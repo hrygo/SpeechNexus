@@ -63,6 +63,17 @@ REPORT_NAME_PATTERN = re.compile(r"integration-shard-\d+\.json")
 # resource class.
 WEB_CASE_WEIGHT = 5
 
+# A case that drives a real PostgreSQL/MySQL service or the Workbench runtime
+# costs several times a unit case, and case counts alone left the twelve lanes
+# 1.9x apart (measured 146-275 s for ~248 cases on 2026-11-16). The module names
+# below are the ones that own a private cluster, a service MySQL schema or the
+# Workbench runtime; three is the centre of the measured per-module ratio and it
+# only decides how many ordinary cases a lane receives.
+HEAVY_CASE_WEIGHT = 3
+HEAVY_MODULE_PATTERN = re.compile(
+    r"(_pg|_postgres|_mysql|_migration_pg)\.py$|workbench_runtime|test_gateway_submit_ledger"
+)
+
 # Test files whose cases share one service database are isolated by unique schema or
 # database names (tests/integration/AGENTS.md), so a shard can run several pytest
 # workers against the same PostgreSQL/MySQL/MinIO services. The suite is dominated
@@ -136,17 +147,25 @@ def _hash_bucket(nodeid: str, count: int) -> int:
     return int.from_bytes(hashlib.sha256(nodeid.encode()).digest(), "big") % count
 
 
-def _lane_quotas(*, ordinary: int, web_cases: Sequence[int], count: int) -> list[int]:
-    """Choose how many ordinary cases each lane receives.
+def case_cost(nodeid: str) -> int:
+    """Estimated execution cost of one case; only relative weight matters."""
+    path = nodeid.split("::", 1)[0]
+    return HEAVY_CASE_WEIGHT if HEAVY_MODULE_PATTERN.search(path) else 1
 
-    Web cases stay on the Web-capable lanes, but each one is already worth
-    WEB_CASE_WEIGHT ordinary cases, so those lanes receive proportionally fewer
-    ordinary cases. Quotas are whole nodeids and sum exactly to ordinary;
-    largest remainder keeps totals exact and breaks ties by lane index.
+
+def _lane_targets(*, costs: Sequence[int], web_cases: Sequence[int], count: int) -> list[float]:
+    """Split the estimated total cost evenly across lanes.
+
+    Each ordinary case contributes its own cost, so a lane that receives:
+    database modules is asked for proportionally fewer cases. Web cases stay on
+    the Web-capable lanes and are already worth WEB_CASE_WEIGHT, so those lanes
+    ask for less ordinary cost. Targets are floats; the walk below turns them
+    into whole cases and keeps the totals exact.
     """
     web_lanes = len(web_cases)
-    target = (ordinary + WEB_CASE_WEIGHT * sum(web_cases)) / count
-    desired = [
+    total = sum(costs) + WEB_CASE_WEIGHT * sum(web_cases)
+    target = total / count
+    return [
         (
             target
             if lane < count - web_lanes
@@ -154,20 +173,26 @@ def _lane_quotas(*, ordinary: int, web_cases: Sequence[int], count: int) -> list
         )
         for lane in range(count)
     ]
-    total = sum(desired)
-    if total <= 0:
-        # The Web cases alone exhaust every target; spread ordinary cases evenly.
-        desired = [1.0] * count
-        total = float(count)
-    scaled = [value * ordinary / total for value in desired]
-    quotas = [math.floor(value) for value in scaled]
-    remainder = ordinary - sum(quotas)
-    order = sorted(
-        range(count), key=lambda lane: (scaled[lane] - quotas[lane], -lane), reverse=True
-    )
-    for lane in order[:remainder]:
-        quotas[lane] += 1
-    return quotas
+
+
+def _lane_slice(costs: Sequence[int], cursor: int, target: float, lanes_left: int) -> int:
+    """How many cases this lane takes: as many as its target allows, never all.
+
+    Every later lane needs at least one case, so the walk stops early when only
+    that many remain; a lane always takes at least one case of its own.
+    """
+    remaining = len(costs) - cursor
+    if lanes_left <= 0:
+        return remaining
+    limit = remaining - lanes_left
+    if limit <= 0:
+        return 0
+    taken = 0
+    spent = 0.0
+    while taken < limit and spent + costs[cursor + taken] <= target:
+        spent += costs[cursor + taken]
+        taken += 1
+    return max(1, taken)
 
 
 def partition(nodeids: Sequence[str], index: int, count: int) -> list[str]:
@@ -193,19 +218,19 @@ def partition(nodeids: Sequence[str], index: int, count: int) -> list[str]:
         )
         for position, nodeid in enumerate(web_order):
             web_lanes[position % web_lane_count].append(nodeid)
-        quotas = _lane_quotas(
-            ordinary=len(ordinary),
-            web_cases=[len(lane) for lane in web_lanes],
-            count=count,
-        )
         ordinary_order = sorted(
             ordinary, key=lambda nodeid: (hashlib.sha256(nodeid.encode()).digest(), nodeid)
         )
+        costs = [case_cost(nodeid) for nodeid in ordinary_order]
+        targets = _lane_targets(
+            costs=costs, web_cases=[len(lane) for lane in web_lanes], count=count
+        )
         selected: list[str] = []
         cursor = 0
-        for lane, quota in enumerate(quotas):
-            lane_cases = ordinary_order[cursor : cursor + quota]
-            cursor += quota
+        for lane, target in enumerate(targets):
+            span = _lane_slice(costs, cursor, target, count - lane - 1)
+            lane_cases = ordinary_order[cursor : cursor + span]
+            cursor += span
             if lane >= count - web_lane_count:
                 lane_cases = lane_cases + web_lanes[lane - (count - web_lane_count)]
             if lane == index:

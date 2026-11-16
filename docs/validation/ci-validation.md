@@ -502,6 +502,7 @@ uv run python scripts/dev-env/python-coverage.py combine \
 1. **十二片 + 片内两 worker。** `INTEGRATION_SHARD_COUNT` 由 8 改为 12，矩阵 `[0..11]`、`max-parallel: 12`；`integration_plan` 发布 12 组 `browser_<i>`/`node_contracts_<i>`，`plan`、证据下载、`check`、覆盖率 `combine` 与探测器的 `--shard-count` 五处参数同步。每片用显式 nodeid 调用 pytest 并加 `-n 2 --dist loadfile`，普通分片用例数由约 371 降到约 248；`web` 路由仍只展开 8–11 四片。
 2. **路由与守卫拆分。** 原先挂在 `routing` 里的 `tests/ci` 回归、Design Token、契约消费者绑定迁到并行且不筛范围的 `guards` 作业，`routing` 只保留 checkout 与范围判定；`guards` 结果被最终门禁无条件要求（意外 `skipped` 也算失败）。
 3. **覆盖率采集 2 → 4 worker。** `python-coverage.py` 的 `PYTHON_COVERAGE_WORKERS_MAX`、CLI `choices`、分片元数据校验与 `workbench-pg-probe.py` 的 `coverage_count` 上限一并放宽到 4；四份 worker 数据加十二份分片数据共十六份合并判定。
+5. **按成本而非用例数分区。** 分片器用 `HEAVY_CASE_WEIGHT = 3` 给需要真实 PostgreSQL/MySQL 或 Workbench 运行时的模块加权（`_pg`/`_postgres`/`_mysql`/`_migration_pg` 文件、`workbench_runtime`、`test_gateway_submit_ledger`），再按每道目标的成本切连续区间，而不是先算用例配额。2026-11-16 用同一次完整 inventory（2769 例、其中 928 例属于重模块）对比：旧算法八条 DB 道的估算成本为 388–438（跨度 1.42x），新算法八条全部为 402（1.00x），四条 Web 道 309–345 升到 350–359，再加各自约 12 例五倍权重的浏览器用例后仍在 410–419；整体成本跨度 1.42x → 1.15x。用例数跨度基本不变（1.27x → 1.26x），因为均衡目标已经从数量换成成本。
 4. **并发预算。** 同时运行的长作业为 12 分片 + `python_tests` + `python_static` + `web` + `controller_image` 的两个构建作业，加上接近完成的 docs/compose/reference 作业，峰值约 19，低于账号的 20 个并发作业上限；16 片会到 22，因此停在 12。
 
 ### 实测与预期
@@ -517,6 +518,7 @@ uv run python scripts/dev-env/python-coverage.py combine \
 改动其中任一侧都必须同时改另一侧，`tests/ci` 与 `tests/contract` 会拦下不一致：
 
 - `INTEGRATION_SHARD_COUNT`（`ci-routing.py`）↔ 矩阵 `shard`、`max-parallel`、显示名、`integration_plan` 的 12 组输出、`plan`/下载/`check`/`combine` 的 `--count` 与探测器的 `--shard-count`；`tests/ci/test_ci_routing.py` 钉住常量与工作流参数，`tests/unit/test_integration_shards.py` 与 `tests/contract/test_ci_workflow.py` 钉住矩阵与计数。
+- `WEB_CASE_WEIGHT`/`HEAVY_CASE_WEIGHT`（`integration-shards.py`）↔ 分区的成本模型 ↔ `integration_plan` 发布的每片用例数与工具需求；改权重会改所有分片的 `selected`，`check` 按同一模型重算，两边不一致即失败。
 - `SHARD_WORKERS_DEFAULT`/`SHARD_WORKERS_MAX`（`integration-shards.py`）↔ `workbench-pg-probe.py` 的 `INTEGRATION_SHARD_WORKERS` 与 `--shard-workers` ↔ 工作流的 `--shard-workers 2`。
 - `PYTHON_COVERAGE_PARTITIONS_MAX`（`python-coverage.py`）与 `PYTHON_PARTITION_MAX`（`workbench-pg-probe.py`）↔ 工作流 `python_tests` 矩阵的 `--partitions 8` 与两腿的 `--index-base` ↔ 门禁 `combine` 的两次 `--job-summary/--job-parts` ↔ 证据下载器的两次 `--coverage-artifact`。两侧分片数满足 `sum(workers) == partitions` 且索引互不重叠，合并仍按一份数据集判定。
 - `PYTHON_COVERAGE_WORKERS_MAX`（`python-coverage.py`）↔ CLI `choices` ↔ `workbench-pg-probe.py` 的 `coverage_count` 上限 ↔ `download-integration-evidence.py` 的 `COVERAGE_WORKERS_MAX` 与门禁的 `--coverage-workers` ↔ 工作流的 `--workers 4`；`tests/ci/test_ci_inspection_retirement.py` 与 `tests/contract/test_ci_workflow.py` 分别钉住工作流里的 worker 数与下载参数。

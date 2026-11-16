@@ -225,13 +225,18 @@ speech_builtin_voice_qualification_provenance   -- 每条已发布内建资格�
 | 新 generation 注册 | `previous_generation_active`：上一代必须 `instance_state='stopped'` 且 `base_budget_kind='released'` | 只有 controller 观测过的停止才能把预算标成 released；自证无从推进代次。 |
 | 资格范围扩大 | `BuiltinVoiceFacts` + `require_qualified_parameters` | 自证只能声明 ⊆ binding 参数域的能力；越界即拒绝，且不写任何行。 |
 
-结构性证据：新命令的写集合只有
-`speech_builtin_voice_approvals`（INSERT，probe 列为 NULL）、
-`speech_builtin_voice_operator_attestations`（INSERT）、
-`speech_builtin_voice_publications/heads/qualifications`（既有发布入口）。
-集成用例在自证前后对 `runtime_instance_intents`、`runtime_instance_heads`、
-`engine_instances`、`resource_pools`、`admission_leases`、`execution_stop_evidence`
-做前后快照比对，证明零改动。
+结构性证据是**授权面**，不是运行态快照。声明身份 `sn_operator_attestation` 由
+`operator_attestation_writer_grants` 声明：对运行态实体 `host_nodes`、`admission_leases`、
+`execution_stop_evidence`、`runtime_instance_intents` **连 `SELECT` 都没有**，对
+`resource_pools` 与 `workspace_quotas` 只有 `SELECT`；写权限只有
+`speech_builtin_voice_approvals` 的八列 `INSERT` 与
+`speech_builtin_voice_operator_attestations` 的表级 `INSERT`，没有任何
+`UPDATE`/`DELETE`/`TRUNCATE`，也没有资格、发布或 publication head 的写权限。
+因此即使这条写入路径被完全控制，它也造不出 native 运行证据、租约、停止证据或预算释放：
+能力缺口由权限边界保证，而不是由「这一次观察到它没写」保证。表级能力对照见 §5 表格，
+授权函数的实际面由 `tests/integration/test_operator_attested_qualification_pg.py` 逐表断言
+（对上述四个运行态实体 `SELECT` 直接 `InsufficientPrivilege`），发布侧的零改动另有前后快照
+比对作为补充证据。
 
 ## 6. 失败面与错误码
 

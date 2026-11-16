@@ -69,10 +69,16 @@ def builtin_publisher_grants(schema: str, role: str) -> tuple[str, ...]:
 def operator_attestation_writer_grants(schema: str, role: str) -> tuple[str, ...]:
     """Only the independent operator identity that records an attestation.
 
-    It may append one approval and its attestation record and read the durable
-    facts it must cross-check. It must not read qualifications, publications or
-    publication heads, and it never receives UPDATE, DELETE or TRUNCATE: a
-    recorded attestation cannot be rewritten afterwards.
+    It appends one approval through an explicit eight-column INSERT (so
+    ``probe_authorization_id`` and ``result_intent`` are unwritable: a declaration
+    can never look like a controller probe) and one table-level INSERT into the
+    attestation ledger. Its reads are exactly the facts it cross-checks: the
+    installation target, source approvals and revocations, existing approvals and
+    attestations, binding revisions with their release evidence, publications and
+    retirements (for the revision number this declaration points at), registered
+    instances, resource pools and workspace quotas. It cannot read
+    ``speech_publication_heads`` and never receives UPDATE, DELETE or TRUNCATE on
+    anything, so a recorded attestation cannot be rewritten or superseded.
     """
     schema, role = checked_sql_name(schema), checked_sql_name(role)
     return (

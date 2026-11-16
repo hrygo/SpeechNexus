@@ -348,7 +348,7 @@ a timeout.
 
 | Host | `docker pull node:26.12.1-bookworm-slim` | Uncached `--no-cache` build | Outcome |
 | --- | --- | --- | --- |
-| macOS arm64, macOS 27.0.1, Docker 29.9.3 — image removed first, 2026-11-16 | 5.26 s | 93.12 s | exit 0 |
+| macOS arm64, macOS 27.0.1, Docker 29.9.3 — image removed first, 2026-11-16 | 5.26 s | 95.13 s | exit 0 |
 | same macOS arm64 host, 2026-11-15 (#829 evidence) | 4.24 s | 53.44 s | exit 0 |
 | MegaCube, Linux aarch64 + NVIDIA GB10, 2026-11-15 (#572/#829 evidence) | node layer pinned at 13.27 KiB/s, 42.99 of 55.89 MB — about 70 min for that layer alone | did not complete; the 900 s Compose build window expired | exit 124 |
 
@@ -380,12 +380,19 @@ The build's own output confirms the same conclusion without a separate pull: wit
 `--progress=plain`, a `FROM` step that sits on "Downloading" for minutes at well
 under 100 KiB/s is the same measurement.
 
-#### Mirror build (build-only)
+#### Throttled route: the build arguments
 
-Two files exist for the throttled case and for nothing else:
-[images/web.mirror.Dockerfile](images/web.mirror.Dockerfile) and
-[compose.build-mirror.override.yaml](compose.build-mirror.override.yaml). The second is
-passed *in addition to* the repository Compose file:
+`deploy/images/web.Dockerfile` takes its three network inputs as build arguments whose
+defaults are the product values: `NODE_BASE_IMAGE`, `NGINX_BASE_IMAGE` and
+`NPM_REGISTRY` (empty means "whatever npm and pnpm resolve"). Nothing else about the
+build is parameterised, so a build that passes none of them is the build this file
+always produced. The deployment never passes them either: `deploy/compose.yaml` pins
+none of the three, and `docker compose --profile web config` renders the same document
+whether or not the example override below exists.
+
+For a host the criteria above put in the throttled row, pass the arguments through
+[compose.build-mirror.override.yaml](compose.build-mirror.override.yaml), which is
+added to the repository Compose file rather than replacing anything:
 
 ```bash
 export SPEECHNEXUS_NODE_BASE_IMAGE=docker.m.daocloud.io/library/node:26.12.1-bookworm-slim
@@ -396,10 +403,10 @@ docker compose -f deploy/compose.yaml \
   --profile web build workbench
 ```
 
-The equivalent direct build, when Compose is not in play:
+The same arguments on a direct build, when Compose is not in play:
 
 ```bash
-docker build -f deploy/images/web.mirror.Dockerfile \
+docker build -f deploy/images/web.Dockerfile \
   --build-arg APP_NAME=workbench \
   --build-arg NODE_BASE_IMAGE=docker.m.daocloud.io/library/node:26.12.1-bookworm-slim \
   --build-arg NGINX_BASE_IMAGE=docker.m.daocloud.io/nginxinc/nginx-unprivileged:1.31-alpine \
@@ -407,25 +414,17 @@ docker build -f deploy/images/web.mirror.Dockerfile \
   -t speechnexus/web-workbench:<commit> .
 ```
 
-What the two files are and are not:
+What a redirect must not change is how the bytes are trusted: the file carries no
+`strict-ssl=false`, no `NODE_TLS_REJECT_UNAUTHORIZED` and no `--insecure`, a private or
+session CA still arrives as the `proxy_ca` BuildKit secret, and no credential belongs in
+the Dockerfile or the override — a mirror that needs authentication is configured on the
+Docker daemon. `tests/ci/test_web_build_arguments.py` keeps the arguments optional: their
+defaults must remain Docker Hub references, `deploy/compose.yaml` must not pin them, and
+the example override may add arguments only.
 
-- **build-only.** `deploy/compose.yaml` never references either file, and Compose only
-  auto-loads a file named `compose.override.yaml`, so their presence changes nothing:
-  `docker compose --profile web config` renders the same document with and without
-  them, and adding the override to the command line changes only the Web services'
-  `build.dockerfile` and three build arguments (whose unset defaults are the product
-  values). The default build path is therefore unchanged instruction for instruction.
-- **the product Dockerfile stays the definition.** `images/web.Dockerfile` is not
-  modified, `images/python.Dockerfile` is not modified, and the mirror file is
-  compared against the product file by `tests/ci/test_web_mirror_build.py`, which
-  fails when the product build changes and the twin does not follow.
-- **it moves where bytes come from, not how they are trusted.** No `strict-ssl=false`,
-  no `NODE_TLS_REJECT_UNAUTHORIZED`, no `--insecure`: a private or session CA still
-  arrives as the `proxy_ca` BuildKit secret. No credential belongs in either file; a
-  mirror that needs authentication is configured on the Docker daemon.
-- **the Python images are out of scope here.** Their registry inputs are redirected on
-  the Docker daemon (`registry-mirrors`), which needs no repository file, and the pypi
-  route is not part of the measured failure above.
+The Python images have no equivalent arguments: their base and index inputs are
+redirected on the Docker daemon (`registry-mirrors`), which needs no repository file,
+and the pypi route is not what failed in the measurement above.
 
 **The bundle is the same, measured rather than assumed.** Hash the build stage's
 `web-dist` tree and compare; this is the exact command used below:
@@ -437,22 +436,27 @@ docker build --target build -f deploy/images/web.Dockerfile \
   'cd /workspace/web-dist && find . -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum'
 ```
 
-On the macOS host above, three `--no-cache` builds produced the same 24-file
-`web-dist` tree,
-`5310e398a263e48effdce29887291dc2664f41c8db9bc45ee7198a020b2a3088`: the product
-Dockerfile (93.12 s), the mirror Dockerfile with no arguments (93.58 s), and the
-mirror Dockerfile redirected to the daocloud registry and `registry.npmmirror.com`
-(47.37 s). The digest identifies source bytes, so it changes with the tree — at
-`5cd5a5d0` the same method gave `80ada7a38a4e08dce8c3009cd196482e26d9854b8930c7e44ef9136f2b7d7f9d`
-(#829), and a cached and an uncached build agreed there too. The nginx base image
-adds one further file, `50x.html`, that is not part of the application bundle.
+On the macOS host above, every uncached build of this tree produced the same 24-file
+tree,
+`5310e398a263e48effdce29887291dc2664f41c8db9bc45ee7198a020b2a3088`, whatever came from
+where: the Dockerfile before it took arguments (107.31 s), the parameterised file with no
+arguments (95.13 s), the parameterised file with the daocloud and
+`registry.npmmirror.com` arguments (42.52 s), and the Compose command above — the
+documented one, not a hand-written `docker build` — uncached through the override
+(44.48 s). Hashing the published `/usr/share/nginx/html` tree minus the nginx base
+image's `50x.html` gives the same digest, which is why the two commands are
+interchangeable. Neither the digest nor the build time is a constant: the same host
+produced builds between 42 s and 107 s for this tree depending on how the two registries
+behaved that minute, and the digest changes with the source tree — at `5cd5a5d0` this
+method gave
+`80ada7a38a4e08dce8c3009cd196482e26d9854b8930c7e44ef9136f2b7d7f9d` (#829).
 
 A mirror is not necessarily a transparent proxy, and that boundary is worth checking
 because it is the one thing the bundle digest does not cover: compare the base-image
 manifests. The daocloud mirror above served the same manifests as Docker Hub
 (`node@sha256:88e480776c6149ff1d098cd304f44bf18057fb5d284a3329b78162d29821e28c`,
 `nginxinc/nginx-unprivileged@sha256:b5047b9b76845eac124358373c6852377c52e4b05834a47647e955dd91cb8f1e`),
-so those images differ from the public-registry build only by name. A mirror that
+so those images differ from the public-registry build only by reference. A mirror that
 serves a *different* manifest puts that base into the image instead: the runtime layer
 is then the mirror's, and if it is the **node** base the bundle digest above is no
 longer promised either, because the toolchain that produced it changed. Check the two

@@ -1,56 +1,45 @@
-# BUILD-ONLY example override: point the two Web image builds at whatever registry and
-# package mirror this host can actually reach. It is not part of the shipped topology.
+# BUILD-ONLY example override: pass the Web build's network arguments so a host that
+# cannot reach Docker Hub or `registry.npmjs.org` at a usable rate can still build the
+# image. It is not part of the shipped topology, and it changes arguments only — never
+# the Dockerfile, the image name, the runtime environment or the bundle.
 #
 # `deploy/compose.yaml` neither includes nor references this file, and Compose only
-# auto-loads a file literally named `compose.override.yaml`, so this file sitting in
-# the tree changes nothing on its own. `tests/ci/test_web_mirror_build.py` holds that:
-# it fails if the default Compose file ever names this override or the mirror
-# Dockerfile.
+# auto-loads a file literally named `compose.override.yaml`, so its presence changes
+# nothing on its own. `tests/ci/test_web_build_arguments.py` holds that.
 #
-# When to reach for it: `deploy/README.md`, section "Builds on a throttled registry
-# route", gives the criteria. In short, a `docker pull` of the base image that cannot
-# hold roughly 1 MiB/s per layer means the uncached product build will not finish in a
-# 900 s window, and this override is the way through.
+# When to reach for it: `deploy/README.md`, section "Build window and registry route",
+# gives the criteria. In short, a cold `docker pull` of the base image that cannot hold
+# roughly 1 MiB/s per layer means an uncached product build will not finish inside a
+# 900 s window, and these arguments are the way through.
 #
 # Usage — the repository file stays first, this file is added, nothing is replaced:
 #
 #   export SPEECHNEXUS_NODE_BASE_IMAGE=docker.m.daocloud.io/library/node:26.12.1-bookworm-slim
-#   export SPEECHNEXUS_NGINX_BASE_IMAGE=docker.m.daocloud.io/library/nginxinc/nginx-unprivileged:1.31-alpine
+#   export SPEECHNEXUS_NGINX_BASE_IMAGE=docker.m.daocloud.io/nginxinc/nginx-unprivileged:1.31-alpine
 #   export SPEECHNEXUS_NPM_REGISTRY=https://registry.npmmirror.com
 #   docker compose -f deploy/compose.yaml \
 #     -f deploy/compose.build-mirror.override.yaml \
 #     --profile web build workbench
 #
-# What changes: the Dockerfile used for the build (`deploy/images/web.mirror.Dockerfile`)
-# and the three mirror arguments. What does not: the image name and labels from
-# `deploy/compose.yaml`, the runtime environment, the health check, and the application
-# bundle — the bundle digest is identical to the default build, and the README records
-# the measurement.
+# Leaving the `SPEECHNEXUS_*` variables unset makes every argument resolve to the
+# value `deploy/images/web.Dockerfile` already defaults to, so this file is also a
+# no-op then.
 #
-# Two things do not belong here:
-#   * credentials — a mirror that needs authentication is configured on the Docker
-#     daemon, never in a Compose file that ships in the repository;
-#   * TLS relaxation — a private or session CA is supplied as the `proxy_ca` BuildKit
-#     secret, the same way the product build consumes it. Do not add `strict-ssl=false`,
-#     `NODE_TLS_REJECT_UNAUTHORIZED` or `--insecure`.
-#
-# The defaults below are the product values, so leaving the `SPEECHNEXUS_*` variables
-# unset makes this override build the ordinary image through the mirror Dockerfile.
+# Two things do not belong here: credentials — a mirror that needs authentication is
+# configured on the Docker daemon, never in a Compose file that ships in the
+# repository — and TLS relaxation. A private or session CA is supplied as the
+# `proxy_ca` BuildKit secret, the same way the product build consumes it.
 services:
   admin:
     build:
-      dockerfile: deploy/images/web.mirror.Dockerfile
       args:
-        APP_NAME: admin
         NODE_BASE_IMAGE: ${SPEECHNEXUS_NODE_BASE_IMAGE:-node:26.12.1-bookworm-slim}
         NGINX_BASE_IMAGE: ${SPEECHNEXUS_NGINX_BASE_IMAGE:-nginxinc/nginx-unprivileged:1.31-alpine}
         NPM_REGISTRY: ${SPEECHNEXUS_NPM_REGISTRY:-}
 
   workbench:
     build:
-      dockerfile: deploy/images/web.mirror.Dockerfile
       args:
-        APP_NAME: workbench
         NODE_BASE_IMAGE: ${SPEECHNEXUS_NODE_BASE_IMAGE:-node:26.12.1-bookworm-slim}
         NGINX_BASE_IMAGE: ${SPEECHNEXUS_NGINX_BASE_IMAGE:-nginxinc/nginx-unprivileged:1.31-alpine}
         NPM_REGISTRY: ${SPEECHNEXUS_NPM_REGISTRY:-}

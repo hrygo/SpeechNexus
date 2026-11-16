@@ -51,6 +51,12 @@ class Settings(BaseSettings):
     object_storage_bucket: str = Field(min_length=3, max_length=63)
     readiness_timeout_seconds: float = Field(default=3.0, gt=0, le=30)
     database_schema: str = Field(default="speech", pattern=r"^[a-z][a-z0-9_]{2,62}$")
+    # Optional dedicated read-only DSN for the cancellation-debt diagnostic. It is
+    # separate on purpose: the API identity must not be granted the fence, ledger,
+    # lease or execution tables just to populate a readiness detail (#852 review
+    # P1), and a deployment that does not provision such a role simply gets
+    # `cancellation_debt: unavailable (not configured)`.
+    readiness_cancellation_dsn: SecretStr | None = None
     object_storage_access_key: SecretStr | None = Field(default=None, min_length=1)
     object_storage_secret_key: SecretStr | None = Field(default=None, min_length=1)
     asset_default_ttl_seconds: int | None = Field(default=604800, ge=60, le=31536000)

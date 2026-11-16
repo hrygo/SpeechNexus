@@ -260,10 +260,17 @@ def _build_readiness(settings: Settings) -> ReadinessService:
             timeout_seconds=settings.readiness_timeout_seconds,
         ),
         # Reports accepted cancellations that cannot yet return capacity. It is
-        # not a failing probe: /readyz is the deployment healthcheck, and one
-        # Job's stuck reservation must not take the API out of service (#852).
+        # not a failing probe: /readyz is the deployment healthcheck, a stuck Job
+        # must not take the API out of service, and a missing privilege must not
+        # either (#852 review P1). It reads through its own optional DSN so the API
+        # identity keeps its minimum data face; without one it reports
+        # `unavailable (not configured)` instead of guessing.
         CancellationDebtProbe(
-            settings.database_url.get_secret_value(),
+            (
+                None
+                if settings.readiness_cancellation_dsn is None
+                else settings.readiness_cancellation_dsn.get_secret_value()
+            ),
             schema=settings.database_schema,
             timeout_seconds=settings.readiness_timeout_seconds,
         ),

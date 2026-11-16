@@ -270,12 +270,19 @@ request ID，不覆盖他人事实。
 
 ### 取消失败的终态判定
 
-受理过的取消必须在有界时间内到达一个明确的算力结论，不能停在 `cancelling`。
-判定有两条独立边界，任一到达即触发：受理时间加
+受理过的取消必须**在实现允许的范围内**尽量在界内到达一个明确的算力结论。判定有两条
+独立边界，任一到达即触发：受理时间加
 `SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_CONFIRM_TIMEOUT_SECONDS`（默认 300 秒，
 有界 1–3600），或 `max_attempts` 用尽。越过边界后不再把「继续向网关提问」当作收敛
 手段——有界重试证明不了尚未证明的停止——但也不放弃受阻的受理，而是每次领取都尝试
 一次终态判定；判定不能完成时继续用有界退避重试该行，并把阻塞原因留在可读面上。
+
+**这个目标有一类已知例外，实现确实会停在 `cancelling`**：执行已经是 `succeeded`/`aborted`
+等终态、但拿不到停止证据时，领域规则拒绝隔离一个已完成的执行，Job 因此停在 `cancelling`、
+租约停在 `reserved`、`held_slots` 不归零，账本 `attempts` 饱和在 64（见本节末「执行已
+`succeeded` 而后到的取消」）。公开状态机不允许 `cancelling → succeeded`，所以这条路径没有
+自动收口，只能等 #338 的停止确认协议或操作员处置。这与「界内收口」的目标冲突，属于**已知
+限制而非保证**，已列入发布说明候选。
 
 判定分两步，顺序不可交换：
 
@@ -318,6 +325,11 @@ Job 已是本错误码的 `failed` 时只补做隔离；他人写入的终态不
 执行已 `succeeded` 而后到的取消仍按同一判定尝试收口，但领域规则会拒绝隔离一个已完成的
 执行，因此这类受理会停在 `cancelling` 并反复进入「无法隔离」的可见面（见下一节），
 直到 #338 的停止确认协议给出可证明的收口；判定路径从不把 `succeeded` 改写成 `cancelled`。
+实测当前行为：Job 恒为 `cancelling`、租约恒为 `reserved`、`held_slots` 不归零、账本
+`attempts` 涨到 64 后饱和并继续以最大退避领取；数据库触发器拒绝 `cancelling → succeeded`，
+所以不存在「自动变成成功」的分支。竞争方案见
+[`docs/plans/2026-11-16-succeeded-then-cancelled.md`](../plans/2026-11-16-succeeded-then-cancelled.md)，
+本切片不改变状态机或触发器。
 
 #### 隔离不了的时候：可见面与处置
 
@@ -325,14 +337,42 @@ Job 已是本错误码的 `failed` 时只补做隔离；他人写入的终态不
 
 1. **就绪与诊断 detail**：`create_app` 装配的 `CancellationDebtProbe`
    （名字 `cancellation_debt`）在每次 `/readyz` 与
-   `GET /v1/nexus/admin/diagnostics` 中报告「已受理但仍在持有容量的取消」，detail 形如
-   `cancellation_debt: 1 accepted cancellation(s) still hold capacity:
-   job-… -> lease-…(lease=reserved, execution=executing)`。判定标准是：围栏已受理、
-   账本未 `settled`（或根本没有账本行，即 worker 从未运行过）、Job 仍是 `cancelling`、
-   且受理时间距数据库当前时间超过宽限（默认 900 秒，大于默认确认窗口加退避）。
+   `GET /v1/nexus/admin/diagnostics` 中报告「已受理但仍在持有容量的取消」。判定标准是：
+   围栏已受理、账本未 `settled`（或根本没有账本行，即 worker 从未运行过）、Job 仍是
+   `cancelling`、且受理时间距数据库当前时间超过宽限（默认 900 秒，大于默认确认窗口加退避）。
    它**不**改变聚合状态：`/readyz` 是 `deploy/compose.yaml` 的健康检查，一个 Job 占着
    它无法归还的槽位，不应该让整个 API 退出服务。告警口径因此是这个固定前缀，
    不是 HTTP 状态：`cancellation_debt:`。
+
+   探针**永远报告 `ok`**：detail 只承载观察，不参与聚合就绪判定。`/readyz` 是
+   `deploy/compose.yaml` 的健康检查，`admin`/`workbench` 又都 `depends_on: service_healthy`，
+   所以一个诊断让 API 变 503 就等于整套部署起不来——权限不足、连接失败、超时、relation 缺失
+   都只体现在 detail 里。
+
+   它**不**使用 API 自己的 DSN，而是读取可选的专用只读 DSN
+   `SPEECHNEXUS_READINESS_CANCELLATION_DSN`：为填充一个诊断就去给 `sn_api` 加取消账本、
+   围栏、租约或执行表的 SELECT，是拿安全边界换一个字符串。没配这个 DSN 时 detail 是
+   `cancellation_debt: unavailable (not configured)`，其余一切照常。
+
+   detail 的形态对应探针能读到多少：
+
+   | 形态 | 何时出现 |
+   |---|---|
+   | `cancellation_debt: N … job-… -> lease-…(lease=reserved, execution=executing)` | DSN 指向被授予 `cancellation_debt_reader_grants`（或更宽）的只读身份 |
+   | `cancellation_debt: N … job-… -> lease-unread [lease detail unavailable: permission]` | 该身份能读 Job、围栏与账本，但读不到租约/执行表 |
+   | `cancellation_debt: unavailable (not configured)` | 未配置专用 DSN（默认部署） |
+   | `cancellation_debt: unavailable (permission｜relation｜connection｜timeout｜error)` | 探针什么都读不到；分类保证真实故障仍然可见，而不是被吞掉 |
+
+   完整的 `Job → 租约 → 两侧状态` 明细需要一个单独的只读身份，最小授权集合由
+   `cancellation_debt_reader_grants(schema, role)` 生成（列级：围栏的 `job_id/accepted_at_us`、
+   账本的 `job_id/settled_at_us`、`speech_jobs.job_id/state`、
+   `admission_leases.lease_id/operation_id/lease_state`、`submit_intents.lease_id/execution_state`；
+   不含规范请求正文、不含对账写权限）。把这个角色的 DSN 配进
+   `SPEECHNEXUS_READINESS_CANCELLATION_DSN` 即可；不配就只有上面第二/第四种形态，
+   逐条明细改用本节下面的只读钻取查询（由迁移/运维身份执行）。
+
+   探针复用一条连接（`application_name=speechnexus-readiness-debt`），不随每次 `/readyz`
+   轮询新建会话；查询后回滚以保持会话空闲。
 2. **worker 日志**：每次判定被阻塞时，worker 对 stderr 输出一条
    `cancellation acceptance holds capacity but cannot be isolated`，带 `job_id` 和阻塞
    明细（哪条租约、租约状态、执行状态、拒绝原因）。

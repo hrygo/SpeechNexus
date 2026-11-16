@@ -426,6 +426,18 @@ ROWS: tuple[Row, ...] = (
         evidence="docs/components/production-assets.md::With neither key, business endpoints",
     ),
     Row(
+        keys=("SPEECHNEXUS_READINESS_CANCELLATION_DSN",),
+        prerequisite="可选的专用只读取消债务身份（未配置即报 not configured）",
+        behaviour=DOCUMENTED,
+        disposition=(
+            "无需：文档声明作用域（未配置时诊断 detail 报 not configured，且从不影响就绪）"
+        ),
+        names_keys=False,
+        evidence=(
+            "docs/components/production-jobs.md::cancellation_debt: unavailable (not configured)"
+        ),
+    ),
+    Row(
         keys=("SPEECHNEXUS_WORKSPACE_WRITER_DATABASE_URL",),
         prerequisite="资产运行时已装配（成对的 SPEECHNEXUS_OBJECT_STORAGE_* 凭据）",
         behaviour=DOCUMENTED,

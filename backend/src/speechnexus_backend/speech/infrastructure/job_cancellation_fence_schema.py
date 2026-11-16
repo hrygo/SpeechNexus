@@ -104,6 +104,31 @@ def cancellation_reconciliation_grants(schema: str, role: str) -> tuple[str, ...
     )
 
 
+def cancellation_debt_reader_grants(schema: str, role: str) -> tuple[str, ...]:
+    """Optional read-only identity for the ``cancellation_debt`` diagnostic.
+
+    Not granted to any runtime identity by default: the API identity must not be
+    able to read the cancellation ledger, the speech owner's leases or the
+    gateway's submit intents just to fill a readiness detail (#852 review P1). A
+    deployment that wants the full ``Job -> lease -> states`` detail provisions
+    this separate role and points ``SPEECHNEXUS_READINESS_CANCELLATION_DSN`` at
+    it; without it the probe reports ``unavailable (not configured)``.
+
+    Column-level on purpose: no canonical request document, no reconciliation
+    writes, no capacity accounting beyond the lease state the detail prints.
+    """
+    schema, role = checked_sql_name(schema), checked_sql_name(role)
+    return (
+        f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"',
+        f'GRANT SELECT (job_id, accepted_at_us) ON "{schema}".{TABLE} TO "{role}"',
+        f'GRANT SELECT (job_id, settled_at_us) ON "{schema}".{RECONCILIATION_TABLE} TO "{role}"',
+        f'GRANT SELECT (job_id, state) ON "{schema}".speech_jobs TO "{role}"',
+        f"GRANT SELECT (lease_id, operation_id, lease_state) "
+        f'ON "{schema}".admission_leases TO "{role}"',
+        f'GRANT SELECT (lease_id, execution_state) ON "{schema}".submit_intents TO "{role}"',
+    )
+
+
 def gateway_cancellation_fence_grants(schema: str, role: str) -> tuple[str, ...]:
     """The gateway only needs the existence key, not acceptance metadata."""
     schema, role = checked_sql_name(schema), checked_sql_name(role)
@@ -119,6 +144,7 @@ __all__ = [
     "NOT_SUBMITTED_TABLE",
     "RECONCILIATION_TABLE",
     "TABLE",
+    "cancellation_debt_reader_grants",
     "cancellation_not_submitted_grants",
     "cancellation_reconciliation_grants",
     "gateway_cancellation_fence_grants",

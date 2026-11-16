@@ -29,25 +29,30 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import psycopg
 import pytest
 from alembic import command
 from alembic.config import Config
+from httpx import ASGITransport, AsyncClient
 from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
+from pydantic import AnyHttpUrl, SecretStr
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 
+from speechnexus_backend.app import create_app
 from speechnexus_backend.job_cancellation_runtime import (
     UnconfirmedCancellationSettlement,
     _PublicJobsSettlement,
 )
+from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.job_cancellation_reconciliation import (
     JobCancellationReconciler,
 )
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
+from speechnexus_backend.speech.application.readiness import ReadinessService
 from speechnexus_backend.speech.domain.job_dispatch import submit_intent_identity
 from speechnexus_backend.speech.domain.public_jobs import cleanup_state, retryable
 from speechnexus_backend.speech.infrastructure.coordination_grants import (
@@ -64,6 +69,7 @@ from speechnexus_backend.speech.infrastructure.job_cancellation_fence import (
 )
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
     RECONCILIATION_TABLE,
+    cancellation_debt_reader_grants,
     cancellation_reconciliation_grants,
 )
 from speechnexus_backend.speech.infrastructure.job_cancellation_reconciliation_postgres import (
@@ -77,6 +83,9 @@ from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
 from speechnexus_backend.speech.infrastructure.public_job_schema import public_job_grants
 from speechnexus_backend.speech.infrastructure.public_jobs_postgres import (
     PostgresPublicJobs,
+)
+from speechnexus_backend.speech.infrastructure.qualified_speech_facts_postgres import (
+    speech_synthesis_reader_grants,
 )
 from speechnexus_backend.speech.infrastructure.readiness import CancellationDebtProbe
 
@@ -238,12 +247,19 @@ def _seed_execution(
 @contextmanager
 def _sandbox(
     *leases: tuple[str, tuple[str, str] | None],
+    coordination: bool = True,
+    api_identity: bool = False,
+    debt_reader: bool = False,
 ) -> Iterator[CancelSandbox]:
     """One Job whose leases carry the given gateway execution facts.
 
     ``None`` means that lease never reached submission, so the gateway recorded
     no execution fact for it at all -- the review's "one lease without the fact"
-    case.
+    case. ``coordination=False`` provisions the role the way a minimal-privilege
+    deployment does: the Job, cancellation and ledger tables are granted, the
+    lease and execution tables are not. ``api_identity=True`` reproduces the
+    reference deployment's ``sn_api`` grant set exactly, and ``debt_reader=True``
+    the optional read-only identity the debt detail documents.
     """
     url = os.environ.get(VARIABLE)
     if not url:
@@ -258,17 +274,26 @@ def _sandbox(
     pool = None
     try:
         admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{PASSWORD}'")
-        for grant in (
-            *job_runtime_grants(schema, role),
-            *public_job_grants(schema, role),
-            *cancellation_reconciliation_grants(schema, role),
-        ):
-            admin.execute(grant)
-        for grant in coordination_runtime_grants(
-            schema, speech_role=role, gateway_role=role + "_unused"
-        ):
-            if f'"{role}"' in grant:
+        if api_identity:
+            # Exactly what deploy/README.md gives `sn_api`, nothing else.
+            for grant in speech_synthesis_reader_grants(schema, role):
                 admin.execute(grant)
+        elif debt_reader:
+            for grant in cancellation_debt_reader_grants(schema, role):
+                admin.execute(grant)
+        else:
+            for grant in (
+                *job_runtime_grants(schema, role),
+                *public_job_grants(schema, role),
+                *cancellation_reconciliation_grants(schema, role),
+            ):
+                admin.execute(grant)
+        if coordination:
+            for grant in coordination_runtime_grants(
+                schema, speech_role=role, gateway_role=role + "_unused"
+            ):
+                if f'"{role}"' in grant:
+                    admin.execute(grant)
         _seed_foundation(admin, job_id, lease_ids)
         for index, (lease_id, facts) in enumerate(leases):
             if facts is not None:
@@ -299,7 +324,10 @@ def _sandbox(
             name="cancel-failure-" + suffix,
         )
         pool.open()
-        with pool.connection() as connection, connection.cursor() as cursor:
+        # Seeded as the schema owner: the acceptance row is fixture state, and the
+        # identity under test may legitimately be unable to write or read it.
+        admin.execute(f'SET search_path TO "{schema}", pg_catalog')
+        with admin.cursor() as cursor:
             write_cancellation_fence(
                 cursor,
                 job_id=job_id,
@@ -681,6 +709,194 @@ def test_the_readiness_detail_names_the_blocking_lease(
         assert detail is not None
         assert detail.startswith("cancellation_debt: 1 accepted cancellation(s)")
         assert f"{box.job_id} -> {LEASE_SECOND}(lease=reserved, execution=not_submitted)" in detail
+
+
+def test_a_role_without_the_coordination_grants_still_names_the_job() -> None:
+    """The debt probe degrades instead of failing under a minimal-privilege role.
+
+    The reference runtime role is granted the Job, cancellation and ledger tables
+    it writes; it is *not* granted the speech owner's ``admission_leases`` or the
+    gateway's ``submit_intents`` (they hold another owner's rows and the canonical
+    private command document). Joining them raised ``permission denied``, which the
+    readiness service turned into ``/readyz`` 503 -- the whole API unhealthy
+    because a diagnostic could not read a table it must never be granted.
+    """
+    with _sandbox((LEASE, QUARANTINED_DOCUMENT_STATE), coordination=False) as box:
+        detail = asyncio.run(_debt_probe(box).check())
+
+    assert detail is not None
+    assert detail.startswith("cancellation_debt: 1 accepted cancellation(s)")
+    assert f"{box.job_id} -> lease-unread" in detail
+    assert "[lease detail unavailable: permission]" in detail
+
+
+def test_the_debt_probe_never_fails_a_readiness_report() -> None:
+    """No probe failure may make ``/readyz`` unready; the detail names the cause."""
+    with _sandbox((LEASE, QUARANTINED_DOCUMENT_STATE), coordination=False) as box:
+        unreadable = asyncio.run(
+            ReadinessService(
+                [
+                    CancellationDebtProbe(
+                        make_conninfo(os.environ[VARIABLE], user=box.role, password=PASSWORD),
+                        schema=box.schema,
+                        timeout_seconds=3,
+                        grace_seconds=0.001,
+                    )
+                ],
+                timeout_seconds=3,
+            ).inspect()
+        )
+    assert unreadable.ready is True
+    assert unreadable.checks[0].status.value == "ok"
+    assert unreadable.checks[0].detail is not None
+    assert unreadable.checks[0].detail.startswith("cancellation_debt:")
+
+    # A DSN that cannot be opened at all is a probe fact, not an unready API.
+    unreachable = asyncio.run(
+        ReadinessService(
+            [
+                CancellationDebtProbe(
+                    "postgresql://nobody:nobody@127.0.0.1:1/none",
+                    schema="speech",
+                    timeout_seconds=1,
+                )
+            ],
+            timeout_seconds=2,
+        ).inspect()
+    )
+    assert unreachable.ready is True
+    assert unreachable.checks[0].detail == "cancellation_debt: unavailable (connection)"
+
+
+def test_readyz_and_diagnostics_stay_reachable_when_the_probe_cannot_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The HTTP surface an operator uses must not collapse with the probe.
+
+    ``/readyz`` is the deployment healthcheck and diagnostics is the read surface;
+    a role that is not granted the lease tables must leave both serving, with the
+    degraded detail saying which layer this slice reaches.
+    """
+    with _sandbox((LEASE, QUARANTINED_DOCUMENT_STATE), coordination=False) as box:
+        probe = _debt_probe(box)
+        app = create_app(
+            settings=_http_settings(box),
+            readiness=ReadinessService([probe], timeout_seconds=3),
+        )
+
+        async def fetch(path: str) -> tuple[int, dict[str, Any]]:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.get(path)
+            return response.status_code, cast(dict[str, Any], response.json())
+
+        status, ready = asyncio.run(fetch("/readyz"))
+        assert status == 200, ready
+        assert ready["status"] == "ready"
+        detail = next(
+            check["detail"] for check in ready["checks"] if check["name"] == "cancellation_debt"
+        )
+        assert detail.startswith("cancellation_debt: 1 accepted cancellation(s)")
+        assert "[lease detail unavailable: permission]" in detail
+
+        status, diagnostics = asyncio.run(fetch("/v1/nexus/admin/diagnostics"))
+        assert status == 200, diagnostics
+
+
+def test_the_reference_api_identity_keeps_readyz_ok_and_says_why(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The reference deployment's ``sn_api`` grant set, not a union sandbox role.
+
+    ``sn_api`` holds exactly ``speech_synthesis_reader_grants`` (catalogue,
+    qualification, bindings, voices, settlement root, workspaces) -- no fence, no
+    ledger, no Job, lease or execution reads. The probe must therefore report
+    ``unavailable (permission)`` and must never make ``/readyz`` unready: in the
+    reference deployment ``admin`` and ``workbench`` wait for
+    ``service_healthy``, so a 503 here keeps the whole stack from starting.
+    """
+    with _sandbox(
+        (LEASE, QUARANTINED_DOCUMENT_STATE), coordination=False, api_identity=True
+    ) as box:
+        identity = make_conninfo(os.environ[VARIABLE], user=box.role, password=PASSWORD)
+        probe = CancellationDebtProbe(
+            identity, schema=box.schema, timeout_seconds=3, grace_seconds=0.001
+        )
+        assert asyncio.run(probe.check()) == "cancellation_debt: unavailable (permission)"
+
+        app = create_app(
+            settings=_http_settings(box), readiness=ReadinessService([probe], timeout_seconds=3)
+        )
+
+        async def fetch(path: str) -> tuple[int, dict[str, Any]]:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.get(path)
+            return response.status_code, cast(dict[str, Any], response.json())
+
+        status, ready = asyncio.run(fetch("/readyz"))
+        assert status == 200, ready
+        assert ready["status"] == "ready"
+        check = next(item for item in ready["checks"] if item["name"] == "cancellation_debt")
+        assert check["status"] == "ok"
+        assert check["detail"] == "cancellation_debt: unavailable (permission)"
+
+        status, _ = asyncio.run(fetch("/v1/nexus/admin/diagnostics"))
+        assert status == 200
+
+
+def test_the_optional_reader_identity_reports_the_full_detail() -> None:
+    """Pointing the dedicated DSN at the optional reader role yields the full view."""
+    with _sandbox((LEASE, QUARANTINED_DOCUMENT_STATE), coordination=False, debt_reader=True) as box:
+        detail = asyncio.run(_debt_probe(box).check())
+
+    assert detail is not None
+    assert f"{box.job_id} -> {LEASE}(lease=reserved, execution=unknown_quarantined)" in detail
+    assert "unavailable" not in detail
+
+
+def test_the_probe_reuses_its_session_instead_of_connecting_per_poll() -> None:
+    """``/readyz`` is polled every few seconds; it must not open a session each time."""
+    with _sandbox((LEASE, QUARANTINED_DOCUMENT_STATE), coordination=False, debt_reader=True) as box:
+        probe = _debt_probe(box)
+
+        async def poll() -> list[str | None]:
+            return [await probe.check() for _ in range(4)]
+
+        details = asyncio.run(poll())
+        sessions = box.query(
+            "SELECT count(*) AS n FROM pg_stat_activity WHERE usename = %s", (box.role,)
+        )[0]["n"]
+        asyncio.run(probe.aclose())
+
+    assert len(details) == 4
+    assert all(detail is not None for detail in details)
+    assert sessions == 1, sessions
+
+
+def test_an_unconfigured_probe_says_so_instead_of_failing() -> None:
+    """No dedicated DSN is the default deployment: name it, never fail readiness."""
+    probe = CancellationDebtProbe(None, schema="speech", timeout_seconds=1)
+
+    report = asyncio.run(ReadinessService([probe], timeout_seconds=1).inspect())
+
+    assert report.ready is True
+    assert report.checks[0].status.value == "ok"
+    assert report.checks[0].detail == "cancellation_debt: unavailable (not configured)"
+
+
+def _http_settings(box: CancelSandbox) -> Settings:
+    """The composition root's settings, pointing at the sandbox role."""
+    return Settings(
+        environment="test",
+        database_url=SecretStr(
+            make_conninfo(os.environ[VARIABLE], user=box.role, password=PASSWORD)
+        ),
+        database_schema=box.schema,
+        object_storage_endpoint=AnyHttpUrl("http://127.0.0.1:9000"),
+        object_storage_healthcheck_url=AnyHttpUrl("http://127.0.0.1:9000/minio/health/live"),
+        object_storage_bucket="synthetic-bucket",
+    )
 
 
 def test_a_closed_acceptance_is_not_reported_as_debt(

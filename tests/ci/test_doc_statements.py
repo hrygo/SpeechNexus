@@ -117,8 +117,8 @@ class DocumentedCapabilityGuardTests(unittest.TestCase):
                 "取消（`POST /v1/nexus/jobs/{job_id}/cancellations`）、"
                 "重试（`POST /v1/nexus/jobs/{job_id}/retries`）与 SSE 事件流"
                 "（`GET /v1/nexus/jobs/{job_id}/events`），注册在 "
-                "`backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:802` 起，"
-                "并由 `backend/src/speechnexus_backend/app.py:822` 装配进应用；"
+                "`backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:819` 起，"
+                "并由 `backend/src/speechnexus_backend/app.py:819` 装配进应用；"
                 "取消、重试与事件流另有隔离 PG 与真实 TCP 测试，这些路由尚未在参考部署上实际调用。"
             ),
             OLD_PRD_CLAIM,

@@ -186,10 +186,16 @@ class JobRejectedError(RuntimeError):
     refusal or a missing result payload), not client conflicts. A connection
     failure in the submission window is not a refusal at all: it cannot prove
     the transaction did not commit, so it is reported as outcome unknown.
+
+    ``detail`` carries the one fact the reason class cannot express: which
+    prerequisite is missing (a database that never ran the migration profile, a
+    role without its grants). It names keys and commands only -- never a DSN value,
+    host, database name or credential -- and it never changes ``code`` (#920).
     """
 
-    def __init__(self, code: JobRejectionReason) -> None:
+    def __init__(self, code: JobRejectionReason, detail: str | None = None) -> None:
         self.code = code
+        self.detail = detail
         super().__init__(code)
 
 
@@ -1589,7 +1595,7 @@ def _revision_result(result: RevisionCreateResult) -> tuple[PublicJob, str]:
             # outage, never a contract violation.
             raise PublicJobUnavailableError(result.detail)
         _raise_admission_rejection(result.error_code, result.detail)
-        raise JobRejectedError(_rejection_reason(result.error_code))
+        raise JobRejectedError(_rejection_reason(result.error_code), result.detail)
     if result.job is None or result.revision is None:
         raise JobRejectedError("contract")
     return result.job, result.revision
@@ -1617,7 +1623,7 @@ def _submission_result(result: JobCreateResult) -> PublicJob:
             # store knows the blank key, names that key and never a value (#877).
             raise PublicJobUnavailableError(result.detail)
         _raise_admission_rejection(result.error_code, result.detail)
-        raise JobRejectedError(_rejection_reason(result.error_code))
+        raise JobRejectedError(_rejection_reason(result.error_code), result.detail)
     if result.job is None:
         raise JobRejectedError("contract")
     return result.job

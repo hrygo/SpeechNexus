@@ -21,9 +21,8 @@ and would otherwise hide held capacity. A future identity change fails closed
 
 import psycopg
 
+from speechnexus_backend.speech.domain.job_prerequisites import MIGRATION_COMMAND
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
-
-MIGRATION_COMMAND = "docker compose --profile migration run --rm migrate"
 
 
 class SettlementPreflightUnavailableError(RuntimeError):
@@ -32,7 +31,9 @@ class SettlementPreflightUnavailableError(RuntimeError):
     A missing schema or relation means this database never ran the migration
     profile. That is a deployment defect with one repair, so it is raised as this
     named refusal instead of letting the driver's ``UndefinedTable`` escape as an
-    uncaught traceback that restart-loops the API container (#877 item 3).
+    uncaught traceback that restart-loops the API container (#877 item 3). The
+    command is the shared one from ``domain.job_prerequisites``, so every surface
+    that names the repair prints the same line (#920).
     """
 
 

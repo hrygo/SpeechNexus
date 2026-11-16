@@ -452,7 +452,7 @@ WS 断开即停止接收新操作，取消实时计算并回收 owner，记录�
 
 ## 3. 调用示例
 
-以下 ID、版本和文本均为说明性示例；运行前须替换为目标部署中实际存在且具备资格的资源。示例展示契约形状，不证明路由或执行链已装配：同步 ASR/TTS 的前置条件分别见[同步转写](../operations/synchronous-transcription.md)和[同步语音合成](../components/synchronous-speech.md)，公开 Job 路由已装配创建、列表、读取、取消、重试与 SSE 事件流（`backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:802` 起），实时及音色创作流程仍须按实际交付与部署证据判断。
+以下 ID、版本和文本均为说明性示例；运行前须替换为目标部署中实际存在且具备资格的资源。示例展示契约形状，不证明路由或执行链已装配：同步 ASR/TTS 的前置条件分别见[同步转写](../operations/synchronous-transcription.md)和[同步语音合成](../components/synchronous-speech.md)，公开 Job 路由已装配创建、列表、读取、取消、重试与 SSE 事件流（`backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:819` 起），实时及音色创作流程仍须按实际交付与部署证据判断。
 
 ### 3.1 同步 TTS 与文件转写
 

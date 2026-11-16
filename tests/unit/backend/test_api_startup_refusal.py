@@ -16,6 +16,9 @@ import uvicorn
 
 from speechnexus_backend import main as api_main
 from speechnexus_backend.speech.infrastructure import tts_settlement_preflight as preflight
+from speechnexus_backend.speech.infrastructure.job_schema_preflight import (
+    JobSchemaNotMigratedError,
+)
 
 
 class _Settings:
@@ -45,3 +48,31 @@ def test_the_api_entry_point_names_a_missing_migration(
     assert "migration profile" in stderr
     assert "admission_leases" in stderr
     assert "Traceback" not in stderr
+
+
+def test_the_job_schema_refusal_is_not_claimed_by_the_entry_point(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The lifespan refusal belongs to uvicorn, and the entry point must not pretend.
+
+    ``JobRuntime.open()`` awaits inside the ASGI lifespan, so uvicorn logs the
+    exception with its traceback and exits ``STARTUP_FAILURE`` (3) itself; the
+    ``except`` in ``main()`` cannot see it. This pins that division: the entry
+    point converts only the synchronous assembly refusal, and the startup answer
+    for an unmigrated Job database is uvicorn's named exception, not a ``FAIL:``
+    line. Measured on uvicorn 0.54.0: exit 3, ``Exception in 'lifespan' protocol``
+    plus the traceback, and the migration sentence in the exception message
+    (#920 review M1).
+    """
+
+    def refuse(*args: Any, **kwargs: Any) -> None:
+        raise JobSchemaNotMigratedError(["alembic_version", "speech_jobs"])
+
+    monkeypatch.setattr(api_main, "Settings", lambda: _Settings())
+    monkeypatch.setattr(uvicorn, "run", refuse)
+
+    with pytest.raises(JobSchemaNotMigratedError):
+        api_main.main()
+
+    stderr = capsys.readouterr().err
+    assert "FAIL:" not in stderr

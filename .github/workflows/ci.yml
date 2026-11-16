@@ -800,8 +800,8 @@ jobs:
           python3 scripts/dev-env/download-integration-evidence.py \
             --repository "$CI_REPOSITORY" --run-id "$CI_RUN_ID" \
             --count 12 --coverage-workers 4 --output "$RUNNER_TEMP/integration-shards" \
-            --coverage-artifact workbench-pg-full-coverage-a \
-            --coverage-artifact workbench-pg-full-coverage-b \
+            --coverage-artifact workbench-pg-full-coverage-a:0 \
+            --coverage-artifact workbench-pg-full-coverage-b:4 \
             --coverage-output "$RUNNER_TEMP/coverage-evidence"
 
       - name: Verify same-commit collection, partition coverage and actual test outcomes

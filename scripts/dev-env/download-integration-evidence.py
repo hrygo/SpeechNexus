@@ -169,6 +169,16 @@ def artifact_created_at(artifact: Any) -> datetime:
     return stamp
 
 
+def parse_coverage_artifact(value: str) -> tuple[str, int]:
+    """Read a measured artifact reference, optionally with its first worker index."""
+    name, _, base = value.partition(":")
+    if not re.fullmatch(r"[A-Za-z0-9._-]{1,120}", name):
+        raise ValueError("Invalid Python coverage artifact name")
+    if base and (not base.isdigit() or int(base) < 0):
+        raise ValueError("Invalid Python coverage index base")
+    return name, int(base) if base else 0
+
+
 def select_coverage_artifact(
     artifacts: list[Any], name: str = COVERAGE_ARTIFACT
 ) -> tuple[Any, int]:
@@ -199,12 +209,15 @@ def download_coverage(
     artifacts: list[Any],
     workers: int,
     name: str = COVERAGE_ARTIFACT,
+    index_base: int = 0,
 ) -> None:
     """Fetch one measured dataset; an absent artifact is a failing gate, not a smaller one."""
     if type(workers) is not int or not 1 <= workers <= COVERAGE_WORKERS_MAX:
         raise ValueError("Invalid Python coverage worker count")
     if not re.fullmatch(r"[A-Za-z0-9._-]{1,120}", name):
         raise ValueError("Invalid Python coverage artifact name")
+    if type(index_base) is not int or index_base < 0:
+        raise ValueError("Invalid Python coverage index base")
     output = output / name
     artifact, inventory = select_coverage_artifact(artifacts, name)
     artifact_id = artifact["id"]
@@ -221,7 +234,7 @@ def download_coverage(
         or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest)
     ):
         raise ValueError("Invalid or expired Python coverage artifact metadata")
-    archive = root / "coverage.zip"
+    archive = root / f"coverage-{name}.zip"
     try:
         fetch_api(f"repos/{repository}/actions/artifacts/{artifact_id}/zip", archive, size)
     except ArtifactFetchError as error:
@@ -232,18 +245,22 @@ def download_coverage(
         actual_digest = "sha256:" + hashlib.file_digest(stream, "sha256").hexdigest()
     if actual_digest != digest:
         raise ValueError("Python coverage artifact digest mismatch")
+    owned = range(index_base, index_base + workers)
     required = {COVERAGE_SUMMARY} | {
-        f"{COVERAGE_PARTS_DIR}/coverage-{index}.data" for index in range(workers)
+        f"{COVERAGE_PARTS_DIR}/coverage-{index}.data" for index in owned
     }
     allowed = {COVERAGE_SUMMARY, f"{COVERAGE_PARTS_DIR}/coverage.data"} | {
-        f"{COVERAGE_PARTS_DIR}/coverage-{index}.data" for index in range(workers)
+        f"{COVERAGE_PARTS_DIR}/coverage-{index}.data" for index in owned
     }
-    for index in range(workers):
-        for name in (f"worker-{index}.json", f"worker-{index}.log", f"postgres-{index}.json"):
-            allowed.add(f"{COVERAGE_PARTS_DIR}/{name}")
+    for index in owned:
+        for member_name in (
+            f"worker-{index}.json",
+            f"worker-{index}.log",
+            f"postgres-{index}.json",
+        ):
+            allowed.add(f"{COVERAGE_PARTS_DIR}/{member_name}")
     limits = {COVERAGE_SUMMARY: REPORT_LIMIT} | {
-        f"{COVERAGE_PARTS_DIR}/coverage-{index}.data": COVERAGE_DATA_LIMIT
-        for index in range(workers)
+        f"{COVERAGE_PARTS_DIR}/coverage-{index}.data": COVERAGE_DATA_LIMIT for index in owned
     }
     with zipfile.ZipFile(archive) as zipped:
         members = zipped.infolist()
@@ -279,7 +296,7 @@ def download(
     *,
     coverage_output: Path | None = None,
     coverage_workers: int = 2,
-    coverage_artifacts: Sequence[str] = (COVERAGE_ARTIFACT,),
+    coverage_artifacts: Sequence[tuple[str, int]] = ((COVERAGE_ARTIFACT, 0),),
 ) -> None:
     if not re.fullmatch(r"[A-Za-z0-9-]+/[A-Za-z0-9_.-]+", repository):
         raise ValueError("Invalid repository")
@@ -304,9 +321,16 @@ def download(
         download_shards(repository, run_id, count, output, root, artifacts)
         if coverage_output is not None:
             coverage_output.mkdir(parents=True)
-            for name in coverage_artifacts:
+            for name, index_base in coverage_artifacts:
                 download_coverage(
-                    repository, run_id, coverage_output, root, artifacts, coverage_workers, name
+                    repository,
+                    run_id,
+                    coverage_output,
+                    root,
+                    artifacts,
+                    coverage_workers,
+                    name,
+                    index_base,
                 )
 
 
@@ -332,7 +356,10 @@ def main() -> int:
             args.output,
             coverage_output=args.coverage_output,
             coverage_workers=args.coverage_workers,
-            coverage_artifacts=tuple(args.coverage_artifact or (COVERAGE_ARTIFACT,)),
+            coverage_artifacts=tuple(
+                parse_coverage_artifact(value)
+                for value in (args.coverage_artifact or [COVERAGE_ARTIFACT])
+            ),
         )
     except ArtifactFetchError as error:
         shard = "metadata" if error.shard is None else str(error.shard)

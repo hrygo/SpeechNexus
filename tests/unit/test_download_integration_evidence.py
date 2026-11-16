@@ -304,6 +304,20 @@ def test_download_combines_both_artifact_sets_in_one_run(
     assert (published / MODULE.COVERAGE_PARTS_DIR / "coverage-1.data").is_file()
 
 
+def test_coverage_artifact_reference_carries_its_first_worker_index() -> None:
+    assert MODULE.parse_coverage_artifact("workbench-pg-full-coverage-b:4") == (
+        "workbench-pg-full-coverage-b",
+        4,
+    )
+    assert MODULE.parse_coverage_artifact("workbench-pg-full-coverage") == (
+        "workbench-pg-full-coverage",
+        0,
+    )
+    for value in ("bad name:0", "coverage:-1", "coverage:x"):
+        with pytest.raises(ValueError):
+            MODULE.parse_coverage_artifact(value)
+
+
 def test_cli_process_is_bounded_and_never_receives_a_token_argument(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

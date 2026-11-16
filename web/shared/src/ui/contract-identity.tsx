@@ -14,9 +14,14 @@ import { useEffect, useState } from "react";
  * This guard compares a build fact with a runtime fact. `CONTRACT_DIGEST` is a
  * generated constant baked into the bundle at build time; `GET /v1/nexus/version`
  * reports the digest the running API was generated from. Equal values mean both
- * sides came from one contract revision. An unequal value, an API without that
- * route, or an answer that does not satisfy the generated contract renders the
- * alert below instead of nothing.
+ * sides came from one contract revision.
+ *
+ * Only an unequal pair of digests is reported. Everything that leaves the API side
+ * unknown — a route that is not served (404), a proxy or static server's answer, an
+ * unreachable host, a timeout, an answer that violates the generated contract — is
+ * silence: "cannot confirm" is not "mixed", and a deployment must not show a red
+ * banner because a network hop was missing. The manual checklist in
+ * `docs/operations/same-version-check.md` covers the unknown cases.
  */
 
 /** The API operation that reports the identity; `/v1/nexus/version` in the contract. */
@@ -26,36 +31,20 @@ type CheckState =
   | { kind: "checking" }
   | { kind: "aligned" }
   | { kind: "mismatch"; apiDigest: string }
-  | { kind: "absent" }
-  | { kind: "unconfirmed" }
-  | { kind: "unreachable" };
+  | { kind: "unknown" };
 
-const ALERT_LABEL = {
-  mismatch: "前后端版本不一致",
-  absent: "无法确认前后端同版",
-  unconfirmed: "无法确认前后端同版",
-} as const;
+const ALERT_LABEL = "前后端版本不一致";
 
-type AlertKind = keyof typeof ALERT_LABEL;
+const ALERT_COPY =
+  "这个页面和它连接的接口不是同一版本构建的。混着用的时候，页面会按旧规则解释新接口的返回，读任务结果和制品就可能读错或读不到。请让部署方把前端和后端一起升级，或者一起回滚。";
 
-const ALERT_COPY: Record<AlertKind, (apiDigest: string) => string> = {
-  mismatch: (apiDigest) =>
-    "这个页面和它连接的接口不是同一版本构建的。混着用的时候，页面会按旧规则解释新接口的返回，读任务结果和制品就可能读错或读不到。请让部署方把前端和后端一起升级，或者一起回滚。" +
-    `前端契约 ${shortDigest(CONTRACT_DIGEST)}，接口契约 ${shortDigest(apiDigest)}。`,
-  absent: () =>
-    "接口没有提供版本信息，可能这次只升级了一半（页面或接口其中一侧没有跟着换）。这种状态下无法确认页面与接口是否同一版本，读任务结果和制品前请让部署方核对前后端是否同批升级。",
-  unconfirmed: () =>
-    "接口返回的版本信息不完整，无法确认页面与接口是否同一版本。请让部署方核对前后端是否同批升级或同批回滚。",
-};
+/** How long the identity check may take before the API side counts as unknown. */
+export const IDENTITY_TIMEOUT_MS = 5000;
 
 /** The first six bytes are enough to tell two revisions apart in a sentence. */
 function shortDigest(digest: string): string {
   const hex = digest.startsWith("sha256:") ? digest.slice("sha256:".length) : digest;
   return hex.length <= 12 ? hex : `${hex.slice(0, 12)}…`;
-}
-
-function isAlertKind(kind: CheckState["kind"]): kind is AlertKind {
-  return kind === "mismatch" || kind === "absent" || kind === "unconfirmed";
 }
 
 /**
@@ -93,44 +82,43 @@ async function compareIdentity(expectedDigest: string, signal: AbortSignal): Pro
       signal,
     });
   } catch {
-    return { kind: "unreachable" };
-  }
-  if (response.status === 404) {
-    // An API built before this route existed answers the public 404 envelope:
-    // that is exactly the half-upgraded deployment the alert exists for.
-    await discardBody(response);
-    return { kind: "absent" };
+    // Offline, a stopped API, a blocked CSP fetch: the API side is unknown, and
+    // "unknown" is never reported as a version mismatch.
+    return { kind: "unknown" };
   }
   if (!response.ok) {
+    // A 404 is what a reverse proxy, a static file server and an API built before
+    // this route all answer. None of them identifies the running API's contract, so
+    // none of them is evidence that two revisions were mixed (#901 P2-3).
     await discardBody(response);
-    return { kind: "unreachable" };
+    return { kind: "unknown" };
   }
   const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
   if (contentType !== "application/json") {
     // Something else answered, for example a static server's index.html.
     await discardBody(response);
-    return { kind: "unreachable" };
+    return { kind: "unknown" };
   }
   let body: unknown;
   try {
     body = await response.json();
   } catch {
     // `json()` reads the body, so there is nothing left to release here.
-    return { kind: "unconfirmed" };
+    return { kind: "unknown" };
   }
   try {
     // The generated validator owns the response shape, including the required
-    // no-store cache directive: a cached answer must not pass as an identity.
+    // no-store cache directive: a cached answer is not an identity.
     validateResponse("getVersionIdentity", 200, {
       body,
       headers: { "cache-control": response.headers.get("cache-control") ?? "" },
     });
   } catch {
-    return { kind: "unconfirmed" };
+    return { kind: "unknown" };
   }
   const apiDigest = (body as { contract_digest?: unknown }).contract_digest;
   if (typeof apiDigest !== "string") {
-    return { kind: "unconfirmed" };
+    return { kind: "unknown" };
   }
   return apiDigest === expectedDigest ? { kind: "aligned" } : { kind: "mismatch", apiDigest };
 }
@@ -141,6 +129,9 @@ function useContractIdentity(expectedDigest: string): CheckState {
   useEffect(() => {
     const controller = new AbortController();
     let mounted = true;
+    // A hanging answer must not stay pending forever: after the budget the API side
+    // is unknown (silent), and the request is released.
+    const deadline = setTimeout(() => controller.abort(), IDENTITY_TIMEOUT_MS);
     void compareIdentity(expectedDigest, controller.signal).then((next) => {
       if (mounted) {
         setState(next);
@@ -148,6 +139,7 @@ function useContractIdentity(expectedDigest: string): CheckState {
     });
     return () => {
       mounted = false;
+      clearTimeout(deadline);
       controller.abort();
     };
   }, [expectedDigest]);
@@ -155,24 +147,26 @@ function useContractIdentity(expectedDigest: string): CheckState {
 }
 
 /**
- * Renders nothing while the comparison is running, when the API is unreachable,
+ * Renders nothing while the comparison is running, when the API side is unknown,
  * and — the normal case — when both sides were built from one contract revision.
  */
 export function ContractIdentityAlert() {
   const state = useContractIdentity(CONTRACT_DIGEST);
-  if (!isAlertKind(state.kind)) {
+  if (state.kind !== "mismatch") {
     return null;
   }
-  const detail = state.kind === "mismatch" ? state.apiDigest : "";
   return (
     <div
       role="alert"
-      className="boundary-note"
-      data-nexus-contract-check={state.kind}
-      aria-label="前后端同版本核对"
+      className="contract-identity-alert"
+      data-nexus-contract-check="mismatch"
+      aria-label="前后端版本不一致"
     >
-      <span className="boundary-label">{ALERT_LABEL[state.kind]}</span>
-      <p>{ALERT_COPY[state.kind](detail)}</p>
+      <span className="contract-identity-alert__label">{ALERT_LABEL}</span>
+      <p>
+        {ALERT_COPY}
+        {`前端契约 ${shortDigest(CONTRACT_DIGEST)}，接口契约 ${shortDigest(state.apiDigest)}。`}
+      </p>
     </div>
   );
 }

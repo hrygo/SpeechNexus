@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { test, expect } from "@playwright/test";
 
 import { readDeploymentHeaders, readDeploymentHeadersFromRepository } from "./deployed-headers.mjs";
-import { deployedOrigins } from "./deployed-servers.mjs";
+import { MIXED_CONTRACT_DIGEST, deployedOrigins, mixedOrigins } from "./deployed-servers.mjs";
 
 /**
  * First paint of the deployed bundles under the deployed security headers (#840).
@@ -30,9 +30,25 @@ const repositoryRoot = fileURLToPath(new URL("../..", import.meta.url));
 const policy = "default-src 'self'; script-src 'self'";
 
 const applications = [
-  { name: "admin", origin: deployedOrigins.admin, heading: "运行事实管理" },
-  { name: "workbench", origin: deployedOrigins.workbench, heading: "语音任务集中完成" },
+  {
+    name: "admin",
+    origin: deployedOrigins.admin,
+    mixedOrigin: mixedOrigins.admin,
+    heading: "运行事实管理",
+  },
+  {
+    name: "workbench",
+    origin: deployedOrigins.workbench,
+    mixedOrigin: mixedOrigins.workbench,
+    heading: "语音任务集中完成",
+  },
 ];
+
+const IDENTITY_PATH = "/v1/nexus/version";
+// The identity probe the bundles ship with (#853); every other first-paint request
+// stays forbidden, which is what makes the count below a wiring assertion.
+const identityRequests = (requests) =>
+  requests.filter((url) => new URL(url).pathname === IDENTITY_PATH);
 
 test.describe("deployment security headers", () => {
   test("nginx.conf declares one policy in every location and does not allow unsafe-eval", () => {
@@ -131,12 +147,14 @@ for (const application of applications) {
 
       const pageErrors = [];
       const consoleErrors = [];
+      const requests = [];
       page.on("pageerror", (error) => pageErrors.push(String(error)));
       page.on("console", (message) => {
         if (message.type() === "error") {
           consoleErrors.push({ text: message.text(), url: message.location()?.url ?? "" });
         }
       });
+      page.on("request", (request) => requests.push(request.url()));
 
       const response = await page.goto(application.origin, { waitUntil: "load" });
       expect(response).not.toBeNull();
@@ -161,22 +179,88 @@ for (const application of applications) {
       // A fresh page makes exactly one request of its own: the same-version
       // identity probe (#853). This origin has no API attached, so that request
       // fails by design and the browser logs the failed resource; the failure
-      // must stay silent in the interface instead of becoming a version warning.
-      // Every other console error still fails this gate.
-      const identityProbe = (entry) => entry.url.endsWith("/v1/nexus/version");
+      // must stay silent in the interface instead of becoming a version warning
+      // (#901 P2-3: unknown is not mixed). Every other console error still fails.
+      const identityProbe = (entry) => entry.url.endsWith(IDENTITY_PATH);
       const unexpected = consoleErrors.filter((entry) => !identityProbe(entry));
       expect(
         unexpected.map((entry) => entry.text),
         `${application.name} console errors`,
       ).toEqual([]);
+
+      // The probe must actually be wired into the entry: without this count a build
+      // with the alert component deleted still passes (`0` filtered errors), which is
+      // the hole #901 P2-5 found. Deleting the wiring from `App.tsx` fails here.
+      const probes = identityRequests(requests);
       expect(
-        consoleErrors.length - unexpected.length,
-        `${application.name} made no same-version identity request`,
-      ).toBeLessThanOrEqual(1);
+        probes.length,
+        `${application.name} first paint did not ask for its same-version identity`,
+      ).toBe(1);
       await expect(
         page.locator("[data-nexus-contract-check]"),
         `${application.name} warned about versions although no API answered`,
       ).toHaveCount(0);
+    });
+
+    test("reports the other contract revision this origin answers with", async ({
+      context,
+      page,
+    }) => {
+      const deployment = readDeploymentHeadersFromRepository(repositoryRoot);
+
+      await context.route("**/*", (route) => {
+        const host = new URL(route.request().url()).host;
+        const allowed = [...Object.values(deployedOrigins), ...Object.values(mixedOrigins)].some(
+          (origin) => new URL(origin).host === host,
+        );
+        return allowed ? route.continue() : route.abort("blockedbyclient");
+      });
+
+      const pageErrors = [];
+      const consoleErrors = [];
+      page.on("pageerror", (error) => pageErrors.push(String(error)));
+      page.on("console", (message) => {
+        if (message.type() === "error") {
+          consoleErrors.push(message.text());
+        }
+      });
+
+      const response = await page.goto(application.mixedOrigin, { waitUntil: "load" });
+      expect(response).not.toBeNull();
+      expect(response.headers()["content-security-policy"]).toBe(deployment.csp);
+      expect(pageErrors).toEqual([]);
+      expect(consoleErrors).toEqual([]);
+
+      // Both sides of the disagreement are on screen, and the element carries the
+      // attribute automation reads instead of the copy (#901 P2-4).
+      const alert = page.locator('[data-nexus-contract-check="mismatch"]');
+      await expect(alert, `${application.name} did not report the mixed revisions`).toBeVisible();
+      await expect(alert).toContainText("前后端版本不一致");
+      // Both sides are quoted, so a reader can compare them without opening a build
+      // log: the bundle's baked digest under 前端契约, the API's under 接口契约.
+      await expect(alert).toContainText("前端契约");
+      await expect(alert).toContainText("接口契约");
+      await expect(alert).toContainText(MIXED_CONTRACT_DIGEST.slice(7, 19));
+
+      // The alert is the entry's only alert and it sits above the hero: a reader sees
+      // it without scrolling at 1280x560 and 360x800 (measured, not assumed).
+      for (const viewport of [
+        { width: 1280, height: 560 },
+        { width: 360, height: 800 },
+      ]) {
+        await page.setViewportSize(viewport);
+        const box = await alert.boundingBox();
+        expect(box, `${application.name} alert has no box at ${viewport.width}px`).not.toBeNull();
+        expect(box.y).toBeGreaterThanOrEqual(0);
+        expect(
+          Math.ceil(box.y + box.height),
+          `${application.name} alert is clipped at ${viewport.width}x${viewport.height}`,
+        ).toBeLessThanOrEqual(viewport.height);
+        const overflow = await page.evaluate(
+          () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        );
+        expect(overflow, `${application.name} alert overflows horizontally`).toBeLessThanOrEqual(0);
+      }
     });
   });
 }

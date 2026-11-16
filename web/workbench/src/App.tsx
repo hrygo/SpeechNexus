@@ -79,8 +79,8 @@ export function App() {
       }
       statusState={kind === "prompter" ? "ready" : "contract"}
       boundaryNote="“个人”描述任务体验，不代表服务端按用户私有保存。当前部署中的项目、音色与结果由所有工作台使用者共享，浏览器本地标识不能充当身份。"
+      deploymentAlert={<ContractIdentityAlert />}
     >
-      <ContractIdentityAlert />
       <nav className="file-task-nav" aria-label="工作台功能">
         <button
           type="button"

@@ -69,4 +69,31 @@ describe("workbench same-version guard", () => {
 
     expect(screen.queryByRole("alert")).toBeNull();
   });
+
+  it("says nothing when no identity answer arrives at all", async () => {
+    // Offline first paint, a static file server, or an API built before this route:
+    // "unknown" is not "mixed" and must not paint a red banner (#901 P2-3).
+    const fetchMock = vi.fn(() => Promise.reject(new TypeError("Failed to fetch")));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await settle();
+
+    expect(fetchMock).toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("keeps the alert distinct from the standing deployment note", async () => {
+    stubIdentityFetch(OTHER_DIGEST);
+
+    render(<App />);
+    await settle();
+
+    const alert = screen.getByRole("alert");
+    // Two different readings of the same page: a static deployment note is always
+    // there, the version alert only when the pair is provably mixed (#901 P2-4).
+    expect(alert.className).not.toContain("boundary-note");
+    expect(alert).not.toHaveClass("boundary-note");
+    expect(document.querySelector("aside.boundary-note")).not.toBeNull();
+  });
 });

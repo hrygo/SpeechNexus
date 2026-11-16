@@ -1,5 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { CONTRACT_DIGEST } from "@speechnexus/contracts/contract-digest";
+
 import { App } from "../App";
 import { meetingJournalKey } from "./meeting-journal";
 import { sample, source, meeting } from "./meeting-fixtures";
@@ -40,7 +42,17 @@ function setup(loseCreate = false) {
     else if (path.endsWith("/transcripts")) body = sample("listTranscripts");
     else if (path.endsWith("/transcripts/transcript-demo")) body = source();
     else if (path.endsWith("/meetings/meeting-demo")) body = meeting();
-    else throw Error("unexpected synthetic route");
+    else if (path === "/v1/nexus/version") {
+      // The entry's first-paint same-version probe (#853). Every other unscripted
+      // route stays a loud failure: this mock names each request the page may make.
+      return new Response(
+        JSON.stringify({ version: "0.1.0.dev0", contract_digest: CONTRACT_DIGEST }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+        },
+      );
+    } else throw Error("unexpected synthetic route");
     return new Response(JSON.stringify(body), {
       status,
       headers: { "Content-Type": "application/json" },

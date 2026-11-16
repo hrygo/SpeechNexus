@@ -2,7 +2,7 @@ import { CONTRACT_DIGEST } from "@speechnexus/contracts/contract-digest";
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ContractIdentityAlert } from "@speechnexus/shared";
+import { ContractIdentityAlert, IDENTITY_TIMEOUT_MS } from "@speechnexus/shared";
 
 /**
  * The runtime side of #853. The counterexample this must make red is a page that
@@ -111,9 +111,9 @@ describe("ContractIdentityAlert", () => {
     expect(alert).toHaveTextContent("bbbbbbbbbbbb");
   });
 
-  it("reports an API that has no version route at all as unconfirmed", async () => {
-    // An API built before this check answers the public 404 envelope. That is
-    // the half-upgraded deployment the card names: old image, new page.
+  it("stays silent when the route is not served (404) instead of claiming a half upgrade", async () => {
+    // A reverse proxy, a static file server and an API built before this route all
+    // answer 404; none of them tells us which contract revision is running (#901 P2-3).
     stubFetch(() =>
       response({
         status: 404,
@@ -126,29 +126,61 @@ describe("ContractIdentityAlert", () => {
     render(<ContractIdentityAlert />);
     await settle();
 
-    const alert = screen.getByRole("alert");
-    expect(alert).toHaveAttribute("data-nexus-contract-check", "absent");
-    expect(alert).toHaveTextContent("可能这次只升级了一半");
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("reports a body that violates the generated contract as unconfirmed", async () => {
+  it("stays silent when the answer violates the generated contract", async () => {
     stubFetch(() => response({ body: { version: "0.1.0.dev0" } }));
 
     render(<ContractIdentityAlert />);
     await settle();
 
-    const alert = screen.getByRole("alert");
-    expect(alert).toHaveAttribute("data-nexus-contract-check", "unconfirmed");
-    expect(alert).toHaveTextContent("无法确认页面与接口是否同一版本");
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("reports a cached identity as unconfirmed instead of accepting it", async () => {
+  it("stays silent when the identity came from a cache instead of the API", async () => {
     stubFetch(() => response({ body: identityBody(CONTRACT_DIGEST), cacheControl: "max-age=600" }));
 
     render(<ContractIdentityAlert />);
     await settle();
 
-    expect(screen.getByRole("alert")).toHaveAttribute("data-nexus-contract-check", "unconfirmed");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("stays silent for every non-2xx answer", async () => {
+    for (const status of [403, 500, 503]) {
+      stubFetch(() => response({ status, body: {} }));
+      const { unmount } = render(<ContractIdentityAlert />);
+      await settle();
+      expect(screen.queryByRole("alert")).toBeNull();
+      unmount();
+    }
+  });
+
+  it("gives up after the identity budget and stays silent", async () => {
+    vi.useFakeTimers();
+    try {
+      const signals: AbortSignal[] = [];
+      stubFetch((_input, init) => {
+        signals.push(init?.signal as AbortSignal);
+        return new Promise<Response>(() => {
+          // Never answers: the guard must release the request at the deadline.
+        });
+      });
+
+      render(<ContractIdentityAlert />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(IDENTITY_TIMEOUT_MS);
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(signals[0]?.aborted).toBe(true);
+      expect(screen.queryByRole("alert")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does not alarm when nothing answered at all", async () => {

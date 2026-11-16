@@ -98,3 +98,16 @@ expect(view.generate).toHaveBeenCalledTimes(1);
 - [`workbench/src/books/RenderUnitPanel.test.tsx`](workbench/src/books/RenderUnitPanel.test.tsx) 的 `invokeReplayHandler`：取 `__reactProps$` 的 `onClick` 并用 `act` 包裹；该文件据此调用被禁用控件的 handler。
 
 同一个浏览器规格里的 `settledReplayIsUnavailable` 只断言展示层（`toBeDisabled()` 加 `click({ force: true })`），不承担行为层证据。
+
+## 首屏请求预算
+
+**页面在用户显式操作前不访问业务 API。首屏同版身份检查（`GET /v1/nexus/version`）是唯一登记例外：每次页面加载恰好一次，不带凭据、不写数据、不触发业务读取。**
+
+这条规则原先只活在测试断言里，没有文档写过，于是 #853 引入首屏请求时撞上一族无归属的「零请求」断言（#901 P1）。断言账本、每处断言原来的意图、以及登记方式见 [首屏请求预算与唯一登记例外](../docs/validation/first-paint-request-budget.md)。
+
+改动首屏行为或断言时：
+
+- 新增第二个首屏请求前先改这条规则和账本，不得只改断言；把判据放宽成「允许任意首屏请求」不算通过。
+- 合成边界（探针、`tests/web`）里登记为**独立计数**，业务计数与「不得自动访问 API」断言保持原文；身份请求是已配置的 API 只读请求，不计入写与外发。
+- 整页挂载的断言（`App` 根）必须能证明身份请求**确实发出**，不能只证明「没有告警」：删掉告警组件后门禁要转红。
+- 审批与文档入口：契约侧仍按 [speechnexus-contract-change](../.agents/skills/speechnexus-contract-change/SKILL.md)。

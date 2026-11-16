@@ -10,7 +10,12 @@
  * API paths failing like an unreachable upstream — so the gate can assert first
  * paint under the real policy without Docker.
  *
- * Usage: node deployed-server.mjs <dist-directory> <port>
+ * With a third argument the origin also answers the same-version identity route
+ * (`GET /v1/nexus/version`) with that contract digest, which is how the gate proves
+ * the version alert is actually wired into the entry instead of trusting that a
+ * missing component leaves no trace (#901 P2-5).
+ *
+ * Usage: node deployed-server.mjs <dist-directory> <port> [identity-contract-digest]
  */
 import { createServer } from "node:http";
 import { readFileSync, statSync } from "node:fs";
@@ -18,9 +23,12 @@ import { extname, join, normalize, resolve } from "node:path";
 
 import { readDeploymentHeadersFromRepository } from "./deployed-headers.mjs";
 
-const [distArgument, portArgument] = process.argv.slice(2);
+const [distArgument, portArgument, identityDigest] = process.argv.slice(2);
 if (!distArgument || !portArgument) {
-  throw new Error("Usage: deployed-server.mjs <dist-directory> <port>");
+  throw new Error("Usage: deployed-server.mjs <dist-directory> <port> [identity-digest]");
+}
+if (identityDigest !== undefined && !/^sha256:[0-9a-f]{64}$/u.test(identityDigest)) {
+  throw new Error(`Invalid identity digest: ${identityDigest}`);
 }
 const distRoot = resolve(distArgument);
 const port = Number(portArgument);
@@ -46,6 +54,9 @@ const contentTypes = new Map([
 
 /** The deployment proxies these prefixes to the backend; without one, refuse. */
 const PROXIED_PREFIXES = ["/v1/", "/v2/"];
+
+const identityBody = () =>
+  JSON.stringify({ version: "0.1.0.dev0", contract_digest: identityDigest });
 
 function send(response, status, body, contentType) {
   response.writeHead(status, {
@@ -90,6 +101,18 @@ function readFileInside(root, candidate) {
 
 const server = createServer((request, response) => {
   const pathname = new URL(request.url ?? "/", `http://127.0.0.1:${port}`).pathname;
+  if (identityDigest !== undefined && pathname === "/v1/nexus/version") {
+    // A second revision of the same deployment: the API answers, with another
+    // contract digest than the one baked into these bundles.
+    response.writeHead(200, {
+      ...headers,
+      "cache-control": "no-store",
+      "content-type": contentTypes.get(".json"),
+      "content-length": Buffer.byteLength(identityBody()),
+    });
+    response.end(identityBody());
+    return;
+  }
   if (PROXIED_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
     sendApiUnavailable(response);
     return;

@@ -613,6 +613,48 @@ h1 {
 }
 
 /* ==========================================================================
+   Contract Identity Alert (Mixed Frontend / API Revisions)
+   ========================================================================== */
+/* Deliberately unlike the deployment note below: a solid danger rule, a compact
+   single card pinned under the header, no 48 px lead-in. It is the only element
+   allowed above the hero, so it is visible without scrolling at 1280x560 and
+   360x800, and a reader can tell "this page and its API were built differently"
+   apart from the always-present "shared deployment" note at a glance. */
+.contract-identity-alert {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--nexus-space-3);
+  align-items: start;
+  margin-top: var(--nexus-space-4);
+  padding: var(--nexus-space-3) var(--nexus-space-4);
+  background: var(--surface-strong);
+  border: 1px solid color-mix(in oklch, var(--nexus-color-rose-500) 45%, transparent);
+  border-left: 4px solid var(--nexus-color-rose-500);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+}
+
+.contract-identity-alert__label {
+  color: var(--nexus-color-rose-500);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.contract-identity-alert p {
+  margin-bottom: 0;
+  color: var(--ink);
+  font-size: var(--nexus-text-sm);
+  line-height: 1.6;
+}
+
+@media (max-width: 560px) {
+  .contract-identity-alert {
+    grid-template-columns: 1fr;
+    gap: var(--nexus-space-1);
+  }
+}
+
+/* ==========================================================================
    Boundary Note (Shared Deployment Banner)
    ========================================================================== */
 .boundary-note {

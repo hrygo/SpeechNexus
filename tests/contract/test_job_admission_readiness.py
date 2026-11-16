@@ -25,13 +25,17 @@ points an operator at an answer the API does not produce.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any, cast
 
+import httpx
 import pytest
+from fastapi import FastAPI
 from jsonschema import ValidationError
 from speechnexus_contracts import parse
 
+from speechnexus_backend.app import create_app
 from speechnexus_backend.speech.domain.job_admission_readiness import (
     CAUSE_CODES,
     AdmissionReadinessCause,
@@ -41,8 +45,17 @@ from speechnexus_backend.speech.interfaces.http.job_errors import (
     DEPLOYMENT_STATE_CODES,
     job_error,
 )
+from speechnexus_backend.speech.interfaces.http.unimplemented import (
+    UNIMPLEMENTED_OPERATIONS,
+    assert_placeholder_ownership,
+    create_unimplemented_router,
+)
+from speechnexus_backend.speech.interfaces.http.unimplemented_errors import (
+    OPERATION_NOT_IMPLEMENTED,
+)
 from tests.contract.test_speech_http_statuses import response_contract
 from tests.support.contracts import validator
+from tests.unit.backend.test_health import _settings
 
 OPERATION = "getJobAdmissionReadiness"
 CREATE_OPERATION = "createJob"
@@ -334,12 +347,57 @@ def test_the_capacity_answer_enumerates_its_code() -> None:
     assert not _create_job_accepts(503, "job_capacity_exhausted")
 
 
-def test_the_report_path_is_declared_and_not_shadowed_by_the_identifier_route() -> None:
+def test_the_report_path_is_a_literal_sibling_of_the_identifier_route() -> None:
+    # The report path is literal and shares the `/v1/nexus/jobs/` prefix with
+    # `getJob`. The identifier is opaque (`Identifier` allows `-`, and a real job id is
+    # `job-<hex>`), so the two paths cannot be told apart by shape -- only by which
+    # route Starlette reaches first. That ordering is what the two tests below pin; a
+    # segment-count or character-set assertion here would prove nothing.
     paths = cast(dict[str, Any], DOCUMENT["paths"])
     assert PATH in paths
     assert "/v1/nexus/jobs/{job_id}" in paths
-    # The literal segment cannot be a Job identifier (`Identifier` excludes `-`), so
-    # the two routes cannot be confused once the literal route ships; until then the
-    # placeholder must be mounted first, or `getJob` answers for this path.
-    assert len([segment for segment in PATH.split("/") if segment]) == 4
-    assert "-" in PATH.rsplit("/", 1)[1]
+    assert UNIMPLEMENTED_OPERATIONS["getJobAdmissionReadiness"] == ("GET", PATH)
+
+
+async def test_the_report_path_is_answered_by_its_own_route_not_by_get_job() -> None:
+    # Measured on the assembled application: the report path answers the
+    # unimplemented-operation placeholder while a real Job id still reaches `getJob`,
+    # which answers `job_unavailable` because no job service is injected here. The two
+    # different codes are what make this an assertion about routing rather than about
+    # a status a shared error would also produce.
+    app = create_app(settings=_settings())
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://localhost"
+    ) as http:
+        report = await http.get(PATH, headers={"X-Request-ID": REQUEST_ID})
+        job = await http.get("/v1/nexus/jobs/job-0123456789ab")
+    assert report.status_code == 503
+    assert report.json()["error"]["code"] == OPERATION_NOT_IMPLEMENTED
+    assert (job.status_code, job.json()["error"]["code"]) == (503, "job_unavailable")
+
+
+def test_the_identifier_route_registered_first_swallows_the_report_path() -> None:
+    # The control, and the reason the ordering matters beyond this slice: a parameter
+    # matches any single segment, so with `{job_id}` registered first the report path is
+    # read as a Job id. Two consequences, both asserted: the request is answered by
+    # `getJob`, and the assembly guard rejects that order. Whoever registers the real
+    # report handler (#863) has to place it before the `{job_id}` route.
+    app = FastAPI()
+
+    @app.get("/v1/nexus/jobs/{job_id}")
+    async def get_job(job_id: str) -> dict[str, str]:
+        return {"job_id": job_id}
+
+    app.include_router(create_unimplemented_router())
+    response = asyncio.run(_request(app, "GET", PATH))
+    assert response.status_code == 200
+    assert response.json() == {"job_id": "admission-readiness"}
+    with pytest.raises(RuntimeError, match="answers /v1/nexus/jobs/admission-readiness"):
+        assert_placeholder_ownership(app.routes)
+
+
+async def _request(app: Any, method: str, path: str) -> httpx.Response:
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://localhost"
+    ) as http:
+        return await http.request(method, path)

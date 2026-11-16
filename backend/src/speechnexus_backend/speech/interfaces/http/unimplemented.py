@@ -41,6 +41,16 @@ Ownership is method-specific: normalization folds only a method+template pair
 that the placeholder table owns. For example, the voice-draft placeholders own
 GET and PATCH, but not DELETE; a real DELETE route at the slash-suffixed
 template may coexist, even though the same slash is an alias for GET/PATCH.
+
+A second collision shape is invisible to template comparison: a parameter on one
+side matches the other side's literal segment, so the pair competes for one
+request path while the templates differ. Nothing there is a duplicate and no
+request errors: the earlier route answers and the later route's path is
+unreachable. Mounting the placeholder ``GET /v1/nexus/deletions/{deletion_id}``
+before a real ``GET /v1/nexus/deletions/plan-literal`` loses the real route;
+registering the real route first leaves the placeholder dead. The assembly is
+therefore read in registration order as well: each route's concrete path must
+not be answered by a route registered before it, so either arrangement fails.
 """
 
 from __future__ import annotations
@@ -132,6 +142,42 @@ def is_unimplemented_path(path: str) -> bool:
     return any(pattern.fullmatch(path) for pattern in _PATH_PATTERNS)
 
 
+# Converters the framework knows, filled with a value each one accepts. Anything
+# else fills one segment, which is what an unconverted parameter matches.
+_SAMPLE_ARGUMENTS = {
+    "int": "1",
+    "float": "1.0",
+    "uuid": "00000000-0000-0000-0000-000000000000",
+}
+
+
+def sample_path(template: str) -> str:
+    """One concrete request path this template accepts.
+
+    Two templates compete when one would answer a request the other serves. That is
+    a question about requests, not spellings, so the guard fills each template into a
+    path and lets the other template's pattern answer it. Substituting a value the
+    converter accepts keeps the answer independent of how the two templates name or
+    convert their parameters.
+    """
+
+    def fill(match: re.Match[str]) -> str:
+        # The pattern captures the braces, so the parameter starts after ``{``.
+        _name, _, converter = match.group(0)[1:-1].partition(":")
+        return _SAMPLE_ARGUMENTS.get(converter, "probe")
+
+    return _TEMPLATE_PARAMETER.sub(fill, template)
+
+
+def declared_methods(route: Any) -> frozenset[str]:
+    """The methods that decide ownership, without the implicit HEAD/OPTIONS."""
+    return frozenset(
+        method
+        for method in (getattr(route, "methods", None) or ())
+        if method not in IMPLICIT_METHODS
+    )
+
+
 def matches_template(template: str, path: str) -> bool:
     """True when a concrete request path fills this route template."""
     return _path_pattern(template).fullmatch(path) is not None
@@ -163,7 +209,7 @@ def methods_for_path(routes: Iterable[Any], path: str) -> frozenset[str]:
 
 
 def assert_placeholder_ownership(routes: Iterable[Any]) -> None:
-    """Fail when a real route shares a placeholder-owned method and template.
+    """Fail when a placeholder and a real route compete for the same requests.
 
     Registration order decides which route wins, so a feature router included
     after the placeholders would answer 503 for an operation that ships. The
@@ -171,14 +217,26 @@ def assert_placeholder_ownership(routes: Iterable[Any]) -> None:
     converter or appending trailing slashes cannot hide the conflict. It only
     checks method+template pairs declared by the placeholder table; another
     method at the same template remains available for a real route.
+
+    Competing is not only a shared template. A parameter on one side matches the
+    other side's literal segment, so ``{job_id}`` and ``admission-readiness`` fight
+    over one request path while the templates differ. That shape is silent at
+    runtime: nothing is a duplicate, the earlier route simply answers and whatever
+    the later route alone would have served is unreachable. The assembly is
+    therefore also read as an ordered table: each route's concrete path (filled from
+    its own template) must not be answered by a route registered before it. This
+    rejects a placeholder that swallows a shipped operation's literal path and a
+    placeholder left behind where a real dynamic route already answers.
     """
     owners: dict[tuple[str, str], list[str]] = {}
+    declared: list[tuple[bool, str, frozenset[str]]] = []
     for route in iter_routes(routes):
         template = getattr(route, "path", None)
         if not isinstance(template, str):
             continue
         module = getattr(getattr(route, "endpoint", None), "__module__", "") or ""
         shape = normalize_template(template)
+        declared.append((module == __name__, template, declared_methods(route)))
         for method in getattr(route, "methods", None) or ():
             owners.setdefault((method, shape), []).append(module)
     collisions = [
@@ -190,6 +248,20 @@ def assert_placeholder_ownership(routes: Iterable[Any]) -> None:
         raise RuntimeError(
             "real routes must not share a method+template with a placeholder; "
             "placeholders must be the only owner: " + ", ".join(collisions)
+        )
+    shadowed = sorted(
+        {
+            f"{earlier} answers {later}"
+            for index, (_later_placeholder, later, methods) in enumerate(declared)
+            for _earlier_placeholder, earlier, earlier_methods in declared[:index]
+            if methods & earlier_methods and matches_template(earlier, sample_path(later))
+        }
+    )
+    if shadowed:
+        raise RuntimeError(
+            "an earlier route must not answer the requests a later route serves; "
+            "register the more specific template first and remove a placeholder once "
+            "its operation ships: " + ", ".join(shadowed)
         )
 
 

@@ -728,10 +728,13 @@ def create_app(
     # instead of a framework 404 that reads like "unknown resource". Mounted
     # before the feature routers because a declared literal path can share a
     # prefix with a dynamic sibling: `GET /v1/nexus/jobs/admission-readiness`
-    # would otherwise be answered by `GET /v1/nexus/jobs/{job_id}`. Ordering
-    # cannot let a placeholder own a shipped operation instead: the ownership
-    # guard below rejects any placeholder whose method and template a real route
-    # also registers.
+    # would otherwise be answered by `GET /v1/nexus/jobs/{job_id}`. That case is
+    # not left to this comment: the guard at the end of this function reads the
+    # assembled table in registration order and fails when an earlier route
+    # answers the concrete path a later one serves, which covers a placeholder
+    # swallowing a shipped literal route as well. When the report ships, its
+    # literal handler has to be registered before the `{job_id}` handler for the
+    # same reason (#863): a parameter matches any single segment.
     app.include_router(create_unimplemented_router())
     app.include_router(create_asset_router(lambda: asset_service))
     app.include_router(create_artifact_router(get_artifacts))
@@ -918,8 +921,8 @@ def create_app(
     app.state.speech = speech
     app.state.transcriptions = transcriptions
     require_request_abort_capture(app)
-    # Checked last, once every router is mounted: ordering is load-bearing, and
-    # a feature router included after the placeholders would be shadowed by them
-    # and answer 503 for an operation that ships.
+    # Checked last, once every router is mounted: ordering is load-bearing. A
+    # literal route registered after the template that matches it is unreachable
+    # whichever side of the placeholders it sits on.
     assert_placeholder_ownership(app.router.routes)
     return app

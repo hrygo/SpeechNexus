@@ -50,11 +50,13 @@ controller 制品摘要是受信不可变部署前提下的磁盘 Python 源或�
 
 **持久与读面。** 迁移 `0055_operator_attestation` 新增 `speech_builtin_voice_operator_attestations`（按 approval 唯一，含 instance/generation/fencing/策略摘要/四个制品摘要/窗口/声明原件与其摘要/声明人）与 `speech_builtin_voice_qualification_provenance`（每个已发布资格一行，`source_kind` 取 `controller_observed` 或 `operator_attested`，后者必须带 attestation 外键）。发布入口对两个来源都写 provenance，并在写入前复核算出声明的 approval 与声明记录逐项一致，不一致即 `attestation_mismatch` 回滚。`speechnexus-qualification-provenance` 只读打印每个语音的 `source_kind`、`provenance_recorded` 与声明细节；迁移 `0055` 之前已发布的资格没有 provenance 行，报告为 `evidence=legacy_pre_0055`：批准自身带 `probe_authorization_id` 时标签为 `controller_observed`，否则为 `unverified`（按证据，不按缺席），不回填、不改写既有记录。`--fail-on-expired-attestation` 在声明窗口已过时以退出码 `3` 失败。
 
-**准入读取来源证据。** 读面标签同时是准入判据：`require_builtin_voice`（同步 TTS 准入与启动门）与公开 Job 的内建兜底共用 `qualification_source_evidence.qualification_source_evidenced_sql`，只有两条正向证据之一成立才接受——控制器观测必须带 `probe_authorization_id`，运维自证必须在其 `[observed_at_us, expires_at_us)` 窗口内。因此：
+**准入读取来源证据。** 准入判据是 `qualification_source_evidence.qualification_source_state_sql`，由 `require_builtin_voice`（同步 TTS 准入）、公开 Job 的内建兜底与启动门（`has_qualified_voice` 的候选查询）共用。只有两条正向证据之一成立才接受——控制器观测必须带 `probe_authorization_id`，运维自证必须在其 `[observed_at_us, expires_at_us)` 窗口内。因此：
 
-- 已发布但来源无证据（`source_kind='unverified'`）的资格不被任何准入消费：公开 Job 答 `422 voice_not_published`，响应 `message` 点名「资格没有证据支撑、按控制器探针路径或已接受的运维声明重新发布」；同步 TTS 答 `404 voice_not_found`（与已撤销资格一致），并在日志里留 `code=qualification_source_unverified` 与语音身份，两种起因靠日志区分；两者都不是 `backend_unavailable`；
+- 除上述两条证据外的一律拒绝，包括 `source_kind='unverified'`、声明已过窗口、控制器观测缺探针授权、运维自证缺 attestation，以及**没有 provenance 行**。公开 Job 答 `422 voice_not_published`，响应 `message` 按具体状态点名修复动作；同步 TTS 答 `404 voice_not_found`（与已撤销资格一致），并在日志里留 `code=qualification_source_unverified state=…` 与语音身份，几种起因靠日志区分；两者都不是 `backend_unavailable`；
 - 声明窗口过期后，该资格立即停止准入，不需要也不允许改写已记录的行，续期靠发布新的 voice revision；
-- `0055` 之前没有 provenance 行的真历史资格继续被接受（grandfather），读面标 `legacy_pre_0055`；声明身份对 provenance 表没有 `INSERT` 权限，所以「已发布且无 provenance」只能是历史。
+- 「没有 provenance 行」不是历史豁免：provenance 是资格行的子表，数据库没有「资格行必须有 provenance 行」的约束，而写资格行是发布身份的必需权限，所以手写资格行或删掉 provenance 行都能造出这个形状。审计读面仍把它标成 `legacy_pre_0055`（记录事实），但准入同样拒绝，恢复方式是重新发布。
+
+**发布说明（已知限制）。** 迁移 `0055` 之前产生的内建资格没有 provenance 行，因此**不再自动被准入接受**（同步 TTS 与公开 Job 都会拒绝），必须重新发布——走控制器探测路径或运维自证路径其一——才能恢复可用；审计读面在此之前仍把这些行标为 `legacy_pre_0055`。
 
 **不开放的能力。** 声明不是 controller 观测，因此不放行：`require_native_ready` 与探针签发（仍要求 node-controller 的 native runtime 证据，缺失即 `native_runtime_evidence_unavailable`）；算力预算归还与租约结算（`release()` 仍要求授权 stop kind，缺少实测停止即 `execution_cleanup_pending`）；`execution_cleanup_pending` 的清偿；实例生命周期收敛与新 generation（仍要求上一代 `stopped` 且预算 `released`）；`execution_stop_evidence`、`runtime_intent_deliveries` 与 `admission_leases` 的任何写入。声明事务的写目标是且只是 approval 与声明记录两行；`tests/integration/test_operator_attested_qualification_pg.py` 对运行态账本做前后快照以固定这一点。
 

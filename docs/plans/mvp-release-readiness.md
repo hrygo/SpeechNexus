@@ -121,6 +121,7 @@
 6. 修 #840：Web 镜像在自身 CSP 下白屏（`ajv.compile` 的 `unsafe-eval`），并把「真实镜像产物 + 真实 CSP 头」的首屏渲染门禁加进 CI。
 7. ~~修订三处陈旧陈述~~：已完成（#823）。同步 ASR 的终态写入者、公开 Job 六个路由的装配范围与生产 planner 的装配状态都已按代码就地订正（`execution-gateway/src/speechnexus_gateway/infrastructure/file_execution_worker.py:380`、`backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:802` 起、`backend/src/speechnexus_backend/job_dispatch_runtime.py:321`），矩阵按 `delivery-issues.json` 重渲染；三处均只声明装配/实现证据，未升格为真实部署验证。
 8. 在参考部署上补一次「照着文档从零起一套」的记录（含 LICENSE 决定），完成后才可宣称 Epic #342 的 MVP 口径达标。
+9. 发布说明写明 0055 的资格证据限制：0055 之前产生、没有 provenance 行的内建资格不再自动被准入接受（同步 TTS 与公开 Job 均拒绝），须按控制器探测路径或运维自证路径重新发布才能恢复；条目随发行版一起对外。
 
 ## §6 建议新建的实施卡（待统一建卡，本卡不创建）
 

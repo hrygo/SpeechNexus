@@ -1035,13 +1035,35 @@ async def test_a_builtin_qualification_without_source_evidence_is_refused_by_nam
         # the wrong fact, which is the #877/#880 defect this pins.
         assert "no backing evidence" in message, message
         assert "attestation" in message, message
-        # Control: the same published revision, with the evidence row removed, is
-        # admitted -- so the refusal above came from the provenance row.
+        # Removing the provenance row does not make the voice usable either: "no
+        # provenance row" only means "not written by the publish command", which is
+        # what a hand-written qualification looks like. The answer stays a refusal and
+        # names the other repair.
         db.query(
             "DELETE FROM speech_builtin_voice_qualification_provenance "
             "WHERE voice_id='voice-vivian' AND revision='2'"
         )
+        unvouched = await client.post(
+            PREFIX, json=_body(), headers={"Idempotency-Key": "synthetic-no-provenance"}
+        )
+        assert unvouched.status_code == 422, unvouched.text
+        assert _error(unvouched)[0] == "voice_not_published"
+        assert "no qualification source recorded" in unvouched.json()["error"]["message"]
+        # Control: the same revision with a controller observation that names its probe
+        # authorization is admitted, so the refusals above are about the evidence and
+        # not about the voice being unusable in general.
+        db.query(
+            "INSERT INTO speech_builtin_voice_probe_authorizations "
+            "(authorization_id,source_approval_id,voice_id,intent) "
+            "VALUES ('probe-auth-evidence','source-evidence','voice-vivian','{}'::jsonb)"
+        )
+        db.query(
+            "INSERT INTO speech_builtin_voice_qualification_provenance "
+            "(voice_id,revision,source_kind,evidence_kind,attestation_id,probe_authorization_id) "
+            "VALUES ('voice-vivian','2','controller_observed','probe_authorization',NULL,"
+            "'probe-auth-evidence')"
+        )
         admitted = await client.post(
-            PREFIX, json=_body(), headers={"Idempotency-Key": "synthetic-legacy-evidence"}
+            PREFIX, json=_body(), headers={"Idempotency-Key": "synthetic-evidenced"}
         )
         assert admitted.status_code == 202, admitted.text

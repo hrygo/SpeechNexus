@@ -190,7 +190,8 @@ speech_builtin_voice_qualification_provenance   -- 每条已发布内建资格�
   attestation 且不得携带 probe 授权；两者都不成立时记 `source_kind='unverified'`、
   `evidence_kind='absent'`，读面显示为「来源未知」，而不是悄悄算作控制器观测。
   0055 之前发布的资格没有 provenance 行：读面按批准自身是否带 `probe_authorization_id`
-  归为 `controller_observed`（`evidence=legacy_pre_0055`）或 `unverified`，同样是正向证据。
+  归为 `controller_observed`（`evidence=legacy_pre_0055`）或 `unverified`，这是读面对历史
+  的记录，不是准入结论——准入要求 provenance 行本身，缺它一律拒绝（见 §3.6）。
 - **`declared_*` 命名**：`declared_lifecycle_digest`／读面的 `declared_fencing_token`、
   `declared_instance_generation`、`declared_observed_at_us`、`declared_expires_at_us`
   都是声明的快照，不是当前运行态；读面注释与字段前缀同时表达这一点。
@@ -204,39 +205,44 @@ speech_builtin_voice_qualification_provenance   -- 每条已发布内建资格�
 持凭据者可以绕过信任声明、release 证据与窗口直接合成一条可用的内建资格，读面诚实地写
 「来源未知」，而同步 TTS 与公开 Job 照常使用。所以准入侧与读面共用同一个判据。
 
-判据只有一份，位于 `speech/infrastructure/qualification_source_evidence.py`
-（`qualification_source_evidenced_sql`），由三处准入消费方共用，不允许各自重写：
+判据只有一份，位于 `speech/infrastructure/qualification_source_evidence.py`：
+`qualification_source_state_sql` 给一行资格判出所处状态（`evidenced` / `absent` /
+`unverified` / `controller_without_probe` / `operator_without_attestation` /
+`operator_elapsed`），`qualification_source_evidenced_sql` 只是「状态等于 `evidenced`」。
+三处读者共用这两个表达式，不允许各自重写：
 
-| 消费方 | 用途 |
+| 读者 | 用途 |
 | --- | --- |
-| `require_builtin_voice`（`builtin_voice_qualification.py`） | 同步 TTS 解析与准入事务、`has_qualified_voice` 启动门（后者复用同一函数） |
+| `require_builtin_voice`（`builtin_voice_qualification.py`） | 同步 TTS 解析与准入事务 |
 | `public_job_admission._custom_voice` | 公开 Job 的内建兜底判定 |
-| `qualification_source_evidence` 自身 | 上面两处引用的唯一实现；`tests/unit` 用例断言没有消费方重新内联判据 |
+| `QualifiedPostgresSpeechFacts.has_qualified_voice` | 启动门：候选查询本身带同一判据，再逐行走 `require_builtin_voice`，两处不会各说各话 |
 
-接受与拒绝（判别器是 **provenance 行是否存在**，不是标签）：
+接受与拒绝只有三种情形，**准入一律要求正向证据**：
 
 | 情形 | provenance 行 | 准入 |
 | --- | --- | --- |
-| 控制器观测 | 有，`controller_observed` 且 `probe_authorization_id` 非空 | 接受 |
-| 运维自证（窗口内） | 有，`operator_attested` 且 attestation 在 `[observed_at_us, expires_at_us)` | 接受 |
-| 运维自证（已过期） | 有，`operator_attested` 但窗口已过 | 拒绝，`qualification_source_unverified` |
-| 伪造/证据缺失 | 有，`unverified` | 拒绝，`qualification_source_unverified` |
-| 0055 之前的真历史行 | **没有** | 接受（grandfather），读面标 `legacy_pre_0055` |
+| 控制器观测 | `controller_observed` 且 `probe_authorization_id` 非空 | 接受 |
+| 运维自证（窗口内） | `operator_attested` 且 attestation 在 `[observed_at_us, expires_at_us)` | 接受 |
+| 其余全部 | `unverified`、声明已过窗口、控制器缺探针授权、声明缺 attestation、**没有 provenance 行** | 拒绝，`qualification_source_unverified` |
 
-放行「无 provenance 行」不是放宽：正常发布路径一定写 provenance 行，而声明身份对
-`speech_builtin_voice_qualification_provenance` 没有任何 `INSERT` 权限（见 §7），所以
-「已发布但没有 provenance 行」只能是 0055 之前的历史，不是可伪造的形状。
+「没有 provenance 行」不构成历史豁免：provenance 是资格行的子表，数据库层没有「资格行必须有
+provenance 行」的约束，而写资格行是发布身份的必需权限。因此手写资格行、或删掉 provenance 行、
+或走不通发布命令的 `DELETE`，都能得到「已发布但无 provenance 行」这种形状——它只说明这一行不是
+发布命令写的。真历史行同样需要重新发布（控制器探测路径或运维自证路径）才能重新被准入；
+审计读面仍按事实标 `legacy_pre_0055`，那是读面的记录，不是准入许可。发布说明必须写明这条限制
+（见 §9 与运维手册的发布说明）。
 
 拒绝码与文案：内部 `qualification_source_unverified` 进入
 `ADMISSION_REJECTION_CODES`，按既有 `PUBLIC_ADMISSION_CODES` 映射为公开
-`engine_resource_disabled`（部署侧待修、不可重试），不新增公开码、不改契约。**公开文案点名真实原因**：
-`SOURCE_UNVERIFIED_DETAIL` 说明资格缺少证据支撑以及修复方式，不沿用该码「资源被禁用」的默认文案，
-否则运维会去翻开关而不是查证据链（与 #877/#880 的点名规则一致）。
+`engine_resource_disabled`（部署侧待修、不可重试），不新增公开码、不改契约。**公开文案按状态点名**：
+`source_refusal_detail(state)` 给出具体修复动作（无 provenance 行→重新发布；声明过期→发新版本
+并重新声明；缺探针授权/缺 attestation 各自点名），不沿用「资源被禁用」的默认文案，否则运维会去翻
+开关而不是查证据链（与 #877/#880 的点名规则一致）。
 
 | 消费方 | 线上答案 | 名字落在哪里 |
 | --- | --- | --- |
-| 公开 Job 内建兜底 | `422 voice_not_published`（该 revision 确实不可用、确定性、不可重试） | 响应 `message` 点名「资格没有证据支撑，按控制器探针路径或已接受的运维声明重新发布」 |
-| 同步 TTS | `404 voice_not_found`（与已撤销资格的既有行为一致，不是 503） | 日志行 `builtin voice qualification refused: voice=… revision=… code=qualification_source_unverified` |
+| 公开 Job 内建兜底 | `422 voice_not_published`（该 revision 确实不可用、确定性、不可重试） | 响应 `message` 按状态点名修复动作 |
+| 同步 TTS | `404 voice_not_found`（与已撤销资格的既有行为一致，不是 503） | 日志行 `builtin voice qualification refused: voice=… revision=… code=qualification_source_unverified state=…` |
 
 两处都必须保留可区分的名字：同步 TTS 的两种起因（已撤销 / 无证据）在线上是同一个 404，只有日志能分开；
 公开 Job 的 `voice_not_published` 默认文案说的是「未发布」，而这件事是「已发布但无证据」。
@@ -329,8 +335,9 @@ attestations、probe authorizations），以 `sn_qualification_reader` 身份运
 - `source_kind='operator_attested'`：运维自证，附 attestation 明细，运维能看出「这不是
   controller 观测来的」。
 - `source_kind='unverified'`（`source_evidence='absent'`）：既没有 probe 授权也没有声明记录，
-  显式标为来源未知而不是算作 controller 观测；这类行在准入侧被拒绝（见 §3.6），标签与准入
-  结论一致。
+  显式标为来源未知而不是算作 controller 观测；这类行在准入侧被拒绝（见 §3.6）。
+- `evidence=legacy_pre_0055`：0055 之前没有 provenance 行的历史行。读面照实标出这段历史；
+  准入不因标签放行，这类行同样要重新发布才能被接受。
 - 只有 `controller_observed` 行输出 `probe_authorization_id`；operator 行不输出该字段，
   避免「有授权但为空」的误读。
 
@@ -366,8 +373,8 @@ provenance 行保留为历史事实。
 | 反例 3（时效） | 窗口过期 / 超上限用例 |
 | 反例 4（不能顶替 controller 语义） | 算力释放与 `execution_cleanup_pending` 的 domain 用例 + 运行时账本前后快照 |
 | 反例 5（不能静默降级） | `require_native_ready` / probe 授权对自证实例仍拒绝；既有 controller 负例原样保持 |
-| 反例 6（准入不吃无证据的行） | 伪造发布 → `require_builtin_voice` 返回 `qualification_source_unverified`、Job 兜底不选中该行；真历史行（无 provenance）仍接受；声明过期后同样拒绝 |
-| 正例 2（controller 回归） | 同一文件用例：probe 支撑的发布在带 provenance 与降级为历史行两种状态下都接受 |
+| 反例 6（准入不吃无证据的行） | 伪造发布（含**只写资格行、不写 provenance 行**）→ `require_builtin_voice` 返回 `qualification_source_unverified`、Job 兜底不选中该行、公开 Job 答 422 并按状态点名修复动作；声明过期后同样拒绝且文案点名「声明已过期」 |
+| 正例 2（controller 回归） | 同一文件用例：probe 支撑的发布只有带 provenance 才被接受；先断言无 provenance 时被拒，再写入探针授权与 provenance 后接受 |
 
 ## 9. 实现与验收状态
 

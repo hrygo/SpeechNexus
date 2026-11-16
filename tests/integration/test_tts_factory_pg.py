@@ -317,10 +317,16 @@ def _voice(admission: AdmissionDatabase, *, audio_format: str = "pcm") -> None:
         (digest, expiry),
     )
     db.query(
+        "INSERT INTO speech_builtin_voice_probe_authorizations "
+        "(authorization_id,source_approval_id,voice_id,intent) "
+        "VALUES ('probe-auth-1','source-1','voice-vivian','{}'::jsonb)"
+    )
+    db.query(
         "INSERT INTO speech_builtin_voice_approvals (approval_id,voice_id,revision,revision_id,"
-        "binding_revision_id,source_approval_id,facts,expires_at) "
+        "binding_revision_id,source_approval_id,facts,expires_at,probe_authorization_id,"
+        "result_intent) "
         "VALUES ('approval-1','voice-vivian','1','voice-rev-1',"
-        "'binding-test','source-1',%s::jsonb,%s)",
+        "'binding-test','source-1',%s::jsonb,%s,'probe-auth-1','{}'::jsonb)",
         (json.dumps(facts), expiry),
     )
     db.query("INSERT INTO speech_publications VALUES ('voice','voice-vivian','1','voice-rev-1',1)")
@@ -331,6 +337,15 @@ def _voice(admission: AdmissionDatabase, *, audio_format: str = "pcm") -> None:
         "INSERT INTO speech_builtin_voice_qualifications VALUES "
         "('voice-vivian','1','voice-rev-1','binding-test','approval-1',%s::jsonb,'Vivian')",
         (json.dumps(document),),
+    )
+    # The fixture stands in for `publish_builtin_voice`, which records the source in
+    # the same transaction. Admission requires that evidence, so a fixture that skips
+    # it would describe a publication the ledger cannot vouch for.
+    db.query(
+        "INSERT INTO speech_builtin_voice_qualification_provenance "
+        "(voice_id,revision,source_kind,evidence_kind,attestation_id,probe_authorization_id) "
+        "VALUES ('voice-vivian','1','controller_observed','probe_authorization',NULL,"
+        "'probe-auth-1')"
     )
     for grant in speech_synthesis_reader_grants(
         db.schema, admission.runtime.foundation.speech_role
@@ -573,9 +588,9 @@ async def test_factory_http_uses_real_postgres_qualification_and_admission(
         # same 404 branch as a revoked one, so the *log* has to carry the difference:
         # an operator cannot tell "revoked" from "no evidence" from the wire answer.
         db.query(
-            "INSERT INTO speech_builtin_voice_qualification_provenance "
-            "(voice_id,revision,source_kind,evidence_kind,attestation_id,probe_authorization_id) "
-            "VALUES ('voice-vivian','1','unverified','absent',NULL,NULL)"
+            "UPDATE speech_builtin_voice_qualification_provenance "
+            "SET source_kind='unverified',evidence_kind='absent',probe_authorization_id=NULL "
+            "WHERE voice_id='voice-vivian' AND revision='1'"
         )
         caplog.clear()
         with caplog.at_level(logging.WARNING):
@@ -593,7 +608,12 @@ async def test_factory_http_uses_real_postgres_qualification_and_admission(
         assert unbacked.json()["error"]["code"] == "voice_not_found"
         assert "qualification_source_unverified" in caplog.text, caplog.text
         assert "voice-vivian" in caplog.text
-        db.query("DELETE FROM speech_builtin_voice_qualification_provenance")
+        db.query(
+            "UPDATE speech_builtin_voice_qualification_provenance "
+            "SET source_kind='controller_observed',evidence_kind='probe_authorization',"
+            "probe_authorization_id='probe-auth-1' "
+            "WHERE voice_id='voice-vivian' AND revision='1'"
+        )
         # Control: the same request succeeds again once the unevidenced row is gone,
         # so the refusal came from the evidence row and not from the publication.
         assert db.query("SELECT count(*) AS n FROM admission_operations")[0]["n"] == 1

@@ -43,8 +43,9 @@ from speechnexus_backend.speech.infrastructure.admission_codec import (
 )
 from speechnexus_backend.speech.infrastructure.catalog_revision_schema import RETIREMENT_TABLE
 from speechnexus_backend.speech.infrastructure.qualification_source_evidence import (
-    SOURCE_UNVERIFIED_DETAIL,
-    qualification_source_evidenced_sql,
+    STATE_EVIDENCED,
+    qualification_source_state_sql,
+    source_refusal_detail,
 )
 from speechnexus_backend.speech.infrastructure.runtime_codec import decode_record
 from speechnexus_backend.speech.infrastructure.transcription_submit import build_asr_submit
@@ -318,13 +319,18 @@ def _require_evidenced_qualification(cursor: _Cursor, voice: dict[str, Any]) -> 
     if not cursor.fetchall():
         return
     cursor.execute(
-        "SELECT 1 FROM speech_builtin_voice_qualifications q "
-        "WHERE q.voice_id=%s AND q.revision=%s AND q.revision_id=%s "
-        f"AND ({qualification_source_evidenced_sql('q')})",
+        "SELECT "
+        f"({qualification_source_state_sql('q')}) AS source_state "
+        "FROM speech_builtin_voice_qualifications q "
+        "WHERE q.voice_id=%s AND q.revision=%s AND q.revision_id=%s",
         (voice["id"], str(voice["revision"]), voice["revision_id"]),
     )
-    if not cursor.fetchall():
-        raise PublicJobAdmissionRejectedError("voice_not_published", SOURCE_UNVERIFIED_DETAIL)
+    rows = cursor.fetchall()
+    state = rows[0].get("source_state") if len(rows) == 1 else None
+    if state != STATE_EVIDENCED:
+        raise PublicJobAdmissionRejectedError(
+            "voice_not_published", source_refusal_detail(str(state))
+        )
 
 
 def _custom_voice(

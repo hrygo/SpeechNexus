@@ -15,8 +15,9 @@ from speechnexus_backend.speech.domain.builtin_voice_qualification import Builti
 from speechnexus_backend.speech.infrastructure.publications_sql import PublicationCursor
 from speechnexus_backend.speech.infrastructure.qualification_source_evidence import (
     SOURCE_UNVERIFIED,
-    SOURCE_UNVERIFIED_DETAIL,
-    qualification_source_evidenced_sql,
+    STATE_EVIDENCED,
+    qualification_source_state_sql,
+    source_refusal_detail,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -42,7 +43,7 @@ def require_builtin_voice(
     cursor.execute(
         "SELECT a.facts, floor(extract(epoch FROM a.expires_at)*1000000)::bigint AS expiry_us, "
         "floor(extract(epoch FROM clock_timestamp())*1000000)::bigint AS now_us, "
-        f"({qualification_source_evidenced_sql('q')}) AS source_evidenced "
+        f"({qualification_source_state_sql('q')}) AS source_state "
         "FROM speech_builtin_voice_qualifications q "
         "JOIN speech_builtin_voice_approvals a ON a.approval_id=q.approval_id "
         "AND a.voice_id=q.voice_id AND a.revision=q.revision "
@@ -87,20 +88,22 @@ def require_builtin_voice(
     rows = cursor.fetchall()
     if len(rows) != 1:
         raise AdmissionRejectedError("policy_or_resource_disabled")
-    if rows[0].get("source_evidenced") is not True:
+    state = rows[0].get("source_state")
+    if state != STATE_EVIDENCED:
         # The row is published, unexpired and matches this request, but nothing
         # evidences where its qualification came from: name that instead of
         # answering the generic refusal an operator would read as "nothing here".
-        # The log line keeps the code: "revoked qualification" and "no evidence for
-        # this qualification" reach the sync TTS surface as the same 404, and only
-        # the log can tell an operator which one happened.
+        # The log line keeps the code and the state: "revoked qualification" and "no
+        # evidence for this qualification" reach the sync TTS surface as the same
+        # 404, and only the log can tell an operator which one happened.
         _LOGGER.warning(
-            "builtin voice qualification refused: voice=%s revision=%s code=%s",
+            "builtin voice qualification refused: voice=%s revision=%s code=%s state=%s",
             voice_id,
             revision,
             SOURCE_UNVERIFIED,
+            state,
         )
-        raise AdmissionRejectedError(SOURCE_UNVERIFIED, SOURCE_UNVERIFIED_DETAIL)
+        raise AdmissionRejectedError(SOURCE_UNVERIFIED, source_refusal_detail(cast(str, state)))
     try:
         BuiltinVoiceFacts(rows[0]["facts"])
         validate_response("getVoiceRevision", 200, {"body": rows[0]["facts"]["public_document"]})

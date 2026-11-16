@@ -17,7 +17,7 @@ import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import psycopg
 import pytest
@@ -574,6 +574,15 @@ def _admission_answer(db: psycopg.Connection[dict[str, Any]], **overrides: Any) 
     return "accepted"
 
 
+def _refusal_detail(db: psycopg.Connection[dict[str, Any]]) -> str | None:
+    """The detail sentence an operator would read for this row's refusal."""
+    try:
+        _admit(db)
+    except AdmissionRejectedError as error:
+        return error.detail
+    return None
+
+
 def _job_fallback_selects_the_row(db: psycopg.Connection[dict[str, Any]]) -> bool:
     """Whether the public Job builtin fallback would treat this as a builtin voice."""
     row = db.execute(
@@ -955,6 +964,70 @@ def test_renewal_publishes_a_second_qualification_under_a_new_voice_revision(
         _close(ledger)
 
 
+def test_a_hand_written_qualification_without_provenance_is_refused(
+    pg: tuple[psycopg.Connection[dict[str, Any]], str, str],
+) -> None:
+    """The attack the review used: hand-write the two INSERTs, skip the publish command.
+
+    No ``DELETE`` is needed and no privilege is escalated. Writing a qualification row
+    is a required permission of the publishing identity, and the provenance row is a
+    child table with no database-level requirement that the parent has one, so the
+    publishing identity can produce "published, but nothing says where from" directly.
+    That shape is refused everywhere admission looks, and the audit report still shows
+    it as recorded history rather than pretending the row does not exist.
+    """
+    db, schema, role = pg
+    ledger = Ledger(db, schema)
+    writer = ledger.writer(role)
+    try:
+        ledger.attest(writer)
+    finally:
+        _close(ledger)
+    ledger.publisher(role)  # provisions the publishing identity's own grants
+    publisher = psycopg.connect(
+        make_conninfo(os.environ["SPEECHNEXUS_TEST_DATABASE_URL"], user=role, password=PASSWORD),
+        autocommit=True,
+        row_factory=dict_row,
+    )
+    try:
+        publisher.execute("SELECT set_config('search_path', %s, false)", (schema,))
+        # Every statement here is one the publishing identity is entitled to run; what
+        # it cannot do is make the result look like it came from a source.
+        publisher.execute(
+            "INSERT INTO speech_publications VALUES ('voice',%s,%s,%s,%s)",
+            (VOICE, str(REVISION), REVISION_ID, REVISION),
+        )
+        publisher.execute(
+            "INSERT INTO speech_publications VALUES ('binding',%s,'1',%s,1)",
+            (BINDING_REVISION_ID, BINDING_REVISION_ID),
+        )
+        # Copy the qualification straight out of the approval the identity can read,
+        # so the row matches this request in every column -- everything but the source.
+        publisher.execute(
+            "INSERT INTO speech_builtin_voice_qualifications "
+            "(voice_id,revision,revision_id,binding_revision_id,approval_id,document,"
+            "native_speaker_id) "
+            "SELECT a.voice_id,a.revision,a.revision_id,a.binding_revision_id,a.approval_id,"
+            "a.facts->'public_document',a.facts->>'native_speaker_id' "
+            "FROM speech_builtin_voice_approvals a WHERE a.approval_id=%s",
+            (APPROVAL,),
+        )
+        assert db.execute(
+            "SELECT count(*) AS n FROM speech_builtin_voice_qualification_provenance"
+        ).fetchone() == {"n": 0}
+        # Published, publishable by hand, and still refused: the missing provenance row
+        # is the whole difference.
+        assert _admission_answer(db) == SOURCE_UNVERIFIED
+        assert _job_fallback_selects_the_row(db) is False
+        assert "no qualification source recorded" in cast(str, _refusal_detail(db))
+        entries = _report(db, schema)
+        assert entries and entries[0]["provenance_recorded"] is False
+        assert entries[0]["evidence"] == "legacy_pre_0055"
+    finally:
+        publisher.close()
+        _close(ledger)
+
+
 def test_the_attested_identity_cannot_publish_a_controller_label(
     pg: tuple[psycopg.Connection[dict[str, Any]], str, str],
 ) -> None:
@@ -1087,6 +1160,11 @@ def test_an_elapsed_declaration_stops_admitting_work(
         )
         assert _admission_answer(db) == SOURCE_UNVERIFIED
         assert _job_fallback_selects_the_row(db) is False
+        # The sentence names the elapsed declaration, not a generic "no evidence":
+        # the repair is a fresh attestation, not a re-publication of the same window.
+        detail = cast(str, _refusal_detail(db))
+        assert "elapsed window" in detail, detail
+        assert "fresh attestation" in detail, detail
         # The qualification itself is still published: the refusal is about its
         # source window, not about the row having vanished.
         assert db.execute(
@@ -1098,16 +1176,19 @@ def test_an_elapsed_declaration_stops_admitting_work(
         _close(ledger)
 
 
-def test_a_historical_row_without_provenance_stays_admitted(
+def test_a_qualification_without_a_provenance_row_is_refused(
     pg: tuple[psycopg.Connection[dict[str, Any]], str, str],
 ) -> None:
-    """Grandfathering keys on the absence of a provenance row, not on a label.
+    """A qualification row with no provenance row is refused, and the refusal says so.
 
-    A real pre-0055 row has no provenance row at all, which no writer can forge: the
-    declaration identity holds no INSERT on that table. So absence stays admitted
-    (and the read surface labels it ``legacy_pre_0055``), while a row that carries an
-    ``unverified`` provenance row -- published with no evidence at all -- is refused
-    by the same lookup.
+    This is the forgery an earlier revision of this path let through: the provenance
+    row is a child table with no database-level requirement that a qualification has
+    one, and writing the qualification row is a required permission of the publishing
+    identity. A `DELETE` (or, equivalently, two hand-written `INSERT`s that skip the
+    publish command) therefore produces a usable voice while the read surface calls it
+    history. "No provenance row" only means "not written by the publish command", so it
+    is refused like any other missing evidence; the read surface still labels such a
+    row ``legacy_pre_0055`` for audit, and the repair is to publish the voice again.
     """
     db, schema, role = pg
     ledger = Ledger(db, schema)
@@ -1140,12 +1221,17 @@ def test_a_historical_row_without_provenance_stays_admitted(
             "WHERE voice_id=%s AND revision=%s",
             (VOICE, REVISION),
         )
-        assert _admission_answer(db) == "accepted"
-        assert _job_fallback_selects_the_row(db) is True
+        # Without its provenance row the same published qualification is refused, and
+        # the refusal names the repair (publish again) instead of "nothing matched".
+        assert _admission_answer(db) == SOURCE_UNVERIFIED
+        assert _job_fallback_selects_the_row(db) is False
+        assert _refusal_detail(db) is not None
+        assert "publish it again" in cast(str, _refusal_detail(db))
         entries = _report(db, schema)
+        # Audit fact, not an admission permit: the row is still labelled history.
         assert entries[0]["provenance_recorded"] is False
         assert entries[0]["evidence"] == "legacy_pre_0055"
-        # Same row, now carrying an unverified provenance row: refused.
+        # Same row, now carrying an unverified provenance row: still refused.
         db.execute(
             "INSERT INTO speech_builtin_voice_qualification_provenance "
             "(voice_id,revision,source_kind,evidence_kind,attestation_id,"
@@ -1344,12 +1430,10 @@ def test_rows_published_before_the_migration_are_reported_as_recorded_history(
     assert "source unknown" in entries[0]["note"]
     assert entries[-1]["summary"]["legacy_pre_0055"] == 1
     assert entries[-1]["summary"]["controller_observed"] == 0
-    # The label is honest, not a refusal: this row has no provenance at all, which
-    # no writer can forge, so the shared admission predicate keeps accepting it as
-    # history. (The full lookup additionally requires a published row and an
-    # unexpired source approval; `test_a_historical_row_without_provenance_stays_
-    # admitted` exercises it end to end through a real publication.)
-    assert _job_fallback_selects_the_row(db) is True
+    # The label records history; it does not admit work. Admission reads the same
+    # row as "no source recorded" and refuses it -- `test_a_qualification_without_a_
+    # provenance_row_is_refused` covers that end to end through a real publication.
+    assert _job_fallback_selects_the_row(db) is False
     _close(ledger)
 
 

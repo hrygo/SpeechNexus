@@ -964,30 +964,33 @@ def test_a_declaration_cannot_name_a_principal_wider_than_its_column() -> None:
     assert widest.declared_by == "o" * 63
 
 
-def test_every_admission_consumer_uses_the_one_source_evidence_predicate() -> None:
-    """Three consumers, one decision: a re-inlined check is the drift this prevents.
+def test_every_source_evidence_reader_uses_the_one_predicate() -> None:
+    """Three readers, one decision: a re-inlined check is the drift this prevents.
 
     The gate/observation path already paid for a drift between two hand-written
-    copies of one rule; the source label must not repeat it. This asserts each
-    consumer references the shared predicate instead of restating it.
+    copies of one rule; the qualification source must not repeat it. Each reader
+    references the shared expression instead of restating the acceptance rule, and
+    none of them spells the controller label out itself.
     """
     root = Path(__file__).resolve().parents[3]
-    consumers = (
-        "backend/src/speechnexus_backend/speech/infrastructure/builtin_voice_qualification.py",
-        "backend/src/speechnexus_backend/speech/infrastructure/public_job_admission.py",
-    )
-    for name in consumers:
+    infrastructure = "backend/src/speechnexus_backend/speech/infrastructure/"
+    readers = {
+        # The admission lookup behind synchronous TTS and the Job admission report.
+        infrastructure + "builtin_voice_qualification.py": "qualification_source_state_sql(",
+        # The public Job builtin fallback.
+        infrastructure + "public_job_admission.py": "qualification_source_state_sql(",
+        # The startup gate: its candidate list carries the same predicate, so it
+        # cannot disagree with the per-request decision.
+        infrastructure
+        + "qualified_speech_facts_postgres.py": "qualification_source_evidenced_sql(",
+    }
+    for name, reference in readers.items():
         source = (root / name).read_text()
-        assert "qualification_source_evidenced_sql" in source, name
+        assert reference in source, name
         assert "source_kind='controller_observed'" not in source, name
-    # `has_qualified_voice` delegates to `require_builtin_voice`; assert that too so
-    # a future edit cannot give the startup gate its own existence-only check.
-    facts = (
-        root
-        / "backend/src/speechnexus_backend/speech/infrastructure/qualified_speech_facts_postgres.py"
-    ).read_text()
-    assert "require_builtin_voice(" in facts
-    assert "speech_builtin_voice_qualifications" in facts  # the candidate list only
+        assert "NOT EXISTS (SELECT 1 FROM speech_builtin_voice_qualification_provenance" not in (
+            source
+        ), name
 
 
 def test_the_unverified_admission_refusal_has_its_own_internal_code() -> None:

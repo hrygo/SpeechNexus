@@ -705,6 +705,61 @@ def _response_schema(
     return response, schema if isinstance(schema, Mapping) else None
 
 
+def _resolve_local(document: Mapping[str, Any], node: object) -> Mapping[str, Any] | None:
+    """Follow local ``$ref`` chains, because responses are usually components."""
+
+    seen: set[str] = set()
+    while isinstance(node, Mapping):
+        reference = node.get("$ref")
+        if not isinstance(reference, str) or not reference.startswith("#/"):
+            return node
+        if reference in seen:
+            return None
+        seen.add(reference)
+        target: object = document
+        for token in reference.removeprefix("#/").split("/"):
+            target = target.get(token) if isinstance(target, Mapping) else None
+        node = target
+    return None
+
+
+def _response_headers(
+    document: Mapping[str, Any], path: str, method: str, status: str
+) -> dict[str, Mapping[str, Any]]:
+    paths = document.get("paths")
+    item = paths.get(path) if isinstance(paths, Mapping) else None
+    operation = item.get(method) if isinstance(item, Mapping) else None
+    responses = operation.get("responses") if isinstance(operation, Mapping) else None
+    response = (
+        _resolve_local(document, responses.get(status)) if isinstance(responses, Mapping) else None
+    )
+    headers = response.get("headers") if isinstance(response, Mapping) else None
+    if not isinstance(headers, Mapping):
+        return {}
+    return {
+        str(name).lower(): value for name, value in headers.items() if isinstance(value, Mapping)
+    }
+
+
+def _response_metadata(
+    document: Mapping[str, Any], path: str, method: str, status: str
+) -> dict[str, object]:
+    paths = document.get("paths")
+    item = paths.get(path) if isinstance(paths, Mapping) else None
+    operation = item.get(method) if isinstance(item, Mapping) else None
+    responses = operation.get("responses") if isinstance(operation, Mapping) else None
+    response = (
+        _resolve_local(document, responses.get(status)) if isinstance(responses, Mapping) else None
+    )
+    if not isinstance(response, Mapping):
+        return {}
+    return {
+        field: value
+        for field, value in response.items()
+        if field not in {"headers", *_NON_STRUCTURAL_KEYS}
+    }
+
+
 def _apply_approved_response_replacements(
     source: str,
     base: Mapping[str, Any],
@@ -763,6 +818,83 @@ def _apply_approved_response_replacements(
                     continue
         remaining.append(
             f"{pointer}: approved response replacement entry does not match: {problem}"
+        )
+    return remaining, approved
+
+
+# Exact, product-approved response-header removals. A header promise is part of
+# the response contract: removing one tells consumers to stop reading a signal the
+# operation may still send. The entry names the source, path, method, status,
+# version pair and header, so it never covers another header, response, operation
+# or version pair, and it is honoured only when the response's other metadata
+# (apart from the annotation-only keys) is unchanged -- a removal approval must
+# not carry an unrelated edit with it.
+_APPROVED_RESPONSE_HEADER_REMOVALS: dict[
+    tuple[str, str, str, str, str, str, str], dict[str, str]
+] = {
+    (
+        "contracts/speech-openapi.yaml",
+        "/v1/nexus/jobs/{job_id}/cancellations",
+        "post",
+        "409",
+        "0.1.0.dev18",
+        "0.1.0.dev18",
+        "retry-after",
+    ): {
+        "issue": "#852",
+        "reason": (
+            "Only `execution_cleanup_pending` sent this header. The code is no "
+            "longer retryable and no longer sends it, because nothing finishes "
+            "that cleanup on its own; keeping the declaration would promise a "
+            "header that never arrives."
+        ),
+    },
+}
+
+
+def _apply_approved_response_header_removals(
+    source: str,
+    base: Mapping[str, Any],
+    current: Mapping[str, Any],
+    base_version: str,
+    current_version: str,
+    findings: list[str],
+) -> tuple[list[str], list[str]]:
+    remaining = list(findings)
+    approved: list[str] = []
+    for key, metadata in _APPROVED_RESPONSE_HEADER_REMOVALS.items():
+        entry_source, path, method, status, from_version, to_version, header = key
+        if entry_source != source:
+            continue
+        pointer = f"{source}:paths/{path}/{method}/responses/{status}"
+        if (base_version, current_version) != (from_version, to_version):
+            continue
+        expected = f"{pointer}: response header removed: {header.lower()}"
+        base_headers = _response_headers(base, path, method, status)
+        if header.lower() not in base_headers:
+            # Nothing to approve: the baseline does not declare this header, so this
+            # comparison contains no removal of it. Sibling tables can rely on their
+            # version pair to be inert here; a header removal is registered on the
+            # version pair the change lands in, which is also the pair of a
+            # baseline that already lost the header (an identical-sides comparison).
+            continue
+        if header.lower() in _response_headers(current, path, method, status):
+            continue
+        problem: str | None = None
+        if not metadata.get("issue") or not metadata.get("reason"):
+            problem = "entry must include a non-empty issue and reason"
+        elif _response_metadata(base, path, method, status) != _response_metadata(
+            current, path, method, status
+        ):
+            problem = "response metadata other than the removed header changed"
+        elif expected not in remaining:
+            problem = f"exact finding {expected!r} is absent"
+        else:
+            remaining.remove(expected)
+            approved.append(f"{expected} [{metadata['issue']}: {metadata['reason']}]")
+            continue
+        remaining.append(
+            f"{pointer}: approved response header removal entry does not match: {problem}"
         )
     return remaining, approved
 
@@ -1102,6 +1234,7 @@ def inspect_sources(
     approved_removals: list[str] = []
     approved_parameters: list[str] = []
     approved_replacements: list[str] = []
+    approved_header_removals: list[str] = []
     approved_narrowings: list[str] = []
     approved_vocabulary_changes: list[str] = []
     compared_sources: set[str] = set()
@@ -1149,6 +1282,14 @@ def inspect_sources(
                 row["current_version"],
                 detected,
             )
+            detected, approved_header_removal = _apply_approved_response_header_removals(
+                path,
+                old,
+                new,
+                row["base_version"],
+                row["current_version"],
+                detected,
+            )
             detected, approved_narrowing = _apply_approved_request_bound_narrowings(
                 path,
                 old,
@@ -1164,6 +1305,7 @@ def inspect_sources(
             approved_removals.extend(approved)
             approved_parameters.extend(approved_parameter)
             approved_replacements.extend(approved_replacement)
+            approved_header_removals.extend(approved_header_removal)
             approved_narrowings.extend(approved_narrowing)
             approved_vocabulary_changes.extend(approved_vocabulary)
             row["findings"] = len(detected)
@@ -1175,6 +1317,7 @@ def inspect_sources(
         {key[0] for key in _APPROVED_OPERATION_REMOVALS}
         | {key[0] for key in _APPROVED_PARAMETER_REMOVALS}
         | {key[0] for key in _APPROVED_RESPONSE_REPLACEMENTS}
+        | {key[0] for key in _APPROVED_RESPONSE_HEADER_REMOVALS}
         | {key[0] for key in _APPROVED_REQUEST_BOUND_NARROWINGS}
         | {finding.split(":", 1)[0] for finding in _APPROVED_RESPONSE_VOCABULARY_WIDENINGS}
     ) & set(selected)
@@ -1190,6 +1333,7 @@ def inspect_sources(
         "approved_removals": approved_removals,
         "approved_parameter_removals": approved_parameters,
         "approved_response_replacements": approved_replacements,
+        "approved_response_header_removals": approved_header_removals,
         "approved_request_bound_narrowings": approved_narrowings,
         "approved_response_vocabulary_changes": approved_vocabulary_changes,
         "unverified": list(UNVERIFIED),
@@ -1223,6 +1367,8 @@ def main() -> int:
             print("  approved parameter removal: " + approval)
         for approval in report["approved_response_replacements"]:
             print("  approved response replacement: " + approval)
+        for approval in report["approved_response_header_removals"]:
+            print("  approved response header removal: " + approval)
         for approval in report["approved_request_bound_narrowings"]:
             print("  approved request bound narrowing: " + approval)
         for approval in report["approved_response_vocabulary_changes"]:

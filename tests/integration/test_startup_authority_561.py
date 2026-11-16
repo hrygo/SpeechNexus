@@ -782,6 +782,9 @@ class WorkbenchSandbox:
     schema: str
     role: str
     admin: Any
+    # The sandbox this workbench runs beside; its schema also carries the migrated
+    # product tables, which are outside the workbench schema by construction.
+    jobs_schema: str
 
     def settings(self, *, cleanup_role: str | None = None) -> WorkbenchSettings:
         cleanup = self.role if cleanup_role is None else cleanup_role
@@ -804,7 +807,13 @@ def workbench_db(jobs_db: JobSandbox) -> Iterator[WorkbenchSandbox]:
     try:
         jobs_db.admin.execute(bootstrap_sql(schema))
         jobs_db.admin.execute(runtime_grants_sql(schema, role))
-        yield WorkbenchSandbox(jobs_db.url, schema, role, jobs_db.admin)
+        yield WorkbenchSandbox(
+            url=jobs_db.url,
+            schema=schema,
+            role=role,
+            admin=jobs_db.admin,
+            jobs_schema=jobs_db.schema,
+        )
     finally:
         jobs_db.admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
         _drop_role(jobs_db, role)
@@ -862,25 +871,45 @@ async def test_workbench_startup_rejects_each_single_misgrant(
     assert workbench_db.schema not in message
 
 
-def _foreign_relation(db: WorkbenchSandbox) -> str:
-    """Pick a real relation outside the workbench schema, in this same database.
+def _foreign_relation(db: WorkbenchSandbox) -> tuple[str, str]:
+    """Name the migrated product table this sandbox uses as its foreign surface.
 
-    The migration this fixture ran created the speech product tables in their own
-    namespace, which is exactly the surface a shared `sn_api` identity holds
-    privileges on. Naming it here keeps the case about the *identity* rather than
-    about one hard-coded table.
+    ``jobs_db`` ran the migration, so the product tables exist in this sandbox's own
+    schema, which is outside the workbench schema the startup check inspects. That is
+    the surface a shared `sn_api` identity holds privileges on, so naming it keeps
+    the case about the *identity* rather than about one discovered relation.
+
+    Both parts are named instead of discovered. Discovering by catalog order returns
+    another worker's ``sn_jobs_*`` sandbox table, and two sessions updating one
+    ``pg_class.relacl`` row — this test's ``GRANT`` against that worker's sandbox
+    ``GRANT``/``DROP OWNED BY`` — raise ``tuple concurrently updated``. A sandbox
+    schema is the only writer of its own catalog rows, so this stays deterministic.
     """
-    row = db.admin.execute(
-        "SELECT n.nspname, c.relname FROM pg_catalog.pg_class c "
-        "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
-        "WHERE c.relkind = 'r' AND left(n.nspname, 3) <> 'pg_' "
-        "AND n.nspname <> 'information_schema' AND n.nspname <> %s "
-        "ORDER BY n.nspname, c.relname LIMIT 1",
-        (db.schema,),
+    schema, relation = db.jobs_schema, "admission_attempts"
+    present = db.admin.execute(
+        "SELECT pg_catalog.to_regclass(%s) IS NOT NULL AS present",
+        (f"{schema}.{relation}",),
     ).fetchone()
-    assert row is not None, "the fixture left no relation outside the workbench schema"
-    schema, relation = row["nspname"], row["relname"]
-    return f"{schema}.{relation}"
+    assert present is not None and present["present"], (
+        f"the migration left no product table {schema}.{relation} to stand outside "
+        "the workbench schema"
+    )
+    return schema, relation
+
+
+def test_foreign_relation_is_the_migrated_product_table(
+    workbench_db: WorkbenchSandbox,
+) -> None:
+    """The foreign surface is a named product table, not whichever relation sorts first.
+
+    Both refusal cases below pass for *any* out-of-schema grant, so they cannot tell
+    a real product table from another worker's sandbox table. Pinning schema and table
+    name is what goes red if the helper starts discovering relations again.
+    """
+    schema, relation = _foreign_relation(workbench_db)
+    assert schema == workbench_db.jobs_schema
+    assert schema != workbench_db.schema
+    assert relation == "admission_attempts"
 
 
 async def test_workbench_startup_refuses_an_identity_with_foreign_privileges(
@@ -894,7 +923,7 @@ async def test_workbench_startup_refuses_an_identity_with_foreign_privileges(
     shape: the workbench surface would pass while the identity stays broad. The
     startup check must refuse the wider identity instead of serving with it.
     """
-    relation = _foreign_relation(workbench_db)
+    relation = ".".join(_foreign_relation(workbench_db))
     workbench_db.admin.execute(f'GRANT SELECT ON {relation} TO "{workbench_db.role}"')
     with pytest.raises(RuntimeStartupError) as caught:
         await check_database(workbench_db.settings())
@@ -927,7 +956,7 @@ async def test_workbench_startup_refuses_a_role_reachable_into_another_schema(
     judges the login *and* the roles it can switch to, and names the role the
     foreign grant is actually held by.
     """
-    relation = _foreign_relation(workbench_db)
+    relation = ".".join(_foreign_relation(workbench_db))
     wider = _create_role(workbench_db, "wbwider")
     try:
         workbench_db.admin.execute(f'GRANT SELECT ON {relation} TO "{wider}"')
@@ -960,7 +989,7 @@ async def test_workbench_cleanup_identity_refuses_foreign_privileges(
     authority. `check_cleanup_identity` must refuse it and name the relation
     outside the workbench schema that it can still reach.
     """
-    relation = _foreign_relation(workbench_db)
+    relation = ".".join(_foreign_relation(workbench_db))
     workbench_db.admin.execute(f'GRANT SELECT ON {relation} TO "{workbench_db.role}"')
     with pytest.raises(RuntimeStartupError) as caught:
         await check_cleanup_identity(workbench_db.settings())
@@ -975,7 +1004,7 @@ async def test_workbench_cleanup_identity_refuses_a_role_reachable_into_another_
     workbench_db: WorkbenchSandbox,
 ) -> None:
     """A reachable wide role on the erasing identity is the same bypass as on the serving one."""
-    relation = _foreign_relation(workbench_db)
+    relation = ".".join(_foreign_relation(workbench_db))
     wider = _create_role(workbench_db, "wbwider")
     try:
         workbench_db.admin.execute(f'GRANT SELECT ON {relation} TO "{wider}"')

@@ -41,6 +41,27 @@ function response(options: {
   } as unknown as Response;
 }
 
+/**
+ * The body of an answer this check never reads must still be released: an open body
+ * keeps the request pending for the lifetime of the document, which leaks a connection
+ * and makes any "no network activity" wait hang — the real-browser gates use exactly
+ * that wait, and a 404 or a static server's HTML was enough to stall them.
+ */
+it("releases every answer it reads nothing from", async () => {
+  for (const answer of [
+    { status: 404 },
+    { status: 503 },
+    { status: 200, contentType: "text/html" },
+  ]) {
+    const cancel = vi.fn(() => Promise.resolve());
+    stubFetch(() => ({ ...response(answer), body: { cancel } }) as unknown as Response);
+    const { unmount } = render(<ContractIdentityAlert />);
+    await settle();
+    expect(cancel).toHaveBeenCalledTimes(1);
+    unmount();
+  }
+});
+
 async function settle() {
   // One macrotask is enough for the fetch promise chain to finish and commit.
   await act(async () => {

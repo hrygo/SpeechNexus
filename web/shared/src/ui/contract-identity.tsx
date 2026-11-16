@@ -59,6 +59,23 @@ function isAlertKind(kind: CheckState["kind"]): kind is AlertKind {
 }
 
 /**
+ * Release an answer whose body this check never reads.
+ *
+ * An unread body keeps the request open in the browser: a page that answers 404, 503
+ * or a static server's HTML would leave one request pending for the lifetime of the
+ * document, which is both a leaked connection and a real gate failure — a browser
+ * that waits for "no network activity" (`networkidle`) never settles. Every early
+ * answer returns through here first.
+ */
+async function discardBody(response: Response): Promise<void> {
+  try {
+    await response.body?.cancel();
+  } catch {
+    // A body that cannot be cancelled is already released by the browser.
+  }
+}
+
+/**
  * Read the API identity and compare it with this bundle's digest.
  *
  * `unreachable` stays silent on purpose: a stopped API, an offline page or a
@@ -81,20 +98,24 @@ async function compareIdentity(expectedDigest: string, signal: AbortSignal): Pro
   if (response.status === 404) {
     // An API built before this route existed answers the public 404 envelope:
     // that is exactly the half-upgraded deployment the alert exists for.
+    await discardBody(response);
     return { kind: "absent" };
   }
   if (!response.ok) {
+    await discardBody(response);
     return { kind: "unreachable" };
   }
   const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
   if (contentType !== "application/json") {
     // Something else answered, for example a static server's index.html.
+    await discardBody(response);
     return { kind: "unreachable" };
   }
   let body: unknown;
   try {
     body = await response.json();
   } catch {
+    // `json()` reads the body, so there is nothing left to release here.
     return { kind: "unconfirmed" };
   }
   try {

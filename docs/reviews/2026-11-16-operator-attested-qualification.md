@@ -4,7 +4,7 @@
 对比基 `origin/main...HEAD`，21 文件 +4202/−33。审查在独立 worktree `/private/tmp/sn883` 完成，
 隔离 PostgreSQL `sn876-oa-pg:55470`、MySQL `sn876-oa-mysql:55471`。
 
-> 本报告按轮记：**第一轮** `6f118956`（下至「第二轮」标记之前，保持该时点原样）、**第二轮** `82d55a82`、**第三轮** `82d55a82`（同 head 的复核与命名/续期核实）、**第四轮** `f77b348b`（文末「第四轮：终核」）。四轮结论均为不能合，阻塞理由逐轮收窄：第一轮是「标签可伪造 + 读面没有身份」，第二轮是「标签诚实但准入不读」，第四轮只剩一条：没有 provenance 行的 grandfather 形状可由发布身份伪造。
+> 本报告按轮记：**第一轮** `6f118956`（下至「第二轮」标记之前，保持该时点原样）、**第二轮** `82d55a82`、**第三轮** `82d55a82`（同 head 的复核）、**第四轮** `f77b348b`、**第五轮** `9e492e11`（文末「第五轮：终核」，**PASS**）。一至四轮的结论均为不能合，阻塞理由逐轮收窄：第一轮是「标签可伪造 + 读面没有身份」，第二轮是「标签诚实但准入不读」，第四轮只剩「无 provenance 行的 grandfather 形状可由发布身份伪造」；第五轮删掉该分支后四条全过，只剩两处发布说明/日志文案精度（P3）。
 
 **结论：不能合。** 这条路径的关闭状态、写入边界与迁移都做得很干净，运行态快照也确实是零变化；
 但「两种来源在读面上分得开」这个本 PR 的唯一卖点有两条硬缺陷：
@@ -842,5 +842,147 @@ psql "postgresql://sn_oa:sn_oa_pw@127.0.0.1:55470/sn_oa" -c "DO \$\$ DECLARE r r
 git -C /Users/hrygo/Documents/SpeechNexus worktree remove /private/tmp/sn883-r2
 git -C /Users/hrygo/Documents/SpeechNexus worktree remove /private/tmp/sn883   # 合并 #882 之后
 # 探针脚本（仓库外，无仓库引用）
+rm -rf /private/tmp/sn883-oa-probe
+```
+
+---
+
+## 第五轮：终核（head `9e492e11`）
+
+核验于 2026-11-16 13:05–13:35（Asia/Shanghai），对象 `9e492e11`（`fix: 准入不再豁免无 provenance 行的资格`）。
+第四次记录保持 `f77b348b` 时点原样。本轮按 lead 裁定的四条 + his 追加的夹具判定共五项核。
+
+### 结论（第五轮）：**PASS**
+
+四条全部通过，另加夹具判定：`test_builtin_voice_qualification.py` 的改动是**修正不真实的夹具**且用例变强。
+只剩两处**文案精度**问题（P3，见文末），不构成合并阻塞。
+
+### 1. 最小攻击集现在是否被拒 —— **PASS**
+
+原样重放（`writer` = `operator_attestation_writer_grants` 身份写 8 列批准；`publisher` =
+`builtin_publisher_grants` + `publication_grants` 身份连上去手写 `speech_publications` +
+`speech_builtin_voice_qualifications`，`document` 从 `facts->'public_document'` 复制，**不写 provenance 行**）：
+
+```
+攻击状态已建成: provenance 行数 = 0
+同步 TTS 准入: 拒绝 code = qualification_source_unverified
+  detail = the published builtin voice has no qualification source recorded: publish it again
+           through the controller probe path, or record an accepted operator attestation for it,
+           then send a new request
+public Job 兜底: 拒绝 code = voice_not_published（同一 detail）
+读面: unverified | evidence: legacy_pre_0055
+```
+
+同步侧与 Job 侧都拒绝，且点名「publish it again …」；读面仍如实记 `legacy_pre_0055`（第 5 条的读面要求）。
+
+回归（同一轮实测）：
+
+```
+真 operator 行准入: 通过, verifier_id = operator-attested-customvoice-v1 | Job: None（内建资格）
+        读面: operator_attested | evidence: provenance_row
+真 controller 行准入: 通过, verifier_id = builtin-customvoice-v1 | Job: None（内建资格）
+        读面: controller_observed | evidence: provenance_row
+```
+
+### 2. `test_builtin_voice_qualification.py` 被改：修正夹具，不是削弱覆盖 —— **PASS**
+
+判定依据用代码与授权实测，不看作者说法：
+
+| 事实 | 证据 |
+| --- | --- |
+| 真实控制器探测路径必然写 `probe_authorization_id` + `result_intent` | `qualification_probe_approval.py:409` 的 `INSERT` 列清单含这两列 |
+| 只有 authorizer 身份能写这两列 | `qualification_authorizer_grants` 的 `GRANT INSERT (probe_authorization_id, result_intent)`；实测 `has_column_privilege` = True |
+| 8 列身份（`qualification_writer_grants`）写不了 probe 授权列 | 实测其可写列恰为 8 列，`probe_authorization_id` 不在其中 |
+| 账本强制两列成对 | `speech_builtin_voice_approvals` 的 `builtin_approval_probe_intent_pair` CHECK（我第一轮记过） |
+
+所以旧夹具「8 列写批准、期望 controller_observed 资格」是**真实探测路径产生不出来的形状**，改掉它是修正。
+用例同时**变强**：新增「有资格行、无 provenance → `AdmissionRejectedError(SOURCE_UNVERIFIED)`、detail 含
+`no qualification source recorded`」与「补探针授权 + provenance 后才接受」两段；接受覆盖仍在
+（`56 passed`，含该文件全部用例）。
+
+### 3. 状态表达式有没有开出新洞 —— **PASS**
+
+逐态实测（每态各造一行，同一 schema 内逐个验同步 TTS 与 public Job）：
+
+| 状态 | 构造 | 同步 TTS | public Job | 判定 |
+| --- | --- | --- | --- | --- |
+| `absent`（无 provenance 行） | 手写发布 | 拒绝 `qualification_source_unverified` | 拒绝 `voice_not_published` | 拒绝 ✓ |
+| `unverified` | 有行、无证据 | 拒绝 | 拒绝 | 拒绝 ✓ |
+| `controller_without_probe` | 试图写 `controller_observed` + probe 空 | **无法构造**：`CheckViolation`（账本 CHECK 要求标签带 probe 授权） | — | 不可达 ✓ |
+| `operator_without_attestation` | 试图写 `operator_attested` + attestation 空 | **无法构造**：`CheckViolation` | — | 不可达 ✓ |
+| `operator_elapsed` | 真声明发布后把窗口移到过去 | 拒绝，detail 点名「实施例声明窗口已过期：发新 revision」 | 拒绝 | 拒绝 ✓ |
+| `evidenced`（operator 窗口内） | 真声明发布 | 接受 | 接受 | 放行 ✓ |
+| `evidenced`（controller） | 探针授权 + provenance | 接受 | 接受 | 放行 ✓ |
+
+`CASE` 的 `ELSE` 落 `unverified`，`evidenced_sql` 只是 `state = 'evidenced'`，没有默认放行分支；
+两个「差一点」状态被账本 CHECK 挡住，不可达（死代码，不是洞）。日志行还带上状态：
+`builtin voice qualification refused: … code=qualification_source_unverified state=absent`。
+
+### 4. `has_qualified_voice` 是不是真消费者 —— **PASS**
+
+判据现在在**候选查询的 WHERE 条件里**（不是算出来不用）：
+
+```sql
+SELECT q.voice_id,q.revision FROM speech_builtin_voice_qualifications q
+WHERE q.binding_revision_id=%s AND (qualification_source_evidenced_sql('q'))
+ORDER BY q.voice_id,q.revision LIMIT 64
+```
+
+变异实测：把该 `AND (…)` 换成 `AND TRUE` 后，防漂移用例
+`test_every_source_evidence_reader_uses_the_one_predicate` 转红；功能用例仍绿（启动门只在 TTS 装配时被调用，
+`_voice` 的逐行复核兜住）——与作者的说明一致，且这正是该用例守护的语义（不许各写一份）。
+该用例现在覆盖三处读者（`builtin_voice_qualification`、`public_job_admission`、`qualified_speech_facts`），
+不再有第四轮那种「存在性查询 + 空断言」。
+
+### 5. 读面没被误伤 + 发布说明 —— **PASS（附两处 P3 文案精度）**
+
+`test_rows_published_before_the_migration_are_reported_as_recorded_history` 的**读面断言全部保留**：
+`source_kind == 'unverified'`、`provenance_recorded is False`、`evidence == 'legacy_pre_0055'`、
+note 含 `source unknown`、summary 里 `legacy_pre_0055 == 1` 且 `controller_observed == 0`；
+**只有准入那半句**从「仍被接受」改成 `assert _job_fallback_selects_the_row(db) is False`。
+这正是「读面记录事实、准入是否决层」的形态，没有被一起改掉。
+
+发布说明写进了**两个面向发布的位置**（不是只在设计文档）：
+`docs/operations/builtin-voice-qualification.md` 的「发布说明（已知限制）」与
+`docs/plans/mvp-release-readiness.md` 第 9 条。实测核心断言与实现一致：
+0055 前无 provenance 行的资格**不再被准入接受**（同步 TTS 与 public Job 都拒绝，见第 1、3 条）。
+
+两处 P3（文案，不阻塞）：
+
+1. **「重新发布即可恢复」对同一 revision 不成立**：实测同 revision 重发被
+   `BuiltinVoicePublicationRejectedError("publication_conflict")` 拒绝（`speech_publications` 以
+   `(kind,object_id,revision)` 为键、资格行以 `(voice_id,revision)` 为键，都不会让旧行「补上」证据）。
+   实际恢复动作是**发布新的 voice revision 并重新取得资格**——运维手册第 49/56 行对续期已经这么写，
+   但发布说明那句只写「重新发布」，照字面执行会撞 `publication_conflict`。建议改成「发布新的 voice
+   revision 并重新取得资格（探针或声明其一）」。
+2. **未来时间的 attestation 落到 `operator_without_attestation`**：实测 `observed_at_us > now` 时状态是
+   `operator_without_attestation`，文案说「claims an operator declaration that is not recorded」——
+   它不是没记录，是窗口还没开始。拒绝正确，文案不准（P3，lead 已裁定本片不修）。
+
+### 本轮基线与覆盖限制
+
+- 单元 27 + 隔离 PG 集成 29（含被改的 `test_builtin_voice_qualification.py` 全部用例）= **56 passed**；
+  `tests/ci` **459 passed / 1647 subtests**。
+- 变异：启动门去判据 → 防漂移用例红（已还原，`git status --porcelain` 空）。
+- **限制**：本轮的隔离 PG 是宿主上临时起的 PostgreSQL 18.6 集群（端口 55470），不是作者原来的容器；
+  宿主 Docker 未运行、本机也没有 MySQL，因此 `test_public_job_admission_http_pg.py` 与
+  `test_tts_factory_pg.py`（都在夹具阶段要求同时给 PG 与 MySQL DSN）**本轮未复跑**。第 1/3/5 条的
+  准入结论来自直接调用 `require_builtin_voice` 与 `public_job_admission._custom_voice` 的实测，
+  HTTP 状态码与 message 那层沿用作者用例的既有断言（上一 head 上我复跑过该文件，11 passed）。
+- 结论时效：2026-11-16，针对 `9e492e11`；`#882` 的代码矩阵未等（按 lead 要求）。
+
+### 清理命令（本轮之后不再需要这套环境）
+
+```
+# 本轮临时起的隔离 PG（宿主，非仓库）
+pg_ctl -D /private/tmp/sn883-pg stop -m fast && rm -rf /private/tmp/sn883-pg
+# 探针 schema/角色（如果集群还留着）
+psql "postgresql://sn_oa@127.0.0.1:55470/sn_oa" -tAc "SELECT nspname FROM pg_namespace WHERE nspname LIKE 'sn_oa_%'" \
+  | xargs -r -n1 -I{} psql "postgresql://sn_oa@127.0.0.1:55470/sn_oa" -c 'DROP SCHEMA IF EXISTS "{}" CASCADE'
+psql "postgresql://sn_oa@127.0.0.1:55470/sn_oa" -tAc "SELECT rolname FROM pg_roles WHERE rolname LIKE 'sn_oa_%' AND rolname <> 'sn_oa'" \
+  | xargs -r -n1 -I{} psql "postgresql://sn_oa@127.0.0.1:55470/sn_oa" -c 'DROP OWNED BY "{}"' -c 'DROP ROLE IF EXISTS "{}"'
+# 审查 worktree 与探针脚本（报告已推送、内容在 #882）
+git -C /Users/hrygo/Documents/SpeechNexus worktree remove /private/tmp/sn883-r2
+git -C /Users/hrygo/Documents/SpeechNexus worktree remove /private/tmp/sn883   # 合并 #882 之后
 rm -rf /private/tmp/sn883-oa-probe
 ```

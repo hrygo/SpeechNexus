@@ -2136,14 +2136,70 @@ instance 来“绕过”冲突；先核对旧 head、owner 和 readiness 证据�
 
 ## 10. 停止与清理边界
 
+`down` 只清理本次解析到的项目与 profile 资源。启动时用过 `--profile` 的部署（如
+`job-dispatch`、`binding-disable`、`engine-registration`）必须列出同一组 profile 再停止：
+
 ```bash
-"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml down
+"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
+  --profile job-dispatch --profile binding-disable down   # 与本轮启动用过的 profile 集合一致
 ```
 
-`down` 不删除命名卷 `postgres-data` / `minio-data`；不要用 `down -v` 清理真实执行
-证据或未完成的对账事实。私有文件和 env 文件也不得提交到仓库。停止容器不等于释放
-已准入的执行/租约或停止引擎；按[对账恢复](reconciliation-recovery.md)和具体实例
-停止流程取得证据后再归还预算。
+一次性验收栈要连数据卷一起丢弃时用 `down -v`，profile 同样要带齐。profile 不一致时，未启用
+profile 的服务不会被停止或删除，网络因仍有端点而删除失败（`Resource is still in use`），
+命令仍然退出 `0`。`down` 不删除命名卷 `postgres-data` /
+`minio-data`；不要用 `down -v` 清理真实执行证据或未完成的对账事实。私有文件和 env 文件
+也不得提交到仓库。停止容器不等于释放已准入的执行/租约或停止引擎；按[对账恢复](reconciliation-recovery.md)
+和具体实例停止流程取得证据后再归还预算。
+
+### 10.1 清栈复核：用 label filter，不用退出码
+
+`down` / `down -v` 的退出码不是清栈证据。以下情形都不删除目标资源、也不报错，退出码仍为
+`0`：
+
+- `--profile` 集合与启动时不同（见本节首段）：这些服务不被停止或删除，网络因仍有端点而
+  删除失败；
+- `-p` / `COMPOSE_PROJECT_NAME` 与启动时不同，或当前 shell 没有 export 它而部署用了独立
+  项目名——§1 的默认回落是 `speechnexus`，用它去停 `speechnexus-ref` 就是这种情况；
+- 用另一份 `compose.yaml` 执行（别的目录、旧副本，或 `COMPOSE_FILE` 指向别的文件）：项目名
+  随之变成那份文件里的 `name:`。
+
+实测（2026-11-16，Docker Engine 29.9.3、Compose v5.7.0，最小探针项目，均以 `EXIT=0` 结束）：
+
+- `up --profile extra` 后丢掉 profile 执行 `down -v`：报 `Resource is still in use`，仍有
+  1 个容器与 1 个网络存活；补齐 profile 重跑后三项同时为空。
+- 用错 `-p` 执行 `down -v`：无任何输出，2 个容器、1 个网络、1 个卷全部残留。
+- 换一份 `compose.yaml` 执行 `down -v`：无任何输出，3 个容器全部残留。
+
+清栈后用 label filter 复核三项，**三项都为空**才算清完：
+
+```bash
+PROJECT="${COMPOSE_PROJECT_NAME:-speechnexus}"   # 必须等于 §1 启动时实际生效的项目名
+docker ps -a       --filter label=com.docker.compose.project="$PROJECT" --format '{{.Names}}'
+docker network ls  --filter label=com.docker.compose.project="$PROJECT" --format '{{.Name}}'
+docker volume ls   --filter label=com.docker.compose.project="$PROJECT" --format '{{.Name}}'
+```
+
+`--format` 不能省略：无匹配时 `docker ps -a --filter …` 仍打印表头行（`CONTAINER ID  IMAGE
+COMMAND …`），`docker network ls` 同理（`NETWORK ID  NAME  DRIVER  SCOPE`）。输出只有表头
+表示空，但它是非空输出，肉眼与 `[ -n "$(…)" ]` 都会读成残留；加 `--format` 后无匹配才是零行。
+
+任一项非空时按 containers → networks → volumes 处理，顺序不能反：
+
+| 非空项 | 先定位 | 删除 | 约束 |
+| --- | --- | --- | --- |
+| 容器 | `docker inspect <容器名> --format '{{index .Config.Labels "com.docker.compose.project"}}'` 核对该容器确实属于本项目 | `docker rm -f <容器名>` | `-f` 跳过优雅停止，处理中的请求会中断 |
+| 网络 | `docker network inspect <网络名> --format '{{range .Containers}}{{.Name}} {{end}}'` | `docker network rm <网络名>` | 仍有端点时报 `network ... has active endpoints`，先删容器 |
+| 卷 | `docker volume inspect <卷名> --format '{{.Driver}} {{.Labels}}'` | `docker volume rm <卷名>` | 容器仍挂载时报 `volume is in use` 且退出码 `1`（实测）；只在确认卷内无需保留的数据后删除 |
+
+`postgres-data` / `minio-data` 保存本部署的全部持久事实，删卷不可恢复，`down -v` 会一并删除。
+需要保留现场时只 `down`（不带 `-v`）：此时卷那一项允许非空，但验收记录要写明保留了哪些卷
+及原因，容器与网络两项仍必须为空。
+
+同一台主机上并行多个验收窗口时（例如 `#572` 的从零验收 `DEL-535` 与其它栈共用 GPU 主机），
+每套部署用独立 `COMPOSE_PROJECT_NAME`，收工时 `down -v` 后按本节三项复核全部为空再结束窗口。
+否则下一轮会拿到其它项目的残留容器、网络或卷，或在脏环境上取证。项目级容器枚举在
+`scripts/dev-env/check-async-job-prereqs.py` 里也用于读取部署前置（`docker_containers`），
+它是前置判定、不判清栈；清栈的空判据只有本节这三条命令。
 
 ## 11. 验证边界
 

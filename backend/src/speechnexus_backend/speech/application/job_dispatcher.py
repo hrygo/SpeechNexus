@@ -36,6 +36,7 @@ from speechnexus_backend.speech.domain.job_dispatch import (
     submit_intent_identity,
     terminal_result,
     validate_voice_dispatch_request,
+    verified_failure_evidence,
 )
 
 
@@ -85,6 +86,52 @@ class ResultPublisher(Protocol):
 
 
 _LOG = logging.getLogger(__name__)
+
+#: The stable event name the dispatch gate emits when it refuses to settle a failure.
+#: Alerting matches the name, not the message: the message is prose and may be edited.
+STOP_EVIDENCE_UNVERIFIED_EVENT = "dispatch_stop_evidence_unverified"
+#: Fixed fields for that event, in report order, so one alert rule can name them all.
+STOP_EVIDENCE_UNVERIFIED_LOG_FIELDS = (
+    "event",
+    "job_id",
+    "submit_intent_id",
+    "reason_code",
+    "stop_evidence_kind",
+    "cleanup_state",
+    "execution_state",
+    "dispatch_attempts",
+    "lease_held",
+)
+
+
+def stop_evidence_unverified_log(
+    *,
+    job_id: str,
+    submit_intent_id: str,
+    stop_evidence_kind: object,
+    cleanup_state: object,
+    execution_state: object,
+    dispatch_attempts: int,
+) -> dict[str, object]:
+    """One bounded, secret-free record of a Job the gate had to hold (#917 review M4).
+
+    ``dispatch_attempts`` is the claim version: it counts how many times a worker has
+    picked this Job up, which is the retry count an operator needs to decide whether the
+    producer is still broken or the pass is merely early. ``lease_held`` is ``True`` by
+    construction -- the gate returns before settling, so the admitted capacity is still
+    reserved -- and is reported rather than implied.
+    """
+    return {
+        "event": STOP_EVIDENCE_UNVERIFIED_EVENT,
+        "job_id": job_id,
+        "submit_intent_id": submit_intent_id,
+        "reason_code": "stop_evidence_unverified",
+        "stop_evidence_kind": stop_evidence_kind,
+        "cleanup_state": cleanup_state,
+        "execution_state": execution_state,
+        "dispatch_attempts": dispatch_attempts,
+        "lease_held": True,
+    }
 
 
 class LeaseSettlement(Protocol):
@@ -382,6 +429,26 @@ class JobDispatcher:
             if state == "succeeded":
                 return await self._complete(claim, job, submission, should_stop)
             if state in ("failed", "aborted"):
+                evidence = verified_failure_evidence(status)
+                if evidence is None:
+                    # The execution reached the engine and the gateway proved neither a
+                    # stop nor a non-dispatch, so this status cannot settle the Job: a
+                    # failure returns capacity and would hide a still-reserved slot.
+                    # Hold it and make the hold visible (#917 review M4): the dispatch
+                    # gate has no automatic exit, `cancellation_debt` does not see a
+                    # `running` Job, and the remedy is the producer's status document.
+                    _LOG.warning(
+                        STOP_EVIDENCE_UNVERIFIED_EVENT,
+                        extra=stop_evidence_unverified_log(
+                            job_id=job.job_id,
+                            submit_intent_id=submission.submit_intent_id,
+                            stop_evidence_kind=status.get("stop_evidence_kind"),
+                            cleanup_state=status.get("cleanup_state"),
+                            execution_state=state,
+                            dispatch_attempts=claim.claim_version,
+                        ),
+                    )
+                    return DispatchResult(job.job_id, "unknown", "stop_evidence_unverified")
                 return await self._fail(claim, job, gateway_failure_code(status))
             if state == "unknown_quarantined":
                 return DispatchResult(job.job_id, "unknown", "outcome_unknown")

@@ -24,6 +24,7 @@ from speechnexus_gateway.domain.command_redaction import (
 )
 from speechnexus_gateway.domain.fencing import BarrierSnapshot, IngressFence
 from speechnexus_gateway.domain.instance_drain import DrainInventory, InstanceIdentity
+from speechnexus_gateway.domain.instance_reclaim import ReclaimRecord
 from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.output_intervals import OutputIntervalRecord, OutputIntervalWrite
 from speechnexus_gateway.domain.recovery import (
@@ -42,6 +43,7 @@ from speechnexus_gateway.domain.submission import (
     SubmitRequest,
     VerifiedStopEvidence,
 )
+from speechnexus_gateway.domain.voice_design_release import VoiceDesignReleaseEvidence
 
 
 @dataclass(frozen=True, slots=True)
@@ -310,6 +312,37 @@ class InstanceDrainLedger(BarrierLedger, ExecutionFactLedger, Protocol):
     ) -> InstanceIdentity | None: ...
 
     def read_drain_inventory(self, identity: InstanceIdentity) -> DrainInventory: ...
+
+
+class InstanceReclaimFactsReader(Protocol):
+    """The recorded facts one idle reclaim decision reads, in a single statement.
+
+    ``None`` means this gateway never recorded that generation. A read failure is an
+    error the caller must propagate: reporting "not idle" for a store that could not
+    answer would hide the debt the reclaim exists to expose.
+    """
+
+    def read_reclaim_record(self, identity: InstanceIdentity) -> ReclaimRecord | None: ...
+
+
+class InstanceReleaseEvidencePort(Protocol):
+    """Reports what the stop producer observed for one instance generation.
+
+    Nothing here releases capacity: an implementation answers with the producer's own
+    release fact, which the voice-design gate refuses unless it is a confirmed process or
+    container termination. A transport failure, timeout, disconnect or missing record is
+    ``None``, and the generation stays held.
+    """
+
+    def release_evidence(
+        self,
+        *,
+        instance_id: str,
+        instance_generation: int,
+        pool_id: str,
+        binding_revision_id: str,
+        fencing_token: int,
+    ) -> VoiceDesignReleaseEvidence | None: ...
 
 
 class ExecutionCommandDeletionAuthorizer(Protocol):

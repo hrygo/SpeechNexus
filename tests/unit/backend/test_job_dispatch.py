@@ -180,8 +180,16 @@ class GatewayState:
         submit_status: int = 200,
         response_submit_id: str | None = None,
         generated_samples: list[int] | None = None,
+        stop_evidence_kind: str = "engine_terminal_response",
+        cleanup_state: str = "complete",
+        dispatched_at: str | None = "2026-11-07T11:00:00Z",
+        engine_request_id: str | None = "engine-synthetic",
     ) -> None:
         self.terminal = terminal
+        self.stop_evidence_kind = stop_evidence_kind
+        self.cleanup_state = cleanup_state
+        self.dispatched_at = dispatched_at
+        self.engine_request_id = engine_request_id
         self.error_code = error_code
         self.queries_before_terminal = queries_before_terminal
         self.first_submit_unknown = first_submit_unknown
@@ -200,6 +208,10 @@ class GatewayState:
         document: dict[str, Any] = {
             "submit_intent_id": self.response_submit_id or observed,
             "execution_state": state,
+            "stop_evidence_kind": self.stop_evidence_kind,
+            "cleanup_state": self.cleanup_state,
+            "dispatched_at": self.dispatched_at,
+            "engine_request_id": self.engine_request_id,
         }
         if self.error_code is not None:
             document["error_code"] = self.error_code
@@ -544,6 +556,84 @@ async def test_gateway_failure_maps_to_the_frozen_error_code() -> None:
     assert batch.failed == 1
     assert states.jobs[job.job_id].state == "failed"
     assert batch.succeeded == 0
+
+
+async def test_gateway_failure_without_stop_evidence_is_not_projected_failed() -> None:
+    """Counterexample: a failure settles a lease, so it needs a verified stop."""
+    job = _job()
+    states = States(job)
+    gateway = GatewayState(
+        terminal="failed",
+        error_code="engine_transport_unknown",
+        queries_before_terminal=0,
+        stop_evidence_kind="unconfirmed_timeout",
+        cleanup_state="quarantined",
+    )
+    dispatcher = _dispatcher(
+        Queue([[ClaimedJob(job, "worker-synthetic", 1, NOW + 30_000_000)]]),
+        states,
+        gateway,
+        Publisher(),
+    )
+
+    batch = await dispatcher.run_once("worker-synthetic")
+
+    assert batch.failed == 0 and batch.unknown == 1
+    assert states.jobs[job.job_id].state == "running"
+
+
+@pytest.mark.parametrize("state", ["failed", "aborted"])
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "engine_abort_ack",
+        "engine_terminal_response",
+        "instance_terminated_by_controller",
+        "operator_verified_instance_terminated",
+    ],
+)
+async def test_a_verified_stop_still_projects_the_frozen_error_code(state: str, kind: str) -> None:
+    job = _job()
+    states = States(job)
+    gateway = GatewayState(
+        terminal=state,
+        error_code="engine_transport_unknown",
+        queries_before_terminal=0,
+        stop_evidence_kind=kind,
+    )
+    dispatcher = _dispatcher(
+        Queue([[ClaimedJob(job, "worker-synthetic", 1, NOW + 30_000_000)]]),
+        states,
+        gateway,
+        Publisher(),
+    )
+
+    batch = await dispatcher.run_once("worker-synthetic")
+
+    assert batch.failed == 1 and batch.unknown == 0
+    assert states.jobs[job.job_id].state == "failed"
+
+
+async def test_a_failure_without_a_complete_cleanup_is_not_projected_failed() -> None:
+    job = _job()
+    states = States(job)
+    gateway = GatewayState(
+        terminal="failed",
+        error_code="engine_transport_unknown",
+        queries_before_terminal=0,
+        cleanup_state="pending",
+    )
+    dispatcher = _dispatcher(
+        Queue([[ClaimedJob(job, "worker-synthetic", 1, NOW + 30_000_000)]]),
+        states,
+        gateway,
+        Publisher(),
+    )
+
+    batch = await dispatcher.run_once("worker-synthetic")
+
+    assert batch.failed == 0 and batch.unknown == 1
+    assert states.jobs[job.job_id].state == "running"
 
 
 async def test_credential_rejection_is_terminal_not_unknown() -> None:

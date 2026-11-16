@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import socket
+import threading
+import time
 
 import psycopg
+import pytest
 
 from speechnexus_backend.speech.application.readiness import ReadinessService
 from speechnexus_backend.speech.infrastructure.readiness import (
+    CancellationDebtProbe,
+    StopEvidenceDebtProbe,
     _describe_debt,
     _failure_category,
     unavailable_detail,
@@ -262,3 +268,90 @@ def test_the_debt_sentence_counts_jobs_and_leases_in_two_named_units() -> None:
         "cancellation_debt: 2 accepted cancellation(s) still hold capacity over 4 held lease(s)"
     )
     assert "completed-without-release=2, execution-unknown=2" in detail
+
+
+class _BlackHole:
+    """A TCP endpoint that accepts connections and never answers.
+
+    It is the failure mode a hung read-only DSN produces: the socket connects, the server
+    never speaks, and libpq waits. Nothing here is PostgreSQL-specific -- what the test
+    needs is a connect that never completes on its own.
+    """
+
+    def __init__(self) -> None:
+        self._server = socket.socket()
+        self._server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._server.bind(("127.0.0.1", 0))
+        self._server.listen(8)
+        self._server.settimeout(0.05)
+        self.port: int = self._server.getsockname()[1]
+        self._accepted: list[socket.socket] = []
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._serve, daemon=True)
+
+    def __enter__(self) -> _BlackHole:
+        self._thread.start()
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self._stop.set()
+        self._thread.join(timeout=5)
+        for connection in self._accepted:
+            connection.close()
+        self._server.close()
+
+    def _serve(self) -> None:
+        while not self._stop.is_set():
+            try:
+                connection, _ = self._server.accept()
+            except OSError, TimeoutError:
+                continue
+            # Held open and never read: the client's connect() stays pending.
+            self._accepted.append(connection)
+
+
+@pytest.mark.parametrize(
+    "probe_class",
+    [
+        pytest.param(CancellationDebtProbe, id="cancellation_debt"),
+        pytest.param(StopEvidenceDebtProbe, id="stop_evidence_debt"),
+    ],
+)
+async def test_a_hung_probe_reports_a_timeout_and_keeps_readiness_ok(
+    probe_class: type[CancellationDebtProbe] | type[StopEvidenceDebtProbe],
+) -> None:
+    """#917 review M4-a: a hung diagnostic must not take the API out of service.
+
+    Both debt probes promise never to fail ``/readyz``. With the service budget and the
+    probe budget equal, the service's outer timeout expired first, the probe's own handler
+    never ran, and the check reported ``failed``/``timed out`` -- an outage caused by a
+    diagnostic. The probe now spends a fraction of the service budget, so its own timeout
+    wins and the documented ``unavailable (timeout)`` shape is what an operator sees.
+    """
+    with _BlackHole() as hole:
+        probe = probe_class(
+            f"postgresql://synthetic:synthetic@127.0.0.1:{hole.port}/synthetic",
+            schema="speech",
+            timeout_seconds=1.0,
+        )
+        report = await ReadinessService([probe], timeout_seconds=1.0).inspect()
+
+    assert report.ready is True
+    assert report.checks[0].status.value == "ok"
+    assert report.checks[0].detail == f"{probe.name}: unavailable (timeout)"
+
+
+async def test_a_hung_probe_does_not_delay_the_aggregate_past_the_budget() -> None:
+    """The whole report still answers inside the service budget, not 1.25x of it."""
+    with _BlackHole() as hole:
+        probe = StopEvidenceDebtProbe(
+            f"postgresql://synthetic:synthetic@127.0.0.1:{hole.port}/synthetic",
+            schema="speech",
+            timeout_seconds=1.0,
+        )
+        started = time.monotonic()
+        report = await ReadinessService([probe], timeout_seconds=1.0).inspect()
+        elapsed = time.monotonic() - started
+
+    assert report.ready is True
+    assert elapsed < 1.0

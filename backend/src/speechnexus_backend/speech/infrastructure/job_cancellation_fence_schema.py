@@ -105,29 +105,40 @@ def cancellation_reconciliation_grants(schema: str, role: str) -> tuple[str, ...
 
 
 def cancellation_debt_reader_grants(schema: str, role: str) -> tuple[str, ...]:
-    """Optional read-only identity for the ``cancellation_debt`` diagnostic.
+    """Optional read-only identity for both readiness debt diagnostics.
+
+    Serves ``cancellation_debt`` (accepted cancellations that cannot return
+    capacity) and its sibling ``stop_evidence_debt`` (``running`` Jobs whose gateway
+    reported failed/aborted without a verified stop, #917 review M4). They read the
+    same tables and are deliberately reported under different prefixes because their
+    dispositions differ, so one identity covers both.
 
     Not granted to any runtime identity by default: the API identity must not be
     able to read the cancellation ledger, the speech owner's leases or the
     gateway's submit intents just to fill a readiness detail (#852 review P1). A
     deployment that wants the full ``Job -> lease -> states`` detail provisions
     this separate role and points ``SPEECHNEXUS_READINESS_CANCELLATION_DSN`` at
-    it; without it the probe reports ``unavailable (not configured)``.
+    it; without it the probes report ``unavailable (not configured)``.
 
     Column-level on purpose: no canonical request document, no reconciliation
-    writes, no capacity accounting beyond the lease state the detail prints.
+    writes, no capacity accounting beyond the lease state the detail prints. The
+    dispatch-debt probe additionally needs the row's own dispatch proof
+    (``cleanup_state``, ``dispatched_at_us``, ``engine_request_id``) to tell "the
+    engine was never asked" from "the engine was asked and nothing proved it
+    stopped" -- the two shapes the dispatch gate settles and holds respectively.
     """
     schema, role = checked_sql_name(schema), checked_sql_name(role)
     return (
         f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"',
         f'GRANT SELECT (job_id, accepted_at_us) ON "{schema}".{TABLE} TO "{role}"',
         f'GRANT SELECT (job_id, settled_at_us) ON "{schema}".{RECONCILIATION_TABLE} TO "{role}"',
-        f'GRANT SELECT (job_id, state) ON "{schema}".speech_jobs TO "{role}"',
+        f'GRANT SELECT (job_id, state, updated_at_us) ON "{schema}".speech_jobs TO "{role}"',
         f"GRANT SELECT (lease_id, operation_id, lease_state) "
         f'ON "{schema}".admission_leases TO "{role}"',
         # ``submit_intent_id`` is the join key to the terminal fact, not the
         # canonical command: it names the intent the gateway answered about.
-        f"GRANT SELECT (submit_intent_id, lease_id, execution_state) "
+        f"GRANT SELECT (submit_intent_id, lease_id, execution_state, cleanup_state, "
+        f"dispatched_at_us, engine_request_id) "
         f'ON "{schema}".submit_intents TO "{role}"',
         # The subclass label needs the gateway's terminal fact: without it a
         # ``succeeded`` execution that never recorded ``engine_terminal_response``

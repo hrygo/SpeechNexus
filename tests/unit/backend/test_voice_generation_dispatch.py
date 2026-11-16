@@ -465,8 +465,17 @@ async def test_dispatcher_timeout_before_submit_stays_unknown_and_running() -> N
 class _EngineGateway:
     """Query returns not_found until submit, then the scripted engine state."""
 
-    def __init__(self, execution_state: str, error_code: str | None = None) -> None:
+    def __init__(
+        self,
+        execution_state: str,
+        error_code: str | None = None,
+        *,
+        stop_evidence_kind: str = "instance_terminated_by_controller",
+        cleanup_state: str = "complete",
+    ) -> None:
         self._execution_state, self._error_code = execution_state, error_code
+        self._stop_evidence_kind = stop_evidence_kind
+        self._cleanup_state = cleanup_state
         self._submit_intent_id: str | None = None
         self.queries = 0
         self.submits = 0
@@ -476,6 +485,10 @@ class _EngineGateway:
         status: dict[str, Any] = {
             "submit_intent_id": self._submit_intent_id,
             "execution_state": self._execution_state,
+            "stop_evidence_kind": self._stop_evidence_kind,
+            "cleanup_state": self._cleanup_state,
+            "dispatched_at": "2026-11-07T11:00:00Z",
+            "engine_request_id": "engine-synthetic",
         }
         if self._error_code is not None:
             status["error_code"] = self._error_code
@@ -515,6 +528,25 @@ async def test_engine_reported_voice_timeout_is_projected_failed(state: str) -> 
     assert batch.failed == 1 and batch.unknown == 0
     assert states.finished == [("failed", "voice_generation_timeout")]
     assert states.job.state == "failed"
+
+
+@pytest.mark.parametrize("state", ["failed", "aborted"])
+async def test_a_voice_failure_without_release_evidence_stays_running(state: str) -> None:
+    """A voice Job is not settled failed until the lane proves the stop."""
+    job = _job("voice_design")
+    gateway = _EngineGateway(
+        state,
+        "voice_generation_timeout",
+        stop_evidence_kind="unconfirmed_timeout",
+        cleanup_state="quarantined",
+    )
+    dispatcher, states = _dispatcher(job, gateway)
+
+    batch = await dispatcher.run_once("worker-synthetic")
+
+    assert batch.failed == 0 and batch.unknown == 1
+    assert states.finished == []
+    assert states.job.state == "running"
 
 
 async def test_unavailable_state_store_does_not_publish_or_finish_a_voice_job() -> None:

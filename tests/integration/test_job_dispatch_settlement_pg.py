@@ -16,6 +16,7 @@ import httpx
 import pytest
 from psycopg.conninfo import make_conninfo
 from pydantic import SecretStr
+from tests.fake.execution_status import execution_status
 from tests.integration.test_coordination_foundation import foundation as foundation
 from tests.integration.test_production_admission import AdmissionDatabase
 from tests.integration.test_production_admission import admission_database as admission_database
@@ -349,12 +350,18 @@ class _Gateway:
                         }
                     },
                 )
-            document: dict[str, Any] = {
-                "submit_intent_id": submit_id,
-                "execution_state": self.terminal,
-            }
-            if self.terminal != "succeeded":
-                document["error_code"] = "engine_execution_failed"
+            # The fake's own row is the fact it reports: this settlement path refuses the
+            # submit before dispatch, so `failed` is the contract's `not_required` + `none`
+            # shape with no dispatch identity, and `succeeded` carries the engine's terminal
+            # response. The factory validates the document with the generated `parse`, so the
+            # double cannot answer with a shape no gateway can produce.
+            document = execution_status(
+                submit_intent_id=submit_id,
+                state="succeeded" if self.terminal == "succeeded" else "failed_not_dispatched",
+                # The dispatcher compares the document's digest with the command it
+                # submitted, so the double has to echo the real one.
+                command_digest=(self.last_submission or {}).get("command_digest", DIGEST),
+            )
             return httpx.Response(200, json=document)
         raise AssertionError("unexpected gateway path: " + request.method + " " + path)
 
@@ -438,7 +445,10 @@ async def test_tts_engine_failure_releases_capacity_through_the_stop_guard(
 
     assert batch.claimed == 1 and batch.failed == 1, batch
     read = _read(_store(admission_database), job_id)
-    assert read.state == "failed" and read.error_code == "engine_execution_failed"
+    # The row this fake records is `failed` + `not_required`: the contract's provable
+    # non-dispatch branch, whose error code comes from the closed `ExecutionErrorCode`
+    # enum. A job-level invented code is not a shape a gateway can answer with.
+    assert read.state == "failed" and read.error_code == "invalid_execution_request"
     assert _lease(db, job_id)["lease_state"] == "released"
     _assert_capacity_returned(baseline, _capacity_snapshot(db))
 

@@ -22,7 +22,23 @@ consumes VAD candidates through a fixed vLLM endpoint and verifies terminal iden
 finish reason and token usage. Both ASR models were exercised on authorized local inputs.
 The authenticated submit, abort and instance-drain HTTP routes are served: without an engine
 adapter the two engine routes refuse, and the drain reports the recorded in-flight work of one
-instance generation without claiming a stop.
+instance generation without claiming a stop. The instance-reclaim service reads the same
+recorded inventory once together with the generation's readiness instant, newest execution
+activity and held capacity, and applies one fixed judgement table whose order is the
+answer: resident policy, an unconfirmed stop, unfinished work and a lease that still
+reserves the slot all hold the generation before any release report is considered, then a
+verified container/process termination reports `reclaimed`, anything weaker (an engine
+sleep acknowledgment, an unconfirmed exit) is held, and an unknown idle anchor or an active
+cooldown delays the rest. The cooldown is the caller's value and must be the manifest
+`idle_reclaim_cooldown_ms` within the contract's bounds; this service reads no manifest and
+invents no default. It writes nothing, stops nothing and returns no budget, and it has no
+public route: the scheduler still issues the stop, and it would need a frozen-contract
+change before it could call in. Release evidence is the released node checkpoint read through the verified-stop source,
+validated there (node, gateway, pool, binding, generation, fencing token and the observation
+window) and turned into the release fact directly; the `whole_instance_stop_evidence`
+converter is the recovery sweep's write path, not this read path, and the reclaim chain reads
+no `execution_stop_evidence` row at all. A store that cannot answer raises instead of
+reporting an idle instance.
 The [default file-ASR composition](../docs/operations/file-asr-runtime.md) can now connect
 the existing durable worker through an explicit private deployment file and separate object
 credentials. It validates configuration before acquiring control resources, loads the pinned

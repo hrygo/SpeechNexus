@@ -117,7 +117,29 @@ VoiceDesign 无预算时创建任务有界排队，不能挤出实时实例或�
 
 请求增量预算与实例常驻预算分别记账：请求完成仅释放已确认可释放的增量，实例预算在确认进程 / 容器停止且资源释放后才归还。加载失败也须完成清理证据；结果失败不等于资源已回收。实例卸载不删除模型绑定、音色候选、已发布 revision、来源或校验证据，再次启动重新核对 readiness 与资格匹配。
 
-空闲回收和排队的生效值由部署策略及现行契约确定：[容量清单](../../contracts/capacity-manifest.schema.json)包含 `idle_reclaim_cooldown_ms`，按需加载时要求非空且至少 1000 ms；[公开能力契约](../../contracts/speech-openapi.yaml)包含非负的 `max_queue_wait_ms`。这些结构约束不证明调度或回收已接通，也不替代具体部署的准备时限；本节不新增默认值或状态枚举。资格验证须覆盖 VoiceDesign 冷加载 / 回收与实时 1 ASR + 1 TTS 共存时的峰值占用、延迟、停止证据和预算不足行为。
+回收的判定与停止证据由 execution gateway 承担，停止动作与容量归还仍属调度器。gateway 的实例回收服务一次只读一个实例代次已记录的事实：就绪时刻、最近一次执行活动时刻（`terminated_at_us`、`dispatched_at_us`、`updated_at_us` 的最大值）、仍然 reserved 的租约、以及既有 drain 报告的 submitting / 在途 / 隔离三类在途集合；观察时刻取数据库 `clock_timestamp()`，不取进程时钟。空闲锚点取就绪时刻与最近活动时刻的较大值，两者皆无时代次不按空闲处理。判定对每种状态给出唯一结论：
+
+| 代次状态（按判定顺序） | 回收结论 |
+| --- | --- |
+| `loading_policy` 为 resident | 不回收，常驻策略优先于空闲 |
+| 存在 `unknown_quarantined` 执行 | 不回收，该代次的停止未确认 |
+| drain 报告 submitting 或在途执行 | 不回收，先满足 drain 条件 |
+| 仍持有 reserved 租约 | 不回收，容量尚未归还；已验证的终止也不能覆盖未归还的租约 |
+| 已报告停止但释放未确认 | 不回收，停止证据未验证 |
+| 无就绪时刻也无执行活动 | 不回收，空闲时长未知 |
+| 空闲时长小于 `idle_reclaim_cooldown_ms` | 不回收，冷却中 |
+| 已取得实例终止与资源释放证据且不持有租约 | 已回收 |
+| 其余 | 可回收，由调度器执行停止 |
+
+表中顺序即判定顺序：前四行（常驻、隔离、在途、未归还租约）优先于释放报告，空闲锚点与冷却两行在释放报告之后。已终止的代次若仍持有租约，答案是"不回收（容量未归还）"而不是"已回收"，因为"已回收"承诺该代次容量已空。
+
+回收答案只是判断：它不写任何行、不发停止命令、不归还预算。停止仍由调度器在满足 drain 后发起，并与实例身份和当前 fencing 对齐。`reclaim_due` / `reclaimed` / `held` 是 gateway 内部推导值，不是机器契约枚举；该答案目前没有公开路由，也没有生产调用方——调度器侧的调用需要先改冻结的内部契约。它读取的事实都在既有链路上：代次、租约与执行行与 drain 报告同源；释放报告取自 node-controller 的 verified-stop 投影（恢复扫描已在生产使用的同一接口），由 `NodeStopEvidenceSource.release_evidence` 校验节点/网关/池/绑定/代次/fencing 与时间窗后**直接构造** `VoiceDesignReleaseEvidence`——回收路径不经 `whole_instance_stop_evidence`，那个转换器只在恢复扫描把已验证停止写成 `execution_stop_evidence` 行时使用。
+
+`execution_stop_evidence` 由两条既有车道写入：gateway 的 `record_stop`（恢复扫描把经内部 verified-stop 接口读到的 released checkpoint 交给 `whole_instance_stop_evidence` 转换后写入）与 backend 的隔离释放车道（`quarantine_release_sql` 按既定预检写入同一张表）。回收路径**不读** `execution_stop_evidence`：它的租约与执行行来自 `admission_leases` / `submit_intents`，释放报告来自 verified-stop 投影；整条回收链不新增写者、不新增表。音色设计的停止回执只做校验、不写行，写入仍归恢复扫描的转换器；引擎 sleep 应答、状态码变化、超时与断连都不构成释放证据，只有容器或进程终止且资源确认释放才记 `reclaimed`。
+
+缺少停止证据不能把公开 Job 投影成失败。gateway 状态为 failed / aborted 时，backend 派发只接受两类形状：`cleanup_state = complete` 且停止证据是已验证种类（abort 应答、引擎终态应答、实例被控制器终止、运维核实终止），或 `not_required` 且未产生任何引擎请求。其余形状记稳定事件 `dispatch_stop_evidence_unverified`（含 Job、原因码、领取次数与租约仍持有）并返回 `stop_evidence_unverified`，Job 保持 running、租约继续持有。这是有意的挂住而不是自动终态：既有取消协调与 `cancellation_debt` 只覆盖 `cancelling` 且有 fence 的 Job，**不会**替 `running` 的这类 Job 收尾。可见面是与 `cancellation_debt` 同族的只读就绪探针 `stop_evidence_debt`，它把这类 Job 计数并逐个列名，永不因此让 `/readyz` 失败。处置是修生产端——让网关（或测试替身）的状态文档带上契约要求的 `cleanup_state` 与 `stop_evidence_kind`——而不是等它自己好；具体判定、detail 形态与处置见[生产 Job 文档的可见面一节](../components/production-jobs.md#隔离不了的时候可见面与处置)。
+
+空闲回收和排队的生效值由部署策略及现行契约确定：[容量清单](../../contracts/capacity-manifest.schema.json)包含 `idle_reclaim_cooldown_ms`，按需加载时要求非空且至少 1000 ms；[公开能力契约](../../contracts/speech-openapi.yaml)包含非负的 `max_queue_wait_ms`。这些结构约束不证明调度或回收已接通，也不替代具体部署的准备时限；本节不新增默认值或状态枚举。资格验证须覆盖 VoiceDesign 冷加载 / 回收与实时 1 ASR + 1 TTS 共存时的峰值占用、延迟、停止证据和预算不足行为；真实回收时序需在 GPU 部署上验证。
 
 ## 2. 持久化、任务恢复与数据生命周期
 

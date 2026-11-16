@@ -501,9 +501,57 @@ def gateway_failure_code(status: Mapping[str, Any]) -> str:
     return "execution_failed"
 
 
+#: The stop-evidence kinds the coordination contract accepts as a verified stop.
+#: ``none`` and ``unconfirmed_timeout`` are the two the ledger uses for "nothing was
+#: proved", so neither may ever settle a Job whose execution reached the engine.
+VERIFIED_STOP_EVIDENCE_KINDS: frozenset[str] = frozenset(
+    {
+        "engine_abort_ack",
+        "engine_terminal_response",
+        "instance_terminated_by_controller",
+        "operator_verified_instance_terminated",
+    }
+)
+
+#: The documented shape of a submit the durable fence refused before any dispatch.
+_NO_EXECUTION_EVIDENCE = "none"
+
+
+def verified_failure_evidence(status: Mapping[str, Any]) -> str | None:
+    """Return the fact that makes one ``failed``/``aborted`` status settle a Job.
+
+    A Job is a projection: its failure settles an admission lease and returns capacity,
+    which only a verified stop or a provable non-dispatch may do. So this returns the
+    evidence kind of exactly two contract shapes and ``None`` for everything else:
+
+    * ``cleanup_state=complete`` with a verified stop evidence kind -- the gateway
+      appended a stop row after the engine stopped, or the whole instance generation was
+      terminated and its resources released;
+    * ``cleanup_state=not_required``, ``stop_evidence_kind=none`` and no dispatch
+      identity -- the submit was refused before any engine request existed.
+
+    Anything else, including an ``aborted`` projection whose evidence is
+    ``unconfirmed_timeout``, is not proof. The caller keeps the Job running and its lease
+    held instead of projecting a failure it cannot back.
+    """
+    kind = status.get("stop_evidence_kind")
+    cleanup = status.get("cleanup_state")
+    if not isinstance(kind, str) or kind not in VERIFIED_STOP_EVIDENCE_KINDS:
+        if (
+            kind == _NO_EXECUTION_EVIDENCE
+            and cleanup == "not_required"
+            and status.get("dispatched_at") is None
+            and status.get("engine_request_id") is None
+        ):
+            return _NO_EXECUTION_EVIDENCE
+        return None
+    return kind if cleanup == "complete" else None
+
+
 __all__ = [
     "DISPATCHABLE_JOB_KINDS",
     "DISPATCHABLE_JOB_KIND_UNION",
+    "VERIFIED_STOP_EVIDENCE_KINDS",
     "VOICE_GENERATION_JOB_KINDS",
     "VOICE_JOB_KINDS",
     "VOICE_VALIDATION_JOB_KINDS",
@@ -529,4 +577,5 @@ __all__ = [
     "submit_intent_identity",
     "terminal_result",
     "validate_voice_dispatch_request",
+    "verified_failure_evidence",
 ]

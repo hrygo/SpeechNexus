@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import math
 import re
 from collections.abc import Sequence
 from typing import Any
@@ -12,6 +13,7 @@ import httpx
 import psycopg
 from pydantic import AnyHttpUrl
 
+from speechnexus_backend.speech.domain.job_dispatch import VERIFIED_STOP_EVIDENCE_KINDS
 from speechnexus_backend.speech.infrastructure import (
     job_cancellation_fence_schema,
     public_job_schema,
@@ -63,6 +65,21 @@ class ObjectStorageReadinessProbe:
             response = await client.get(str(self._healthcheck_url))
             response.raise_for_status()
 
+
+#: Fraction of the service's per-probe budget a non-failing diagnostic spends on its own
+#: work. ``ReadinessService`` wraps every probe in ``asyncio.timeout(timeout_seconds)``, so a
+#: probe whose own budget equals the service budget races it: the outer timeout wins, the
+#: probe's ``except Exception`` never runs, and ``/readyz`` reports ``failed``/``timed out``.
+#: That turns a diagnostic into an outage -- exactly what these probes promise never to do.
+#: Spending 80% leaves the probe room to convert its own timeout into the
+#: ``unavailable (timeout)`` detail it documents.
+_PROBE_BUDGET_FRACTION = 0.8
+#: Hard character bound on a debt detail. Row and job counts are already bounded, but 96 rows
+#: of long identifiers still produce a ~17 kB string, and a readiness detail that large is a
+#: payload problem rather than a diagnostic. ASCII identifiers make characters equal bytes.
+_DETAIL_MAX_CHARS = 512
+#: Appended when the detail is cut, so a truncated sentence never looks complete.
+_DETAIL_TRUNCATED = "... (truncated)"
 
 #: Prefix an operator alert matches on. Kept stable and secret-free.
 CANCELLATION_DEBT_PREFIX = "cancellation_debt"
@@ -146,7 +163,11 @@ class CancellationDebtProbe:
             raise ValueError("Cancellation debt report must be bounded")
         self._dsn = dsn
         self._schema = schema
-        self._timeout_seconds = timeout_seconds
+        # Spend only part of the service budget, and give libpq a longer connect timeout than
+        # that: the probe's own deadline must be the one that fires, so a hung endpoint becomes
+        # this probe's ``unavailable (timeout)`` detail instead of the service's ``failed``.
+        self._timeout_seconds = timeout_seconds * _PROBE_BUDGET_FRACTION
+        self._connect_timeout_seconds = max(1, math.ceil(timeout_seconds) + 1)
         self._grace_us = int(grace_seconds * 1_000_000)
         self._limit = limit
         self._connection: psycopg.AsyncConnection[Any] | None = None
@@ -196,7 +217,7 @@ class CancellationDebtProbe:
             assert self._dsn is not None  # guarded by ``check``
             connection = await psycopg.AsyncConnection.connect(
                 self._dsn,
-                connect_timeout=max(1, round(self._timeout_seconds)),
+                connect_timeout=self._connect_timeout_seconds,
                 options=f"-c search_path={self._schema},pg_catalog,pg_temp",
                 application_name=_APPLICATION_NAME,
             )
@@ -242,6 +263,21 @@ def _failure_category(error: BaseException) -> str:
     if isinstance(error, psycopg.OperationalError | psycopg.InterfaceError | OSError):
         return "connection"
     return "error"
+
+
+def _bounded_detail(text: str) -> str:
+    """Cut a debt detail at a separator so the result stays a readable, bounded sentence."""
+    if len(text) <= _DETAIL_MAX_CHARS:
+        return text
+    budget = _DETAIL_MAX_CHARS - len(_DETAIL_TRUNCATED)
+    window = text[:budget]
+    # Prefer a job/lease boundary, then a token boundary: a mid-identifier cut reads as a
+    # different identifier, which is worse than a shorter list.
+    for separator in ("; ", ", ", " "):
+        cut = window.rfind(separator)
+        if cut > budget // 2:
+            return window[:cut].rstrip() + _DETAIL_TRUNCATED
+    return window.rstrip() + _DETAIL_TRUNCATED
 
 
 def debt_subclass(
@@ -327,7 +363,7 @@ def _describe_debt(rows: Sequence[tuple[Any, ...]], *, missing: str | None = Non
                 f"{name}={job_counts[name]}" for name in _JOB_CLASSES if job_counts.get(name)
             )
         )
-    return f"{head} ({'; '.join(scopes)}): {detail}{suffix}{note}"
+    return _bounded_detail(f"{head} ({'; '.join(scopes)}): {detail}{suffix}{note}")
 
 
 _JOB_LEVEL_DEBT = f"""
@@ -368,3 +404,196 @@ WHERE j.state = 'cancelling'
 ORDER BY f.accepted_at_us, f.job_id, l.lease_id
 LIMIT %(limit)s
 """
+
+
+#: Prefix an operator alert matches on for the dispatch gate's stuck Jobs. Sibling of
+#: ``CANCELLATION_DEBT_PREFIX`` and deliberately distinct: this class has no automatic
+#: exit, and its remedy is the producer, not a settlement command.
+STOP_EVIDENCE_DEBT_PREFIX = "stop_evidence_debt"
+#: The stop-evidence kinds the coordination contract accepts as a verified stop, as one
+#: SQL tuple. It is derived from the domain's single definition: a second literal here
+#: would drift, and drift in this direction is silent -- the probe would stop matching the
+#: kind the dispatch gate accepts and report no debt for the Jobs that need it.
+_SQL_VERIFIED_STOP_EVIDENCE = (
+    "(" + ", ".join(f"'{kind}'" for kind in sorted(VERIFIED_STOP_EVIDENCE_KINDS)) + ")"
+)
+
+_STOP_EVIDENCE_DEBT = f"""
+SELECT j.job_id, i.submit_intent_id, i.execution_state, i.cleanup_state, e.evidence_kind
+FROM {public_job_schema.JOBS} AS j
+-- Only a lease that still holds capacity is a blocker: `quarantined` is an accounted
+-- state and `released` returned the capacity.
+JOIN admission_leases AS l
+  ON l.operation_id = j.job_id
+ AND l.lease_state NOT IN ('released', 'quarantined')
+JOIN submit_intents AS i ON i.lease_id = l.lease_id
+LEFT JOIN execution_stop_evidence AS e ON e.submit_intent_id = i.submit_intent_id
+WHERE j.state = 'running'
+  AND i.execution_state IN ('failed', 'aborted')
+  -- The provable non-dispatch shape is not this debt: the dispatcher settles it.
+  AND NOT (
+        i.cleanup_state = 'not_required'
+    AND i.dispatched_at_us IS NULL
+    AND i.engine_request_id IS NULL
+  )
+  -- Neither is a verified stop: a lease that outlived its own verified release is the
+  -- `cancellation_debt` completed-without-release shape, not a missing evidence fact.
+  -- COALESCE is load-bearing: a missing evidence row leaves every joined column NULL,
+  -- and `NOT NULL` is NULL, which would silently drop the one class this probe exists
+  -- to report. "No row" means "no verified stop", i.e. TRUE here.
+  AND NOT COALESCE(
+        e.evidence_kind IN {_SQL_VERIFIED_STOP_EVIDENCE}
+    AND e.execution_stopped = 1
+    AND e.resources_released = 1,
+    FALSE
+  )
+  AND j.updated_at_us
+      <= CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) - %(grace_us)s
+ORDER BY j.updated_at_us, j.job_id
+LIMIT %(limit)s
+"""
+
+
+def stop_evidence_unavailable_detail(error: BaseException) -> str:
+    """One bounded sentence naming what this probe could not read, and why."""
+    return f"{STOP_EVIDENCE_DEBT_PREFIX}: {_UNAVAILABLE} ({_failure_category(error)})"
+
+
+def _describe_stop_evidence_debt(
+    rows: Sequence[tuple[Any, ...]], *, missing: str | None = None
+) -> str | None:
+    """One bounded sentence naming every `running` Job the dispatch gate refused to settle.
+
+    The gate holds a Job whose gateway reported ``failed``/``aborted`` without a verified
+    stop, because projecting the failure would return capacity for a slot nothing proved
+    released. That refusal is correct and has no automatic exit, so it must be visible:
+    this detail is the operator's list, the fixed prefix is the alerting key, and the
+    remedy is always the producer's status document.
+    """
+    if not rows:
+        return None
+    jobs: dict[str, list[str]] = {}
+    for row in rows:
+        job_id, intent_id, execution_state, cleanup_state = row[0], row[1], row[2], row[3]
+        kind = row[4] if len(row) > 4 else None
+        jobs.setdefault(job_id, []).append(
+            f"{intent_id}(execution={execution_state or 'not_submitted'}, "
+            f"cleanup={cleanup_state or 'unrecorded'}, "
+            f"evidence={kind or 'none'})"
+        )
+    shown = list(jobs.items())[:3]
+    detail = "; ".join(f"{job} -> {', '.join(intents)}" for job, intents in shown)
+    hidden = len(jobs) - len(shown)
+    suffix = f" (+{hidden} more)" if hidden else ""
+    note = f" [lease detail {_UNAVAILABLE}: {missing}]" if missing else ""
+    executions = sum(len(intents) for intents in jobs.values())
+    head = (
+        f"{STOP_EVIDENCE_DEBT_PREFIX}: {len(jobs)} running Job(s) hold capacity while the "
+        f"gateway reports no verified stop"
+    )
+    head += f" over {executions} execution(s)" if executions else ""
+    return _bounded_detail(f"{head}: {detail}{suffix}{note}")
+
+
+class StopEvidenceDebtProbe:
+    """Name `running` Jobs whose failure cannot be projected for want of stop evidence.
+
+    Read-only and non-failing for the same reason as :class:`CancellationDebtProbe`:
+    ``/readyz`` is the deployment healthcheck, so one Job the dispatch gate had to hold
+    -- or a missing privilege, relation, connection or timeout -- must not take the API
+    out of service. The observed fact is reported in the probe detail instead, which
+    reaches both ``/readyz`` and ``GET /v1/nexus/admin/diagnostics``, and the alerting
+    rule matches the ``stop_evidence_debt:`` prefix.
+
+    It shares the optional read-only DSN with the cancellation debt probe: the tables it
+    reads are the same ones, and the API identity is not granted them. A deployment
+    without such a role gets ``stop_evidence_debt: unavailable (not configured)``.
+
+    The disposition is deliberately *not* a settlement: nothing here decides the Job.
+    The operator fixes the producer -- the gateway, or a test double, must report
+    ``cleanup_state`` and ``stop_evidence_kind`` as the frozen contract requires -- and
+    the next dispatch pass then settles the Job through the normal path.
+    """
+
+    def __init__(
+        self,
+        dsn: str | None,
+        *,
+        schema: str,
+        timeout_seconds: float,
+        grace_seconds: float = 300,
+        limit: int = 96,
+    ) -> None:
+        if not re.fullmatch(r"[a-z][a-z0-9_]{2,62}", schema):
+            raise ValueError("Invalid readiness schema")
+        if not 0 < grace_seconds <= 86_400:
+            raise ValueError("Stop evidence debt grace must be bounded")
+        if type(limit) is not int or not 1 <= limit <= 512:
+            raise ValueError("Stop evidence debt report must be bounded")
+        self._dsn = dsn
+        self._schema = schema
+        # Spend only part of the service budget, and give libpq a longer connect timeout than
+        # that: the probe's own deadline must be the one that fires, so a hung endpoint becomes
+        # this probe's ``unavailable (timeout)`` detail instead of the service's ``failed``.
+        self._timeout_seconds = timeout_seconds * _PROBE_BUDGET_FRACTION
+        self._connect_timeout_seconds = max(1, math.ceil(timeout_seconds) + 1)
+        self._grace_us = int(grace_seconds * 1_000_000)
+        self._limit = limit
+        self._connection: psycopg.AsyncConnection[Any] | None = None
+        self._lock = asyncio.Lock()
+
+    @property
+    def name(self) -> str:
+        return STOP_EVIDENCE_DEBT_PREFIX
+
+    async def check(self) -> str | None:
+        """Report the debt, never the probe's own trouble as unreadiness."""
+        if self._dsn is None:
+            return f"{STOP_EVIDENCE_DEBT_PREFIX}: {_UNAVAILABLE} (not configured)"
+        try:
+            async with asyncio.timeout(self._timeout_seconds), self._lock:
+                try:
+                    return await self._inspect()
+                except BaseException:
+                    # A connection that failed mid-query must not be reused: its
+                    # transaction state is unknown.
+                    await self._discard()
+                    raise
+        except Exception as error:
+            return stop_evidence_unavailable_detail(error)
+
+    async def _inspect(self) -> str | None:
+        connection = await self._connection_or_connect()
+        async with connection.cursor() as cursor:
+            await cursor.execute(
+                _STOP_EVIDENCE_DEBT, {"grace_us": self._grace_us, "limit": self._limit}
+            )
+            rows = await cursor.fetchall()
+        # End the read transaction so the reused session stays idle between polls.
+        await connection.rollback()
+        return _describe_stop_evidence_debt(rows)
+
+    async def _connection_or_connect(self) -> psycopg.AsyncConnection[Any]:
+        connection = self._connection
+        if connection is None or connection.closed or connection.broken:
+            assert self._dsn is not None  # guarded by ``check``
+            connection = await psycopg.AsyncConnection.connect(
+                self._dsn,
+                connect_timeout=self._connect_timeout_seconds,
+                options=f"-c search_path={self._schema},pg_catalog,pg_temp",
+                application_name=_APPLICATION_NAME,
+            )
+            self._connection = connection
+        return connection
+
+    async def _discard(self) -> None:
+        connection, self._connection = self._connection, None
+        if connection is None:
+            return
+        with contextlib.suppress(Exception):  # a close failure has no caller to inform
+            await connection.close()
+
+    async def aclose(self) -> None:
+        """Release the reused session; callers own the process lifetime."""
+        async with self._lock:
+            await self._discard()

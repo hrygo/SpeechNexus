@@ -392,6 +392,38 @@ Job 已是本错误码的 `failed` 时只补做隔离；他人写入的终态不
 
    探针复用一条连接（`application_name=speechnexus-readiness-debt`），不随每次 `/readyz`
    轮询新建会话；查询后回滚以保持会话空闲。
+
+   同一只读身份还装配第二个同族探针 `StopEvidenceDebtProbe`（名字 `stop_evidence_debt`），
+   报告**派发门禁挂住的 Job**：gateway 已把执行记为 `failed`/`aborted`，却没有可验证的
+   停止事实，于是 backend 不把 Job 投影成失败（失败会归还一份没人证明释放过的容量），
+   Job 保持 `running`、租约继续持有。这类 Job **不在**本节的处理范围内：它既不是
+   `cancelling`、也没有取消围栏，取消协调与 `cancellation_debt` 都看不见它；同时它
+   **没有自动终态出口**（有意如此，自动收口等于放宽门禁）。
+
+   判定（四类形状，缺一不算）：Job 仍 `running`；租约仍持有容量（`lease_state` 不是
+   `released`/`quarantined`）；该租约的 `submit_intents` 是 `failed` 或 `aborted`，且
+   **不是**「`cleanup_state='not_required'` + 无 `dispatched_at_us` + 无 `engine_request_id`」
+   的可证明未派发形状（那种形状门禁自己会结算）；`execution_stop_evidence` 里没有
+   `engine_stopped=1`、`resources_released=1` 的已验证种类。detail 形态：
+
+   | 形态 | 何时出现 |
+   |---|---|
+   | `stop_evidence_debt: N running Job(s) hold capacity while the gateway reports no verified stop over M execution(s): job-… -> submit-…(execution=failed, cleanup=complete, evidence=none)` | 只读身份按 `cancellation_debt_reader_grants` 授权（或更宽） |
+   | `stop_evidence_debt: unavailable (not configured)` | 未配置 `SPEECHNEXUS_READINESS_CANCELLATION_DSN`（默认部署） |
+   | `stop_evidence_debt: unavailable (permission｜relation｜connection｜timeout｜error)` | 探针读不到；分类保证真实故障可见 |
+
+   它和 `cancellation_debt` 一样**永远报告 `ok`**，不参与聚合就绪判定：一个 Job 挂住
+   不应该让 `deploy/compose.yaml` 的健康检查失败、进而让 `admin`/`workbench` 都起不来。
+
+   **处置是修生产端，不是等它自己好。** 这个 detail 出现时，问题在状态文档的生产者：
+   网关（或测试替身）必须按冻结契约给出 `cleanup_state` 与 `stop_evidence_kind`
+   （`failed` 时 `cleanup_state ∈ {not_required, complete}`，`complete` 必须带已验证的
+   停止种类；`aborted` 必须 `complete` 且带已验证种类）。修好后下一次派发会走正常路径
+   结算该 Job，**不需要**手工改 Job 状态、释放租约或补写证据行——手工补写正是伪造
+   证词。worker 侧的对应告警是稳定事件名 `dispatch_stop_evidence_unverified`，字段为
+   `job_id`、`submit_intent_id`、`reason_code`、`stop_evidence_kind`、`cleanup_state`、
+   `execution_state`、`dispatch_attempts`（领取次数）、`lease_held`（门禁返回前不结算，
+   因此恒为 `true`）。
 2. **worker 日志**：每次判定被阻塞时，worker 对 stderr 输出一条
    `cancellation acceptance holds capacity but cannot be isolated`，带 `job_id` 和阻塞
    明细（哪条租约、租约状态、执行状态、拒绝原因）。

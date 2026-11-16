@@ -228,6 +228,13 @@ SURFACES: tuple[Surface, ...] = (
         "QualificationSettings",
     ),
     Surface(
+        "operator_attestation",
+        "backend",
+        "the operator-attested qualification command line",
+        "backend/src/speechnexus_backend/attest_builtin_voice.py",
+        "OperatorAttestationSettings",
+    ),
+    Surface(
         "recover_tts",
         "backend",
         "the TTS recovery command line",

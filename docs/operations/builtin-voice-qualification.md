@@ -1,6 +1,8 @@
 # Builtin Voice 资格边界
 
-当前受控资格范围是 `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` / `Vivian`；来源批准、资格探针和发布入口已有实现，实际可用性仍取决于部署配置和有效资格。来源批准和执行资格是不同事实：来源批准固定来源修订、摘要、speaker 与期限；独立 qualification producer 核验实际原证据后记录完整 `BuiltinVoiceFacts`。预设要求 `builtin-customvoice-v1` / `1` 以及八项固定检查，生产者未取得完整证据时不得写入 approval。普通探针通过不自动等于此资格。
+当前受控资格范围是 `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` / `Vivian`；来源批准、资格探针和发布入口已有实现，实际可用性仍取决于部署配置和有效资格。来源批准和执行资格是不同事实：来源批准固定来源修订、摘要、speaker 与期限；独立 qualification producer 核验实际原证据后记录完整 `BuiltinVoiceFacts`。
+
+资格有两个互相独立、机器可区分且持久化的来源：node-controller 观测的受控探针（`builtin-customvoice-v1` / `1`，八项固定检查，见下文「资格探针准入」）与外部托管引擎的 operator 声明（`operator-attested-customvoice-v1`，见「外部托管引擎的 operator 声明资格」）。两者写入同一个 approval 账本和同一份公开资格，但 facts 键集互斥、verifier 不同，发布时在 `speech_builtin_voice_qualification_provenance` 记录本次资格由哪个来源产出。生产者未取得所选来源要求的完整证据时不得写入 approval；普通探针通过不自动等于此资格。
 
 公开 `backend_unavailable` 不携带内部拒绝原因。隔离验收须同时保全有界私有应用日志：HTTP 记录服务端生成的 execution UUID 和固定失败类别；普通准入记录原 operation、失败阶段及受控拒绝码，未知码仅记 `unknown_code`；异常存储记录异常类型和五位 SQLSTATE，不记录异常正文、SQL、参数、请求内容、客户端头或连接串。仅有 503 或准入记录为空不能证明 readiness 过期；须结合原持久有效期和具体失败证据定位。诊断不重发未知请求，也不改变停止与结算要求。
 
@@ -31,6 +33,24 @@
 当前受控入口要求使用已核验的源码 checkout：离线模型检查复用 `scripts/dev-env/verify-file-asr-artifacts.py`，当次验证文件 SHA-256 为 `44c92419824c1382fcf8847135c7f39ee18de8b2b9beeb7fd4d054b023185587`，使用时须核对实际版本。脚本缺失时检查失败关闭；当前 wheel 不包含此脚本，不能作为已完成的 wheel 部署交付。隔离 PostgreSQL 的组件测试使用合成模型文件、合成网关及终止证据，不证明真实物理资格；后续真实引擎的受控探测及范围见[2026-11-03 窗口记录](../archive/audits/2026-11-03-controlled-tts-prepare.md)。
 
 controller 制品摘要是受信不可变部署前提下的磁盘 Python 源或安装制品清单摘要，不证明已加载字节码、依赖或整个镜像。网关证据仅反映认证后读取时的 live policy 和映射，不代表 GPU 健康或声音资格。
+
+## 外部托管引擎的 operator 声明资格
+
+`deploy/compose.yaml` 的 bootstrap 明确「engine lifecycle is operator/external」，即没有 node-controller 参与该实例生命周期。这条路径为这类部署提供受控资格，且不改变 controller 观测路径的任何行为。
+
+**信任默认关闭。** 只有部署方以独立私有文件显式声明信任后，才可能写入声明资格：声明缺失即 `error: trust_declaration_missing`（退出码 `4`），不写任何行。代码不会因为「当前没有 node-controller」而自动降级为声明，也不会把探针失败转成声明成功。声明文件为 owner-only、位于仓库外，格式 `speechnexus-operator-attested-engine-v1`，至少固定：目标 `installation`（database/schema/installation_id）、`scope.lifecycle_controller='operator_external'`、`trusted_instances`（逐实例白名单）、`acknowledged_gaps`（必须完整覆盖本路径不提供的 controller 能力）、`max_attestation_validity_seconds`（上限 30 天）与 `declared_by`。
+
+**声明请求固定可核验事实。** 请求文件格式 `speechnexus-operator-attested-qualification-v1`，声明 voice/revision、binding 与 binding revision、instance 与 generation、fencing token、模板身份、镜像摘要、模型 id/revision/制品摘要、能力声明与有效期窗口，并内嵌模板原件（`speechnexus-template-v1`）与外部生命周期原件（`speechnexus-external-lifecycle-v1`）；两个原件的规范摘要（`sort_keys` 紧凑 JSON 的 `sha256:`）记录在案，任何第三方可用同一文件重算核对。
+
+`speechnexus-attest-builtin-voice` 在单个事务内依次核对：installation 目标与声明一致；来源批准存在、未撤销且未过期；binding revision 已发布、未停用，release 原文件通过正式 release 验证器（`verify_binding_release_evidence`）；注册账本中的 instance/generation/state/host/gateway/pool/binding_revision/template/config digest/fencing/owner 期限/policy revision 与声明和配方一致；模板与生命周期原件的身份、模型 pin 与 stage pin 一致；声明能力是 binding 参数域的子集；认证网关的 live policy 映射（含 `gateway_policy_digest`）与持久事实一致且观测时间在 60 秒内；有效期窗口不超过声明上限、来源有效期与 release 有效期。每一项不满足都以具名错误码退出（`trust_declaration_target_mismatch`、`trust_declaration_instance_not_trusted`、`image_digest_mismatch`、`template_identity_mismatch`、`instance_generation_mismatch`、`stale_fencing_token`、`attestation_window_expired`、`attestation_window_too_long`、`gateway_policy_evidence_unavailable`、`model_artifact_digest_mismatch`、`capability_outside_binding_domains`、`source_approval_unavailable`、`binding_release_evidence_mismatch`、`writer_identity_forbidden`、`attestation_conflict`），并回滚到零写入。
+
+**写入身份最小化。** 命令使用仓库外 `SPEECHNEXUS_OPERATOR_ATTESTATION_WRITER_DATABASE_URL` 配置的独立非 owner 身份，权限由 `operator_attestation_writer_grants` 声明：只读核对所需的注册与发布事实，追加一条 approval（探针列为 `NULL`）和一条声明记录，不持有任何表的 `UPDATE`/`DELETE`/`TRUNCATE`，也没有资格、发布或 publication head 写权限。持有发布 head 权限的身份会被 `writer_identity_forbidden` 拒绝，因为重指发布 head 可以撤回公开资格。
+
+**持久与读面。** 迁移 `0055_operator_attestation` 新增 `speech_builtin_voice_operator_attestations`（按 approval 唯一，含 instance/generation/fencing/策略摘要/四个制品摘要/窗口/声明原件与其摘要/声明人）与 `speech_builtin_voice_qualification_provenance`（每个已发布资格一行，`source_kind` 取 `controller_observed` 或 `operator_attested`，后者必须带 attestation 外键）。发布入口对两个来源都写 provenance，并在写入前复核算出声明的 approval 与声明记录逐项一致，不一致即 `attestation_mismatch` 回滚。`speechnexus-qualification-provenance` 只读打印每个语音的 `source_kind`、`provenance_recorded` 与声明细节；迁移 `0055` 之前已发布的资格没有 provenance 行，报告为 `evidence=legacy_pre_0055` 且 `source_kind=controller_observed`（当时不存在声明路径），不推断、不回填、不改写既有记录。`--fail-on-expired-attestation` 在声明窗口已过时以退出码 `3` 失败。
+
+**不开放的能力。** 声明不是 controller 观测，因此不放行：`require_native_ready` 与探针签发（仍要求 node-controller 的 native runtime 证据，缺失即 `native_runtime_evidence_unavailable`）；算力预算归还与租约结算（`release()` 仍要求授权 stop kind，缺少实测停止即 `execution_cleanup_pending`）；`execution_cleanup_pending` 的清偿；实例生命周期收敛与新 generation（仍要求上一代 `stopped` 且预算 `released`）；`execution_stop_evidence`、`runtime_intent_deliveries` 与 `admission_leases` 的任何写入。声明事务的写目标是且只是 approval 与声明记录两行；`tests/integration/test_operator_attested_qualification_pg.py` 对运行态账本做前后快照以固定这一点。
+
+撤销沿用既有入口：`speechnexus-revoke-builtin-voice --kind qualification --approval-id <声明 approval>` 追加撤销事实，此后新准入拒绝；声明记录本身保留为已发生事实，不被改写。迁移的 `downgrade` 在存在声明历史时拒绝执行（`Operator attestation history requires preservation`），不存在时先删 provenance 再删声明表。
 
 ## 正式公开 SDK 验收
 

@@ -165,8 +165,11 @@ PLANES: tuple[NonSettingPlane, ...] = (
         runtime=True,
     ),
     NonSettingPlane(
-        keys=("SPEECHNEXUS_SOURCE_APPROVAL_WRITER_DATABASE_URL",),
-        owner="the source-approval command line",
+        keys=(
+            "SPEECHNEXUS_SOURCE_APPROVAL_WRITER_DATABASE_URL",
+            "SPEECHNEXUS_OPERATOR_ATTESTATION_WRITER_DATABASE_URL",
+        ),
+        owner="the source-approval and operator-attestation command lines",
         runtime=True,
     ),
     NonSettingPlane(

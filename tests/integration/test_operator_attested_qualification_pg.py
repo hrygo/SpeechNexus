@@ -1,0 +1,980 @@
+"""PostgreSQL acceptance for the operator-attested qualification writer.
+
+Every fact here is synthetic: a synthetic binding publication, synthetic release
+evidence and a synthetic registration ledger. The point is not that a real engine
+was measured -- it is that the two qualification sources are recorded, told apart
+by the durable ledger, and that the attestation path cannot pretend to be a
+controller observation.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import io
+import json
+import os
+import uuid
+from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any
+
+import psycopg
+import pytest
+import rfc8785
+from alembic import command
+from alembic.config import Config
+from psycopg.conninfo import make_conninfo
+from psycopg.rows import dict_row
+from sqlalchemy import create_engine
+from sqlalchemy.pool import NullPool
+from tests.unit.backend.test_binding_release_evidence import packet
+
+from speechnexus_backend.builtin_voice_publication import (
+    BuiltinVoicePublicationRejectedError,
+    _recorded_source,
+    publish_builtin_voice,
+)
+from speechnexus_backend.operator_attested_qualification import (
+    record_operator_attestation,
+)
+from speechnexus_backend.qualification_provenance import (
+    REPORT_SQL,
+)
+from speechnexus_backend.qualification_provenance import (
+    main as provenance_main,
+)
+from speechnexus_backend.speech.domain.operator_attestation import (
+    OPERATOR_CHECKS,
+    AttestationRequest,
+    OperatorAttestationError,
+    TrustDeclaration,
+)
+from speechnexus_backend.speech.infrastructure.builtin_voice_grants import (
+    builtin_publisher_grants,
+    operator_attestation_writer_grants,
+)
+from speechnexus_backend.speech.infrastructure.builtin_voice_qualification import (
+    require_builtin_voice,
+)
+from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
+from speechnexus_backend.speech.infrastructure.publication_schema import publication_grants
+from speechnexus_backend.speech.infrastructure.publications_postgres import PostgresPublications
+
+pytestmark = pytest.mark.integration
+
+INSTANCE = "instance-tts-1"
+GENERATION = 1
+FENCING = 7
+POOL = "pool-tts"
+WORKSPACE = "wsp-tts"
+POLICY = "policy-1"
+HOST = "host-1"
+GATEWAY = "gateway-1"
+TEMPLATE = "template-tts-customvoice"
+VOICE = "voice-vivian"
+REVISION = "1"
+REVISION_ID = "voice-rev-1"
+BINDING = "binding-tts"
+BINDING_REVISION = "1"
+BINDING_REVISION_ID = "binding-rev-1"
+SOURCE = "source-1"
+APPROVAL = "approval-att-1"
+ATTESTATION = "att-tts-1"
+PASSWORD = "synthetic_operator_attestation"
+RUNTIME_TABLES = (
+    "runtime_instance_intents",
+    "runtime_instance_heads",
+    "engine_instances",
+    "resource_pools",
+    "host_nodes",
+    "workspace_quotas",
+    "admission_leases",
+    "execution_stop_evidence",
+    "runtime_intent_deliveries",
+    "admission_attempts",
+    "admission_operations",
+    "admission_requests",
+    "coordination_jobs",
+    "coordination_outbox",
+)
+
+
+@pytest.fixture
+def pg() -> Iterator[tuple[psycopg.Connection[dict[str, Any]], str, str]]:
+    url = os.environ.get("SPEECHNEXUS_TEST_DATABASE_URL")
+    if not url:
+        pytest.fail(
+            "Configure an isolated PostgreSQL DSN in SPEECHNEXUS_TEST_DATABASE_URL; "
+            "skip is not evidence"
+        )
+    suffix = uuid.uuid4().hex[:12]
+    schema, role = "sn_oa_" + suffix, "sn_oa_r_" + suffix
+    engine = create_engine(
+        url.replace("postgresql://", "postgresql+psycopg://", 1), poolclass=NullPool
+    )
+    config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
+    config.attributes["schema"] = schema
+    with engine.connect() as migration_connection:
+        config.attributes["connection"] = migration_connection
+        command.upgrade(config, "head")
+    engine.dispose()
+    connection = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+    connection.execute(f'SET search_path TO "{schema}", pg_catalog')
+    connection.execute(f'CREATE ROLE "{role}"')
+    try:
+        yield connection, schema, role
+    finally:
+        connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
+        for name in _roles(schema):
+            connection.execute(f'DROP ROLE IF EXISTS "{name}"')
+        connection.close()
+
+
+def _roles(schema: str) -> list[str]:
+    suffix = schema.removeprefix("sn_oa_")
+    return ["sn_oa_r_" + suffix, "sn_oa_r_" + suffix + "_oa"]
+
+
+def _timestamp(us: int) -> str:
+    return (
+        datetime.fromtimestamp(us / 1_000_000, tz=UTC)
+        .isoformat(timespec="microseconds")
+        .replace("+00:00", "Z")
+    )
+
+
+class Ledger:
+    """The published binding, the release evidence and the registration facts."""
+
+    def __init__(self, db: psycopg.Connection[dict[str, Any]], schema: str) -> None:
+        self.db = db
+        self.schema = schema
+        now = datetime.now(UTC).replace(microsecond=0)
+        self.now = now
+        bundle = packet()
+        manifest, report, definition = bundle["manifest"], bundle["report"], bundle["definition"]
+        self.pin = json.loads(
+            (
+                Path(__file__).resolve().parents[2]
+                / "deploy/engines/file-tts-customvoice/artifact-pin.json"
+            ).read_text()
+        )
+        manifest["binding_revision_id"] = report["binding_revision_id"] = BINDING_REVISION_ID
+        manifest["manifest_id"] = report["capacity_manifest_id"] = "manifest-1"
+        report["report_id"] = manifest["qualification"]["qualification_report_id"] = "report-1"
+        report["binding"] = {"id": BINDING, "revision": BINDING_REVISION}
+        manifest["supported_tasks"] = definition["tasks"] = ["tts_file"]
+        definition["execution_recipe"]["capacity_manifest_id"] = "manifest-1"
+        definition["execution_recipe"]["stage_roles"] = ["tts_connector"]
+        stage = manifest["stage_graph"][0]
+        stage["stage_role"] = "tts_connector"
+        stage["model_revision_digest"] = (
+            "sha256:" + hashlib.sha256(rfc8785.dumps(self.pin["model"])).hexdigest()
+        )
+        report["expires_at"] = manifest["qualification"]["expires_at"] = (
+            (now + timedelta(hours=2)).isoformat().replace("+00:00", "Z")
+        )
+        caps = {
+            "languages": ["en"],
+            "audio_formats": ["wav"],
+            "sample_rates_hz": [24000],
+            "modes": ["complete"],
+            "max_input_codepoints": 400,
+        }
+        definition["parameter_domains"]["tts"] = caps | {"audio_delivery_modes": ["complete"]}
+        manifest["qualification"]["config_bundle_digest"] = (
+            "sha256:"
+            + hashlib.sha256(
+                rfc8785.dumps({"artifact_pin": self.pin, "binding_definition": definition})
+            ).hexdigest()
+        )
+        self.raw_scenarios = json.dumps(bundle["evidence"]).encode()
+        report["evidence_digest"] = "sha256:" + hashlib.sha256(self.raw_scenarios).hexdigest()
+        self.raw_manifest = json.dumps(manifest).encode()
+        self.raw_report = json.dumps(report).encode()
+        self.definition = definition
+        self.manifest_digest = "sha256:" + hashlib.sha256(self.raw_manifest).hexdigest()
+        self.report_digest = "sha256:" + hashlib.sha256(self.raw_report).hexdigest()
+        self.image_digest = report["software"]["engine_components"][stage["stage_id"]][
+            "image_digest"
+        ]
+        self.model_digest = stage["model_revision_digest"]
+        self.capabilities = caps
+        self.expires_at = now + timedelta(hours=1)
+        database_row = db.execute("SELECT current_database() AS name").fetchone()
+        installation_row = db.execute(
+            "SELECT installation_id FROM speech_publication_installation"
+        ).fetchone()
+        assert database_row is not None and installation_row is not None
+        self.database = str(database_row["name"])
+        self.installation_id = str(installation_row["installation_id"])
+        self.digest = "sha256:" + "1" * 64
+        self.pools: list[Any] = []
+        self._registration()
+        self._publication()
+
+    def _registration(self) -> None:
+        db = self.db
+        db.execute(
+            "INSERT INTO host_nodes (host_node_id,memory_architecture,node_state,topology_digest) "
+            "VALUES (%s,'unified','active',%s)",
+            (HOST, "sha256:" + "c" * 64),
+        )
+        db.execute(
+            "INSERT INTO resource_pools (pool_id,service_class,pool_state,owner_id,fencing_token,"
+            "owner_expires_at_us,owner_state) VALUES (%s,'file_tts','ready','scheduler',%s,%s,"
+            "'active')",
+            (POOL, FENCING, int((self.now + timedelta(minutes=10)).timestamp() * 1_000_000)),
+        )
+        db.execute(
+            "INSERT INTO workspace_quotas (workspace_id,max_attempts,policy_revision) "
+            "VALUES (%s,%s,%s)",
+            (WORKSPACE, 5, POLICY),
+        )
+        db.execute(
+            "INSERT INTO engine_instances (instance_id,instance_generation,host_node_id,pool_id,"
+            "gateway_id,binding_revision_id,manifest_id,approved_template_id,management_mode,"
+            "loading_policy,config_digest,instance_state,max_slots,last_fencing_token,version,"
+            "base_budget_kind) VALUES "
+            "(%s,%s,%s,%s,%s,%s,'manifest-1',%s,'operator_external','eager',%s,'ready',1,%s,2,"
+            "'steady')",
+            (
+                INSTANCE,
+                GENERATION,
+                HOST,
+                POOL,
+                GATEWAY,
+                BINDING_REVISION_ID,
+                TEMPLATE,
+                "sha256:" + "d" * 64,
+                FENCING,
+            ),
+        )
+        db.execute(
+            "INSERT INTO runtime_instance_heads (instance_id,current_generation,"
+            "generation_high_water,version) VALUES (%s,%s,%s,1)",
+            (INSTANCE, GENERATION, GENERATION),
+        )
+
+    def _publication(self) -> None:
+        db = self.db
+        db.execute(
+            "INSERT INTO speech_builtin_voice_source_approvals VALUES (%s,%s,%s,%s,%s,%s)",
+            (SOURCE, VOICE, "source-rev", self.digest, "Vivian", self.expires_at),
+        )
+        db.execute(
+            "INSERT INTO speech_publications VALUES ('binding',%s,%s,%s,1)",
+            (BINDING, BINDING_REVISION, BINDING_REVISION_ID),
+        )
+        db.execute(
+            "INSERT INTO speech_publication_heads VALUES ('binding',%s,%s,%s,1)",
+            (BINDING, BINDING_REVISION, BINDING_REVISION_ID),
+        )
+        db.execute("INSERT INTO speech_binding_families VALUES (%s,'1')", (BINDING,))
+        db.execute(
+            "INSERT INTO speech_binding_commands VALUES (%s,%s,1,'{}',%s)",
+            (self.digest, BINDING, self.digest),
+        )
+        db.execute(
+            "INSERT INTO speech_binding_revisions VALUES (%s,'1',%s,%s,1,%s,%s,%s,1)",
+            (
+                BINDING,
+                BINDING_REVISION_ID,
+                self.digest,
+                json.dumps(self.definition),
+                self.digest,
+                self.digest,
+            ),
+        )
+        db.execute(
+            "INSERT INTO speech_binding_publication_evidence VALUES "
+            "('binding',%s,'1',%s,'manifest-1','report-1','operator_cli',1,%s,%s)",
+            (BINDING, BINDING_REVISION_ID, self.manifest_digest, self.report_digest),
+        )
+
+    def release(self) -> dict[str, bytes]:
+        return {
+            "artifact_pin": json.dumps(self.pin).encode(),
+            "manifest": self.raw_manifest,
+            "report": self.raw_report,
+            "scenario_evidence": self.raw_scenarios,
+        }
+
+    def declaration(self, **changes: Any) -> dict[str, Any]:
+        from speechnexus_backend.speech.domain.operator_attestation import REQUIRED_GAPS
+
+        value: dict[str, Any] = {
+            "format": "speechnexus-operator-attested-engine-v1",
+            "declared_by": "ops-oncall",
+            "declared_at": _timestamp(int(self.now.timestamp() * 1_000_000) - 3_600_000_000),
+            "installation": {
+                "database": self.database,
+                "schema": self.schema,
+                "installation_id": self.installation_id,
+            },
+            "scope": {"lifecycle_controller": "operator_external"},
+            "trusted_instances": [INSTANCE],
+            "acknowledged_gaps": sorted(REQUIRED_GAPS),
+            "max_attestation_validity_seconds": 86_400,
+        }
+        value.update(changes)
+        return value
+
+    def lifecycle(self, **changes: Any) -> dict[str, Any]:
+        value: dict[str, Any] = {
+            "format": "speechnexus-external-lifecycle-v1",
+            "lifecycle_controller": "operator_external",
+            "declared_by": "ops-oncall",
+            "instance_id": INSTANCE,
+            "instance_generation": GENERATION,
+            "fencing_token": FENCING,
+            "engine_identity": {
+                "image_digest": self.image_digest,
+                "template_id": TEMPLATE,
+                "engine_auth": "vllm_api_key_v1",
+            },
+        }
+        value.update(changes)
+        return value
+
+    def request(self, **changes: Any) -> dict[str, Any]:
+        observed_us = int(self.now.timestamp() * 1_000_000) - 60_000_000
+        value: dict[str, Any] = {
+            "format": "speechnexus-operator-attested-qualification-v1",
+            "attestation_id": ATTESTATION,
+            "approval_id": APPROVAL,
+            "installation": {
+                "database": self.database,
+                "schema": self.schema,
+                "installation_id": self.installation_id,
+            },
+            "voice": {
+                "voice_id": VOICE,
+                "revision": REVISION,
+                "revision_id": REVISION_ID,
+                "source_approval_id": SOURCE,
+            },
+            "binding": {"binding_id": BINDING, "binding_revision_id": BINDING_REVISION_ID},
+            "engine": {
+                "instance_id": INSTANCE,
+                "instance_generation": GENERATION,
+                "fencing_token": FENCING,
+                "template_id": TEMPLATE,
+                "image_digest": self.image_digest,
+                "template_document": {
+                    "format": "speechnexus-template-v1",
+                    "template": {
+                        "template_id": TEMPLATE,
+                        "image_digest": self.image_digest,
+                        "engine_auth": "vllm_api_key_v1",
+                    },
+                },
+                "lifecycle_document": self.lifecycle(),
+            },
+            "model": {
+                "model_id": self.pin["model"]["repository"],
+                "model_revision": self.pin["model"]["revision"],
+                "model_artifact_digest": self.model_digest,
+            },
+            "capabilities": self.capabilities,
+            "window": {
+                "observed_at": _timestamp(observed_us),
+                "expires_at": _timestamp(observed_us + 3_600_000_000),
+            },
+        }
+        value.update(changes)
+        return value
+
+    def gateway_evidence(self, **changes: Any) -> dict[str, Any]:
+        value: dict[str, Any] = {
+            "gateway_policy_digest": "sha256:" + "e" * 64,
+            "policy_revision_id": POLICY,
+            "voice_id": VOICE,
+            "voice_revision": REVISION,
+            "voice_revision_id": REVISION_ID,
+            "native_speaker_id": "Vivian",
+            "binding_revision_id": BINDING_REVISION_ID,
+            "node_id": HOST,
+            "gateway_id": GATEWAY,
+            "instance_id": INSTANCE,
+            "instance_generation": GENERATION,
+            "observed_at": _timestamp(int(self.now.timestamp() * 1_000_000) - 1_000_000),
+        }
+        value.update(changes)
+        return value
+
+    def count(self, table: str) -> int:
+        row = self.db.execute(f'SELECT count(*) AS n FROM "{table}"').fetchone()
+        assert row is not None
+        return int(row["n"])
+
+    def snapshot(self) -> dict[str, int]:
+        return {table: self.count(table) for table in RUNTIME_TABLES}
+
+    def writer(self, role: str, password: str = PASSWORD) -> PostgresPublications:
+        """The separate minimal identity that may only append one attestation."""
+        identity = role + "_oa"
+        self.db.execute(f'CREATE ROLE "{identity}"')
+        self.db.execute(f"ALTER ROLE \"{identity}\" LOGIN PASSWORD '{password}'")
+        for grant in operator_attestation_writer_grants(self.schema, identity):
+            self.db.execute(grant)
+        return self._store(identity, password)
+
+    def publisher(self, role: str, password: str = PASSWORD) -> PostgresPublications:
+        self.db.execute(f"ALTER ROLE \"{role}\" LOGIN PASSWORD '{password}'")
+        for grant in (
+            *publication_grants(self.schema, role),
+            *builtin_publisher_grants(self.schema, role),
+        ):
+            self.db.execute(grant)
+        return self._store(role, password)
+
+    def _store(self, role: str, password: str) -> PostgresPublications:
+        pool = speech_pool(
+            make_conninfo(
+                os.environ["SPEECHNEXUS_TEST_DATABASE_URL"], user=role, password=password
+            ),
+            schema=self.schema,
+            max_size=1,
+        )
+        pool.open()
+        self.pools.append(pool)
+        return PostgresPublications(pool, timeout_seconds=3)
+
+    def attest(self, store: PostgresPublications, **overrides: Any) -> dict[str, Any]:
+        declaration = TrustDeclaration.parse(overrides.pop("declaration", self.declaration()))
+        request = AttestationRequest.parse(overrides.pop("request", self.request()))
+        evidence = overrides.pop("gateway_evidence", self.gateway_evidence())
+        release = self.release()
+        for name, value in overrides.items():
+            release[name] = value
+        return record_operator_attestation(
+            store,
+            declaration=declaration,
+            request=request,
+            gateway_evidence=evidence,
+            workspace_id=WORKSPACE,
+            **release,
+        )
+
+    def publish(self, store: PostgresPublications) -> dict[str, Any]:
+        head = self.db.execute(
+            "SELECT revision FROM speech_publication_heads WHERE kind='voice' AND object_id=%s",
+            (VOICE,),
+        ).fetchone()
+        expected_head = None if head is None else str(head["revision"])
+        return publish_builtin_voice(
+            store,
+            key_digest="sha256:" + "f" * 64,
+            approval_id=APPROVAL,
+            database=self.database,
+            schema=self.schema,
+            installation_id=self.installation_id,
+            expected_head=expected_head,
+            **self.release(),
+        )
+
+
+def _report(db: psycopg.Connection[dict[str, Any]], schema: str) -> list[dict[str, Any]]:
+    out, err = io.StringIO(), io.StringIO()
+    rows = _report_rows(db, schema)
+    now_us = int(datetime.now(UTC).timestamp() * 1_000_000)
+    code = provenance_main(
+        ["--database-url", "postgresql://unused/synthetic", "--schema", schema],
+        env={},
+        connect=lambda url, name: (rows, now_us),
+        stdout=out,
+        stderr=err,
+    )
+    assert code == 0, err.getvalue()
+    return [json.loads(line) for line in out.getvalue().splitlines()]
+
+
+def _report_rows(db: psycopg.Connection[dict[str, Any]], schema: str) -> list[dict[str, Any]]:
+    with db.cursor() as cursor:
+        cursor.execute(REPORT_SQL)
+        return cursor.fetchall()
+
+
+def test_attested_qualification_publishes_and_is_read_back_as_operator_sourced(
+    pg: tuple[psycopg.Connection[dict[str, Any]], str, str],
+) -> None:
+    db, schema, role = pg
+    ledger = Ledger(db, schema)
+    before = ledger.snapshot()
+    writer = ledger.writer(role)
+    try:
+        outcome = ledger.attest(writer)
+        assert outcome["outcome"] == "committed"
+        row = db.execute(
+            "SELECT facts FROM speech_builtin_voice_approvals WHERE approval_id=%s",
+            (APPROVAL,),
+        ).fetchone()
+        assert row is not None
+        facts = row["facts"]
+        # The two sources are distinguishable by the recorded facts alone.
+        assert facts["verifier_id"] == "operator-attested-customvoice-v1"
+        assert set(facts["required_checks"]) == OPERATOR_CHECKS
+        assert "probe_evidence_digest" not in facts
+        assert facts["declaration_digest"] == outcome["declaration_digest"]
+        assert facts["attestation"]["instance_id"] == INSTANCE
+        assert facts["attestation"]["fencing_token"] == str(FENCING)
+        attestation = db.execute(
+            "SELECT * FROM speech_builtin_voice_operator_attestations WHERE attestation_id=%s",
+            (ATTESTATION,),
+        ).fetchone()
+        assert attestation is not None
+        assert (attestation["instance_generation"], attestation["fencing_token"]) == (
+            GENERATION,
+            FENCING,
+        )
+        assert attestation["declaration"]["declared_by"] == "ops-oncall"
+        assert attestation["template_id"] == TEMPLATE
+        assert attestation["declaration_digest"] == outcome["declaration_digest"]
+    finally:
+        _close(ledger)
+    publisher = ledger.publisher(role)
+    try:
+        published = ledger.publish(publisher)
+        assert published["status"] == "created"
+        provenance = db.execute(
+            "SELECT source_kind, attestation_id FROM "
+            "speech_builtin_voice_qualification_provenance WHERE voice_id=%s AND revision=%s",
+            (VOICE, REVISION),
+        ).fetchone()
+        assert provenance == {"source_kind": "operator_attested", "attestation_id": ATTESTATION}
+        with db.cursor() as cursor:
+            require_builtin_voice(
+                cursor,
+                voice_id=VOICE,
+                revision=int(REVISION),
+                revision_id=REVISION_ID,
+                binding_revision_id=BINDING_REVISION_ID,
+                instance_id=INSTANCE,
+                instance_generation=GENERATION,
+                host_node_id=HOST,
+                gateway_id=GATEWAY,
+                policy_revision_id=POLICY,
+            )
+        # The read surface names the source from the ledger, not from topology.
+        entries = _report(db, schema)
+        voice = [entry for entry in entries if entry.get("voice_id") == VOICE]
+        assert voice[0]["source_kind"] == "operator_attested"
+        assert voice[0]["provenance_recorded"] is True
+        assert voice[0]["attestation_id"] == ATTESTATION
+        assert voice[0]["declared_by"] == "ops-oncall"
+        assert voice[0]["instance_id"] == INSTANCE
+        assert voice[0]["attestation_state"] == "live"
+        assert entries[-1]["summary"]["operator_attested"] == 1
+        # Nothing in the runtime ledger moved: an attestation is not execution.
+        assert ledger.snapshot() == before
+    finally:
+        _close(ledger)
+
+
+def _close(ledger: Ledger) -> None:
+    for pool in ledger.pools:
+        pool.close()
+    ledger.pools.clear()
+
+
+@pytest.mark.parametrize(
+    "case, code",
+    [
+        ("declaration_target", "trust_declaration_target_mismatch"),
+        ("instance_untrusted", "trust_declaration_instance_not_trusted"),
+        ("image", "image_digest_mismatch"),
+        ("template", "template_identity_mismatch"),
+        ("generation", "instance_generation_mismatch"),
+        ("fencing", "stale_fencing_token"),
+        ("window_expired", "attestation_window_expired"),
+        ("gateway", "gateway_policy_evidence_unavailable"),
+        ("model", "model_artifact_digest_mismatch"),
+        ("capabilities", "capability_outside_binding_domains"),
+        ("release_evidence", "binding_release_evidence_mismatch"),
+        ("source_expired", "source_approval_unavailable"),
+    ],
+)
+def test_each_declared_mismatch_is_refused_by_name_and_writes_nothing(
+    pg: tuple[psycopg.Connection[dict[str, Any]], str, str], case: str, code: str
+) -> None:
+    db, schema, role = pg
+    ledger = Ledger(db, schema)
+    writer = ledger.writer(role)
+    now_us = int(datetime.now(UTC).timestamp() * 1_000_000)
+    try:
+        overrides: dict[str, Any] = {}
+        if case == "declaration_target":
+            overrides["declaration"] = ledger.declaration(
+                installation={**ledger.declaration()["installation"], "schema": "other"}
+            )
+        elif case == "instance_untrusted":
+            overrides["declaration"] = ledger.declaration(trusted_instances=["instance-other"])
+        elif case == "source_expired":
+            db.execute(
+                "UPDATE speech_builtin_voice_source_approvals "
+                "SET expires_at=clock_timestamp() - interval '1 second'"
+            )
+        else:
+            request = ledger.request()
+            if case == "image":
+                request["engine"]["image_digest"] = "sha256:" + "9" * 64
+            elif case == "template":
+                request["engine"]["template_id"] = "template-other"
+            elif case == "generation":
+                request["engine"]["instance_generation"] = GENERATION + 1
+            elif case == "fencing":
+                request["engine"]["fencing_token"] = FENCING - 1
+            elif case == "window_expired":
+                request["window"] = {
+                    "observed_at": _timestamp(now_us - 90_000_000),
+                    "expires_at": _timestamp(now_us - 1_000_000),
+                }
+            elif case == "model":
+                request["model"]["model_artifact_digest"] = "sha256:" + "9" * 64
+            elif case == "capabilities":
+                request["capabilities"] = {**request["capabilities"], "sample_rates_hz": [48000]}
+            if case == "gateway":
+                overrides["gateway_evidence"] = ledger.gateway_evidence(
+                    policy_revision_id="policy-2"
+                )
+            else:
+                overrides["request"] = request
+        if case == "release_evidence":
+            overrides["report"] = json.dumps({"report_id": "tampered"}).encode()
+        with pytest.raises(OperatorAttestationError) as error:
+            ledger.attest(writer, **overrides)
+        assert error.value.code == code
+        assert ledger.count("speech_builtin_voice_approvals") == 0
+        assert ledger.count("speech_builtin_voice_operator_attestations") == 0
+        assert ledger.count("speech_builtin_voice_qualifications") == 0
+    finally:
+        _close(ledger)
+
+
+def test_attestation_is_idempotent_and_a_conflict_is_named(
+    pg: tuple[psycopg.Connection[dict[str, Any]], str, str],
+) -> None:
+    db, schema, role = pg
+    ledger = Ledger(db, schema)
+    writer = ledger.writer(role)
+    try:
+        first = ledger.attest(writer)
+        replayed = ledger.attest(writer)
+        assert (first["outcome"], replayed["outcome"]) == ("committed", "replayed")
+        assert ledger.count("speech_builtin_voice_approvals") == 1
+        assert ledger.count("speech_builtin_voice_operator_attestations") == 1
+        now_us = int(datetime.now(UTC).timestamp() * 1_000_000)
+        with pytest.raises(OperatorAttestationError) as conflict:
+            ledger.attest(
+                writer,
+                request=ledger.request(
+                    window={
+                        "observed_at": _timestamp(now_us - 90_000_000),
+                        "expires_at": _timestamp(now_us + 1_800_000_000),
+                    }
+                ),
+            )
+        assert conflict.value.code == "attestation_conflict"
+    finally:
+        _close(ledger)
+
+
+def test_the_writer_identity_cannot_repair_or_erase_its_own_record(
+    pg: tuple[psycopg.Connection[dict[str, Any]], str, str],
+) -> None:
+    db, schema, role = pg
+    ledger = Ledger(db, schema)
+    writer = ledger.writer(role)
+    try:
+        ledger.attest(writer)
+    finally:
+        _close(ledger)
+    # A publisher credential holds publication-head authority and is therefore
+    # refused as the attestation writer (it can repoint what publication shows).
+    publisher = ledger.publisher(role)
+    try:
+        with pytest.raises(OperatorAttestationError) as forbidden:
+            ledger.attest(publisher)
+        assert forbidden.value.code == "writer_identity_forbidden"
+        assert ledger.count("speech_builtin_voice_approvals") == 1
+    finally:
+        _close(ledger)
+    identity = role + "_oa"
+    login = psycopg.connect(
+        make_conninfo(
+            os.environ["SPEECHNEXUS_TEST_DATABASE_URL"], user=identity, password=PASSWORD
+        ),
+        autocommit=True,
+        row_factory=dict_row,
+    )
+    try:
+        login.execute(f'SET search_path TO "{schema}", pg_catalog')
+        for statement in (
+            "UPDATE speech_builtin_voice_approvals SET expires_at=clock_timestamp()",
+            "UPDATE speech_builtin_voice_operator_attestations SET fencing_token=1",
+            "DELETE FROM speech_builtin_voice_operator_attestations",
+            "INSERT INTO speech_builtin_voice_qualifications VALUES "
+            "('voice-vivian','1','voice-rev-1','binding-rev-1','approval-att-1','{}'::jsonb,'Vivian')",
+        ):
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                login.execute(statement)
+    finally:
+        login.close()
+
+
+def test_attestation_opens_no_compute_release_and_no_native_evidence(
+    pg: tuple[psycopg.Connection[dict[str, Any]], str, str],
+) -> None:
+    db, schema, role = pg
+    ledger = Ledger(db, schema)
+    before = ledger.snapshot()
+    writer = ledger.writer(role)
+    try:
+        ledger.attest(writer)
+    finally:
+        _close(ledger)
+    publisher = ledger.publisher(role)
+    try:
+        ledger.publish(publisher)
+    finally:
+        _close(ledger)
+    assert ledger.snapshot() == before
+    # No lease, intent, stop evidence or delivery was produced by the attestation.
+    for table in (
+        "runtime_instance_intents",
+        "runtime_intent_deliveries",
+        "admission_leases",
+        "execution_stop_evidence",
+    ):
+        assert ledger.count(table) == 0
+    pool = db.execute("SELECT owner_state, version FROM resource_pools").fetchone()
+    assert pool == {"owner_state": "active", "version": 1}
+    instance = db.execute(
+        "SELECT instance_state, base_budget_kind FROM engine_instances"
+    ).fetchone()
+    assert instance == {"instance_state": "ready", "base_budget_kind": "steady"}
+
+
+def test_controller_probe_publication_still_records_its_own_source(
+    pg: tuple[psycopg.Connection[dict[str, Any]], str, str],
+) -> None:
+    db, schema, role = pg
+    ledger = Ledger(db, schema)
+    db.execute(
+        "INSERT INTO speech_builtin_voice_approvals VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s)",
+        (
+            APPROVAL,
+            VOICE,
+            REVISION,
+            REVISION_ID,
+            BINDING_REVISION_ID,
+            SOURCE,
+            json.dumps(_probe_facts(ledger)),
+            ledger.expires_at,
+        ),
+    )
+    publisher = ledger.publisher(role)
+    try:
+        ledger.publish(publisher)
+        provenance = db.execute(
+            "SELECT source_kind, attestation_id FROM "
+            "speech_builtin_voice_qualification_provenance WHERE voice_id=%s AND revision=%s",
+            (VOICE, REVISION),
+        ).fetchone()
+        assert provenance == {"source_kind": "controller_observed", "attestation_id": None}
+        entries = _report(db, schema)
+        assert entries[0]["source_kind"] == "controller_observed"
+        assert entries[0]["provenance_recorded"] is True
+        assert "attestation_id" not in entries[0]
+    finally:
+        _close(ledger)
+    # The same approval cannot be republished as operator-sourced: a stray
+    # attestation record makes publication refuse instead of trusting the shape.
+    db.execute(
+        "INSERT INTO speech_builtin_voice_operator_attestations "
+        "(attestation_id,approval_id,voice_id,revision,revision_id,binding_revision_id,"
+        "source_approval_id,instance_id,instance_generation,fencing_token,host_node_id,"
+        "gateway_id,pool_id,policy_revision_id,gateway_policy_digest,template_id,image_digest,"
+        "template_digest,controller_artifact_digest,model_id,model_revision,"
+        "model_artifact_digest,observed_at_us,expires_at_us,declaration,declaration_digest,"
+        "attestation_intent,declared_by) VALUES "
+        "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
+        "'{}'::jsonb,%s,'{}'::jsonb,'ops-oncall')",
+        (
+            ATTESTATION,
+            APPROVAL,
+            VOICE,
+            REVISION,
+            REVISION_ID,
+            BINDING_REVISION_ID,
+            SOURCE,
+            INSTANCE,
+            GENERATION,
+            FENCING,
+            HOST,
+            GATEWAY,
+            POOL,
+            POLICY,
+            "sha256:" + "e" * 64,
+            TEMPLATE,
+            ledger.image_digest,
+            "sha256:" + "2" * 64,
+            "sha256:" + "3" * 64,
+            ledger.pin["model"]["repository"],
+            ledger.pin["model"]["revision"],
+            ledger.model_digest,
+            int(datetime.now(UTC).timestamp() * 1_000_000) - 1_000_000,
+            int(datetime.now(UTC).timestamp() * 1_000_000) + 3_600_000_000,
+            "sha256:" + "4" * 64,
+        ),
+    )
+    approval = db.execute(
+        "SELECT * FROM speech_builtin_voice_approvals WHERE approval_id=%s", (APPROVAL,)
+    ).fetchone()
+    assert approval is not None
+    now_us = int(datetime.now(UTC).timestamp() * 1_000_000)
+    with (
+        db.cursor() as cursor,
+        pytest.raises(BuiltinVoicePublicationRejectedError, match="attestation_mismatch"),
+    ):
+        _recorded_source(cursor, APPROVAL, approval, approval["facts"], now_us)
+
+
+def test_downgrade_refuses_to_discard_attestation_history(
+    pg: tuple[psycopg.Connection[dict[str, Any]], str, str],
+) -> None:
+    db, schema, role = pg
+    ledger = Ledger(db, schema)
+    writer = ledger.writer(role)
+    try:
+        ledger.attest(writer)
+    finally:
+        _close(ledger)
+    config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
+    config.attributes["schema"] = schema
+    engine = create_engine(
+        os.environ["SPEECHNEXUS_TEST_DATABASE_URL"].replace(
+            "postgresql://", "postgresql+psycopg://", 1
+        ),
+        poolclass=NullPool,
+    )
+    try:
+        with engine.connect() as connection:
+            config.attributes["connection"] = connection
+            with pytest.raises(RuntimeError, match="Operator attestation history"):
+                command.downgrade(config, "0054_artifact_deleted_ledger")
+        assert ledger.count("speech_builtin_voice_operator_attestations") == 1
+    finally:
+        engine.dispose()
+
+
+def test_rows_published_before_the_migration_are_reported_as_recorded_history(
+    pg: tuple[psycopg.Connection[dict[str, Any]], str, str],
+) -> None:
+    db, schema, _ = pg
+    ledger = Ledger(db, schema)
+    db.execute(
+        "INSERT INTO speech_builtin_voice_approvals VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s)",
+        (
+            APPROVAL,
+            VOICE,
+            REVISION,
+            REVISION_ID,
+            BINDING_REVISION_ID,
+            SOURCE,
+            json.dumps(_probe_facts(ledger)),
+            ledger.expires_at,
+        ),
+    )
+    db.execute(
+        "INSERT INTO speech_builtin_voice_qualifications VALUES "
+        "(%s,%s,%s,%s,%s,%s::jsonb,'Vivian')",
+        (
+            VOICE,
+            REVISION,
+            REVISION_ID,
+            BINDING_REVISION_ID,
+            APPROVAL,
+            json.dumps(_public_document(ledger, ledger.capabilities)),
+        ),
+    )
+    entries = _report(db, schema)
+    assert entries[0]["source_kind"] == "controller_observed"
+    assert entries[0]["provenance_recorded"] is False
+    assert entries[0]["evidence"] == "legacy_pre_0055"
+    assert entries[-1]["summary"]["legacy_pre_0055"] == 1
+    _close(ledger)
+
+
+def _probe_facts(ledger: Ledger) -> dict[str, Any]:
+    """A controller-observed approval: the same shape the probe path has always used."""
+    caps = ledger.capabilities
+    return {
+        "source_approval_id": SOURCE,
+        "source_revision": "source-rev",
+        "source_digest": ledger.digest,
+        "qualification_report_id": "report-1",
+        "qualification_report_digest": ledger.report_digest,
+        "capacity_manifest_id": "manifest-1",
+        "capacity_manifest_digest": ledger.manifest_digest,
+        "probe_evidence_digest": ledger.digest,
+        "verifier_id": "builtin-customvoice-v1",
+        "verifier_version": "1",
+        "required_checks": [
+            "source_approved",
+            "artifact_integrity",
+            "engine_identity",
+            "voice_speaker_binding",
+            "wav_complete",
+            "output_bounds",
+            "native_terminal",
+            "stop_release",
+        ],
+        "model_id": ledger.pin["model"]["repository"],
+        "model_revision": ledger.pin["model"]["revision"],
+        "model_artifact_digest": ledger.model_digest,
+        "image_digest": ledger.image_digest,
+        "generation": str(GENERATION),
+        "instance_id": INSTANCE,
+        "host_node_id": HOST,
+        "gateway_id": GATEWAY,
+        "gateway_policy_revision_id": POLICY,
+        "gateway_policy_digest": "sha256:" + "e" * 64,
+        "binding_id": BINDING,
+        "binding_revision": BINDING_REVISION,
+        "binding_revision_id": BINDING_REVISION_ID,
+        "native_speaker_id": "Vivian",
+        "checked_at_us": 1_767_225_600_000_000,
+        "expires_at_us": int(ledger.expires_at.timestamp()) * 1_000_000,
+        "public_document": _public_document(ledger, caps),
+        "qualified_capabilities": caps,
+    }
+
+
+def _public_document(ledger: Ledger, caps: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "resource_type": "voice_revision",
+        "voice_id": VOICE,
+        "revision": REVISION,
+        "object": "nexus.voice_revision",
+        "status": "published",
+        "display_name": "Vivian",
+        "source": {
+            "type": "builtin",
+            "draft_id": None,
+            "draft_revision": None,
+            "source_asset_digest": None,
+        },
+        "model_binding": {"id": BINDING, "revision": BINDING_REVISION},
+        "capabilities": caps,
+        "validation": {
+            "validation_id": "report-1",
+            "status": "passed",
+            "checked_at": "2026-01-01T00:00:00Z",
+        },
+        "published_at": "2026-01-01T00:00:00Z",
+        "retired_at": None,
+        "disabled_reason": None,
+    }

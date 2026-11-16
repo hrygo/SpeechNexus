@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from speechnexus_contracts.voice_catalogue_http import validate_response
 
@@ -129,8 +129,10 @@ def publish_builtin_voice(
         cursor.execute(
             "SELECT floor(extract(epoch FROM clock_timestamp()) * 1000000)::bigint AS now_us"
         )
-        if f["checked_at_us"] > cursor.fetchall()[0]["now_us"]:
+        now_us = int(cursor.fetchall()[0]["now_us"])
+        if f["checked_at_us"] > now_us:
             raise BuiltinVoicePublicationRejectedError("qualification_from_future")
+        attestation_id = _recorded_source(cursor, approval_id, a, f, now_us)
         # Match the actual independently stored approval expiry, not caller JSON.
         expiry_delta = a["expires_at"] - datetime(1970, 1, 1, tzinfo=UTC)
         expiry_us = (
@@ -277,6 +279,16 @@ def publish_builtin_voice(
             "facts": f,
         }
         cursor.execute(
+            "INSERT INTO speech_builtin_voice_qualification_provenance "
+            "(voice_id,revision,source_kind,attestation_id) VALUES (%s,%s,%s,%s)",
+            (
+                a["voice_id"],
+                a["revision"],
+                "operator_attested" if attestation_id else "controller_observed",
+                attestation_id,
+            ),
+        )
+        cursor.execute(
             "INSERT INTO speech_builtin_voice_publish_intents "
             "(key_digest,intent,voice_id,revision) VALUES (%s,%s::jsonb,%s,%s)",
             (key_digest, json.dumps(saved), a["voice_id"], a["revision"]),
@@ -284,3 +296,53 @@ def publish_builtin_voice(
         return {"status": "created", "voice_id": a["voice_id"], "revision": a["revision"]}
 
     return store._run(operation, preserve=(BuiltinVoicePublicationRejectedError,))
+
+
+def _recorded_source(
+    cursor: Any, approval_id: str, approval: dict[str, Any], facts: dict[str, Any], now_us: int
+) -> str | None:
+    """Return the attestation that proves an operator source, or None for a probe.
+
+    The provenance row is an explicit fact, not an inference: an operator-attested
+    approval must have its attestation record agree with the approval it names, and
+    a probe approval must not carry one. Every published qualification therefore
+    records which of the two producers created it.
+    """
+    cursor.execute(
+        "SELECT attestation_id,approval_id,voice_id,revision,revision_id,binding_revision_id,"
+        "source_approval_id,instance_id,instance_generation,fencing_token,image_digest,"
+        "template_digest,controller_artifact_digest,model_artifact_digest,observed_at_us,"
+        "expires_at_us,declaration_digest "
+        "FROM speech_builtin_voice_operator_attestations WHERE approval_id=%s",
+        (approval_id,),
+    )
+    rows = cursor.fetchall()
+    if not rows:
+        if facts.get("verifier_id") == "operator-attested-customvoice-v1":
+            raise BuiltinVoicePublicationRejectedError("attestation_missing")
+        return None
+    if len(rows) != 1:
+        raise BuiltinVoicePublicationRejectedError("attestation_missing")
+    attestation = rows[0]
+    recorded = facts.get("attestation")
+    if (
+        facts.get("verifier_id") != "operator-attested-customvoice-v1"
+        or not isinstance(recorded, dict)
+        or attestation["attestation_id"] != recorded.get("attestation_id")
+        or attestation["approval_id"] != approval_id
+        or attestation["voice_id"] != approval["voice_id"]
+        or attestation["revision"] != approval["revision"]
+        or attestation["revision_id"] != approval["revision_id"]
+        or attestation["binding_revision_id"] != approval["binding_revision_id"]
+        or attestation["source_approval_id"] != approval["source_approval_id"]
+        or attestation["instance_id"] != facts.get("instance_id")
+        or str(attestation["instance_generation"]) != facts.get("generation")
+        or attestation["image_digest"] != facts.get("image_digest")
+        or attestation["model_artifact_digest"] != facts.get("model_artifact_digest")
+        or attestation["declaration_digest"] != facts.get("declaration_digest")
+        or attestation["observed_at_us"] != facts.get("checked_at_us")
+        or attestation["expires_at_us"] != facts.get("expires_at_us")
+        or not attestation["observed_at_us"] <= now_us < attestation["expires_at_us"]
+    ):
+        raise BuiltinVoicePublicationRejectedError("attestation_mismatch")
+    return cast(str, attestation["attestation_id"])

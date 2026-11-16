@@ -8,6 +8,12 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { parse } from "../../packages/contracts/src/runtime.mjs";
+import {
+  assertOnlySameVersionRequests,
+  isSameVersionRequest,
+  SAME_VERSION_PATH,
+  sendSameVersionIdentity,
+} from "./same-version-identity.mjs";
 
 const { values } = parseArgs({
   options: { output: { type: "string" }, screenshot: { type: "string" } },
@@ -70,6 +76,12 @@ let phase = "queued",
   requests = 0,
   uploadsInMode = 0,
   loseCreate = true;
+
+// Business requests and same-version identity requests are counted apart (#853):
+// a mounting page makes exactly one of the latter, and folding it into `requests`
+// would quietly weaken every "the page contacted no API" assertion in this probe.
+const identityUrls = [];
+let identityRequests = 0;
 let contentDelay = 0;
 let effectiveFault = null;
 const uploads = [],
@@ -131,6 +143,12 @@ const json = (res, value, status = 200, headers = {}) => {
 const middleware = (vite) => {
   vite.middlewares.use(async (req, res, next) => {
     const path = new URL(req.url, "http://127.0.0.1").pathname;
+    if (isSameVersionRequest(req.method, path)) {
+      identityRequests++;
+      identityUrls.push(path);
+      sendSameVersionIdentity(res);
+      return;
+    }
     if (!path.startsWith("/v1/")) return next();
     requests++;
     try {
@@ -276,15 +294,20 @@ try {
   }
   async function reloadTts() {
     const before = requests;
+    const beforeIdentity = identityRequests;
     await page.reload();
     await choose(page);
     await expect(page.getByLabel("配音模型", { exact: true })).toBeVisible();
     assert.equal(requests, before);
+    // The reload still asks for the same-version identity (#853), counted apart so
+    // the business request count above stays exact.
+    assertOnlySameVersionRequests(identityUrls.slice(beforeIdentity));
   }
   const raw = () => page.evaluate((name) => sessionStorage.getItem(name), key);
   await page.goto(origin);
   await expect(page.getByLabel("音频文件")).toBeVisible();
   assert.equal(requests, 0);
+  assertOnlySameVersionRequests(identityUrls);
   await choose(page);
   await expect(page.getByLabel("配音模型")).toHaveValue("");
   await fill(page);

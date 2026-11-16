@@ -6,6 +6,11 @@ import { parseArgs } from "node:util";
 import assert from "node:assert/strict";
 import { chromium, expect } from "@playwright/test";
 import { validateRequest, validateResponse } from "../../packages/contracts/src/admin-http.ts";
+import {
+  isSameVersionRequest,
+  SAME_VERSION_PATH,
+  sendSameVersionIdentity,
+} from "./same-version-identity.mjs";
 const { values } = parseArgs({ options: { output: { type: "string" } } });
 assert(values.output);
 const output = resolve(values.output),
@@ -23,7 +28,9 @@ const item = (id, status = "active") => ({
 const requests = [],
   outbound = [],
   errors = [],
-  serverErrors = [];
+  serverErrors = [],
+  identityUrls = [];
+let identityRequests = 0;
 let origin,
   nextFailed = false,
   oneReads = 0,
@@ -47,6 +54,14 @@ const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, origin),
       path = url.pathname;
+    // The bundle's same-version check (#853): a build-time identity, counted apart
+    // from the workspace reads so `requests` keeps meaning "a workspace was read".
+    if (isSameVersionRequest(req.method, path)) {
+      identityRequests++;
+      identityUrls.push(path);
+      sendSameVersionIdentity(res);
+      return;
+    }
     if (path.startsWith("/v1/nexus/workspaces")) {
       requests.push({ method: req.method, path, cursor: url.searchParams.get("cursor") });
       assert.equal(req.method, "GET");
@@ -187,6 +202,10 @@ try {
   assert.deepEqual(outbound, []);
   assert.deepEqual(serverErrors, []);
   assert.equal(requests.length, 8);
+  // One page load, one identity check on the declared route (#853); the eight
+  // workspace reads above stay exactly eight.
+  assert.equal(identityRequests, 1);
+  assert.deepEqual(identityUrls, [SAME_VERSION_PATH]);
   const result = {
     browser: browser.version(),
     production_bundle: true,
@@ -207,6 +226,7 @@ try {
     errors,
     outbound,
     serverErrors,
+    same_version_identity_requests: identityRequests,
   };
   await writeFile(resolve(output, "result.json"), JSON.stringify(result, null, 2) + "\n");
   console.log(

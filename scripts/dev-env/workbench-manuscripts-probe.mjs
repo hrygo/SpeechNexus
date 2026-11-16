@@ -8,7 +8,15 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { createHttpValidator } from "../../packages/contracts/src/http-runtime.mjs";
 import { validators as workbenchHttpValidators } from "../../packages/contracts/src/speechnexus_contracts/workbench-http.validators.generated.mjs";
+import { validators as versionHttpValidators } from "../../packages/contracts/src/speechnexus_contracts/version-http.validators.generated.mjs";
 import { parse as parseSpeech } from "../../packages/contracts/src/runtime.mjs";
+import {
+  CONTRACT_DIGEST,
+  isSameVersionRequest,
+  SAME_VERSION_PATH,
+  sameVersionIdentityBody,
+  sendSameVersionIdentity,
+} from "./same-version-identity.mjs";
 
 const { values } = parseArgs({
   options: { output: { type: "string" }, screenshot: { type: "string" } },
@@ -34,6 +42,17 @@ const validator = createHttpValidator(
     ),
   ),
   workbenchHttpValidators,
+);
+// The identity surface has its own generated bundle (#853); validating it here keeps
+// the synthetic loopback honest about the response the bundle actually receives.
+const versionValidator = createHttpValidator(
+  JSON.parse(
+    await readFile(
+      resolve(root, "packages/contracts/src/speechnexus_contracts/version-http.schema.json"),
+      "utf8",
+    ),
+  ),
+  versionHttpValidators,
 );
 const sample = (operation) =>
   structuredClone(
@@ -71,6 +90,11 @@ let enabled = true,
   loseRevision = true,
   requests = 0,
   sequence = 0;
+// Business requests and same-version identity requests are counted apart (#853):
+// the page makes exactly one of the latter when it mounts, and folding it into
+// `requests` would weaken every "the page contacted no API" assertion below.
+const identityUrls = [];
+let identityRequests = 0;
 let loseSpeechImport = true;
 const key = "speechnexus.workbench.manuscripts.v1";
 function error(code) {
@@ -119,6 +143,24 @@ const middleware = (vite) => {
     if (req.method === "GET" && url.pathname === "/v1/nexus/jobs/job-demo") {
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       return res.end(JSON.stringify(speechJob));
+    }
+    if (isSameVersionRequest(req.method, url.pathname)) {
+      identityRequests++;
+      identityUrls.push(url.pathname);
+      const body = sameVersionIdentityBody();
+      try {
+        versionValidator.validateResponse("getVersionIdentity", 200, {
+          body,
+          headers: { "cache-control": "no-store" },
+        });
+      } catch (cause) {
+        handlerErrors.push(
+          `same-version identity: ${cause instanceof Error ? cause.message : String(cause)}`,
+        );
+        if (!res.headersSent) res.writeHead(500, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify(error("synthetic_handler_failure")));
+      }
+      return sendSameVersionIdentity(res);
     }
     if (!url.pathname.startsWith("/v1/") && url.pathname !== "/v2/workbench/status") return next();
     requests++;
@@ -460,17 +502,25 @@ try {
   assert.equal(versions.get(imported[0].id)[0].text, speechOriginal);
   await asrPage.setViewportSize({ width: 360, height: 800 });
   assert(await asrPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-  // A new context with corrupt recovery must not even contact the API.
+  // A new context with corrupt recovery must not contact the business API.
+  // Since #853 a mounting page makes one other contact, the same-version identity
+  // check, so the two are counted separately and each is asserted on its own: a
+  // second first-paint request of either kind still fails here.
   const corrupt = await context();
   await corrupt.addInitScript((name) => {
     if (location.protocol === "http:") sessionStorage.setItem(name, "{");
   }, key);
   const damaged = await corrupt.newPage();
   const beforeDamaged = requests;
+  const beforeDamagedIdentity = identityRequests;
   await damaged.goto(origin);
   await choose(damaged);
   await expect(damaged.getByRole("alert")).toContainText("恢复信息不可用");
+  // The 2026-11-13 recovery invariant (docs/reviews/2026-11-13-terminal-exit.md):
+  // corrupt recovery keeps FileTaskSession unconstructed, so zero business requests.
   assert.equal(requests, beforeDamaged);
+  assert.equal(identityRequests - beforeDamagedIdentity, 1);
+  assert.deepEqual(identityUrls.slice(beforeDamagedIdentity), [SAME_VERSION_PATH]);
   // Simulate quota failure only inside this disposable context, before any write intent.
   const quota = await context();
   const stopped = await quota.newPage();
@@ -532,6 +582,9 @@ try {
     keyboard_and_360px: true,
     fake_excluded: true,
     outbound_requests: outbound.length,
+    same_version_identity_requests: identityRequests,
+    same_version_identity_endpoint: SAME_VERSION_PATH,
+    same_version_identity_digest: CONTRACT_DIGEST,
     page_errors: pageErrors.length,
     handler_errors: handlerErrors,
     real_backend_or_model_qualification: false,

@@ -6,6 +6,13 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
+import {
+  assertOnlySameVersionRequests,
+  isSameVersionRequest,
+  SAME_VERSION_PATH,
+  sameVersionIdentityBody,
+  sameVersionIdentityHeaders,
+} from "./same-version-identity.mjs";
 const { values } = parseArgs({
   options: { output: { type: "string" }, screenshot: { type: "string" } },
 });
@@ -28,8 +35,23 @@ try {
   const context = await browser.newContext({ acceptDownloads: true });
   const unexpected = [];
   const errors = [];
+  // The bundle's same-version check (#853) is a build-time identity, not a service
+  // call: answered here and counted on its own so "unexpected network request"
+  // still means every other request.
+  let identityRequests = 0;
+  const identityUrls = [];
   await context.route("**/*", async (route) => {
     const url = new URL(route.request().url());
+    if (isSameVersionRequest(route.request().method(), url.pathname)) {
+      identityRequests++;
+      identityUrls.push(url.pathname);
+      await route.fulfill({
+        status: 200,
+        headers: sameVersionIdentityHeaders(),
+        body: JSON.stringify(sameVersionIdentityBody()),
+      });
+      return;
+    }
     if (allowed.has(url.origin) && !url.pathname.startsWith("/v1/")) await route.continue();
     else {
       unexpected.push("Unexpected network request");
@@ -126,6 +148,7 @@ try {
   await expect(page.getByLabel("配音演练场景")).toHaveCount(0);
   assert.deepEqual(errors, []);
   assert.deepEqual(unexpected, []);
+  assertOnlySameVersionRequests(identityUrls);
   const report = {
     checked_at: new Date().toISOString(),
     kind: "development_tts_workflow",
@@ -141,6 +164,7 @@ try {
     devicePermissionsRequested: false,
     outboundRequests: 0,
     pageErrors: 0,
+    sameVersionIdentityRequests: identityRequests,
   };
   if (values.output) {
     await mkdir(dirname(resolve(values.output)), { recursive: true });

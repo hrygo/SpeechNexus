@@ -6,6 +6,13 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
+import {
+  assertOnlySameVersionRequests,
+  isSameVersionRequest,
+  SAME_VERSION_PATH,
+  sameVersionIdentityBody,
+  sameVersionIdentityHeaders,
+} from "./same-version-identity.mjs";
 
 const { values } = parseArgs({
   options: { output: { type: "string" }, screenshot: { type: "string" } },
@@ -21,7 +28,9 @@ const text =
   "<img src=x onerror=alert(1)>\n结束。";
 const errors = [],
   outbound = [],
-  api = [];
+  api = [],
+  identityUrls = [];
+let identityRequests = 0;
 let server, browser;
 try {
   server = await preview({
@@ -40,6 +49,18 @@ try {
     if (url.origin !== origin) {
       outbound.push(url.origin);
       return route.abort();
+    }
+    if (isSameVersionRequest(route.request().method(), url.pathname)) {
+      // The bundle's same-version check (#853) is a build-time identity, not an API
+      // call: it is answered and counted apart, so `api` still means "the page
+      // reached a service" and every other path is still pushed there.
+      identityRequests++;
+      identityUrls.push(url.pathname);
+      return route.fulfill({
+        status: 200,
+        headers: sameVersionIdentityHeaders(),
+        body: JSON.stringify(sameVersionIdentityBody()),
+      });
     }
     if (url.pathname.startsWith("/v1/")) {
       api.push(url.pathname);
@@ -142,6 +163,7 @@ try {
   assert.deepEqual(errors, []);
   assert.deepEqual(outbound, []);
   assert.deepEqual(api, []);
+  assertOnlySameVersionRequests(identityUrls);
   const result = {
     checked_at: new Date().toISOString(),
     kind: "production-manual-prompter-synthetic",
@@ -156,6 +178,7 @@ try {
     microphone_calls: 0,
     api_requests: 0,
     outbound_requests: 0,
+    same_version_identity_requests: identityRequests,
     page_errors: 0,
     qualification: "manual-browser-reading-only",
   };

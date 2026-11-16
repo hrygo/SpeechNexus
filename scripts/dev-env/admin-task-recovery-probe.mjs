@@ -7,6 +7,12 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { parse } from "../../packages/contracts/src/runtime.mjs";
+import {
+  assertOnlySameVersionRequests,
+  isSameVersionRequest,
+  SAME_VERSION_PATH,
+  sendSameVersionIdentity,
+} from "./same-version-identity.mjs";
 
 const { values } = parseArgs({
   options: { output: { type: "string" }, screenshot: { type: "string" } },
@@ -21,6 +27,11 @@ const job = (id) => parse("Job", { ...example("queued-job"), id });
 const key = "speechnexus.admin.task-recovery.v1";
 let mode = "lost";
 let requests = 0;
+// Business requests and same-version identity requests are counted apart (#853):
+// a mounting page makes exactly one of the latter, and folding it into `requests`
+// would quietly weaken every "the page contacted no API" assertion in this probe.
+const identityUrls = [];
+let identityRequests = 0;
 const cancellations = [],
   events = [],
   held = new Set();
@@ -31,6 +42,12 @@ const json = (res, data, status = 200) => {
 const middleware = (vite) => {
   vite.middlewares.use((req, res, next) => {
     const url = new URL(req.url, "http://127.0.0.1");
+    if (isSameVersionRequest(req.method, url.pathname)) {
+      identityRequests++;
+      identityUrls.push(url.pathname);
+      sendSameVersionIdentity(res);
+      return;
+    }
     if (!url.pathname.startsWith("/v1/")) return next();
     requests++;
     if (url.pathname === "/v1/nexus/jobs" && req.method === "GET") {
@@ -132,10 +149,14 @@ try {
   const record = async () => JSON.parse(await raw());
   const reload = async () => {
     const before = requests;
+    const beforeIdentity = identityRequests;
     await page.reload();
     await expect(button("读取任务列表")).toBeVisible();
     await page.waitForLoadState("networkidle");
     assert.equal(requests, before, "recovery must not automatically access any API");
+    // The reload still asks for the same-version identity (#853), counted apart so
+    // "no API access" above keeps its exact meaning.
+    assertOnlySameVersionRequests(identityUrls.slice(beforeIdentity));
   };
   const reset = async (nextMode) => {
     mode = nextMode;
@@ -146,6 +167,7 @@ try {
   await page.goto(origin);
   await expect(button("读取任务列表")).toBeVisible();
   assert.equal(requests, 0);
+  assertOnlySameVersionRequests(identityUrls);
   await read();
   await confirm();
   await expect(page.getByRole("region", { name: "取消请求证据" })).toContainText("取消结果未知");

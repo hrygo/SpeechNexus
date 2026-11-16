@@ -6,6 +6,12 @@ import { parseArgs } from "node:util";
 import assert from "node:assert/strict";
 import { chromium, expect } from "@playwright/test";
 import { parse } from "../../packages/contracts/src/runtime.mjs";
+import {
+  assertOnlySameVersionRequests,
+  isSameVersionRequest,
+  SAME_VERSION_PATH,
+  sendSameVersionIdentity,
+} from "./same-version-identity.mjs";
 
 const { values } = parseArgs({ options: { output: { type: "string" } } });
 assert(values.output);
@@ -22,6 +28,8 @@ const jobs = new Map(),
   errors = [],
   serverErrors = [];
 let operationGets = 0;
+const identityUrls = [];
+let identityRequests = 0;
 let origin,
   lostCreate = false,
   lostCancel = false;
@@ -38,6 +46,15 @@ function lost(res) {
 const server = createServer(async (req, res) => {
   try {
     const path = new URL(req.url, origin).pathname;
+    // The bundle's same-version check (#853) is a build-time identity served by the
+    // API shape, not a speech write. Answering it here keeps it out of `writes` and
+    // out of the static-file fallback, which used to swallow it as an ENOENT.
+    if (isSameVersionRequest(req.method, path)) {
+      identityRequests++;
+      identityUrls.push(path);
+      sendSameVersionIdentity(res);
+      return;
+    }
     if (path === "/v1/nexus/jobs" && req.method === "POST") {
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
@@ -337,6 +354,7 @@ try {
   assert.deepEqual(errors, []);
   assert.deepEqual(outbound, []);
   assert.deepEqual(serverErrors, []);
+  assertOnlySameVersionRequests(identityUrls);
   const result = {
     browser: browser.version(),
     production_bundle: true,
@@ -362,6 +380,7 @@ try {
     outbound,
     errors,
     serverErrors,
+    same_version_identity_requests: identityRequests,
   };
   await writeFile(resolve(output, "result.json"), JSON.stringify(result, null, 2) + "\n");
   console.log(

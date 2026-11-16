@@ -6,6 +6,13 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
+import {
+  assertOnlySameVersionRequests,
+  isSameVersionRequest,
+  SAME_VERSION_PATH,
+  sameVersionIdentityBody,
+  sameVersionIdentityHeaders,
+} from "./same-version-identity.mjs";
 
 const { values } = parseArgs({
   options: { output: { type: "string" }, screenshot: { type: "string" } },
@@ -30,8 +37,23 @@ try {
   browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ reducedMotion: "reduce" });
   const unexpected = [];
+  // The bundle's same-version check (#853) is a build-time identity, not a service
+  // call. It is answered here and counted on its own, so the "no service request"
+  // assertion below keeps its exact meaning instead of being widened.
+  let identityRequests = 0;
+  const identityUrls = [];
   await context.route("**/*", async (route) => {
     const url = new URL(route.request().url());
+    if (isSameVersionRequest(route.request().method(), url.pathname)) {
+      identityRequests++;
+      identityUrls.push(url.pathname);
+      await route.fulfill({
+        status: 200,
+        headers: sameVersionIdentityHeaders(),
+        body: JSON.stringify(sameVersionIdentityBody()),
+      });
+      return;
+    }
     if (allowedOrigins.has(url.origin) && !url.pathname.startsWith("/v1/")) await route.continue();
     else {
       unexpected.push("Unexpected service or outbound request");
@@ -147,6 +169,7 @@ try {
   }
   assert.deepEqual(errors, []);
   assert.deepEqual(unexpected, []);
+  assertOnlySameVersionRequests(identityUrls);
   const report = {
     checkedAt: new Date().toISOString(),
     kind: "development_admin_task_center",
@@ -159,6 +182,7 @@ try {
     productionScenarioExcluded: true,
     browserErrors: errors.length,
     unexpectedRequests: unexpected.length,
+    sameVersionIdentityRequests: identityRequests,
     liveServiceVerified: false,
   };
   const serialized = `${JSON.stringify(report, null, 2)}\n`;

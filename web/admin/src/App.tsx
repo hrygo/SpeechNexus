@@ -1,4 +1,4 @@
-import { AppShell, CapabilityCard } from "@speechnexus/shared";
+import { AppShell, CapabilityCard, ContractIdentityAlert } from "@speechnexus/shared";
 import { TaskCenterHost } from "./task-center/TaskCenterHost";
 import { WorkspaceHost } from "./workspaces/WorkspaceHost";
 import { DiagnosticsHost } from "./diagnostics/DiagnosticsHost";
@@ -16,6 +16,7 @@ export function App() {
       statusDetail="公开 API 消费已接入，真实部署待联调"
       statusState="contract"
       boundaryNote="首期没有登录与角色隔离。AdminUI 与工作台在同一部署内共享数据，入口切换只改变任务视图，管理 API 仍需由部署网络与入口网关限制。"
+      deploymentAlert={<ContractIdentityAlert />}
     >
       <section className="card-grid" aria-label="AdminUI 初始化范围">
         <CapabilityCard

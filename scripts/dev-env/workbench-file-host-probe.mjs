@@ -8,6 +8,12 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { parse } from "../../packages/contracts/src/runtime.mjs";
+import {
+  assertOnlySameVersionRequests,
+  isSameVersionRequest,
+  SAME_VERSION_PATH,
+  sendSameVersionIdentity,
+} from "./same-version-identity.mjs";
 const { values } = parseArgs({
   options: { output: { type: "string" }, screenshot: { type: "string" } },
 });
@@ -43,6 +49,12 @@ let mode = "hint",
   phase = "queued",
   requests = 0,
   uploadNumber = 0;
+
+// Business requests and same-version identity requests are counted apart (#853):
+// a mounting page makes exactly one of the latter, and folding it into `requests`
+// would quietly weaken every "the page contacted no API" assertion in this probe.
+const identityUrls = [];
+let identityRequests = 0;
 let loseCreate = true,
   loseCancel = true;
 const smallerAudio = Buffer.from(audio.subarray(0, 300));
@@ -96,6 +108,12 @@ const error = (code) =>
 const middleware = (vite) => {
   vite.middlewares.use(async (req, res, next) => {
     const path = new URL(req.url, "http://127.0.0.1").pathname;
+    if (isSameVersionRequest(req.method, path)) {
+      identityRequests++;
+      identityUrls.push(path);
+      sendSameVersionIdentity(res);
+      return;
+    }
     if (!path.startsWith("/v1/")) return next();
     requests++;
     try {
@@ -243,9 +261,13 @@ try {
   const record = async () => JSON.parse(await raw());
   const reload = async () => {
     const before = requests;
+    const beforeIdentity = identityRequests;
     await page.reload();
     await expect(page.getByLabel("音频文件", { exact: true })).toBeVisible();
     assert.equal(requests, before, "reload must not automatically access an API");
+    // The reload still asks for the same-version identity (#853); it is counted
+    // apart and asserted on its own, so the sentence above keeps its exact meaning.
+    assertOnlySameVersionRequests(identityUrls.slice(beforeIdentity));
   };
   const selectFile = async () => {
     await page
@@ -255,6 +277,7 @@ try {
   await page.goto(`${origin}/?dev-scenario=file-task`);
   await expect(button("上传并转写")).toBeVisible();
   assert.equal(requests, 0);
+  assertOnlySameVersionRequests(identityUrls);
   await expect(page.getByText("故障场景", { exact: true })).toHaveCount(0);
   await page.getByLabel("转写模型", { exact: true }).focus();
   await page.keyboard.press("Tab");
@@ -383,9 +406,11 @@ try {
   await resume.getByRole("button", { name: "上传并转写", exact: true }).click();
   await expect(resume.getByRole("alert")).toContainText("请求结果尚未确认");
   const beforeResume = requests;
+  const beforeResumeIdentity = identityRequests;
   await resume.reload();
   await expect(resume.getByRole("button", { name: "按原输入恢复上传", exact: true })).toBeVisible();
   assert.equal(requests, beforeResume);
+  assertOnlySameVersionRequests(identityUrls.slice(beforeResumeIdentity));
   await resume.getByLabel("音频文件", { exact: true }).setInputFiles(original);
   await resume.getByRole("button", { name: "按原输入恢复上传", exact: true }).click();
   await expect(resume.getByTestId("file-job-status")).toHaveText("queued");

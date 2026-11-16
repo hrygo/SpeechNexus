@@ -24,6 +24,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from psycopg import sql
 from psycopg.conninfo import make_conninfo
+from tests.integration.bundle_identity import version_identity_response
 from tests.integration.test_workbench_runtime import Database
 
 from speechnexus_backend.workbench.application.export_worker import ExportProducer
@@ -174,6 +175,12 @@ class Tier:
         @front.get("/")
         async def index() -> FileResponse:
             return FileResponse(dist / "index.html")
+
+        @front.get("/v1/nexus/version")
+        async def version_identity() -> Response:
+            # The production web tier routes this path to the speech base, which this
+            # harness does not run; see tests/integration/bundle_identity.py.
+            return version_identity_response()
 
         @front.api_route(
             "/v2/workbench/{rest:path}",

@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve, sep, extname } from "node:path";
 import { parseArgs } from "node:util";
+import { isSameVersionRequest, sendSameVersionIdentity } from "./same-version-identity.mjs";
 import { WebSocketServer } from "ws";
 import { chromium, expect } from "@playwright/test";
 import { parse as rest } from "../../packages/contracts/src/realtime.ts";
@@ -179,6 +180,13 @@ const server = createServer(async (req, res) => {
       const s = sessions.get(url.pathname.split("/").at(-1));
       assert(s);
       json(res, 200, snapshot(s));
+      return;
+    }
+    // The bundle's same-version check (#853) is a build-time identity, not a realtime
+    // call: answer it as a single-revision deployment would, before the blanket 503
+    // that stands for "this harness runs no other service".
+    if (isSameVersionRequest(req.method, url.pathname)) {
+      sendSameVersionIdentity(res);
       return;
     }
     if (url.pathname.startsWith("/v1/")) {

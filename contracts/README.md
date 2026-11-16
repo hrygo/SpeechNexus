@@ -49,7 +49,15 @@ root/semantic limits and does not alter the default request surface.
   transcription-only realtime compatibility mode, and the `nexus` speech
   execution surface: capabilities, profiles, jobs, operations, assets,
   artifacts, realtime sessions, voices, pronunciation sets, and voice
-  design / clone / preview / validation / publication. A successful durable
+  design / clone / preview / validation / publication. `GET /v1/nexus/version`
+  reports the API package version and the digest of the machine contract
+  sources this process was generated from (`Cache-Control: no-store`); each Web
+  bundle bakes the same digest in at build time and compares it on start-up, so
+  a half-upgraded deployment is visible instead of silent. The digest is defined
+  in `scripts/dev-env/generate-contract-bindings.py`, is generated into both the
+  Python and TypeScript consumers, and can be recomputed offline with
+  `scripts/dev-env/print-contract-digest.py`; the operating procedure is
+  [前后端同版核对](../docs/operations/same-version-check.md). A successful durable
   Job carries a kind-discriminated structured result tied to its committed
   artifacts and receipt; non-success states carry no result. Its
   `job.succeeded` event carries the same result shape and at least one

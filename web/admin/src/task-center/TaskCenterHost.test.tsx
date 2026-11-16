@@ -40,7 +40,14 @@ describe("Admin production task host", () => {
     render(<App />);
     expect(screen.getByRole("button", { name: "读取任务列表" })).toBeInTheDocument();
     expect(screen.getByText(/任务中心使用当前部署的公开 API/)).toBeInTheDocument();
-    expect(fetch).not.toHaveBeenCalled();
+    // A fresh page performs exactly one request, the same-version identity check
+    // (#853). The task center itself still waits for an explicit read, so any
+    // other call here would mean the mount started touching a service.
+    expect(
+      fetch.mock.calls.map(([input]) =>
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+      ),
+    ).toEqual(["/v1/nexus/version"]);
     expect(screen.queryByLabelText("演练场景")).not.toBeInTheDocument();
   });
 

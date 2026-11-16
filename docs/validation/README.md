@@ -4,5 +4,6 @@
 - [协调请求结构检查](coordination-request-change-checks.md)
 - [HTTP 契约结构检查](http-contract-change-checks.md)
 - [实时协议约束检查](realtime-contract-change-checks.md)
+- [首屏请求预算与唯一登记例外](first-paint-request-budget.md)
 
 [文档索引](../README.md)

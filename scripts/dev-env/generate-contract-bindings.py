@@ -820,6 +820,31 @@ def generate_python_models(schema: Path, output: Path, *, static_projection: boo
     flatten_typed_dicts(output)
 
 
+def contract_digest(root: Path) -> str:
+    """One opaque value identifying the canonical contract revision.
+
+    Python and TypeScript consumers are generated from the same directory, so a
+    value derived from its bytes is the only identity both can hold: the API
+    reports it at runtime and a web bundle bakes it in at build time. A mixed
+    deployment (upgraded frontend, rolled-back API, or the reverse) is then
+    observable in the browser instead of silent.
+
+    Inputs are the machine contract sources — every ``.yaml`` and ``.json`` file
+    below ``root`` — so an explanatory ``README.md`` edit does not invalidate a
+    deployment's identity. The form is fixed so an operator can recompute it
+    without this script: ``sha256`` over, for each such file in byte-sorted
+    relative-path order, ``<relative path> SPACE <file sha256> NEWLINE``.
+    ``scripts/dev-env/print-contract-digest.py`` prints exactly that value.
+    """
+    digest = hashlib.sha256()
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or path.suffix not in {".json", ".yaml"}:
+            continue
+        relative = path.relative_to(root).as_posix()
+        digest.update(f"{relative} {hashlib.sha256(path.read_bytes()).hexdigest()}\n".encode())
+    return "sha256:" + digest.hexdigest()
+
+
 def generate(destination: Path) -> list[Path]:
     manifest = json.loads((CONTRACTS / "bindings.json").read_text())
     python = destination / "src/speechnexus_contracts"
@@ -950,6 +975,18 @@ def generate(destination: Path) -> list[Path]:
         json.dumps(inventory, ensure_ascii=False, indent=2) + "\n"
     )
     outputs.append(Path("source-inventory.json"))
+    digest = contract_digest(CONTRACTS)
+    (destination / "src/contract_digest.generated.ts").write_text(
+        "// Generated from contracts/bindings.json; do not edit.\n"
+        f"export const CONTRACT_DIGEST = {json.dumps(digest)};\n"
+    )
+    (python / "contract_digest.py").write_text(
+        '"""Generated digest of the canonical contract sources; do not edit."""\n'
+        "\n"
+        f'CONTRACT_DIGEST = "{digest}"\n'
+    )
+    outputs.append(Path("src/contract_digest.generated.ts"))
+    outputs.append(Path("src/speechnexus_contracts/contract_digest.py"))
     subprocess.run(
         [
             "pnpm",

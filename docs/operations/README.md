@@ -20,6 +20,7 @@
 - [参考部署一条命令验收](reference-acceptance.md) · `scripts/dev-env/reference-acceptance.py`（工具/迁移/角色/桶/栈/启动闸门/健康）。
 - [容量清单](capacity-manifest.md) · [资格报告](qualification-report.md) · [内建声音资格](builtin-voice-qualification.md)。
 - [对账与恢复](reconciliation-recovery.md) · [上线前检查](release-preflight.md) · [发布就绪历史快照](../archive/operations/release-readiness.md)。
+- [前后端同版核对](same-version-check.md)：运行期契约摘要告警、`GET /v1/nexus/version`，以及两侧都早于该校验时的人工核对清单。
 - [绑定发布](publish-binding-revision.md) · [绑定生命周期](binding-lifecycle.md) · [停用 worker](binding-disable-worker.md)。
 - [绑定发布证据回填](backfill-binding-publication-evidence.md) · [激活幂等与同版验证记录](binding-activation-verification.md)。
 - [取消/中止 oracle 的本地双库验证](local-dual-database.md)。

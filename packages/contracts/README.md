@@ -125,6 +125,19 @@ and JSON Schema, including admin, workbench and internal protocols. Its diff
 shows source changes; it is not a compatibility verdict. The existing OpenAI
 compatibility gate continues to cover only the declared standard subset.
 
+`contract_digest.py` and `contract_digest.generated.ts` carry one digest of the
+machine contract sources, generated from `contracts/` in the same run as every
+other artifact and covered by `make contracts-drift`. Python exposes it as
+`speechnexus_contracts.contract_digest.CONTRACT_DIGEST`, TypeScript as
+`@speechnexus/contracts/contract-digest`. The API reports it at
+`GET /v1/nexus/version` and the Web bundle compiles it in, which is how a page
+detects that the API behind it was built from another contract revision. It is a
+build fact, not a git revision, and it says nothing about implementation quality:
+equal digests mean both sides were generated from the same contracts.
+`scripts/dev-env/print-contract-digest.py` recomputes the value offline; the
+operating procedure is
+[前后端同版核对](../../docs/operations/same-version-check.md).
+
 ## Bundle size of the precompiled validators
 
 Tracking item, not done in #842. The precompiled validators trade first-paint bytes

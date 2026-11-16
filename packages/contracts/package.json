@@ -25,6 +25,8 @@
     "./model-bindings": "./src/model_bindings.ts",
     "./builtin-voice-qualification": "./src/builtin_voice_qualification.ts",
     "./release-evidence": "./src/release_evidence.ts",
+    "./version-http": "./src/version-http.ts",
+    "./contract-digest": "./src/contract_digest.generated.ts",
     "./binding-http": "./src/binding-http.ts",
     "./gateway-recovery": "./src/gateway_recovery.ts",
     "./audio-inspection": "./src/audio_inspection.ts",

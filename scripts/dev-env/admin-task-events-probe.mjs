@@ -7,6 +7,12 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { parse } from "../../packages/contracts/src/runtime.mjs";
+import {
+  assertOnlySameVersionRequests,
+  isSameVersionRequest,
+  SAME_VERSION_PATH,
+  sendSameVersionIdentity,
+} from "./same-version-identity.mjs";
 
 const { values } = parseArgs({
   options: { output: { type: "string" }, screenshot: { type: "string" } },
@@ -35,6 +41,9 @@ const stateFor = (scenario) => ({
   failRead: false,
 });
 let state = stateFor("sequence");
+// Business requests and same-version identity requests are counted apart (#853).
+const identityUrls = [];
+let identityRequests = 0;
 const json = (res, value, status = 200) => {
   res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
   res.end(JSON.stringify(value));
@@ -44,6 +53,12 @@ const { createServer, preview } = await import(pathToFileURL(require.resolve("vi
 const install = (vite) => {
   vite.middlewares.use((req, res, next) => {
     const url = new URL(req.url, "http://127.0.0.1");
+    if (isSameVersionRequest(req.method, url.pathname)) {
+      identityRequests++;
+      identityUrls.push(url.pathname);
+      sendSameVersionIdentity(res);
+      return;
+    }
     if (!url.pathname.startsWith("/v1/")) return next();
     if (req.method !== "GET") return json(res, envelope("invalid_request"), 400);
     const current = state;
@@ -149,9 +164,14 @@ try {
   const start = async (scenario) => {
     for (const response of state.held) response.destroy();
     state = stateFor(scenario);
+    const beforeIdentity = identityRequests;
     await page.goto(`${origin}/`);
     await expect(page.getByRole("heading", { name: "运行事实管理", exact: true })).toBeVisible();
     assert.equal(state.httpRequests, 0, "Production host accessed API without explicit action");
+    // The only contact a mounting page makes is the same-version identity check
+    // (#853); it is asserted on its own, so any other first-paint request still
+    // fails in the business counter above.
+    assertOnlySameVersionRequests(identityUrls.slice(beforeIdentity));
     await page.getByRole("button", { name: "读取任务列表", exact: true }).click();
     await view("job-demo");
     await expect(page.getByTestId("task-detail-status")).toHaveText("queued");

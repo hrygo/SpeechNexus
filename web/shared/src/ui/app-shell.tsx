@@ -14,6 +14,12 @@ export type AppShellProps = {
   statusTitle?: string;
   statusDetail?: string;
   statusState?: CapabilityState;
+  /**
+   * A deployment-level warning about this process pair, rendered directly under the
+   * header — above the hero — so it is on the first screen at any viewport and never
+   * competes with the in-content deployment note.
+   */
+  deploymentAlert?: ReactNode;
   children: ReactNode;
 };
 
@@ -27,6 +33,7 @@ export function AppShell({
   statusTitle = "工程外壳已就绪",
   statusDetail = "契约已交付，业务实现待接入",
   statusState = "ready",
+  deploymentAlert,
   children,
 }: AppShellProps) {
   return (
@@ -46,6 +53,8 @@ export function AppShell({
           <span className="surface-label">{surface}</span>
         </div>
       </header>
+
+      {deploymentAlert}
 
       <main id="main-content" tabIndex={-1}>
         <section className="hero" aria-labelledby="page-title">

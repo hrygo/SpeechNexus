@@ -25,5 +25,8 @@
     "react": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:"
+  },
+  "dependencies": {
+    "@speechnexus/contracts": "workspace:*"
   }
 }

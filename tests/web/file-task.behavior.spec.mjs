@@ -1,6 +1,11 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 
+import {
+  CONTRACT_DIGEST,
+  CONTRACT_VERSION,
+  SAME_VERSION_PATH,
+} from "../../scripts/dev-env/same-version-identity.mjs";
 import { lockToPreview, expectNetworkLocked } from "./network-lock.mjs";
 
 /**
@@ -71,8 +76,10 @@ function syntheticWav() {
  * for is recorded and refused, so an unexpected request is a loud failure instead of a
  * silent network call.
  */
+const backends = [];
+
 async function installBackend(page) {
-  const calls = { assets: 0, creates: [], cancels: [], reads: 0, unexpected: [] };
+  const calls = { assets: 0, creates: [], cancels: [], reads: 0, identity: [], unexpected: [] };
   const plan = {
     create: (route) => route.fulfill({ status: 202, json: example("queued-job") }),
     cancel: (route) => route.fulfill({ status: 202, json: example("cancel-job") }),
@@ -81,6 +88,18 @@ async function installBackend(page) {
   await page.route("**/v1/nexus/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
+    if (path === SAME_VERSION_PATH && request.method() === "GET") {
+      // The page's same-version check (#853): a build-time identity reported by the
+      // API shape, not a speech call. It is answered and recorded on its own so
+      // `unexpected` still means "anything else the page tried to reach".
+      calls.identity.push(path);
+      await route.fulfill({
+        status: 200,
+        json: { version: CONTRACT_VERSION, contract_digest: CONTRACT_DIGEST },
+        headers: { "Cache-Control": "no-store" },
+      });
+      return;
+    }
     if (path === "/v1/nexus/assets" && request.method() === "POST") {
       calls.assets += 1;
       await route.fulfill({ status: 201, json: example("ready-audio") });
@@ -104,6 +123,7 @@ async function installBackend(page) {
     calls.unexpected.push(`${request.method()} ${path}`);
     await route.fulfill({ status: 500, json: refusal(500, "internal_error") });
   });
+  backends.push({ calls });
   return { calls, plan };
 }
 
@@ -144,6 +164,16 @@ const journalRecord = async (page) => {
 
 test.beforeEach(async ({ context }) => {
   await lockToPreview(context);
+});
+
+// Every spec that scripted a backend must show that the page's only request outside
+// the scripted speech paths was the same-version identity check, on the declared
+// route. `calls.unexpected` above stays the loud failure for everything else.
+test.afterEach(() => {
+  for (const backend of backends.splice(0)) {
+    expect(backend.calls.identity.length).toBeGreaterThan(0);
+    expect(backend.calls.identity.filter((path) => path !== SAME_VERSION_PATH)).toEqual([]);
+  }
 });
 
 test("413 首答：显示已作废而非结果未知，两步确认后输入解锁且幂等键换新", async ({ page }) => {

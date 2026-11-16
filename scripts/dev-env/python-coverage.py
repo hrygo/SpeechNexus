@@ -226,11 +226,24 @@ def nodeids(value: Any) -> list[str]:
     return cast(list[str], value)
 
 
-def verify_reports(paths: Sequence[Path], *, head: str, count: int) -> tuple[list[Path], int]:
+def verify_reports(
+    paths: Sequence[Path], *, head: str, count: int, base: int = 0, workers: int | None = None
+) -> tuple[list[Path], int]:
+    """Verify one job's slice of a possibly split measurement.
+
+    count is how many partitions the dataset is cut into; workers is how many of
+    them this job owns, starting at base. A single-job measurement passes neither
+    and keeps the original all-workers semantics.
+    """
     from coverage import CoverageData
 
+    expected = count if workers is None else workers
     check_partition(0, count)
-    if len(paths) != count:
+    if type(expected) is not int or not 1 <= expected <= count:
+        raise ValueError("Python evidence declares an impossible worker slice")
+    if type(base) is not int or base < 0 or base + expected > count:
+        raise ValueError("Python evidence slice is outside the partition set")
+    if len(paths) != expected:
         raise ValueError("Every Python coverage worker is required")
     full: list[str] | None = None
     observed: set[str] = set()
@@ -295,7 +308,7 @@ def verify_reports(paths: Sequence[Path], *, head: str, count: int) -> tuple[lis
         if not coverage_data.has_arcs() or not coverage_data.measured_files():
             raise ValueError("Python worker has no branch coverage data")
         files.append(coverage_file)
-    if full is None or observed != set(full) or indices != set(range(count)):
+    if full is None or observed != set(full) or indices != set(range(base, base + expected)):
         raise ValueError("Python execution did not cover the complete collection exactly once")
     return files, len(full)
 
@@ -457,6 +470,8 @@ def run_parallel(args: argparse.Namespace) -> int:
             [directory / f"worker-{index}.json" for index in indices],
             head=head,
             count=partitions,
+            base=base,
+            workers=args.workers,
         )
         if source_head() != head:
             raise ValueError("Source changed while the Python gate was executing")

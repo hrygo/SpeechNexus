@@ -88,10 +88,16 @@ _TTS_REQUIRED = (
 
 
 class PublicJobAdmissionRejectedError(Exception):
-    """A create must be refused with one stable public error code."""
+    """A create must be refused with one stable public error code.
 
-    def __init__(self, code: str) -> None:
+    ``detail`` names the concrete missing item when the class alone cannot (no
+    registered engine instance, an unpublished binding). It never names a DSN or
+    credential value and never changes the public code (#877).
+    """
+
+    def __init__(self, code: str, detail: str | None = None) -> None:
         self.code = code
+        self.detail = detail
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,7 +203,7 @@ def _quota(cursor: _Cursor, workspace_id: str) -> dict[str, Any]:
     return rows[0]
 
 
-def _instance(cursor: _Cursor, binding_revision_id: str) -> dict[str, Any]:
+def _instance(cursor: _Cursor, binding_revision_id: str, model_id: str) -> dict[str, Any]:
     cursor.execute(
         "SELECT e.instance_id, e.instance_generation, e.host_node_id, e.pool_id, "
         "e.gateway_id, e.binding_revision_id, e.manifest_id, "
@@ -215,8 +221,31 @@ def _instance(cursor: _Cursor, binding_revision_id: str) -> dict[str, Any]:
     )
     rows = cursor.fetchall()
     if not rows:
-        # No ready instance is a capacity refusal, not an unavailable store.
-        raise PublicJobAdmissionRejectedError("job_capacity_exhausted")
+        # No ready instance is a capacity refusal, not an unavailable store. The
+        # refusal names the deployment input: the read-only self-check already
+        # reported "instance <id> generation <n> not registered" while this answer
+        # pointed at capacity or the model catalogue (#877 item 4). A second read
+        # separates "nothing was ever registered" from "registered, not ready":
+        # only the first needs the engine-registration profile.
+        cursor.execute(
+            "SELECT instance_state FROM engine_instances WHERE binding_revision_id=%s "
+            "ORDER BY instance_state",
+            (binding_revision_id,),
+        )
+        states = sorted(str(row["instance_state"]) for row in cursor.fetchall())
+        if not states:
+            detail = (
+                f"no engine instance is registered for model '{model_id}': register "
+                "the engine (engine-registration profile / speechnexus-register-engine) "
+                "so admission has a ready instance; retrying this request cannot create one"
+            )
+        else:
+            detail = (
+                f"the engine instance(s) registered for model '{model_id}' are not ready "
+                f"(states: {', '.join(states)}): restore or re-register the engine; "
+                "retrying this request cannot make one ready"
+            )
+        raise PublicJobAdmissionRejectedError("job_capacity_exhausted", detail)
     if len(rows) != 1:
         raise PublicJobAdmissionRejectedError("job_unavailable")
     return rows[0]
@@ -618,7 +647,7 @@ def build_public_job_admission(
             raise PublicJobAdmissionRejectedError("job_binding_incomplete")
         execution = block
     quota = _quota(cursor, job.workspace_id)
-    instance = _instance(cursor, binding_revision_id)
+    instance = _instance(cursor, binding_revision_id, model_id)
     plan = _runtime_plan(cursor, instance)
     if (
         plan.binding.binding_revision_id != binding_revision_id

@@ -61,7 +61,16 @@ _TIMESTAMP = 253_402_300_799_999_999
 
 
 class PublicJobUnavailableError(RuntimeError):
-    """Persisted public Job facts could not be read or written safely."""
+    """Persisted public Job facts could not be read or written safely.
+
+    ``detail`` names the deployment input that makes the surface unusable when
+    this build knows it -- a blank Job DSN, for example. It names the key only;
+    a value never reaches the message (#877).
+    """
+
+    def __init__(self, detail: str | None = None) -> None:
+        self.detail = detail
+        super().__init__(detail or "")
 
 
 class PublicJobNotFoundError(LookupError):
@@ -353,6 +362,10 @@ class JobCreateResult:
     outcome: Literal["created", "replayed", "conflict", "unknown", "rejected"]
     job: PublicJob | None = None
     error_code: str | None = None
+    # The concrete missing item when the refusal class alone cannot name it (a
+    # blank admission DSN, no registered engine instance). It is never a DSN value
+    # and never changes the code (#877).
+    detail: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -363,6 +376,7 @@ class RevisionCreateResult:
     job: PublicJob | None = None
     revision: str | None = None
     error_code: str | None = None
+    detail: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

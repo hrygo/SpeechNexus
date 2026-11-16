@@ -26,10 +26,10 @@ date: 2026-11-08
 
 | 编号 | 前置 | 缺失时的可观察症状 | 缺它的 Job 表现 |
 | --- | --- | --- | --- |
-| 1 | API 的 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL` 与 `SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL` | `POST /v1/nexus/jobs` 返回 `503 job_unavailable` | 没有 Job 可被 claim |
-| 2 | 迁移到唯一 head（`migration` profile，`speechnexus-job-migrate --schema speech`） | Job/准入关系不存在，迁移版本表为空 | 创建失败或 worker 启动即退出 |
+| 1 | API 的 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL` 与 `SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL` | `POST /v1/nexus/jobs` 返回 `503 job_unavailable`，`message` 点名空白的键名（两条都空则两条都列，只空 admission 时由创建路径点名它） | 没有 Job 可被 claim |
+| 2 | 迁移到唯一 head（`migration` profile，`speechnexus-job-migrate --schema speech`） | Job/准入关系不存在，迁移版本表为空；worker 闸门先比对迁移头并点名 `speech.alembic_version is missing: run the migration profile`，API 启动则以 `FAIL: ... migration profile` 拒绝（都不再是 traceback） | 创建失败或进程启动即退出 |
 | 3 | 派发角色与五组 grant（启用 `voice_validation` 再加两张 `SELECT`） | worker 的启动闸门点名缺授权的表/列并退出，`restart: unless-stopped` 下形成重启循环 | 启动期失败，不领取租约 |
-| 4 | 真实引擎与已注册 `ready` 实例（`engine-registration` profile，同一次写入实例、`host_nodes` 与 `workspace_quotas`），且该 binding 已发布、该工作空间有配额行；readiness 收据未过期（`engine-readiness` profile 定时续期） | 未发布 binding 时创建返回 `422 model_not_published`；有 binding、该工作空间没有配额行时返回 `422 workspace_not_configured`；两者都在、但没有匹配的 `ready` 实例时返回 `429 job_capacity_exhausted`；实例在但收据过期返回 `503 engine_not_ready`（非 `job_unavailable`） | 分别停在绑定解析、配额判定与容量判定，没有可执行实例 |
+| 4 | 真实引擎与已注册 `ready` 实例（`engine-registration` profile，同一次写入实例、`host_nodes` 与 `workspace_quotas`），且该 binding 已发布、该工作空间有配额行；readiness 收据未过期（`engine-readiness` profile 定时续期） | 未发布 binding 时创建返回 `422 model_not_published`（`message` 点名发布 binding 与注册引擎）；有 binding、该工作空间没有配额行时返回 `422 workspace_not_configured`；两者都在、但没有匹配的 `ready` 实例时返回 `429 job_capacity_exhausted`（`message` 点名未注册的引擎/实例，已注册但非 `ready` 时点名现有状态）；实例在但收据过期返回 `503 engine_not_ready`（非 `job_unavailable`） | 分别停在绑定解析、配额判定与容量判定，没有可执行实例 |
 | 5 | gateway 的 `result_bucket` 存在、被 `minio-init` 创建并启用版本化，且与 env 一致 | worker 的启动闸门点名缺桶/缺版本化/配置不一致并退出 | 启动期失败，不领取租约 |
 | 6 | `network_mode: service:gateway` 下的启动顺序与网关重建后的 worker 重建 | worker 命名空间失效或指向旧 gateway | 进程在，网关调用全部失败 |
 
@@ -44,8 +44,8 @@ date: 2026-11-08
   默认部署不装配它，音频上传恒为 `503 asset_inspection_unavailable`；装配与验证见第 10 节。
 
 判定顺序固定为 binding → 配额 → 容量，所以从空库照本文执行时，看到 `429
-job_capacity_exhausted` 就说明前两项已经成立（`speech/application/public_jobs.py:803`、
-`public_job_admission.py:190`、`:219`）。
+job_capacity_exhausted` 就说明前两项已经成立（`speech/application/public_jobs.py:822`、
+`public_job_admission.py:196`、`:248`）。
 
 ## 2. `up -d`/`--wait` 成功 ≠ 就绪
 
@@ -120,7 +120,10 @@ Job/事件/提交写入，admission 负责原子准入的配额、租约与协�
 时 API 启动即拒绝。缺其中任一个时，请求只有走到准入才会得到 `503 job_unavailable`；在还没有
 已发布 binding 的部署上（例如刚按最小部署手册起好的空库），同一个请求先停在绑定解析，
 返回的是 `422 model_not_published`（`job_errors.py:71`），看到它不等于 writer/admission
-已配好：`503 job_unavailable` 只覆盖准入阶段的存储不可用（`job_errors.py:133`）。
+已配好：`503 job_unavailable` 只覆盖准入阶段的存储不可用（`job_errors.py:133`）。该 503 的
+`message` 点名空白的键名：只空 admission 时由创建路径点名
+`SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL`（读与取消不受影响），两条都空时路由层同时点名
+两条键。
 
 下面三个 DSN 一次生成并写回环境文件。角色名固定为 `sn_job_writer`、`sn_job_admission`、
 `sn_job_dispatch`，口令随机生成且**不打印**；服务器、端口和数据库名沿用
@@ -246,6 +249,8 @@ psql "$SPEECHNEXUS_MIGRATION_DATABASE_URL" -Atc \
 | 版本号为空 | 迁移中断在版本记录提交前；不要手工写版本表，按[对账恢复](reconciliation-recovery.md)处理 |
 | 版本号低于发布制品 head | 迁移落后于镜像；自检会列出缺的 revision，先执行迁移再启动新版本进程 |
 | 版本表有多行 | 多个 head 已被应用；先按[对账恢复](reconciliation-recovery.md)收敛再升级 |
+| api 容器 `Restarting`，日志首行 `FAIL: the settled-capacity preflight cannot read ...` | 该库未执行迁移；同步 TTS 结算预检读到缺失的准入表后按迁移指引拒绝启动（退出码 `1`），先跑 `migration` profile |
+| worker 日志 `FAIL: speech.alembic_version is missing: run the migration profile ...` | 启动闸门先比对迁移头、再跑角色守卫；schema 或版本表不存在时点名迁移，不再抛 `InvalidSchemaName` traceback |
 
 ## 6. 第 3 步：前置 3 —— 派发角色与五组 grant
 
@@ -339,9 +344,9 @@ binding 身份必须等于 §7.1 发布出来的 `revision_id`；反过来先注
 head 与实例对不上的 `ready` 实例，创建 Job 仍然失败。
 
 创建 Job 时的判定顺序是固定的，据此可以判断缺的是哪一项：先解析 binding（无已发布 head →
-`422 model_not_published`，`speech/application/public_jobs.py:803`），再取该工作空间的配额行（无行 →
-`422 workspace_not_configured`，`public_job_admission.py:190`），然后才找 ready 实例
-（找不到 → `429 job_capacity_exhausted`，`public_job_admission.py:219`）。因此「没有实例时
+`422 model_not_published`，`speech/application/public_jobs.py:822`），再取该工作空间的配额行（无行 →
+`422 workspace_not_configured`，`public_job_admission.py:196`），然后才找 ready 实例
+（找不到 → `429 job_capacity_exhausted`，`public_job_admission.py:248`）。因此「没有实例时
 返回 429」只在 binding 与配额都已存在时成立；空库上最先看到的是 422。
 
 ### 7.1 发布 binding：注册与创建 Job 的前置
@@ -372,15 +377,15 @@ curl -sS -X POST http://127.0.0.1:8000/v1/nexus/admin/model-bindings \
 
 | 请求字段 | 取值来源 | 约束与依据 |
 | --- | --- | --- |
-| `binding_id` | 部署自行分配并保持稳定 | `Identifier`：`^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$`。它同时是 `GET /v1/models` 的 `id` 与 `POST /v1/nexus/jobs` 的 `model` 取值（目录 `id` 即 `object_id`，`model_catalog.py:98`；Job 侧按 head 的 `object_id` 解析，`public_jobs_postgres.py:221`） |
+| `binding_id` | 部署自行分配并保持稳定 | `Identifier`：`^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$`。它同时是 `GET /v1/models` 的 `id` 与 `POST /v1/nexus/jobs` 的 `model` 取值（目录 `id` 即 `object_id`，`model_catalog.py:98`；Job 侧按 head 的 `object_id` 解析，`public_jobs_postgres.py:227`） |
 | `logical_model` | 部署自行分配的逻辑名 | `^[a-z0-9][a-z0-9._-]{1,63}$`；只投影为目录的 `nexus.logical_model`（`model_catalog.py:103`），不要求等于引擎模型名或 gateway 的 `served_model` |
 | `tasks` | 要跑的任务：ASR 填 `["asr_file"]`，TTS 填 `["tts_file"]` | 创建 Job 按 kind 校验（`speech/application/public_jobs.py:54`），不含对应任务 → `422 model_not_published` |
 | `engine.kind` / `image_digest` / `runtime_version` | 部署实际运行的引擎镜像事实（`image_digest` 为 `sha256:<64 位小写十六进制>`） | 草稿只做结构校验，不查外部引用是否存在（[不可变草稿](../components/model-binding-drafts.md)） |
 | `artifact_set` | 固定制品清单：file-ASR 由 `scripts/dev-env/verify-file-asr-artifacts.py --emit-binding-request` 从 `artifact-pin.json` 生成 | 同上；真实值必须来自实际挂载的制品，不能手造摘要 |
 | `execution_recipe.recipe_revision` / `stage_roles` | 配方的执行角色：文件 ASR 为 `asr_batch` | gateway 只接受 `task_kind=asr_file` + `stage_role=asr_batch` 的命令（`file_asr_command.py:103`） |
-| `execution_recipe.capacity_manifest_id` | 部署选定的容量清单 ID，**必须与第 2 步提交的 `capacity_manifest_id` 逐字相同**，且**必须等于 §7.2 注册时的 `manifest_id`** | 与草稿不符 → 第 2 步 `422 capacity_manifest_mismatch`（`binding_lifecycle_postgres.py:292`）；与实例不符 → 创建 Job 时 `422 job_binding_incomplete`（`public_job_admission.py:626`） |
+| `execution_recipe.capacity_manifest_id` | 部署选定的容量清单 ID，**必须与第 2 步提交的 `capacity_manifest_id` 逐字相同**，且**必须等于 §7.2 注册时的 `manifest_id`** | 与草稿不符 → 第 2 步 `422 capacity_manifest_mismatch`（`binding_lifecycle_postgres.py:292`）；与实例不符 → 创建 Job 时 `422 job_binding_incomplete`（`public_job_admission.py:655`） |
 | `parameter_domains` | 该 binding 允许的参数域 | 结构校验在草稿阶段完成 |
-| `execution_defaults` | 完整执行参数：ASR 的 13 个必填字段与 TTS 的 11 个必填字段全部给齐（见 `contracts/model-binding-execution-defaults.schema.json`），取值来自部署配置与该 binding 的固定默认 | **创建 Job 的硬前置**：准入从这里取语言、分段、期限等全部执行参数（`public_job_admission.py:128`），缺一项就是 `422 job_binding_incomplete`。它是**只写**字段——写进不可变定义，但 admin 响应把它剥掉（`speech/interfaces/binding_drafts.py:56`），因此核对只能回看这份请求体 |
+| `execution_defaults` | 完整执行参数：ASR 的 13 个必填字段与 TTS 的 11 个必填字段全部给齐（见 `contracts/model-binding-execution-defaults.schema.json`），取值来自部署配置与该 binding 的固定默认 | **创建 Job 的硬前置**：准入从这里取语言、分段、期限等全部执行参数（`public_job_admission.py:134`），缺一项就是 `422 job_binding_incomplete`。它是**只写**字段——写进不可变定义，但 admin 响应把它剥掉（`speech/interfaces/binding_drafts.py:56`），因此核对只能回看这份请求体 |
 | `release_tier` | 部署申请的目标等级 | 是申请目标，不是资格回执 |
 
 **第 2 步 发布。** `capacity_manifest_id` 必须等于第 1 步 `execution_recipe` 里的值；
@@ -451,9 +456,9 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 ```
 
 预期：一行 publication、一行 head（同一个 `revision_id`）、`catalog_state.revision >= 1`
-（创建 Job 还要求 catalogue revision 已推进，`speech/application/public_jobs.py:840`）。head 被退役清空后
+（创建 Job 还要求 catalogue revision 已推进，`speech/application/public_jobs.py:859`）。head 被退役清空后
 即使 revision 仍是 `published`，创建 Job 会以 `422 model_binding_not_current` 拒绝
-（`speech/application/public_jobs.py:270`）——这与「未发布」是两个不同的码。
+（`speech/application/public_jobs.py:280`）——这与「未发布」是两个不同的码。
 
 **第 5 步 把 `revision_id` 写回两份私有输入。** 参考部署的注册走配方模式，配方与 gateway
 端点配置都按名字钉住 binding：不写回，Job 能创建但执行会被拒。
@@ -534,9 +539,9 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 
 | 注册输入（配方模式 / 手动模式） | 必须等于 | 依据 |
 | --- | --- | --- |
-| 配方 `binding_revision_id` / `--binding-revision-id` | 已发布 binding 的 `revision_id` | 准入按 `engine_instances.binding_revision_id = <已发布 revision_id>` 找 ready 实例（`public_job_admission.py:211`），并把它与 plan 比对（`:623`） |
-| 配方 `manifest_id` / `--manifest-id` | 该 binding 的 `execution_recipe.capacity_manifest_id` | 准入要求 `plan.binding.manifest_id` 与定义里的清单 ID 相等（`public_job_admission.py:626`） |
-| 配方 `policy_revision_id` / `--policy-revision` | 部署的 VAD/语音策略版本，且等于 §7.1 第 5 步 gateway 私有配置的 `config_revision` | 该值经注册写入 `workspace_quotas.policy_revision`（`engine_registration.py:479`），准入再把它作为执行的 `policy_revision_id`（`public_job_admission.py:858`）；gateway 逐字段比对（`file_asr_command.py:109`） |
+| 配方 `binding_revision_id` / `--binding-revision-id` | 已发布 binding 的 `revision_id` | 准入按 `engine_instances.binding_revision_id = <已发布 revision_id>` 找 ready 实例（`public_job_admission.py:217`），并把它与 plan 比对（`:652`） |
+| 配方 `manifest_id` / `--manifest-id` | 该 binding 的 `execution_recipe.capacity_manifest_id` | 准入要求 `plan.binding.manifest_id` 与定义里的清单 ID 相等（`public_job_admission.py:655`） |
+| 配方 `policy_revision_id` / `--policy-revision` | 部署的 VAD/语音策略版本，且等于 §7.1 第 5 步 gateway 私有配置的 `config_revision` | 该值经注册写入 `workspace_quotas.policy_revision`（`engine_registration.py:479`），准入再把它作为执行的 `policy_revision_id`（`public_job_admission.py:887`）；gateway 逐字段比对（`file_asr_command.py:109`） |
 | `--node` / `--gateway` / `--instance` / `--generation` | 部署实参与 gateway 端点配置里的同名身份 | 配方模式下给出与配方不一致的值会以 `<name>_override_conflict` 退出（`engine_registration.py:1078`） |
 | `--template-id`、`--config-digest`、`--topology-digest`、`--qualification-digest`、容量向量、`--max-attempts` | 部署与镜像事实；binding 不校验这些值 | `_config_matches`（`engine_registration.py:520`）只把已有行与 plan 自身比对 |
 
@@ -596,12 +601,12 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 发布的 `revision_id`、`manifest_id` 等于该 binding 的 `execution_recipe.capacity_manifest_id`。
 
 判定口径：`workspace_quotas` 缺行就是「这个工作空间从没为它注册过引擎」，创建返回
-`422 workspace_not_configured`，重试不会改变结果，只能按 §7.2 注册（`public_job_admission.py:166`
+`422 workspace_not_configured`，重试不会改变结果，只能按 §7.2 注册（`public_job_admission.py:172`
 的选择是刻意的：空读是确定性配置事实，不是存储故障，所以不回 `503`）。`host_nodes` 的
 `allocatable_*` 是注册时写下的宿主机容量，`held_*` / `quarantined_*` 由准入与租约结算维护；
 注册时的容量校验在 `engine_registration.py:502` 的 `_require_capacity`，准入侧不再重读
 `host_nodes` 做容量算术，而是要求存在 ready 实例与 active 池 owner
-（`public_job_admission.py:200`、`:634`）。因此「容量登记」这份事实的产生入口就是 §7.2 的注册，
+（`public_job_admission.py:206`、`:663`）。因此「容量登记」这份事实的产生入口就是 §7.2 的注册，
 不是单独的管理端点。
 
 本节三条 SQL 都是只读查询，可在任意已完成注册的部署上执行；上面的「预期」值按注册代码推导，
@@ -975,9 +980,9 @@ curl -sS -X POST http://127.0.0.1:8000/v1/nexus/jobs \
 ```
 
 `model` 填 `binding_id`（也就是 `GET /v1/models` 返回的 `id`），不是 `logical_model`：ASR/TTS
-创建按 head 的 `object_id` 解析（`public_jobs_postgres.py:221`）。TTS 若带上
+创建按 head 的 `object_id` 解析（`public_jobs_postgres.py:227`）。TTS 若带上
 `model_binding` 引用固定 revision，则 `model` 还要与该 binding 的 `logical_model` 相等
-（`speech/application/public_jobs.py:273`）；不指定时取当前 head。
+（`speech/application/public_jobs.py:283`）；不指定时取当前 head。
 
 预期 `202`，body 是 Job 文档，`status` 为 `queued`，并带 `Location`。随后轮询：
 
@@ -1120,16 +1125,17 @@ FAIL(配置写了但不对,任何阶段都必须修):前置 1
 | 现象 | 先看 | 前置 |
 | --- | --- | --- |
 | `up -d`/`--wait` 成功但 Job 一直 `queued` | worker 是否在反复重启；`logs job-dispatch-worker` 的首条错误 | 3、6 |
-| `POST /v1/nexus/jobs` 返回 `503 job_unavailable` | writer/admission DSN 是否为空、API 是否重建（有已发布 binding 时才会走到这里；否则先看下面的 422） | 1 |
-| 创建返回 `422 model_not_published` | 该 `model` 没有任何已发布 binding 作为 head，或 `tasks` 不含 `asr_file`/`tts_file`；按 §7.1 建立草稿并发布 | 六项之外 |
+| `POST /v1/nexus/jobs` 返回 `503 job_unavailable` | 先读 `message` 点名的空白键（如 `SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL`），再确认 API 是否重建（有已发布 binding 时才会走到这里；否则先看下面的 422） | 1 |
+| 创建返回 `422 model_not_published` | 该 `model` 没有任何已发布 binding 作为 head，或 `tasks` 不含 `asr_file`/`tts_file`；`message` 同时点名「发布 binding + 注册引擎」两步，按 §7.1 建立草稿并发布 | 六项之外 |
 | 创建返回 `422 model_binding_not_current` | revision 仍 `published`，但 head 已被退役清空；重新激活一个仍 published 的 revision（§7.1 第 3 步） | 六项之外 |
-| 创建返回 `429 job_capacity_exhausted` | `engine_instances` 是否有该 binding 的 `ready` 实例，且其 `binding_revision_id` / `manifest_id` 与已发布 binding 一致 | 4 |
+| 创建返回 `429 job_capacity_exhausted` | 先读 `message`：无已注册实例时它点名引擎注册（`engine-registration` profile），已注册但非 `ready` 时点名状态；同时核对 `engine_instances` 是否有该 binding 的 `ready` 实例，且其 `binding_revision_id` / `manifest_id` 与已发布 binding 一致。binding 未发布与无配额行分别是 422，不会走到这里 | 4 |
 | 创建返回 `422 workspace_not_configured` | 该工作空间是否注册过引擎（`workspace_quotas` 无行即未配置配额；重试不会改变结果，只能按 §7.2 注册） | 4 |
 | 创建返回 `422 job_binding_incomplete` | binding 是否带完整 `execution_defaults`，以及实例 `manifest_id` 是否等于其 `execution_recipe.capacity_manifest_id` | 六项之外 |
-| worker 启动即退出 | 角色守卫、`permission denied`、缺少 `voice_validation_worker_grants` | 3 |
+| worker 启动即退出 | 先看 `FAIL:` 行：迁移缺失点名 `alembic_version` 与 migration profile；否则看角色守卫、`permission denied`、缺少 `voice_validation_worker_grants` | 2、3 |
 | Job 进入 `running` 后结果读不回 | worker 与 gateway 的 `result_bucket` 是否一致、桶是否版本化 | 5 |
 | worker 在、但网关调用全部失败 | worker 的网络命名空间是否仍指向当前 gateway 容器 | 6 |
 | 迁移报 `alembic_version` 不存在或版本偏低 | 迁移是否执行到目标库、发布制品 head | 2 |
+| api 启动退出并打印 `FAIL: ... migration profile` | 同一数据库是否执行过迁移（预检读不到准入表即拒绝启动） | 2 |
 
 ## 14. 本机验证记录与未验证项
 

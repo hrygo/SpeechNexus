@@ -19,7 +19,22 @@ and would otherwise hide held capacity. A future identity change fails closed
 (startup refused) instead of silently ignoring held capacity.
 """
 
+import psycopg
+
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
+
+MIGRATION_COMMAND = "docker compose --profile migration run --rm migrate"
+
+
+class SettlementPreflightUnavailableError(RuntimeError):
+    """The preflight could not read its admission tables.
+
+    A missing schema or relation means this database never ran the migration
+    profile. That is a deployment defect with one repair, so it is raised as this
+    named refusal instead of letting the driver's ``UndefinedTable`` escape as an
+    uncaught traceback that restart-loops the API container (#877 item 3).
+    """
+
 
 _TTS_KINDS = (
     "o.request_document::jsonb->>'kind' IN ('tts_file','builtin_voice_qualification_probe')"
@@ -64,13 +79,21 @@ def require_complete_tts_roots(pool: SpeechPool, *, timeout_seconds: float = 3) 
         f"AND {_ROOT_ABSENT}"
         ") LIMIT 1"
     )
-    with pool.connection(timeout=timeout_seconds) as conn:
-        conn.execute("SET TRANSACTION READ ONLY")
-        conn.execute(
-            "SELECT set_config('statement_timeout',%s,true)",
-            (str(max(1, int(timeout_seconds * 1000))),),
-        )
-        row = conn.execute(query).fetchone()
+    try:
+        with pool.connection(timeout=timeout_seconds) as conn:
+            conn.execute("SET TRANSACTION READ ONLY")
+            conn.execute(
+                "SELECT set_config('statement_timeout',%s,true)",
+                (str(max(1, int(timeout_seconds * 1000))),),
+            )
+            row = conn.execute(query).fetchone()
+    except (psycopg.errors.InvalidSchemaName, psycopg.errors.UndefinedTable) as missing:
+        reason = str(missing).strip().splitlines()[0][:300]
+        raise SettlementPreflightUnavailableError(
+            "the settled-capacity preflight cannot read the admission tables "
+            f"({reason or 'no detail'}): this database has not run the migration "
+            f"profile; run `{MIGRATION_COMMAND}` before starting the API"
+        ) from None
     if row is not None:
         raise ValueError(
             "Unsettled asr/tts admission lacks a settlement root or release; reconcile first"

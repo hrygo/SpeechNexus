@@ -201,7 +201,22 @@ def dsn_findings(env: Mapping[str, str]) -> list[str]:
 
 
 def role_guard_findings(connection: Any, schema: str, login: str, effective: str) -> list[str]:
-    """Reject superuser, schema CREATE, database owner or table-owner membership."""
+    """Reject superuser, schema CREATE, database owner or table-owner membership.
+
+    The guard cannot answer for a schema that does not exist:
+    ``has_schema_privilege(role, schema, 'CREATE')`` resolves the name and raises
+    ``InvalidSchemaName``. That case is a missing migration, not a privilege
+    problem, so it is named as such here. The gate runs the migration head first,
+    but the guard stays correct when a future caller (or a test) asks it alone.
+    """
+    present = connection.execute("SELECT to_regnamespace(%s)", (_identifier(schema),)).fetchone()
+    if present is None or present[0] is None:
+        return [
+            f"schema {schema} does not exist, so the dispatch role guard cannot run: "
+            "run the migration profile "
+            "(docker compose --profile migration run --rm migrate) before the "
+            "job-dispatch profile"
+        ]
     findings: list[str] = []
     for role in dict.fromkeys((login, effective)):
         row = connection.execute(
@@ -503,11 +518,15 @@ def object_storage_client(env: Mapping[str, str]) -> tuple[Any, list[str]]:
 def database_findings(
     connect: Callable[[str], Any], env: Mapping[str, str], expected_head: str
 ) -> tuple[list[str], list[str]]:
-    """Run the role guard, the migration head, the SELECT probes and the writes.
+    """Run the migration head, the role guard, the SELECT probes and the writes.
 
-    The migration head is compared before the column checks: a database that is
-    behind must be named as such, instead of surfacing later as a missing column or
-    a crashed probe in a surface this build happens to look at.
+    The migration head is compared before the role guard and the column checks. A
+    database that was never migrated must be named as such: the role guard asks
+    ``has_schema_privilege`` about the schema the migration creates, so running it
+    first raised ``InvalidSchemaName`` and hid the designed "run the migration
+    profile" finding (#877 item 2). This is also the documented prerequisite order
+    (migration is prerequisite 2, the dispatch role is prerequisite 3), which the
+    read-only self-check already follows.
     """
     findings = dsn_findings(env)
     if findings:
@@ -535,14 +554,14 @@ def database_findings(
         identities = connection.execute("SELECT SESSION_USER, CURRENT_USER").fetchone()
         if identities is None:
             return ["dispatch role identity is unavailable"], passed
-        findings += role_guard_findings(connection, schema, identities[0], identities[1])
-        if findings:
-            return findings, passed
         migration_failures, verified_head = migration_findings(
             connection, schema, expected_head, identities[1]
         )
         findings += migration_failures
         if migration_failures:
+            return findings, passed
+        findings += role_guard_findings(connection, schema, identities[0], identities[1])
+        if findings:
             return findings, passed
         probe_failures, _ = probe_findings(connection, kinds)
         findings += probe_failures
@@ -650,7 +669,8 @@ def main(
     )
     print(
         "  pending: API-side writer/admission DSNs live in the api container; a "
-        "blank one already fails Job creation with 503 job_unavailable, before any claim",
+        "blank one already fails Job creation with 503 job_unavailable that names the "
+        "blank key, before any claim",
         file=stream,
     )
     if failures:

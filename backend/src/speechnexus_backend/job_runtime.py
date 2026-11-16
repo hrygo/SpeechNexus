@@ -162,6 +162,16 @@ _JOB_UPDATE_SURFACE: dict[str, tuple[str, ...]] = {
     ),
 }
 _JOB_REQUIRED_UPDATE = frozenset(REQUIRED_UPDATE_COLUMNS)
+# A writer-only deployment keeps reads and cancellations, but a create has no
+# admission role to reserve capacity with. The store used to answer the bare
+# ``503 job_unavailable``, which read like a database outage; the runtime names the
+# blank key instead (never a value) (#877 item 1).
+_ADMISSION_DSN_BLANK = (
+    "SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL is blank: a create cannot reserve "
+    "capacity or write its Job in one admission transaction, so no Job is written. "
+    "Reads and cancellations keep working without it; set it to the same database "
+    "as SPEECHNEXUS_JOB_WRITER_DATABASE_URL."
+)
 _PUBLICATION_SUBJECT = "Voice publisher"
 
 
@@ -255,6 +265,9 @@ class JobRuntime:
                     require_admission=True,
                     timeout_seconds=self._settings.job_transaction_timeout_seconds,
                     storage_bucket=self._settings.object_storage_bucket,
+                    admission_unavailable_detail=(
+                        None if admission_pool is not None else _ADMISSION_DSN_BLANK
+                    ),
                 )
                 self.jobs = PublicJobs(adapter, adapter)
                 self.voice_drafts = VoiceDrafts(self.jobs, PostgresVoiceDrafts(pool))

@@ -53,6 +53,11 @@ class Facts:
     def latest_binding(self, model_id: str) -> BindingFact | None:
         return self.binding if model_id == "tts-quality" else None
 
+    def engine_instance_states(self, model_id: str) -> tuple[str, ...]:
+        # No engine instance serves a model this fake knows about: the published
+        # binding is the only engine-facing fact it models.
+        return ()
+
     def binding_revision(self, binding_id: str, revision: int) -> BindingFact | None:
         fact = self.binding
         return (

@@ -1,10 +1,21 @@
-"""Isolated PG: consistent abort recovery and the independent reader's real ACLs."""
+"""Isolated PG: consistent abort recovery and the independent reader's real ACLs.
+
+Every object this module grants on belongs to the module's own disposable database
+(``sn_abort_reader_<hex>``, ``TEMPLATE template0``), so PostgreSQL's per-database
+catalogs are already private to one sandbox: ``pg_class`` and the ``relacl``/``attacl``
+rows of the tables below, ``pg_settings``, ``pg_namespace`` for ``pg_catalog``, and
+locally created functions and sequences. Two catalogs are cluster-wide and cannot be
+per-database — ``pg_authid`` and ``pg_parameter_acl`` — so nothing here writes them;
+`_SENSITIVE_CATALOG` and the ALTER SYSTEM case below carry the per-sandbox equivalents
+that keep the audited predicate intact.
+"""
 
 from __future__ import annotations
 
 import os
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -56,6 +67,12 @@ _LO_FUNCTIONS = (
     "lo_truncate64",
     "lowrite",
 )
+# A per-database system catalog whose initial privileges are not PUBLIC, standing in
+# for the cluster-wide `pg_authid`: a reader that can read either one is wider than its
+# surface. `pg_statistic` is chosen because writing its ACL touches only this
+# sandbox's own `pg_class` row, while `pg_authid`'s row lives in the shared catalog and
+# is rewritten for the whole cluster.
+_SENSITIVE_CATALOG = "pg_catalog.pg_statistic"
 
 
 @dataclass
@@ -65,9 +82,63 @@ class ReaderDatabase:
     admin: Any
     request: SubmitRequest
 
-    def sql(self, query: str, params: tuple[object, ...] = ()) -> list[dict[str, Any]]:
+    def sql(
+        self, query: str | sql.Composable, params: tuple[object, ...] = ()
+    ) -> list[dict[str, Any]]:
         cursor = self.admin.execute(query, params)
         return list(cursor.fetchall()) if cursor.description else []
+
+
+def _sandbox_suffix(db: ReaderDatabase) -> str:
+    """This sandbox's own name suffix, taken from its disposable database's schema."""
+    return db.schema.removeprefix("sn_reader_")
+
+
+def _sandbox_object(db: ReaderDatabase, stem: str) -> str:
+    """Name a sandbox-owned object so two sandboxes can never name the same one."""
+    return f"{stem}_{_sandbox_suffix(db)}"
+
+
+def _sandbox_parameter(db: ReaderDatabase) -> str:
+    """A parameter whose `pg_parameter_acl` row only this sandbox writes.
+
+    `pg_parameter_acl` is a shared catalog with a unique index on the parameter name, so
+    a real GUC is one row for the whole cluster; see the ALTER SYSTEM case.
+    """
+    return f"{db.schema}.alter_system"
+
+
+@contextmanager
+def _refused_while(
+    db: ReaderDatabase,
+    pool: GatewayPool,
+    *,
+    escalate: Sequence[Any],
+    revert: Sequence[Any],
+) -> Iterator[None]:
+    """Hold one escalation open while the audit is asked to refuse the reader.
+
+    `verify_execution_reader_authority` answers with a boolean and fails closed on every
+    exception, so a bare ``assert not`` cannot tell "the audit saw this escalation" from
+    "the pool or a catalog broke". This window pins the refusal to the escalation from
+    both ends: the audit is green immediately before it (the fixture itself is not wider
+    than the reader, #888) and green again once it is reverted (so the refusal belonged
+    to what was applied in between, not to leftover state or a failed connection).
+    """
+    assert verify_execution_reader_authority(pool, db.schema) is True, (
+        "the reader is not authorised before the escalation, so a refusal could not be "
+        "attributed to it"
+    )
+    try:
+        for statement in escalate:
+            db.admin.execute(statement)
+        yield
+    finally:
+        for statement in revert:
+            db.admin.execute(statement)
+    assert verify_execution_reader_authority(pool, db.schema) is True, (
+        "reverting the escalation did not restore the reader's authority"
+    )
 
 
 @pytest.fixture(scope="module")
@@ -250,10 +321,20 @@ def test_reader_has_only_required_access_and_recovers_receipt(
     assert claimed_receipt["claim_state"] == "claimed" and claimed_receipt["claimed_at"] is not None
     assert claimed.status()["execution_state"] == original.status()["execution_state"]
     parse("ExecutionRecoveryStatusResponse", claimed.status())
-    with pytest.raises(psycopg.errors.InsufficientPrivilege), pool.connection() as connection:
+    with (
+        pytest.raises(psycopg.errors.InsufficientPrivilege) as denied_write,
+        pool.connection() as connection,
+    ):
         connection.execute("UPDATE submit_intents SET execution_state='failed'")
-    with pytest.raises(psycopg.errors.InsufficientPrivilege), pool.connection() as connection:
+    assert denied_write.value.diag.message_primary == "permission denied for table submit_intents"
+    with (
+        pytest.raises(psycopg.errors.InsufficientPrivilege) as denied_read,
+        pool.connection() as connection,
+    ):
         connection.execute("SELECT request_document FROM runtime_instance_intents")
+    assert denied_read.value.diag.message_primary == (
+        "permission denied for table runtime_instance_intents"
+    )
     assert "client_cancelled" not in repr(recovered.status())
     db.sql("DELETE FROM gateway_abort_intents WHERE submit_intent_id='submit-test'")
 
@@ -350,78 +431,104 @@ def test_write_via_inheritance_or_set_role_is_rejected(
     db = reader_database
     role, pool = reader
     group = "sn_reader_group_" + uuid.uuid4().hex[:12]
-    db.admin.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(group)))
-    try:
-        db.admin.execute(
+    with _refused_while(
+        db,
+        pool,
+        escalate=[
+            sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(group)),
             sql.SQL("GRANT UPDATE (execution_state) ON {}.submit_intents TO {}").format(
                 sql.Identifier(db.schema), sql.Identifier(group)
-            )
-        )
-        db.admin.execute(
+            ),
             sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
                 sql.Identifier(db.schema), sql.Identifier(group)
-            )
-        )
-        db.admin.execute(
+            ),
             sql.SQL("GRANT {} TO {} WITH " + membership + ", ADMIN FALSE").format(
                 sql.Identifier(group), sql.Identifier(role)
-            )
-        )
+            ),
+        ],
+        revert=[
+            sql.SQL("REVOKE {} FROM {}").format(sql.Identifier(group), sql.Identifier(role)),
+            sql.SQL("DROP OWNED BY {}").format(sql.Identifier(group)),
+            sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(group)),
+        ],
+    ):
         with pool.connection() as connection:
+            assert connection.execute(
+                "SELECT pg_catalog.pg_has_role(current_user,%s,'MEMBER') AS reachable",
+                (group,),
+            ).fetchone() == {"reachable": True}
             if "SET TRUE" in membership:
                 connection.execute(sql.SQL("SET LOCAL ROLE {}").format(sql.Identifier(group)))
             connection.execute("UPDATE submit_intents SET execution_state='submitting'")
         assert not verify_execution_reader_authority(pool, db.schema)
-    finally:
-        db.admin.execute(
-            sql.SQL("REVOKE {} FROM {}").format(sql.Identifier(group), sql.Identifier(role))
-        )
-        db.admin.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(group)))
-        db.admin.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(group)))
 
 
 def test_public_temp_and_write_are_rejected(
     reader_database: ReaderDatabase, reader: tuple[str, GatewayPool]
 ) -> None:
+    """PUBLIC escalations in this sandbox's own database are refused with their cause named.
+
+    Each grant targets this sandbox's disposable database or schema, so the `relacl`,
+    `attacl` and `datacl` rows rewritten here belong to one worker only.
+    """
     db = reader_database
     _, pool = reader
     name = db.admin.info.dbname
     assert name is not None
-    db.admin.execute(
-        sql.SQL("GRANT TEMPORARY ON DATABASE {} TO PUBLIC").format(sql.Identifier(name))
-    )
-    try:
-        assert not verify_execution_reader_authority(pool, db.schema)
-    finally:
-        db.admin.execute(
+    with _refused_while(
+        db,
+        pool,
+        escalate=[sql.SQL("GRANT TEMPORARY ON DATABASE {} TO PUBLIC").format(sql.Identifier(name))],
+        revert=[
             sql.SQL("REVOKE TEMPORARY ON DATABASE {} FROM PUBLIC").format(sql.Identifier(name))
-        )
-    db.admin.execute(
-        sql.SQL("GRANT UPDATE (execution_state) ON {}.submit_intents TO PUBLIC").format(
-            sql.Identifier(db.schema)
-        )
-    )
-    try:
+        ],
+    ):
+        with pool.connection() as connection:
+            assert connection.execute(
+                "SELECT pg_catalog.has_database_privilege("
+                "current_user,current_database(),'TEMPORARY') AS allowed"
+            ).fetchone() == {"allowed": True}
         assert not verify_execution_reader_authority(pool, db.schema)
-    finally:
-        db.admin.execute(
+    with _refused_while(
+        db,
+        pool,
+        escalate=[
+            sql.SQL("GRANT UPDATE (execution_state) ON {}.submit_intents TO PUBLIC").format(
+                sql.Identifier(db.schema)
+            )
+        ],
+        revert=[
             sql.SQL("REVOKE UPDATE (execution_state) ON {}.submit_intents FROM PUBLIC").format(
                 sql.Identifier(db.schema)
             )
-        )
-    db.admin.execute(
-        sql.SQL("GRANT SELECT (request_document) ON {}.runtime_instance_intents TO PUBLIC").format(
-            sql.Identifier(db.schema)
-        )
-    )
-    try:
+        ],
+    ):
+        with pool.connection() as connection:
+            assert connection.execute(
+                "SELECT pg_catalog.has_column_privilege("
+                "current_user,'submit_intents','execution_state','UPDATE') AS allowed"
+            ).fetchone() == {"allowed": True}
         assert not verify_execution_reader_authority(pool, db.schema)
-    finally:
-        db.admin.execute(
+    with _refused_while(
+        db,
+        pool,
+        escalate=[
+            sql.SQL(
+                "GRANT SELECT (request_document) ON {}.runtime_instance_intents TO PUBLIC"
+            ).format(sql.Identifier(db.schema))
+        ],
+        revert=[
             sql.SQL(
                 "REVOKE SELECT (request_document) ON {}.runtime_instance_intents FROM PUBLIC"
             ).format(sql.Identifier(db.schema))
-        )
+        ],
+    ):
+        with pool.connection() as connection:
+            assert connection.execute(
+                "SELECT pg_catalog.has_column_privilege("
+                "current_user,'runtime_instance_intents','request_document','SELECT') AS allowed"
+            ).fetchone() == {"allowed": True}
+        assert not verify_execution_reader_authority(pool, db.schema)
 
 
 @pytest.mark.parametrize("capability", ["pg_write_all_data", "pg_read_server_files"])
@@ -430,17 +537,24 @@ def test_predefined_role_even_without_set_is_rejected(
 ) -> None:
     db = reader_database
     role, pool = reader
-    db.admin.execute(
-        sql.SQL("GRANT {} TO {} WITH INHERIT TRUE, SET FALSE, ADMIN FALSE").format(
-            sql.Identifier(capability), sql.Identifier(role)
-        )
-    )
-    try:
-        assert not verify_execution_reader_authority(pool, db.schema)
-    finally:
-        db.admin.execute(
+    with _refused_while(
+        db,
+        pool,
+        escalate=[
+            sql.SQL("GRANT {} TO {} WITH INHERIT TRUE, SET FALSE, ADMIN FALSE").format(
+                sql.Identifier(capability), sql.Identifier(role)
+            )
+        ],
+        revert=[
             sql.SQL("REVOKE {} FROM {}").format(sql.Identifier(capability), sql.Identifier(role))
-        )
+        ],
+    ):
+        with pool.connection() as connection:
+            assert connection.execute(
+                "SELECT pg_catalog.pg_has_role(current_user,%s,'MEMBER') AS inherited",
+                (capability,),
+            ).fetchone() == {"inherited": True}
+        assert not verify_execution_reader_authority(pool, db.schema)
 
 
 def test_sequence_and_security_definer_bypasses_are_rejected(
@@ -448,35 +562,68 @@ def test_sequence_and_security_definer_bypasses_are_rejected(
 ) -> None:
     db = reader_database
     role, pool = reader
-    db.sql("CREATE SEQUENCE reader_test_sequence")
-    try:
-        db.admin.execute(
-            sql.SQL("GRANT USAGE ON SEQUENCE {}.reader_test_sequence TO {}").format(
-                sql.Identifier(db.schema), sql.Identifier(role)
+    sequence = _sandbox_object(db, "reader_test_sequence")
+    with _refused_while(
+        db,
+        pool,
+        escalate=[
+            sql.SQL("CREATE SEQUENCE {}.{}").format(
+                sql.Identifier(db.schema), sql.Identifier(sequence)
+            ),
+            sql.SQL("GRANT USAGE ON SEQUENCE {}.{} TO {}").format(
+                sql.Identifier(db.schema), sql.Identifier(sequence), sql.Identifier(role)
+            ),
+        ],
+        revert=[
+            sql.SQL("DROP SEQUENCE IF EXISTS {}.{}").format(
+                sql.Identifier(db.schema), sql.Identifier(sequence)
             )
-        )
+        ],
+    ):
         with pool.connection() as connection:
             assert connection.execute(
-                "SELECT nextval('reader_test_sequence') AS value"
+                "SELECT pg_catalog.nextval(%s::pg_catalog.regclass) AS value",
+                (f"{db.schema}.{sequence}",),
             ).fetchone() == {"value": 1}
         assert not verify_execution_reader_authority(pool, db.schema)
-    finally:
-        db.sql("DROP SEQUENCE reader_test_sequence")
-    db.sql("CREATE TABLE reader_definer_marker (value integer)")
-    db.sql(
-        "CREATE FUNCTION reader_test_definer() RETURNS integer LANGUAGE SQL SECURITY DEFINER "
-        "AS 'INSERT INTO reader_definer_marker VALUES (1) RETURNING value'"
-    )
-    try:
+    marker = _sandbox_object(db, "reader_definer_marker")
+    definer = _sandbox_object(db, "reader_test_definer")
+    with _refused_while(
+        db,
+        pool,
+        escalate=[
+            sql.SQL("CREATE TABLE {}.{} (value integer)").format(
+                sql.Identifier(db.schema), sql.Identifier(marker)
+            ),
+            sql.SQL(
+                "CREATE FUNCTION {}.{}() RETURNS integer LANGUAGE SQL SECURITY DEFINER AS {}"
+            ).format(
+                sql.Identifier(db.schema),
+                sql.Identifier(definer),
+                sql.Literal(f"INSERT INTO {db.schema}.{marker} VALUES (1) RETURNING value"),
+            ),
+        ],
+        revert=[
+            sql.SQL("DROP FUNCTION IF EXISTS {}.{}()").format(
+                sql.Identifier(db.schema), sql.Identifier(definer)
+            ),
+            sql.SQL("DROP TABLE IF EXISTS {}.{}").format(
+                sql.Identifier(db.schema), sql.Identifier(marker)
+            ),
+        ],
+    ):
         with pool.connection() as connection:
-            assert connection.execute("SELECT reader_test_definer() AS value").fetchone() == {
-                "value": 1
-            }
-        assert db.sql("SELECT value FROM reader_definer_marker") == [{"value": 1}]
+            assert connection.execute(
+                sql.SQL("SELECT {}.{}() AS value").format(
+                    sql.Identifier(db.schema), sql.Identifier(definer)
+                )
+            ).fetchone() == {"value": 1}
+        assert db.sql(
+            sql.SQL("SELECT value FROM {}.{}").format(
+                sql.Identifier(db.schema), sql.Identifier(marker)
+            )
+        ) == [{"value": 1}]
         assert not verify_execution_reader_authority(pool, db.schema)
-    finally:
-        db.sql("DROP FUNCTION reader_test_definer()")
-        db.sql("DROP TABLE reader_definer_marker")
 
 
 def test_security_definer_outside_application_schema_is_rejected(
@@ -484,51 +631,78 @@ def test_security_definer_outside_application_schema_is_rejected(
 ) -> None:
     db = reader_database
     _, pool = reader
-    db.sql(
-        "CREATE FUNCTION information_schema.reader_test_definer() RETURNS integer "
-        "LANGUAGE SQL SECURITY DEFINER AS 'SELECT 1'"
-    )
-    try:
+    definer = _sandbox_object(db, "reader_test_definer")
+    with _refused_while(
+        db,
+        pool,
+        escalate=[
+            sql.SQL(
+                "CREATE FUNCTION information_schema.{}() RETURNS integer "
+                "LANGUAGE SQL SECURITY DEFINER AS {}"
+            ).format(sql.Identifier(definer), sql.Literal("SELECT 1"))
+        ],
+        revert=[
+            sql.SQL("DROP FUNCTION IF EXISTS information_schema.{}()").format(
+                sql.Identifier(definer)
+            )
+        ],
+    ):
         assert not verify_execution_reader_authority(pool, db.schema)
-    finally:
-        db.sql("DROP FUNCTION information_schema.reader_test_definer()")
 
 
 def test_column_grant_option_cannot_delegate_private_command_access(
     reader_database: ReaderDatabase, reader: tuple[str, GatewayPool]
 ) -> None:
+    """A column-level `WITH GRANT OPTION` is refused, and refused for that reason.
+
+    The reader really can delegate the private `request_document` column while the
+    option is in force — it performs the delegation itself — so the refusal cannot be
+    read as "the grant did not apply".
+    """
     db = reader_database
     role, pool = reader
     recipient = "sn_reader_extra_" + uuid.uuid4().hex[:12]
-    db.admin.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(recipient)))
-    db.admin.execute(
-        sql.SQL(
-            "GRANT SELECT (request_document) ON {}.submit_intents TO {} WITH GRANT OPTION"
-        ).format(sql.Identifier(db.schema), sql.Identifier(role))
-    )
-    try:
+    with _refused_while(
+        db,
+        pool,
+        escalate=[
+            sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(recipient)),
+            sql.SQL(
+                "GRANT SELECT (request_document) ON {}.submit_intents TO {} WITH GRANT OPTION"
+            ).format(sql.Identifier(db.schema), sql.Identifier(role)),
+        ],
+        revert=[
+            sql.SQL(
+                "REVOKE GRANT OPTION FOR SELECT (request_document) ON {}.submit_intents "
+                "FROM {} CASCADE"
+            ).format(sql.Identifier(db.schema), sql.Identifier(role)),
+            sql.SQL("DROP OWNED BY {}").format(sql.Identifier(recipient)),
+            sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(recipient)),
+        ],
+    ):
         with pool.connection() as connection:
+            assert connection.execute(
+                "SELECT pg_catalog.has_column_privilege("
+                "current_user,'submit_intents','request_document',"
+                "'SELECT WITH GRANT OPTION') AS delegable"
+            ).fetchone() == {"delegable": True}
             connection.execute(
                 sql.SQL("GRANT SELECT (request_document) ON {}.submit_intents TO {}").format(
                     sql.Identifier(db.schema), sql.Identifier(recipient)
                 )
             )
         assert not verify_execution_reader_authority(pool, db.schema)
-    finally:
-        db.admin.execute(
-            sql.SQL(
-                "REVOKE GRANT OPTION FOR SELECT (request_document) ON {}.submit_intents "
-                "FROM {} CASCADE"
-            ).format(sql.Identifier(db.schema), sql.Identifier(role))
-        )
-        db.admin.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(recipient)))
-        db.admin.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(recipient)))
 
 
 @pytest.mark.parametrize("authority", ["schema_create", "table_update", "column_update"])
 def test_catalog_create_and_write_privileges_are_never_trusted(
     reader_database: ReaderDatabase, reader: tuple[str, GatewayPool], authority: str
 ) -> None:
+    """`pg_catalog` write authority in this database is refused, not just unexercised.
+
+    `pg_namespace.nspacl` for `pg_catalog` and `pg_class`'s own `relacl`/`attacl` are
+    per-database rows, so the grants below never reach another worker.
+    """
     db = reader_database
     role, pool = reader
     permission = {
@@ -536,8 +710,12 @@ def test_catalog_create_and_write_privileges_are_never_trusted(
         "table_update": "UPDATE ON TABLE pg_catalog.pg_class",
         "column_update": "UPDATE (relpages) ON TABLE pg_catalog.pg_class",
     }[authority]
-    db.admin.execute(sql.SQL("GRANT " + permission + " TO {}").format(sql.Identifier(role)))
-    try:
+    with _refused_while(
+        db,
+        pool,
+        escalate=[sql.SQL("GRANT " + permission + " TO {}").format(sql.Identifier(role))],
+        revert=[sql.SQL("REVOKE " + permission + " FROM {}").format(sql.Identifier(role))],
+    ):
         with pool.connection() as connection:
             if authority == "schema_create":
                 fact = connection.execute(
@@ -562,115 +740,209 @@ def test_catalog_create_and_write_privileges_are_never_trusted(
                 ).fetchone()
             assert fact == {"allowed": True}
         assert not verify_execution_reader_authority(pool, db.schema)
-    finally:
-        db.admin.execute(sql.SQL("REVOKE " + permission + " FROM {}").format(sql.Identifier(role)))
 
 
 def test_catalog_sensitive_read_and_public_settings_write_are_rejected(
     reader_database: ReaderDatabase, reader: tuple[str, GatewayPool]
 ) -> None:
+    """Reading a non-PUBLIC system catalog or writing settings is refused, per surface.
+
+    The sensitive catalog is this sandbox's own `pg_statistic`, not the cluster-wide
+    `pg_authid`: `pg_authid` and its `pg_class` row live in the shared catalog, so a
+    grant on it rewrites one row for every database in the cluster (a concurrent worker
+    raises `tuple concurrently updated`) and widens every other sandbox's reader while
+    it is in force. `pg_statistic` keeps the same audit verdict for the same reason —
+    readable and not initially PUBLIC metadata — with an ACL row this database owns.
+    """
     db = reader_database
     role, pool = reader
-    db.admin.execute(
-        sql.SQL("GRANT SELECT ON pg_catalog.pg_authid TO {}").format(sql.Identifier(role))
-    )
-    try:
+    for grantee in (sql.Identifier(role), sql.SQL("PUBLIC")):
+        with _refused_while(
+            db,
+            pool,
+            escalate=[
+                sql.SQL("GRANT SELECT ON {} TO {}").format(sql.SQL(_SENSITIVE_CATALOG), grantee)
+            ],
+            revert=[
+                sql.SQL("REVOKE SELECT ON {} FROM {}").format(sql.SQL(_SENSITIVE_CATALOG), grantee)
+            ],
+        ):
+            with pool.connection() as connection:
+                assert connection.execute(
+                    "SELECT pg_catalog.has_table_privilege(current_user,%s,'SELECT') AS readable",
+                    (_SENSITIVE_CATALOG,),
+                ).fetchone() == {"readable": True}
+            assert not verify_execution_reader_authority(pool, db.schema)
+    with _refused_while(
+        db,
+        pool,
+        escalate=["GRANT DELETE ON pg_catalog.pg_settings TO PUBLIC"],
+        revert=["REVOKE DELETE ON pg_catalog.pg_settings FROM PUBLIC"],
+    ):
+        assert db.sql(
+            "SELECT count(*) AS entries FROM pg_catalog.pg_class c "
+            "CROSS JOIN LATERAL pg_catalog.aclexplode(c.relacl) acl "
+            "WHERE c.oid='pg_catalog.pg_settings'::pg_catalog.regclass "
+            "AND acl.grantee=0 AND acl.privilege_type='DELETE'"
+        ) == [{"entries": 1}]
+        assert not verify_execution_reader_authority(pool, db.schema)
+    with _refused_while(
+        db,
+        pool,
+        escalate=[
+            sql.SQL("GRANT UPDATE ON pg_catalog.pg_settings TO {} WITH GRANT OPTION").format(
+                sql.Identifier(role)
+            )
+        ],
+        revert=[
+            sql.SQL("REVOKE UPDATE ON pg_catalog.pg_settings FROM {}").format(sql.Identifier(role))
+        ],
+    ):
         with pool.connection() as connection:
             assert connection.execute(
                 "SELECT pg_catalog.has_table_privilege("
-                "current_user,'pg_catalog.pg_authid','SELECT') AS allowed"
-            ).fetchone() == {"allowed": True}
+                "current_user,'pg_catalog.pg_settings','UPDATE WITH GRANT OPTION') "
+                "AS delegable"
+            ).fetchone() == {"delegable": True}
         assert not verify_execution_reader_authority(pool, db.schema)
-    finally:
-        db.admin.execute(
-            sql.SQL("REVOKE SELECT ON pg_catalog.pg_authid FROM {}").format(sql.Identifier(role))
-        )
-    db.sql("GRANT SELECT ON pg_catalog.pg_authid TO PUBLIC")
-    try:
-        assert not verify_execution_reader_authority(pool, db.schema)
-    finally:
-        db.sql("REVOKE SELECT ON pg_catalog.pg_authid FROM PUBLIC")
-    db.sql("GRANT DELETE ON pg_catalog.pg_settings TO PUBLIC")
-    try:
-        assert not verify_execution_reader_authority(pool, db.schema)
-    finally:
-        db.sql("REVOKE DELETE ON pg_catalog.pg_settings FROM PUBLIC")
-    db.admin.execute(
-        sql.SQL("GRANT UPDATE ON pg_catalog.pg_settings TO {} WITH GRANT OPTION").format(
-            sql.Identifier(role)
-        )
-    )
-    try:
-        assert not verify_execution_reader_authority(pool, db.schema)
-    finally:
-        db.admin.execute(
-            sql.SQL("REVOKE UPDATE ON pg_catalog.pg_settings FROM {}").format(sql.Identifier(role))
-        )
-    db.admin.execute(
-        sql.SQL("GRANT UPDATE (setting) ON pg_catalog.pg_settings TO {}").format(
-            sql.Identifier(role)
-        )
-    )
-    try:
-        assert not verify_execution_reader_authority(pool, db.schema)
-    finally:
-        db.admin.execute(
+    with _refused_while(
+        db,
+        pool,
+        escalate=[
+            sql.SQL("GRANT UPDATE (setting) ON pg_catalog.pg_settings TO {}").format(
+                sql.Identifier(role)
+            )
+        ],
+        revert=[
             sql.SQL("REVOKE UPDATE (setting) ON pg_catalog.pg_settings FROM {}").format(
                 sql.Identifier(role)
             )
-        )
+        ],
+    ):
+        # `pg_settings` carries an initial PUBLIC UPDATE, so `has_column_privilege`
+        # answers true before this grant as well; the explicit entry in `attacl` is what
+        # the grant actually adds.
+        assert db.sql(
+            "SELECT count(*) AS entries FROM pg_catalog.pg_class c "
+            "JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid "
+            "CROSS JOIN LATERAL pg_catalog.aclexplode(a.attacl) acl "
+            "JOIN pg_catalog.pg_roles r ON r.oid=acl.grantee "
+            "WHERE c.oid='pg_catalog.pg_settings'::pg_catalog.regclass "
+            "AND a.attname='setting' AND r.rolname=%s AND acl.privilege_type='UPDATE'",
+            (role,),
+        ) == [{"entries": 1}]
+        assert not verify_execution_reader_authority(pool, db.schema)
 
 
 def test_alter_system_parameter_privilege_is_rejected_without_changing_settings(
     reader_database: ReaderDatabase, reader: tuple[str, GatewayPool]
 ) -> None:
+    """A `pg_parameter_acl` entry that lets the reader alter a server parameter is refused.
+
+    `pg_parameter_acl` is a shared catalog with a unique index on `parname`, so a real
+    GUC (`log_min_duration_statement`) is one row the whole cluster rewrites: two
+    sandbox workers granting it at once raise `duplicate key value violates unique
+    constraint "pg_parameter_acl_parname_index"` (`already exists`), and the row update
+    itself raises `tuple concurrently updated`. The parameter is therefore this
+    sandbox's own namespaced name, which PostgreSQL accepts for the same
+    ``GRANT ALTER SYSTEM ON PARAMETER`` form and which only this worker's row holds.
+
+    The audited predicate is unchanged: the audit walks every `pg_parameter_acl` row
+    and refuses any reachable role with `has_parameter_privilege(..., 'ALTER SYSTEM')`.
+    The refusal is pinned to this row: the reader holds nothing on the real GUC, the
+    entry is the only row carrying this role, and the audit is green again once it is
+    revoked.
+    """
     db = reader_database
     role, pool = reader
-    # Parameter ACLs are cluster-wide: grant only to this test's unique role.
-    target = sql.Identifier(role)
-    db.admin.execute(
-        sql.SQL("GRANT ALTER SYSTEM ON PARAMETER log_min_duration_statement TO {}").format(target)
-    )
-    try:
+    parameter = _sandbox_parameter(db)
+    with _refused_while(
+        db,
+        pool,
+        escalate=[
+            sql.SQL("GRANT ALTER SYSTEM ON PARAMETER {} TO {}").format(
+                sql.SQL(parameter), sql.Identifier(role)
+            )
+        ],
+        revert=[
+            sql.SQL("REVOKE ALTER SYSTEM ON PARAMETER {} FROM {}").format(
+                sql.SQL(parameter), sql.Identifier(role)
+            )
+        ],
+    ):
         with pool.connection() as connection:
             assert connection.execute(
                 "SELECT pg_catalog.has_parameter_privilege("
-                "current_user,'log_min_duration_statement','ALTER SYSTEM') AS allowed"
-            ).fetchone() == {"allowed": True}
+                "current_user,%s,'ALTER SYSTEM') AS allowed, "
+                "pg_catalog.has_parameter_privilege("
+                "current_user,'log_min_duration_statement','ALTER SYSTEM') AS real_guc",
+                (parameter,),
+            ).fetchone() == {"allowed": True, "real_guc": False}
+        assert db.sql(
+            "SELECT parname FROM pg_catalog.pg_parameter_acl "
+            "WHERE parname=%s OR paracl::text LIKE %s",
+            (parameter, f"%{role}%"),
+        ) == [{"parname": parameter}]
         assert not verify_execution_reader_authority(pool, db.schema)
-    finally:
-        db.admin.execute(
-            sql.SQL("REVOKE ALTER SYSTEM ON PARAMETER log_min_duration_statement FROM {}").format(
-                target
-            )
+    assert (
+        db.sql(
+            "SELECT 1 AS leftover FROM pg_catalog.pg_parameter_acl WHERE parname=%s", (parameter,)
         )
+        == []
+    )
 
 
 def test_catalog_security_definer_and_sequence_are_audited(
     reader_database: ReaderDatabase, reader: tuple[str, GatewayPool]
 ) -> None:
+    """Objects created in this database's `pg_catalog` are audited, not just exercised.
+
+    `pg_catalog` is a per-database namespace and the objects below carry this sandbox's
+    suffix, so the only writer of these `pg_proc`/`pg_class` rows is this worker.
+    """
     db = reader_database
     role, pool = reader
+    definer = _sandbox_object(db, "sn_reader_test_definer")
+    sequence = _sandbox_object(db, "sn_reader_test_sequence")
     db.sql("SET allow_system_table_mods=on")
     try:
-        db.sql(
-            "CREATE FUNCTION pg_catalog.sn_reader_test_definer() RETURNS integer "
-            "LANGUAGE SQL SECURITY DEFINER AS 'SELECT 1'"
-        )
-        try:
+        with _refused_while(
+            db,
+            pool,
+            escalate=[
+                sql.SQL(
+                    "CREATE FUNCTION pg_catalog.{}() RETURNS integer LANGUAGE SQL "
+                    "SECURITY DEFINER AS {}"
+                ).format(sql.Identifier(definer), sql.Literal("SELECT 1"))
+            ],
+            revert=[
+                sql.SQL("DROP FUNCTION IF EXISTS pg_catalog.{}()").format(sql.Identifier(definer))
+            ],
+        ):
+            with pool.connection() as connection:
+                assert connection.execute(
+                    sql.SQL("SELECT pg_catalog.{}() AS value").format(sql.Identifier(definer))
+                ).fetchone() == {"value": 1}
             assert not verify_execution_reader_authority(pool, db.schema)
-        finally:
-            db.sql("DROP FUNCTION pg_catalog.sn_reader_test_definer()")
-        db.sql("CREATE SEQUENCE pg_catalog.sn_reader_test_sequence")
-        try:
-            db.admin.execute(
-                sql.SQL("GRANT USAGE ON SEQUENCE pg_catalog.sn_reader_test_sequence TO {}").format(
-                    sql.Identifier(role)
-                )
-            )
+        with _refused_while(
+            db,
+            pool,
+            escalate=[
+                sql.SQL("CREATE SEQUENCE pg_catalog.{}").format(sql.Identifier(sequence)),
+                sql.SQL("GRANT USAGE ON SEQUENCE pg_catalog.{} TO {}").format(
+                    sql.Identifier(sequence), sql.Identifier(role)
+                ),
+            ],
+            revert=[
+                sql.SQL("DROP SEQUENCE IF EXISTS pg_catalog.{}").format(sql.Identifier(sequence))
+            ],
+        ):
+            with pool.connection() as connection:
+                assert connection.execute(
+                    "SELECT pg_catalog.nextval(%s::pg_catalog.regclass) AS value",
+                    (f"pg_catalog.{sequence}",),
+                ).fetchone() == {"value": 1}
             assert not verify_execution_reader_authority(pool, db.schema)
-        finally:
-            db.sql("DROP SEQUENCE pg_catalog.sn_reader_test_sequence")
     finally:
         db.sql("RESET allow_system_table_mods")
 
@@ -684,15 +956,16 @@ def test_owned_type_is_rejected_without_attempting_owner_ddl(
     object_name = "sn_reader_type_" + uuid.uuid4().hex[:12]
     object_identifier = sql.Identifier(db.schema, object_name)
     if kind == "enum":
-        db.admin.execute(sql.SQL("CREATE TYPE {} AS ENUM ('one')").format(object_identifier))
-        command = "ALTER TYPE {} OWNER TO {}"
-        cleanup = "DROP TYPE {}"
+        created = sql.SQL("CREATE TYPE {} AS ENUM ('one')").format(object_identifier)
+        owned = sql.SQL("ALTER TYPE {} OWNER TO {}").format(object_identifier, sql.Identifier(role))
+        dropped = sql.SQL("DROP TYPE IF EXISTS {}").format(object_identifier)
     else:
-        db.admin.execute(sql.SQL("CREATE DOMAIN {} AS text").format(object_identifier))
-        command = "ALTER DOMAIN {} OWNER TO {}"
-        cleanup = "DROP DOMAIN {}"
-    try:
-        db.admin.execute(sql.SQL(command).format(object_identifier, sql.Identifier(role)))
+        created = sql.SQL("CREATE DOMAIN {} AS text").format(object_identifier)
+        owned = sql.SQL("ALTER DOMAIN {} OWNER TO {}").format(
+            object_identifier, sql.Identifier(role)
+        )
+        dropped = sql.SQL("DROP DOMAIN IF EXISTS {}").format(object_identifier)
+    with _refused_while(db, pool, escalate=[created, owned], revert=[dropped]):
         with pool.connection() as connection:
             assert connection.execute(
                 "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_type t "
@@ -701,8 +974,6 @@ def test_owned_type_is_rejected_without_attempting_owner_ddl(
                 (object_name,),
             ).fetchone() == {"owns": True}
         assert not verify_execution_reader_authority(pool, db.schema)
-    finally:
-        db.admin.execute(sql.SQL(cleanup).format(object_identifier))
 
 
 def test_public_large_object_writer_is_rejected(
@@ -710,17 +981,25 @@ def test_public_large_object_writer_is_rejected(
 ) -> None:
     db = reader_database
     _, pool = reader
-    with pytest.raises(psycopg.errors.InsufficientPrivilege), pool.connection() as connection:
+    with (
+        pytest.raises(psycopg.errors.InsufficientPrivilege) as denied,
+        pool.connection() as connection,
+    ):
         connection.execute("SELECT pg_catalog.lo_create(0)")
-    db.sql("GRANT EXECUTE ON FUNCTION pg_catalog.lo_create(oid) TO PUBLIC")
-    try:
+    assert denied.value.diag.message_primary == "permission denied for function lo_create"
+    created: dict[str, Any] = {}
+    with _refused_while(
+        db,
+        pool,
+        escalate=["GRANT EXECUTE ON FUNCTION pg_catalog.lo_create(oid) TO PUBLIC"],
+        revert=["REVOKE EXECUTE ON FUNCTION pg_catalog.lo_create(oid) FROM PUBLIC"],
+    ):
         with pool.connection() as connection:
-            created = connection.execute("SELECT pg_catalog.lo_create(0) AS oid").fetchone()
-            assert created is not None
-        assert db.admin.execute("SELECT pg_catalog.lo_unlink(%s)", (created["oid"],)).fetchone()
+            row = connection.execute("SELECT pg_catalog.lo_create(0) AS oid").fetchone()
+            assert row is not None
+            created = row
         assert not verify_execution_reader_authority(pool, db.schema)
-    finally:
-        db.sql("REVOKE EXECUTE ON FUNCTION pg_catalog.lo_create(oid) FROM PUBLIC")
+        assert db.admin.execute("SELECT pg_catalog.lo_unlink(%s)", (created["oid"],)).fetchone()
 
 
 @pytest.mark.parametrize(
@@ -729,56 +1008,83 @@ def test_public_large_object_writer_is_rejected(
 def test_schema_and_database_or_relation_owners_are_rejected(
     reader_database: ReaderDatabase, reader: tuple[str, GatewayPool], authority: str
 ) -> None:
+    """Ownership of this sandbox's own schema, table or database is refused, with cause.
+
+    Every object below belongs to this sandbox's disposable database, so the ownership
+    change only rewrites a row one worker owns; the witness is the same predicate the
+    audit reads (`pg_has_role(role, owner, 'MEMBER')`).
+    """
     db = reader_database
     role, pool = reader
     current_owner = db.admin.execute("SELECT CURRENT_USER AS owner").fetchone()["owner"]
     database_name = db.admin.info.dbname
     assert database_name is not None
-    target = {
-        "schema_create": sql.SQL("SCHEMA {} TO {}").format(
-            sql.Identifier(db.schema), sql.Identifier(role)
-        ),
-        "schema_owner": sql.SQL("SCHEMA {} OWNER TO {}").format(
-            sql.Identifier(db.schema), sql.Identifier(role)
-        ),
-        "relation_owner": sql.SQL("TABLE {}.submit_intents OWNER TO {}").format(
-            sql.Identifier(db.schema), sql.Identifier(role)
-        ),
-        "database_owner": sql.SQL("DATABASE {} OWNER TO {}").format(
-            sql.Identifier(database_name), sql.Identifier(role)
-        ),
-    }[authority]
+    schema = sql.Identifier(db.schema)
+    escalate: list[Any]
+    revert: list[Any]
+    witness: tuple[str, tuple[Any, ...]]
     if authority == "schema_create":
-        db.admin.execute(sql.SQL("GRANT CREATE ON ") + target)
+        escalate = [sql.SQL("GRANT CREATE ON SCHEMA {} TO {}").format(schema, sql.Identifier(role))]
+        revert = [
+            sql.SQL("REVOKE CREATE ON SCHEMA {} FROM {}").format(schema, sql.Identifier(role))
+        ]
+        witness = (
+            "SELECT pg_catalog.has_schema_privilege(current_user,%s,'CREATE') AS reached",
+            (db.schema,),
+        )
+    elif authority == "schema_owner":
+        escalate = [sql.SQL("ALTER SCHEMA {} OWNER TO {}").format(schema, sql.Identifier(role))]
+        # An ownership change rewrites the object's ACL (`aclnewowner`), so restoring the
+        # owner alone leaves the reader without the grants the fixture gave it. The same
+        # grant statements the fixture ran are re-applied, which is what makes the audit
+        # green again — without it a "reverted" fixture would silently be narrower.
+        revert = [
+            sql.SQL("ALTER SCHEMA {} OWNER TO {}").format(schema, sql.Identifier(current_owner)),
+            *gateway_query_grants(db.schema, role),
+        ]
+        witness = (
+            "SELECT pg_catalog.pg_has_role(current_user,n.nspowner,'MEMBER') AS reached "
+            "FROM pg_catalog.pg_namespace n WHERE n.nspname=%s",
+            (db.schema,),
+        )
+    elif authority == "relation_owner":
+        escalate = [
+            sql.SQL("ALTER TABLE {}.submit_intents OWNER TO {}").format(
+                schema, sql.Identifier(role)
+            )
+        ]
+        revert = [
+            sql.SQL("ALTER TABLE {}.submit_intents OWNER TO {}").format(
+                schema, sql.Identifier(current_owner)
+            ),
+            *gateway_query_grants(db.schema, role),
+        ]
+        witness = (
+            "SELECT pg_catalog.pg_has_role(current_user,c.relowner,'MEMBER') AS reached "
+            "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
+            "WHERE c.relname='submit_intents' AND n.nspname=%s",
+            (db.schema,),
+        )
     else:
-        db.admin.execute(sql.SQL("ALTER ") + target)
-    try:
+        escalate = [
+            sql.SQL("ALTER DATABASE {} OWNER TO {}").format(
+                sql.Identifier(database_name), sql.Identifier(role)
+            )
+        ]
+        revert = [
+            sql.SQL("ALTER DATABASE {} OWNER TO {}").format(
+                sql.Identifier(database_name), sql.Identifier(current_owner)
+            )
+        ]
+        witness = (
+            "SELECT pg_catalog.pg_has_role(current_user,d.datdba,'MEMBER') AS reached "
+            "FROM pg_catalog.pg_database d WHERE d.datname=current_database()",
+            (),
+        )
+    with _refused_while(db, pool, escalate=escalate, revert=revert):
+        with pool.connection() as connection:
+            assert connection.execute(*witness).fetchone() == {"reached": True}
         assert not verify_execution_reader_authority(pool, db.schema)
-    finally:
-        if authority == "schema_create":
-            db.admin.execute(
-                sql.SQL("REVOKE CREATE ON SCHEMA {} FROM {}").format(
-                    sql.Identifier(db.schema), sql.Identifier(role)
-                )
-            )
-        elif authority == "schema_owner":
-            db.admin.execute(
-                sql.SQL("ALTER SCHEMA {} OWNER TO {}").format(
-                    sql.Identifier(db.schema), sql.Identifier(current_owner)
-                )
-            )
-        elif authority == "relation_owner":
-            db.admin.execute(
-                sql.SQL("ALTER TABLE {}.submit_intents OWNER TO {}").format(
-                    sql.Identifier(db.schema), sql.Identifier(current_owner)
-                )
-            )
-        else:
-            db.admin.execute(
-                sql.SQL("ALTER DATABASE {} OWNER TO {}").format(
-                    sql.Identifier(database_name), sql.Identifier(current_owner)
-                )
-            )
 
 
 def test_missing_column_and_row_security_fail_closed(
@@ -786,22 +1092,37 @@ def test_missing_column_and_row_security_fail_closed(
 ) -> None:
     db = reader_database
     role, pool = reader
-    db.admin.execute(
-        sql.SQL("REVOKE SELECT (reason) ON {}.gateway_abort_intents FROM {}").format(
-            sql.Identifier(db.schema), sql.Identifier(role)
-        )
-    )
-    assert not verify_execution_reader_authority(pool, db.schema)
-    db.admin.execute(
-        sql.SQL("GRANT SELECT (reason) ON {}.gateway_abort_intents TO {}").format(
-            sql.Identifier(db.schema), sql.Identifier(role)
-        )
-    )
-    db.sql("ALTER TABLE submit_intents ENABLE ROW LEVEL SECURITY")
-    try:
+    with _refused_while(
+        db,
+        pool,
+        escalate=[
+            sql.SQL("REVOKE SELECT (reason) ON {}.gateway_abort_intents FROM {}").format(
+                sql.Identifier(db.schema), sql.Identifier(role)
+            )
+        ],
+        revert=[
+            sql.SQL("GRANT SELECT (reason) ON {}.gateway_abort_intents TO {}").format(
+                sql.Identifier(db.schema), sql.Identifier(role)
+            )
+        ],
+    ):
+        with pool.connection() as connection:
+            assert connection.execute(
+                "SELECT pg_catalog.has_column_privilege("
+                "current_user,'gateway_abort_intents','reason','SELECT') AS readable"
+            ).fetchone() == {"readable": False}
         assert not verify_execution_reader_authority(pool, db.schema)
-    finally:
-        db.sql("ALTER TABLE submit_intents DISABLE ROW LEVEL SECURITY")
+    with _refused_while(
+        db,
+        pool,
+        escalate=["ALTER TABLE submit_intents ENABLE ROW LEVEL SECURITY"],
+        revert=["ALTER TABLE submit_intents DISABLE ROW LEVEL SECURITY"],
+    ):
+        assert db.sql(
+            "SELECT relrowsecurity FROM pg_catalog.pg_class "
+            "WHERE oid='submit_intents'::pg_catalog.regclass"
+        ) == [{"relrowsecurity": True}]
+        assert not verify_execution_reader_authority(pool, db.schema)
 
 
 def test_deleted_original_and_corrupted_original_have_distinct_safe_outcomes(

@@ -3,7 +3,7 @@
   "controlled_endpoint_file": "/run/speechnexus-private/gateway-file-voice-clone-endpoint.json",
   "objects": {
     "endpoint": "http://172.28.0.10:9000",
-    "input_bucket": "speechnexus-inputs",
+    "input_bucket": "speechnexus-results",
     "result_bucket": "speechnexus-results",
     "spool_directory": "/run/speechnexus-private/spool",
     "tls_ca_file": null,

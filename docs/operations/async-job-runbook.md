@@ -226,12 +226,14 @@ SPEECHNEXUS_MIGRATION_DATABASE_URL='postgresql://speechnexus:<owner-password>@12
 预期：无 stdout、退出码 `0`。随后 15 张 Job/准入关系应全部存在。这里的"head"是仓库
 `backend/src/speechnexus_backend/speech/infrastructure/migrations/versions/` 下唯一的
 `alembic heads` 结果；数据库版本低于它时，自检会指出落后并列出缺的 revision，而不是只看
-版本号非空。下面的查询使用
-环境文件里的迁移 DSN，先载入环境（口令来自环境，不进入命令行参数）：
+版本号非空。下面的查询走容器内 `psql`：DSN 的 host 是 Compose 服务名 `postgres`，
+**宿主解析不到**；宿主也不保证装了 `psql`（`DEL-535` 的窗口里是 `command not found`、退出
+`127`）。因此不把 DSN 交给宿主 shell，而是用 owner 身份进 `postgres` 容器执行——容器内本地连接
+不需要口令，所以命令行里没有口令：
 
 ```bash
-set -a; . deploy/compose.env; set +a
-psql "$SPEECHNEXUS_MIGRATION_DATABASE_URL" -Atc \
+docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
+  exec -T postgres psql -U speechnexus -d speechnexus -Atc \
   "select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace
    where n.nspname='speech' and c.relkind='r'
      and relname in ('coordination_jobs','coordination_outbox','admission_operations',
@@ -296,10 +298,11 @@ uv run --all-packages python scripts/dev-env/provision-job-roles.py
 脚本默认 `SN_GATEWAY_ROLE=sn_gateway`；若基础部署的 gateway 角色名不同，用实际 DSN 的用户名
 覆盖该变量。`coordination_runtime_grants` 要求两个角色不同，因此必须先有基础 gateway 角色。
 
-用 worker 启动时**同样的探测语句**核对派发角色（这只是列权限，改动数据为 0 行）：
+用 worker 启动时**同样的探测语句**核对派发角色（这只是列权限，改动数据为 0 行）。同样走容器内
+`psql`：DSN 的服务名宿主解析不到，宿主也没有 `psql`；角色名与数据库名取自该 DSN 的用户名与
+路径（本例为 `sn_job_dispatch` / `speechnexus`），改名时同步替换：
 
 ```bash
-set -a; . deploy/compose.env; set +a
 for stmt in \
   "SELECT job_id FROM speech.speech_jobs LIMIT 0" \
   "SELECT job_id, event_seq, state, occurred_at_us, kind, progress_unit, progress_completed, progress_total FROM speech.speech_job_events LIMIT 0" \
@@ -309,7 +312,8 @@ for stmt in \
   "SELECT request_document FROM speech.admission_requests LIMIT 0" \
   "SELECT lease_id, lease_state, cleanup_state, deadline_at_us FROM speech.admission_leases LIMIT 0" \
   "SELECT artifact_id FROM speech.speech_artifacts LIMIT 0"; do
-  psql "$SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -c "$stmt" >/dev/null \
+  docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
+    exec -T postgres psql -U sn_job_dispatch -d speechnexus -X -q -v ON_ERROR_STOP=1 -c "$stmt" >/dev/null \
     || { printf 'FAILED: %s\n' "$stmt"; exit 1; }
 done
 printf 'dispatch probes ok\n'
@@ -370,6 +374,32 @@ curl -sS -X POST http://127.0.0.1:8000/v1/nexus/admin/model-bindings \
   -d @binding-draft.json
 ```
 
+**`binding-draft.json` 不是 `--emit-binding-request` 输出的原样。** 那个工具产出的是
+**生产者路由**的 `BindingDefaultsCreateRequest`（`contracts/binding-defaults-producer.openapi.yaml`，
+由 `SPEECHNEXUS_BINDING_DEFAULTS_WRITER_DATABASE_URL` 开启）：工具的输出来自
+`binding-definition.json`，带 `parameter_defaults`，不产出 `execution_defaults`。本节这条运维
+写路径按 `ModelBindingCreateRequest` 校验（`contracts/admin-openapi.yaml`，
+`additionalProperties: false`，没有 `parameter_defaults`），原样 POST 会得到
+`400 invalid_binding_request`（`speech/interfaces/http/bindings.py:84`）。两个契约共用
+`engine`、`artifact_set`、`execution_recipe`、`parameter_domains`、`release_tier`，差别只在
+默认值那一块：
+
+- 不要把 `parameter_defaults` 改个名顶替：生产者侧是稀疏参数图（`asr`/`tts`/`output` 三段，
+  只给声明过的字段），运维侧 `execution_defaults` 是完整执行参数（只有 `asr`/`tts`，
+  `additionalProperties: false`）。照抄改名会让 `output` 段与缺项一起被拒。
+- `execution_defaults.asr` 的 13 个必填字段：`language`、`turn_detection`、`finalization`、
+  `preview_interval_ms`、`max_segment_ms`、`rollback_tokens`、`final_deadline_ms`、
+  `auxiliary_deadline_ms`、`alignment`、`diarization`、`vocabulary_set_revision`、
+  `temperature`、`timeout_seconds`；`execution_defaults.tts` 的 11 个：
+  `language`、`text_commit_mode`、`audio_delivery`、`speed`、`instructions`、
+  `pronunciation_revision`、`seed`、`planner`、`sample_rate_hz`、`max_output_audio_ms`、
+  `timeout_seconds`。
+- 取值仍要逐项来自部署事实，工具只提供 `engine` 与 `artifact_set` 的可核验部分。
+
+`release_tier` 由部署申请：**实验部署填 `experimental`**，不要沿用样例与
+`deploy/engines/file-asr-audio/binding-definition.json` 里的 `production`。工具输出和样例文件
+都只是请求目标，不代表生产资格，也不产生资格回执。
+
 预期 `201`，响应是 `ModelBindingDraftRevision`：`revision`（十进制字符串）、
 `revision_id`（由注册表分配、调用方不能指定，形如 `mbrev-…`，`binding_drafts_postgres.py:67`）、
 `publication.status: "draft"`，且 `publication.capacity_manifest_id` /
@@ -381,12 +411,12 @@ curl -sS -X POST http://127.0.0.1:8000/v1/nexus/admin/model-bindings \
 | `logical_model` | 部署自行分配的逻辑名 | `^[a-z0-9][a-z0-9._-]{1,63}$`；只投影为目录的 `nexus.logical_model`（`model_catalog.py:103`），不要求等于引擎模型名或 gateway 的 `served_model` |
 | `tasks` | 要跑的任务：ASR 填 `["asr_file"]`，TTS 填 `["tts_file"]` | 创建 Job 按 kind 校验（`speech/application/public_jobs.py:54`），不含对应任务 → `422 model_not_published` |
 | `engine.kind` / `image_digest` / `runtime_version` | 部署实际运行的引擎镜像事实（`image_digest` 为 `sha256:<64 位小写十六进制>`） | 草稿只做结构校验，不查外部引用是否存在（[不可变草稿](../components/model-binding-drafts.md)） |
-| `artifact_set` | 固定制品清单：file-ASR 由 `scripts/dev-env/verify-file-asr-artifacts.py --emit-binding-request` 从 `artifact-pin.json` 生成 | 同上；真实值必须来自实际挂载的制品，不能手造摘要 |
+| `artifact_set` | 固定制品清单：file-ASR 由 `scripts/dev-env/verify-file-asr-artifacts.py --emit-binding-request` 从 `artifact-pin.json` 生成；从该输出里取 `artifact_set`（与 `engine`）填进本请求体，其余段按本节规则写 | 同上；真实值必须来自实际挂载的制品，不能手造摘要 |
 | `execution_recipe.recipe_revision` / `stage_roles` | 配方的执行角色：文件 ASR 为 `asr_batch` | gateway 只接受 `task_kind=asr_file` + `stage_role=asr_batch` 的命令（`file_asr_command.py:103`） |
 | `execution_recipe.capacity_manifest_id` | 部署选定的容量清单 ID，**必须与第 2 步提交的 `capacity_manifest_id` 逐字相同**，且**必须等于 §7.2 注册时的 `manifest_id`** | 与草稿不符 → 第 2 步 `422 capacity_manifest_mismatch`（`binding_lifecycle_postgres.py:292`）；与实例不符 → 创建 Job 时 `422 job_binding_incomplete`（`public_job_admission.py:655`） |
 | `parameter_domains` | 该 binding 允许的参数域 | 结构校验在草稿阶段完成 |
 | `execution_defaults` | 完整执行参数：ASR 的 13 个必填字段与 TTS 的 11 个必填字段全部给齐（见 `contracts/model-binding-execution-defaults.schema.json`），取值来自部署配置与该 binding 的固定默认 | **创建 Job 的硬前置**：准入从这里取语言、分段、期限等全部执行参数（`public_job_admission.py:134`），缺一项就是 `422 job_binding_incomplete`。它是**只写**字段——写进不可变定义，但 admin 响应把它剥掉（`speech/interfaces/binding_drafts.py:56`），因此核对只能回看这份请求体 |
-| `release_tier` | 部署申请的目标等级 | 是申请目标，不是资格回执 |
+| `release_tier` | 部署申请的目标等级：实验部署填 `experimental` | 是申请目标，不是资格回执；样例与工具输出里的 `production` 不构成生产资格 |
 
 **第 2 步 发布。** `capacity_manifest_id` 必须等于第 1 步 `execution_recipe` 里的值；
 `qualification_report_id` 是部署方声明的资格报告引用；`expected_current_revision` 是提交前
@@ -440,8 +470,13 @@ curl -sS -X POST \
 curl -sS http://127.0.0.1:8000/v1/models
 ```
 
-预期 `200`，`data[*].id` 等于 `binding_id`、`data[*].nexus.binding.revision_id` 等于第 2 步的
-`revision_id`；未配置 `sn_catalog_reader` 时是 `503 model_catalogue_unavailable`。
+**预期值已按实测订正：当前实现返回 `503 model_catalogue_unavailable`。** `DEL-535` 从零实跑
+（基线 `origin/main` `c0172a22`）在 `sn_catalog_reader` 已配置、binding 已发布且已激活的情况下
+仍拿到 `503`，**不是角色没配**。根因是产品缺陷（`#891`）：catalog 要求不可变定义里的
+`binding_id` 等于发布的 `object_id`（`model_catalog.py:79`），而本步创建出的 binding 持久化的
+定义里没有 `binding_id`，整份目录读面因此报不可用。修复前这条核对**不可用**，`503` 不能当作
+「binding 没发布」的证据，改用下面三条 SQL 核对已发布事实。也不要在部署侧放宽 catalog 校验来
+换一个 `200`：那条校验是对的，缺字段的是生产路径。
 
 ```bash
 docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
@@ -477,11 +512,13 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 
 这两处只影响 **执行**：`202` 只需要数据库里的已发布 binding、配额行与 ready 实例。
 
-**本节核对状态**：上面三条 HTTP 命令与两条核对命令都**未在本机实跑**（本机没有可用的参考部署
-与真实引擎）。请求/响应字段与状态码取自 `contracts/binding.openapi.json` 与
-`contracts/model-binding.schema.json`，事务副作用与错误码取自
-`binding_lifecycle_postgres.py`、`speech/interfaces/http/binding_lifecycle.py`；「发布即写
-head、对同一 revision 再激活是 no-op」这个顺序结论也是按这些代码路径推导，不是实测。
+**本节核对状态**：三条 HTTP 命令已在 `DEL-535` 的从空卷实跑中通过（`201`/`201`/`200`，
+MegaCube 真实引擎窗口，基线 `c0172a22`；记录见
+[从零实跑记录](compose-minimal-from-zero.md)第 11 节）。
+本节仍未在**本机**取证（macOS 开发机没有参考部署与引擎）。请求/响应字段与状态码取自
+`contracts/binding.openapi.yaml` 与 `contracts/model-binding.schema.json`，事务副作用与
+错误码取自 `binding_lifecycle_postgres.py`、`speech/interfaces/http/binding_lifecycle.py`；
+「发布即写 head、对同一 revision 再激活是 no-op」这个顺序结论按代码路径推导，不是实测。
 
 ### 7.2 注册引擎（同时写入 `host_nodes` 与 `workspace_quotas`）
 
@@ -513,7 +550,9 @@ except Exception as error:
 '
 ```
 
-预期打印 `http= 200 …`。`--no-deps` 不重复拉起 `postgres`；探针用镜像自带的 `python`
+预期打印 `http= 200 None`：第三段是响应的 `content-type`，引擎的 `/health` 不带这个头，所以
+实测就是 `None`（`DEL-535`）；返回了 `content-type` 的引擎会打印具体值。`--no-deps` 不重复拉起
+`postgres`；探针用镜像自带的 `python`
 （`deploy/images/python.Dockerfile:40` 把 venv 放进 `PATH`，Compose 自己的健康检查也用
 `python`），不假设镜像装了 `curl`。在操作主机上直接
 `curl "${SPEECHNEXUS_ENGINE_HEALTH_URL%/}/health"` 对 `host.docker.internal` 只会得到连接
@@ -550,11 +589,12 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 `engine_registration.py` 全文无该表引用推导，未实跑）。所以「注册成功」不能当作「binding
 已发布」的证据，两个事实要分别核对。
 
-核对注册事实（只读）：
+核对注册事实（只读，同样在容器内执行——DSN 的服务名宿主解析不到，宿主也没有 `psql`）：
 
 ```bash
 set -a; . deploy/compose.env; set +a
-psql "$SPEECHNEXUS_MIGRATION_DATABASE_URL" -Atc \
+docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
+  exec -T postgres psql -U speechnexus -d speechnexus -Atc \
   "select e.instance_id, e.instance_generation, e.instance_state
      from speech.engine_instances e
     where e.instance_id = '${SPEECHNEXUS_ENGINE_INSTANCE_ID}'"
@@ -589,28 +629,46 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
   "select workspace_id, max_attempts, held_attempts, policy_revision from speech.workspace_quotas"
 docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
   exec -T postgres psql -U speechnexus -d speechnexus -Atc \
-  "select host_node_id, node_state, allocatable_device_memory_bytes, held_device_memory_bytes from speech.host_nodes"
+  "select host_node_id, node_state, memory_architecture,
+          allocatable_device_memory_bytes, held_device_memory_bytes,
+          allocatable_unified_physical_memory_bytes, held_unified_physical_memory_bytes,
+          allocatable_cpu_decode_millicores
+     from speech.host_nodes"
 docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
   exec -T postgres psql -U speechnexus -d speechnexus -Atc \
   "select instance_id, instance_generation, instance_state, binding_revision_id, manifest_id from speech.engine_instances"
 ```
 
 预期：`workspace-default` 一行（`max_attempts` 取自 `SPEECHNEXUS_ADMISSION_MAX_ATTEMPTS`，
-`policy_revision` 取自配方的 `policy_revision_id`）；`node-local-1` 一行 `node_state=active`
-且 `allocatable_*` 非零；`instance-asr-1|1|ready` 一行，其 `binding_revision_id` 等于 §7.1
+`policy_revision` 取自配方的 `policy_revision_id`）；`node-local-1` 一行 `node_state=active`，
+容量列**按 `memory_architecture` 选维度**核对、不能只看一对列：`device_memory` 拓扑看
+`allocatable_device_memory_bytes`；`unified_memory` 拓扑（GB10 等统一内存机型）的 device 维度
+本来就是 `0`，容量在 `allocatable_unified_physical_memory_bytes`
+（`DEL-535` 实测：`node-local-1|unified_memory` 的 unified 可分配与已占用同为 `12884901888`，
+CPU 毫核 `2500/2000`）；`instance-asr-1|1|ready` 一行，其 `binding_revision_id` 等于 §7.1
 发布的 `revision_id`、`manifest_id` 等于该 binding 的 `execution_recipe.capacity_manifest_id`。
 
 判定口径：`workspace_quotas` 缺行就是「这个工作空间从没为它注册过引擎」，创建返回
 `422 workspace_not_configured`，重试不会改变结果，只能按 §7.2 注册（`public_job_admission.py:172`
 的选择是刻意的：空读是确定性配置事实，不是存储故障，所以不回 `503`）。`host_nodes` 的
-`allocatable_*` 是注册时写下的宿主机容量，`held_*` / `quarantined_*` 由准入与租约结算维护；
+`allocatable_*` 是注册时写下的宿主机容量，六个维度各自独立、互不代偿：`unified`、`device`、
+`host_memory`、`cpu_decode`、`host_pcm_buffer`、`scratch_disk`；拓扑只填其中适用的维度，其余
+保持 `0`，所以「有维度非零」不等于「device 列非零」。`held_*` / `quarantined_*` 由准入与租约
+结算维护；
 注册时的容量校验在 `engine_registration.py:502` 的 `_require_capacity`，准入侧不再重读
 `host_nodes` 做容量算术，而是要求存在 ready 实例与 active 池 owner
 （`public_job_admission.py:206`、`:663`）。因此「容量登记」这份事实的产生入口就是 §7.2 的注册，
 不是单独的管理端点。
 
-本节三条 SQL 都是只读查询，可在任意已完成注册的部署上执行；上面的「预期」值按注册代码推导，
-本机没有注册过的实例，因此**未实跑**。
+本节三条 SQL 都是只读查询，可在任意已完成注册的部署上执行。`DEL-535`（`c0172a22`，MegaCube）
+已按容器内 `psql` 实跑，输出与上面预期一致：
+
+```text
+workspace-default|8|0|policy-silero-vad-bfdc0193
+instance-asr-1|1|ready|mbrev-3cbacc8e26b74859a63e293162064487|capm-file-asr-qwen3-1p7b-gb10-20261027
+```
+
+`host_nodes` 一行按统一内存维度读出（见上面「预期」）。**本机仍无注册实例，未实跑**。
 
 ### 7.4 readiness 收据续期与观测
 
@@ -1003,7 +1061,9 @@ curl -sS http://127.0.0.1:8000/v1/nexus/jobs/<job_id>
 `execution_defaults` 由 binding 定义的不可变定义提供、不在 admin 响应里回显，所以核对只能
 回看 §7.1 第 1 步的请求体；声音按[内建声音资格](builtin-voice-qualification.md)取证。
 
-命令执行状态：以上三条 HTTP 命令**未在本机验证**（没有完整参考部署与真实引擎）。
+命令执行状态：这三条命令已在 `DEL-535` 的从空卷实跑中走通（时间线与标识见
+[从零实跑记录](compose-minimal-from-zero.md)第 11 节）：`202` → `queued` → `running` →
+`succeeded`，制品 `sha256` 与 `ETag` 一致。**未在本机验证**（本机没有参考部署与真实引擎）。
 
 ## 12. 自检脚本
 

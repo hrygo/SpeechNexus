@@ -7,11 +7,14 @@ date: 2026-11-16
 
 # 从空库按文档起参考部署的执行记录
 
-本文件记录 2026-11-16 在一台 macOS 开发机上、以独立 Compose 项目从空 PostgreSQL 数据卷与
-空 MinIO 出发，只按[最小 Compose 部署](compose-minimal.md)与
-[参考部署异步 Job 的六项前置](async-job-runbook.md)执行到参考部署五服务健康、派发 worker
-启动闸门通过的过程、实测输出与缺口。它不改变两份手册的能力结论，也不构成异步 Job 的验收
-证据；`#572` 仍需一次带真实引擎的完整窗口。
+本文件记录两次「从空库照文档起一套」的实跑，命令、实测输出与缺口都按原样保留：
+
+- §2–§10：2026-11-16 在一台 macOS 开发机上、以独立 Compose 项目从空 PostgreSQL 卷与空 MinIO
+  出发，执行到参考部署五服务健康、派发 worker 启动闸门通过；本机没有真实引擎，止步于一次性
+  引擎注册。
+- §11：同日在 MegaCube（aarch64 + GB10）上从空卷重跑，并在**真实 GPU 引擎**上跑通一条 ASR
+  Job。该轮仍不是零修正通过，暴露的 9 处偏差已由 `#890` 修正，是 `#572`「他人照文档起一套」
+  的实跑前提。
 
 ## 1. 结论
 
@@ -26,6 +29,9 @@ date: 2026-11-16
 - 缺前置时的表现：迁移、派发授权、结果桶三类在 claim 前**点名**拒绝；writer/admission DSN
   缺失是稳定但**不点名**的 `503 job_unavailable`；无 ready 实例从零看到的是
   `422 model_not_published`，手册声称的 `429 job_capacity_exhausted` 在本路径不可达（§6）。
+- MegaCube 那次（§11）补齐了「真实引擎 + 已发布 binding」两个缺口，`202 → queued → running →
+  succeeded` 全链通过；`GET /v1/models` 仍是 `503`（产品缺陷 `#891`），9 处文档/样例偏差见
+  §11.3。
 
 ## 2. 环境、基线与边界
 
@@ -346,3 +352,113 @@ $ docker volume ls --filter label=com.docker.compose.project=sn878 --format '{{.
 3. 没有真实引擎时，止步于第 8 节并记录 `engine_unreachable`；不要用 fake 引擎、不要手写
    `engine_instances`/`leases`、不要注入制品。
 4. 想真正跑通一条 Job，除引擎外还必须先解决 §5 的 binding/配额缺口（D6）。
+
+## 11. DEL-535：MegaCube 上带真实引擎的从零实跑
+
+本节记录 2026-11-16 在 MegaCube（aarch64 + GB10）上、以独立 Compose 项目从空 PostgreSQL 卷与空
+MinIO 卷出发，按[最小 Compose 部署](compose-minimal.md) §0–§7 与
+[异步 Job 六项前置](async-job-runbook.md) §7.1–§7.3 起栈，并在**真实 GPU 引擎**上跑通一条 ASR
+Job 的窗口。它与 §4–§10 那次（macOS、无本地引擎、止步注册）的区别是：这次 202 → succeeded 全链
+通过；相同的是**都不是零修正通过**——本轮按文档执行时暴露了 9 处文档/样例偏差（§11.3，已由
+`#890` 修正）。
+
+### 11.1 基线与镜像
+
+| 项 | 值 |
+| --- | --- |
+| 日期 | 2026-11-16 |
+| 仓库基线 | `origin/main` `c0172a22245c6247fa6ea547d120b0b2f1f8faa0`（`2026-11-16T02:41:30Z`，`#880`） |
+| 工作副本 | 该 SHA 的 codeload 源码归档，`sha256:2b74b5ca58b0711713e8b408899b4f006cedc886c4734d0ccca4e969e81243ae`（无 `.git`，不是 Git checkout） |
+| 主机 | aarch64 + GB10（统一内存，见 §11.3 第 7 条） |
+| Compose 项目 | `del535`，独立子网与宿主端口；profile 为 `migration`、`engine-registration`、`job-dispatch`，另起 `asset-inspection`（`POST /v1/nexus/assets` 需要） |
+| 未起 | `web` / `workbench-api`（本条不要求同版工作台读取，`DEL-534` 已另证） |
+
+显式构建 7 个应用镜像，`BUILD_EXIT=0`，耗时 32.783 s：
+
+| 镜像 | 镜像 ID |
+| --- | --- |
+| `del535-api` | `sha256:1507615877b6ca8c9a9bbc7e068b08c3e2a29dd35c994e7f6131bf3cdc39e193` |
+| `del535-gateway` | `sha256:dd1ac08d1d5266baa3ddff099d4cfc0df0661bb65d01904cfc10579b440f917f` |
+| `del535-migrate` | `sha256:201852588fa90449aa8206435d8d93f286fb73031e011c482d27dac3d869495f` |
+| `del535-engine-register` | `sha256:5815e8fb61e00290c707347fa67a9136bf41dfce62c5395131e8784700dbb9e9` |
+| `del535-job-dispatch-worker` | `sha256:1a064b5c7b10bac435338c654ae49d3c624db1f71f86d1910282e3126234a22e` |
+| `del535-minio-init` | `sha256:93e3d90b7d9548899f3a49ce9f0b75320e430a1669fcda7f5c7f4825070cbfb0` |
+| `del535-asset-inspector` | `sha256:979864dacad50ec59ff019ad49272c2a4124d41546c2fcc281d9d32d445229d4` |
+
+MinIO **未**从源码构建：`deploy/images/minio.Dockerfile` 构建期取 `raw.githubusercontent.com` 的
+LICENSE 做二次校验，该窗口不可达，构建失败，改用同 tag 的既有镜像
+`speechnexus-minio:RELEASE.2025-09-07T16-13-09Z`。这条替代路径已按
+[`compose-minimal.md` §0](compose-minimal.md) 的说明记为「未验证」，本窗口也没有验证从源码构建。
+
+应用镜像不带 `org.opencontainers.image.revision` 标签，镜像到提交只绑定到上面那份源码归档，
+**未做镜像级 provenance 核验**。
+
+### 11.2 Job 时间线与标识
+
+成功的 Job 与首轮被隔离的 Job 标识分开记录，不混用：
+
+| 事实 | 值 |
+| --- | --- |
+| 资产上传 | `POST /v1/nexus/assets` → `201`；`asset-462c19b3616c4dc6a8111ebf18b196a9`，`audio/wav`，`bytes=195356`，`duration_ms=4429`，`sample_rate_hz=22050`，`channels=1` |
+| 创建 | `POST /v1/nexus/jobs` → `202`；`job-6d2c1d0fd54e4cf8b169467cf6db3d6a` |
+| 时间线 | `create-start 03:29:40.864970Z` → `202 03:29:40.940964Z` → `queued 03:29:40.963519Z` → `running 03:29:45.089984Z` → `succeeded 03:29:46.639292Z` |
+| Job 文档 | `status=succeeded`、`cleanup_state=complete`、`catalog_revision=2`、`asr=file-asr-qwen3-1p7b@1` |
+| 制品 | `artifact-5b93ea73e08c4740d1445673ea45dbbf3a9c062636d3f0c5`，`kind=transcript`，`bytes=92`，`sha256=sha256:3002c23c5e859f295f3bec557a363a7fe5359a3db50b351bfffc9885e5e21d5d`；`GET …/content` `200`，`content-length: 92`，`ETag` 与该 `sha256` 一致 |
+| 执行意图 | `submit-519940080fc4f02066b7de05a16a246ef757ca6720fbe933`，`execution_state=succeeded`、`cleanup_state=complete`、无 `error_code`；`engine_request_id=file-command-461b308a7e7949d7848eb891ca9750b8` |
+| 停止/释放证据 | `engine_terminal_response`，`execution_stopped=1`，`resources_released=1` |
+| 租约 | `lease-6d2c1d0fd54e4cf8b169467cf6db3d6a`，`lease_state=released`、`cleanup_state=complete`、`reserved_slots=1` |
+| 配额/实例 | `workspace_quotas` 的 `held_attempts=0`、`quarantined_attempts=0`；`engine_instances` 的 `held_slots=0`、`quarantined_slots=0`、`instance_state=ready` |
+| worker | 一个批次 `claimed=1 succeeded=1 failed=0 unknown=0 lease_lost=0` |
+| gateway | `POST /internal/v1/executions/submit` `200`、`staging-result` `200` |
+| 引擎侧 | 共享 GPU 主机上既有的 vLLM 0.28.0 引擎（未重启、未改配置）日志各出现一次 `POST /v1/audio/transcriptions` `200 OK` |
+
+首轮失败 Job 仅作对照：`job-7fa7edef9bc649ef8c9453e6cdcaec91`，`execution_state=unknown_quarantined`、
+`cleanup_state=quarantined`、`error_code=engine_transport_unknown`、租约 `reserved`、`held_slots=1`，
+引擎日志没有任何转写请求。容器内对冻结请求做哨兵诊断得到
+`ExecutionInputError('execution_input_scope_mismatch')`，即 §11.3 第 1 条。
+
+### 11.3 这轮暴露的 9 条文档/样例偏差
+
+完整原文与实际输出在 `#890`；这里只记「实跑看到什么」与处置位置。
+
+| # | 实跑看到 | 处置 |
+| --- | --- | --- |
+| 1 | 样例私配 `objects.input_bucket=speechnexus-inputs`，而 API 侧 Job 资产写 `SPEECHNEXUS_OBJECT_STORAGE_BUCKET=speechnexus-results`；gateway 抛 `execution_input_scope_mismatch`，首轮 Job 在调用引擎前被隔离 | 样例改成资产桶，`compose-minimal.md` §3 点名「Job 输入资产桶」，`tests/ci` 加样例一致性守卫 |
+| 2 | `verify-file-asr-artifacts.py --emit-binding-request` 产出含 `parameter_defaults`，直接 POST 运维建草稿路由得 `400 invalid_binding_request` | §7.1 写明工具输出是生产者路由的请求体，运维路由的 `execution_defaults` 要另写；工具 help 与 docstring 同步标注 |
+| 3 | 工具从 `binding-definition.json` 取 `release_tier=production`，实验部署必须 `experimental` | §7.1 增加「实验部署填 `experimental`，工具输出不等于生产资格」 |
+| 4 | 配好 `sn_catalog_reader` 后 `GET /v1/models` 仍 `503 model_catalogue_unavailable` | 本节只订正 §7.1 第 4 步的预期值为 `503` 并指向产品缺陷 `#891`；不放宽 catalog 校验 |
+| 5 | 容器内探活打印 `http= 200 None`（`/health` 无 `content-type`） | §7.2 把预期写成 `http= 200 None` |
+| 6 | 宿主 `psql "$…_DATABASE_URL"` 不可用：DSN host 是服务名、宿主也没有 `psql`（退出 `127`） | §5、§6、§7.2 三处改为 `docker compose exec -T postgres psql` |
+| 7 | GB10 是 `unified_memory` 拓扑：`allocatable_device_memory_bytes=0`，容量在 `allocatable_unified_physical_memory_bytes=12884901888` | §7.3 按 `memory_architecture` 选维度核对，SQL 增加 unified 列 |
+| 8 | 第一次 `down -v` 退出 `0` 后仍留 1 个 `com.docker.compose.oneoff=True` 容器与 2 个网络 | `compose-minimal.md` §10.1 增加 one-off 容器的识别与清理 |
+| 9 | `deploy/images/minio.Dockerfile` 构建期需要外网，本窗口不可达 → 构建失败 | 只写文档：`§0` 记「无外网时复用同 tag 既有镜像，此路径未验」，不改构建逻辑 |
+
+### 11.4 收尾：label 复核为空
+
+最终 `down -v` 后再按 `compose-minimal.md` §10.1 的三项 label filter 复核（`--format` 未省略），
+`com.docker.compose.project=del535` 的容器、网络、卷**均为空**：
+
+```text
+containers_begin
+containers_end
+
+networks_begin
+networks_end
+
+volumes_begin
+volumes_end
+```
+
+第一次 `down -v` 的退出码是 `0` 但仍有残留（§11.3 第 8 条）；补齐一次性容器与网络后才得到上面的
+空输出。共享 GPU 主机上两台既有引擎未被触碰：启动时间与镜像摘要均未变。
+
+### 11.5 未验证项
+
+- `GET /v1/models` 未取得 `200`（产品缺陷 `#891`，见 §11.3 第 4 条），未擅自改产品。
+- 未起 `web` / `workbench-api`，未验证同版工作台读取。
+- 未测同步 `/v1/audio/transcriptions`、TTS、voice clone、voice design。
+- 未测 `speechnexus-register-engine` 重跑 `already_ready`、readiness 收据过期与续期。
+- 未测 `SPEECHNEXUS_ASSET_ALLOWED_ORIGINS` override 路径（默认配置上传已成功）。
+- 宿主直连 `psql` 未验证（宿主无 `psql`），全部用容器内 `psql`。
+- MinIO 未从源码构建成功，复用了同 tag 既有镜像。
+- 应用镜像无 revision 标签，镜像→提交的绑定只到源码归档 SHA 一级。

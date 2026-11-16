@@ -399,6 +399,12 @@ def binding_request(
     The caller retains authority for the family/model/manifest reference. The
     registry still allocates revision and snapshot identities, and publication
     must separately verify the referenced capacity and qualification evidence.
+
+    The emitted document is the *producer* route's ``BindingDefaultsCreateRequest``
+    (enabled by ``SPEECHNEXUS_BINDING_DEFAULTS_WRITER_DATABASE_URL``): it carries
+    ``parameter_defaults``. The operational collection route validates
+    ``ModelBindingCreateRequest`` instead, which forbids that key, so a caller
+    posting there takes only ``engine`` and ``artifact_set`` from this output.
     """
     from speechnexus_contracts import ContractValidationError
 
@@ -455,7 +461,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--emit-binding-request",
         action="store_true",
-        help="emit an offline BindingDefaultsCreateRequest instead of the integrity report",
+        help=(
+            "emit an offline BindingDefaultsCreateRequest for the producer route "
+            "instead of the integrity report; the operational create route forbids "
+            "parameter_defaults, so it takes only engine and artifact_set from here"
+        ),
     )
     parser.add_argument("--binding-id")
     parser.add_argument("--logical-model")

@@ -40,6 +40,9 @@ COVERAGE_JOB_TIMEOUT_SECONDS = 15 * 60
 # Pytest workers inside one integration partition. The canonical runner owns the
 # validation and the isolation rule; the probe only forwards the requested value.
 INTEGRATION_SHARD_WORKERS = 3
+# The measured dataset may be split across two jobs of four workers; per-worker
+# coverage partitions therefore go up to eight, not four.
+PYTHON_PARTITION_MAX = 8
 # Setup before the probe starts (container init, checkout, dependency install,
 # MinIO, and on Web lanes pnpm plus Chromium) and the probe's own stop-and-report
 # tail share the same job budget. Reserve five minutes so the inner deadline
@@ -179,7 +182,7 @@ def build_pytest_command(
         if (
             not full_coverage
             or type(coverage_count) is not int
-            or not 1 <= coverage_count <= 4
+            or not 1 <= coverage_count <= PYTHON_PARTITION_MAX
             or type(coverage_index) is not int
             or not 0 <= coverage_index < coverage_count
             or coverage_report is None

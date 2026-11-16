@@ -162,7 +162,7 @@ def test_python_coverage_fragment_keeps_canonical_roots_and_combines_before_gate
             "--python-shard",
             "0",
             "--python-shard-count",
-            "5",
+            "9",
             "--python-shard-report",
             "worker.json",
             "--output",

@@ -91,9 +91,9 @@ PYTHON_COVERAGE_PARTITIONS_MAX = 8
 
 
 def check_partition(index: int, count: int) -> None:
-    if type(count) is not int or not 1 <= count <= PYTHON_COVERAGE_WORKERS_MAX:
+    if type(count) is not int or not 1 <= count <= PYTHON_COVERAGE_PARTITIONS_MAX:
         raise ValueError(
-            f"Python coverage supports one to {PYTHON_COVERAGE_WORKERS_MAX} isolated workers"
+            f"Python coverage supports one to {PYTHON_COVERAGE_PARTITIONS_MAX} partitions"
         )
     if type(index) is not int or not 0 <= index < count:
         raise ValueError("Invalid Python coverage worker identity")

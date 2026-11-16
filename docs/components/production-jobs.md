@@ -273,30 +273,101 @@ request ID，不覆盖他人事实。
 受理过的取消必须在有界时间内到达一个明确的算力结论，不能停在 `cancelling`。
 判定有两条独立边界，任一到达即触发：受理时间加
 `SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_CONFIRM_TIMEOUT_SECONDS`（默认 300 秒，
-有界 1–3600），或 `max_attempts` 用尽。届时不再向网关提问——有界重试证明不了
-尚未证明的停止，继续提问只是推迟结论——而是执行一次终态判定：
+有界 1–3600），或 `max_attempts` 用尽。越过边界后不再把「继续向网关提问」当作收敛
+手段——有界重试证明不了尚未证明的停止——但也不放弃受阻的受理，而是每次领取都尝试
+一次终态判定；判定不能完成时继续用有界退避重试该行，并把阻塞原因留在可读面上。
 
-1. 先隔离租约：按 operation 找出全部租约，对每个租约调用 `LeaseService.quarantine`，
-   `reason_code=cancellation_unconfirmed`，`observed_at_us` 取数据库时钟。领域规则只
-   接受执行事实已是 `unknown_quarantined`/`quarantined` 的租约，其余拒绝并保持原状。
-2. 再把 Job 推进到 `failed`，`error_code=cancellation_unconfirmed`。`cleanup_state`
-   因此汇总为 `quarantined`：公开读模型显示 `failed/cancellation_unconfirmed`，再次取消
-   与自动重试都被拒绝为 `409 execution_cleanup_pending`（`retryable()` 为假），不再
-   回报「正在取消」。
+判定分两步，顺序不可交换：
 
-隔离使 `engine_instances.held_slots` 与 `workspace_quotas.held_attempts` 减一、
-`quarantined_slots`/`quarantined_attempts` 加一：容量仍然不可用，但不再被记成
-「某个执行正持有它」。这与「取消后等租约自然过期」不同：过期后仍未知的租约不得回归
-可用容量，只能经 `QuarantineReleaseService` 与 `/v1/nexus/...` 的操作员证词
-（`operator_verified_instance_terminated`）显式解除隔离。
+1. 逐条隔离租约：按 operation 取出全部租约及其执行事实，对每条尚未 `quarantined`/
+   `released` 的租约调用 `LeaseService.quarantine`，`reason_code=cancellation_unconfirmed`，
+   `observed_at_us` 取数据库时钟。领域规则只接受执行事实已是
+   `unknown_quarantined`/`quarantined` 的租约，其余按原状拒绝。**每条都会尝试**，
+   一条被拒不会掩盖其它租约；被拒的租约连同 `lease_state`、`execution_state` 和拒绝
+   原因一起记录，判定结果因此是「已隔离的租约 + 仍未落地的租约」。
+2. 只有**全部**租约都落到确定态（`quarantined`，或本来就 `released`）时，才把 Job 推进到
+   `failed`，`error_code=cancellation_unconfirmed`。`cleanup_state` 因此汇总为
+   `quarantined`：公开读模型显示 `failed/cancellation_unconfirmed`，再次取消与自动重试
+   都被拒绝为 `409 execution_cleanup_pending`（`retryable` 为假、不带 `Retry-After`），
+   不再回报「正在取消」。
 
-判定本身幂等：Job 已是 `cancelled` 时只补做隔离并返回成功，不把 `cancelled` 倒改写；
-Job 已是本错误码的 `failed` 时只补做隔离；其它终态或他人写入的 `failed` 不覆盖。
-隔离被拒绝或存储不可用不会阻止 Job 的终态判定——判定必须落库，隔离按退避重试，
-此时租约保持其持有者记录的状态，需 #338 的停止证据或操作员处置。
+只要有租约没落地，Job 就保持在 `cancelling`，不做终态判定：此时读模型汇报的
+`cleanup_state=pending` 与「容量仍被持有」是同一件事，不会出现「对外说已隔离、对内还
+占着槽位」的分裂。冻结的判定不会因为之后又尝试而改变，已写入的判定也不会被改写。
 
-执行已 `succeeded` 而后到的取消仍按同一判定收口，不再停在 `cancelling`；
-`settle_cancelled` 只在有停止证据时使用，判定路径从不把 `succeeded` 改写成 `cancelled`。
+容量的记账口径容易被读错，这里说清三类计数各自移动一次的含义：
+
+- `engine_instances.held_slots` / `quarantined_slots` 与
+  `host_nodes.held_unified_physical_memory_bytes` 按**租约**移动：每隔离一条租约，
+  它的 `reserved_slots` 从 held 桶移到 quarantined 桶，两条租约在同一 attempt 上各自
+  移动一次。
+- `workspace_quotas.held_attempts` / `quarantined_attempts` 按**准入 attempt**移动，
+  且只移动一次：只有该 attempt 首次隔离（`quota_state` 由 `held` 变 `quarantined`）时
+  `held_attempts` 减一、`quarantined_attempts` 加一；同一 attempt 的后续租约隔离不再
+  改动这两个计数。看到 `held_attempts` 只减一而 `quarantined_slots` 加了二，是这一口径，
+  不是漏记。
+- 容量仍然不可用，只是不再被记成「某个执行正持有它」。这与「取消后等租约自然过期」
+  不同：过期后仍未知的租约不得回归可用容量，只能经 `QuarantineReleaseService` 与
+  `/v1/nexus/...` 的操作员证词（`operator_verified_instance_terminated`）显式解除隔离，
+  或等网关补上可证明的停止事实后走既有释放路径。
+
+判定幂等：Job 已是 `cancelled` 时只补做隔离并返回成功，不把 `cancelled` 倒改写；
+Job 已是本错误码的 `failed` 时只补做隔离；他人写入的终态不覆盖，其租约仍按同一规则
+隔离，避免无人记账的占用。
+
+执行已 `succeeded` 而后到的取消仍按同一判定尝试收口，但领域规则会拒绝隔离一个已完成的
+执行，因此这类受理会停在 `cancelling` 并反复进入「无法隔离」的可见面（见下一节），
+直到 #338 的停止确认协议给出可证明的收口；判定路径从不把 `succeeded` 改写成 `cancelled`。
+
+#### 隔离不了的时候：可见面与处置
+
+「隔离不了」不能等于「静默继续占用」。本切片给出的可见面分三层，全部只读：
+
+1. **就绪与诊断 detail**：`create_app` 装配的 `CancellationDebtProbe`
+   （名字 `cancellation_debt`）在每次 `/readyz` 与
+   `GET /v1/nexus/admin/diagnostics` 中报告「已受理但仍在持有容量的取消」，detail 形如
+   `cancellation_debt: 1 accepted cancellation(s) still hold capacity:
+   job-… -> lease-…(lease=reserved, execution=executing)`。判定标准是：围栏已受理、
+   账本未 `settled`（或根本没有账本行，即 worker 从未运行过）、Job 仍是 `cancelling`、
+   且受理时间距数据库当前时间超过宽限（默认 900 秒，大于默认确认窗口加退避）。
+   它**不**改变聚合状态：`/readyz` 是 `deploy/compose.yaml` 的健康检查，一个 Job 占着
+   它无法归还的槽位，不应该让整个 API 退出服务。告警口径因此是这个固定前缀，
+   不是 HTTP 状态：`cancellation_debt:`。
+2. **worker 日志**：每次判定被阻塞时，worker 对 stderr 输出一条
+   `cancellation acceptance holds capacity but cannot be isolated`，带 `job_id` 和阻塞
+   明细（哪条租约、租约状态、执行状态、拒绝原因）。
+3. **文档钻取查询**：需要逐行核对时用下面的只读查询，它把 Job、租约和两侧状态连起来：
+
+```sql
+SELECT j.job_id, j.state AS job_state, r.attempts, r.last_outcome,
+       l.lease_id, l.lease_state, l.cleanup_state AS lease_cleanup_state,
+       i.execution_state, i.cleanup_state AS execution_cleanup_state
+FROM speech_job_cancellation_fences AS f
+JOIN speech_jobs AS j ON j.job_id = f.job_id
+LEFT JOIN speech_job_cancellation_reconciliations AS r ON r.job_id = f.job_id
+LEFT JOIN admission_leases AS l
+       ON l.operation_id = f.job_id AND l.lease_state <> 'released'
+LEFT JOIN submit_intents AS i ON i.lease_id = l.lease_id
+WHERE j.state = 'cancelling'
+  AND (r.job_id IS NULL OR r.settled_at_us IS NULL)
+ORDER BY f.accepted_at_us, f.job_id, l.lease_id;
+```
+
+对应的正确处置只有两条，都不需要手工写 SQL 改表：
+
+- **`lease_state=reserved`/`executing` 且执行仍活跃**（`execution_state` 属于
+  `submitting`/`executing`/`stopping`）：走网关的停止入口——对固定 intent 调
+  `/internal/v1/executions/{submit_intent_id}/abort`，实例层面用
+  `/internal/v1/instances/{instance_id}/drain`。网关据此把执行事实写成
+  `unknown_quarantined`/`quarantined`；下一次领取（受退避上限约束）就会隔离该租约、
+  满足「全部落地」条件并把 Job 收口。这正是「外部事实到达后自动完成」的路，
+  也是为什么不能靠改 `state` 或改租约来「释放」容量。
+- **执行已 `succeeded`**：没有可证明的停止，本切片不做收口，保留可见面等 #338；不要
+  手工把 Job 改成 `failed`，也不要手工释放租约。
+
+`quarantine_release` 的 `require_releasable` 契约属于操作员证词子系统，本切片不修改它；
+上面的处置不依赖放宽该契约。自动扫描与告警规则仍归 #528，本切片只保证「占用不会无声」：
+容量账目如实、Job 状态如实、就绪/诊断有 detail、日志有明细、文档有钻取与处置。
 
 只有两类事实允许推进 `cancelled`：网关回报上述“没有执行”终态，或既有停止路径
 验证到 `aborted`、`cleanup_state=complete` 且证据在 `engine_abort_ack`、

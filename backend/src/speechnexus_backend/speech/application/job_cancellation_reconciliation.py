@@ -23,10 +23,13 @@ due again after its lease, and a settled row is never claimed again.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal, Protocol
+
+logger = logging.getLogger(__name__)
 
 # ``exhausted`` is the store's "never claim again" marker: the acceptance was
 # judged. ``terminal_unconfirmed`` stays accepted because earlier builds wrote it
@@ -78,16 +81,37 @@ class CancellationConfirmer(Protocol):
     async def confirm(self, job_id: str, *, not_submitted: bool = False) -> Confirmation: ...
 
 
+@dataclass(frozen=True, slots=True)
+class Judgment:
+    """What one attempt to close an unconfirmable acceptance achieved.
+
+    ``settled`` is true only when the Job is durably terminal for this reason.
+    A blocked judgment is not a failure to retry blindly: it names the leases
+    that still hold capacity, so the caller keeps the fence claimable and the
+    operator surfaces can report the same facts (#852 review P1).
+    """
+
+    settled: bool
+    outcome: ReconciliationOutcome
+    detail: str = ""
+
+    def __post_init__(self) -> None:
+        if self.settled and self.outcome != "exhausted":
+            raise ValueError("A settled judgment records the terminal outcome")
+        if not self.settled and self.outcome == "exhausted":
+            raise ValueError("An unsettled judgment cannot record exhaustion")
+
+
 class UnconfirmedCancellation(Protocol):
     """Judge an acceptance whose stop this worker could not confirm.
 
     Implementations must be idempotent, must never rewrite a Job that another
-    owner already terminated, and must return True only when the Job is durably
-    terminal for an unconfirmed cancel (``failed`` / ``cancellation_unconfirmed``)
-    or was already closed by that other owner.
+    owner already terminated, and must report ``settled`` only when every lease
+    of the Job has reached a determinate state -- capacity that is still held
+    must never be described as quarantined.
     """
 
-    def settle(self, job_id: str) -> bool: ...
+    def settle(self, job_id: str) -> Judgment: ...
 
 
 class CancellationReconciliationStore(Protocol):
@@ -112,12 +136,26 @@ class CancellationReconciliationStore(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class BlockedJudgment:
+    """An acceptance that is past its window but still holds capacity.
+
+    Carried out of ``run_once`` so the caller can log one line per Job naming
+    the leases that block closure; the same facts stay readable from storage, so
+    a restart does not lose them.
+    """
+
+    job_id: str
+    detail: str
+
+
+@dataclass(frozen=True, slots=True)
 class ReconciliationBatch:
     claimed: int = 0
     settled: int = 0
     retried: int = 0
     exhausted: int = 0
     unavailable: int = 0
+    blocked: tuple[BlockedJudgment, ...] = ()
 
 
 class JobCancellationReconciler:
@@ -182,41 +220,12 @@ class JobCancellationReconciler:
             or now_us >= candidate.accepted_at_us + self._confirm_timeout_us
         )
 
-    async def _judge(self, candidate: CancellationCandidate) -> bool:
-        """Close an unconfirmable acceptance; True when the Job is terminal now."""
+    async def _judge(self, candidate: CancellationCandidate) -> Judgment:
+        """Close an unconfirmable acceptance; never drop it on a storage error."""
         try:
             return await asyncio.to_thread(self._unconfirmed.settle, candidate.job_id)
         except Exception:
-            return False
-
-    async def _record_judgment(self, candidate: CancellationCandidate, *, now_us: int) -> bool:
-        """Persist one judgment; True when the acceptance is now terminal.
-
-        ``exhausted`` is the ledger's only "never claim again" marker, so a
-        judged acceptance records it: after this change it means "the
-        acceptance was judged", not "this worker gave up". A judgment that could
-        not be persisted is recorded as ``unavailable`` and stays claimable --
-        this worker is the only component that remembers the Job, and dropping
-        the row here is exactly how an instance slot stayed reserved forever
-        (#852).
-        """
-        judged = await self._judge(candidate)
-        if judged:
-            await asyncio.to_thread(
-                self._store.record_exhausted,
-                candidate.job_id,
-                now_us=now_us,
-                outcome="exhausted",
-            )
-        else:
-            await asyncio.to_thread(
-                self._store.record_retry,
-                candidate.job_id,
-                now_us=now_us,
-                outcome="unavailable",
-                next_check_at_us=now_us + self._backoff_us(candidate.attempts),
-            )
-        return judged
+            return Judgment(settled=False, outcome="unavailable")
 
     async def run_once(self, *, now_us: int) -> ReconciliationBatch:
         now_us = int(now_us)
@@ -228,52 +237,25 @@ class JobCancellationReconciler:
             accepted_before_us=max(0, now_us - self._min_age_us),
         )
         settled = retried = exhausted = unavailable = 0
+        blocked: list[BlockedJudgment] = []
         try:
             async with asyncio.timeout(self._budget_seconds):
                 for candidate in candidates:
-                    if self._judgeable(candidate, now_us):
-                        if await self._record_judgment(candidate, now_us=now_us):
+                    outcome = await self._reconcile(candidate, now_us=now_us)
+                    if isinstance(outcome, Judgment):
+                        if outcome.settled:
                             exhausted += 1
-                        else:
-                            retried += 1
+                            continue
+                        blocked.append(BlockedJudgment(candidate.job_id, outcome.detail))
+                        retried += 1
+                        if outcome.outcome == "unavailable":
                             unavailable += 1
                         continue
-                    try:
-                        confirmation = await self._confirmer.confirm(
-                            candidate.job_id,
-                            not_submitted=candidate.not_submitted_at_us is not None,
-                        )
-                    except Exception:
-                        confirmation = Confirmation("unavailable")
-                    if confirmation.outcome == "settled":
-                        await asyncio.to_thread(
-                            self._store.record_settled, candidate.job_id, now_us=now_us
-                        )
+                    if outcome == "settled":
                         settled += 1
-                    elif confirmation.outcome == "terminal_unconfirmed":
-                        # The execution finished while the Job was cancelling, so
-                        # no stop will ever be confirmed for it. The same terminal
-                        # judgment applies instead of leaving the Job in
-                        # `cancelling` with no owner.
-                        if await self._record_judgment(candidate, now_us=now_us):
-                            exhausted += 1
-                        else:
-                            retried += 1
-                            unavailable += 1
                     else:
-                        delay = max(
-                            self._backoff_us(candidate.attempts),
-                            confirmation.retry_after_us or 0,
-                        )
-                        await asyncio.to_thread(
-                            self._store.record_retry,
-                            candidate.job_id,
-                            now_us=now_us,
-                            outcome=confirmation.outcome,
-                            next_check_at_us=now_us + delay,
-                        )
                         retried += 1
-                        if confirmation.outcome == "unavailable":
+                        if outcome == "unavailable":
                             unavailable += 1
         except TimeoutError:
             # Claimed rows stay leased until next_check_at_us; a later pass resumes.
@@ -284,6 +266,85 @@ class JobCancellationReconciler:
             retried=retried,
             exhausted=exhausted,
             unavailable=unavailable,
+            blocked=tuple(blocked),
+        )
+
+    async def _reconcile(
+        self, candidate: CancellationCandidate, *, now_us: int
+    ) -> Judgment | ReconciliationOutcome:
+        """Advance one acceptance: judge it when its window is over, else ask.
+
+        A judgment ends the row only when it settled. A blocked judgment falls
+        through to the confirmer on purpose: the confirmer is what sends the
+        bounded stop attempt, and capacity held by an execution that may still be
+        running must keep being asked to stop rather than being described as
+        returned (#852 review P1).
+        """
+        judgment: Judgment | None = None
+        if self._judgeable(candidate, now_us):
+            judgment = await self._judge(candidate)
+            if judgment.settled:
+                await self._record_settled_judgment(candidate, now_us=now_us)
+                return judgment
+        try:
+            confirmation = await self._confirmer.confirm(
+                candidate.job_id,
+                not_submitted=candidate.not_submitted_at_us is not None,
+            )
+        except Exception:
+            confirmation = Confirmation("unavailable")
+        if confirmation.outcome == "settled":
+            await asyncio.to_thread(self._store.record_settled, candidate.job_id, now_us=now_us)
+            return "settled"
+        if confirmation.outcome == "terminal_unconfirmed" and judgment is None:
+            # The execution finished while the Job was cancelling: no stop will
+            # ever be confirmed, so ask for the terminal judgment now instead of
+            # waiting out a window that cannot change the answer.
+            judgment = await self._judge(candidate)
+            if judgment.settled:
+                await self._record_settled_judgment(candidate, now_us=now_us)
+                return judgment
+            await self._record_blocked_judgment(candidate, judgment, now_us=now_us)
+            return judgment
+        if judgment is not None:
+            await self._record_blocked_judgment(candidate, judgment, now_us=now_us)
+            return judgment
+        await asyncio.to_thread(
+            self._store.record_retry,
+            candidate.job_id,
+            now_us=now_us,
+            outcome=confirmation.outcome,
+            next_check_at_us=now_us
+            + max(self._backoff_us(candidate.attempts), confirmation.retry_after_us or 0),
+        )
+        return confirmation.outcome
+
+    async def _record_settled_judgment(
+        self, candidate: CancellationCandidate, *, now_us: int
+    ) -> None:
+        """``exhausted`` is the ledger's only "never claim again" marker.
+
+        After this change it means "the acceptance was judged", not "this worker
+        gave up"; the reason itself lives on the Job row, and the isolation on
+        the leases, where operators read it.
+        """
+        await asyncio.to_thread(
+            self._store.record_exhausted,
+            candidate.job_id,
+            now_us=now_us,
+            outcome="exhausted",
+        )
+
+    async def _record_blocked_judgment(
+        self, candidate: CancellationCandidate, judgment: Judgment, *, now_us: int
+    ) -> None:
+        """Keep the fence claimable while capacity that is still held blocks it."""
+        await asyncio.to_thread(
+            self._store.record_retry,
+            candidate.job_id,
+            now_us=now_us,
+            outcome=judgment.outcome,
+            next_check_at_us=now_us + self._backoff_us(candidate.attempts),
         )
 
 
@@ -308,7 +369,12 @@ class CancellationReconciliationWorker:
     async def run(self, stop: asyncio.Event) -> None:
         while not stop.is_set():
             try:
-                await self._reconciler.run_once(now_us=int(time.time() * 1_000_000))
+                batch = await self._reconciler.run_once(now_us=int(time.time() * 1_000_000))
+                for blocked in batch.blocked:
+                    logger.warning(
+                        "cancellation acceptance holds capacity but cannot be isolated",
+                        extra={"job_id": blocked.job_id, "blocking": blocked.detail},
+                    )
             except Exception as error:
                 if self._on_error is None:
                     raise
@@ -320,6 +386,7 @@ class CancellationReconciliationWorker:
 
 
 __all__ = [
+    "BlockedJudgment",
     "CancellationCandidate",
     "CancellationConfirmer",
     "CancellationReconciliationStore",

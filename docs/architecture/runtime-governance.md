@@ -160,6 +160,8 @@ queued / retry_wait → cancelled / expired
 
 停止确认在取消期限内成功，Job 才进入 cancelled。期限到期仍有未知执行时，Job 从 cancelling 转 failed，error.code=cancellation_unconfirmed；cleanup_state 汇总为 quarantined，并返回未清理 Operation 引用，相关资源继续隔离。后续协调只更新 cleanup_state / 资源清理事实，不将 failed 倒改为 cancelled；在旧执行清理完成前，自动或显式 retry 均拒绝为 `409 execution_cleanup_pending`。Job 查询与取消响应必须显示该差别。
 
+`cleanup_state=quarantined` 是对已落地租约的汇总，不是对判定意图的声明：Job 的全部租约都进入隔离桶（或已释放）之后，才写 `failed/cancellation_unconfirmed`；任一租约的执行事实仍未知或仍活跃时，Job 保持 `cancelling`，`cleanup_state` 保持 `pending`，受理继续按有界退避重试，并把「哪条租约、两侧状态如何」报在 `/readyz` 与 `GET /v1/nexus/admin/diagnostics` 的 `cancellation_debt` 明细里。隔离与释放都需要外部事实（停止证据、网关补写的未知执行事实或操作员证词），不得用手工改状态或改租约代替。
+
 每个步骤先写 intent，再执行；输出先写入带 attempt 的私有 staging 对象，验证长度、格式与摘要后，在单个事务中核对最新 policy / 资源状态、Job 取消状态和 attempt fencing，再插入 Artifact 引用、步骤成功和 outbox。与强制禁用 / 删除竞争按 [资源禁用与执行裁决](../speechnexus-product-architecture.md#64-资源禁用执行裁决与操作记录) 的同一数据库边界裁决；普通 retire 对已固定任务的行为也按该节执行。读者只能看到已提交 Artifact，不能看到 staging。失败的 staging 由有作用域的 GC 清理。断电发生在对象写入与数据库提交之间时，恢复只认已提交引用，孤儿对象不得被推断为任务成功。
 
 系统提供 at-least-once 执行与幂等发布，不声称外部推理天然 exactly-once。仅在未向客户端交付实时输出且操作可安全重试、旧 attempt 已协调结束时自动重试；已产生部分实时音频的请求不后台自动重播。辅助步骤失败不覆盖成功正文，按 required / best_effort 策略决定整个 Job 是否成功。

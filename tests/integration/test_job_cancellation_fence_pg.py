@@ -34,6 +34,7 @@ from tests.integration.test_gateway_submit_ledger import seed_second_attempt
 from speechnexus_backend.speech.application.job_cancellation_reconciliation import (
     Confirmation,
     JobCancellationReconciler,
+    Judgment,
 )
 from speechnexus_backend.speech.infrastructure.coordination_grants import (
     coordination_runtime_grants,
@@ -561,8 +562,8 @@ def test_reconciliation_store_lease_retry_settle_and_restart(fence_db: FenceSand
 class _NoJudgment:
     """Stand-in for the terminal judgment: these cases settle or stay pending."""
 
-    def settle(self, job_id: str) -> bool:
-        return False
+    def settle(self, job_id: str) -> Judgment:
+        return Judgment(settled=False, outcome="unavailable")
 
 
 class _SettledAfterRestart:

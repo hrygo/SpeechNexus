@@ -21,6 +21,7 @@ from speechnexus_backend.job_cancellation_runtime import (
 from speechnexus_backend.speech.application.job_cancellation import JobCancellationService
 from speechnexus_backend.speech.application.job_cancellation_reconciliation import (
     JobCancellationReconciler,
+    Judgment,
 )
 from speechnexus_backend.speech.application.job_dispatcher import JobDispatcher
 from speechnexus_backend.speech.application.public_jobs import (
@@ -60,8 +61,8 @@ KEY = "synthetic-cancel-key-1"
 class _NoJudgment:
     """Stand-in for the terminal judgment: these cases settle or stay pending."""
 
-    def settle(self, job_id: str) -> bool:
-        return False
+    def settle(self, job_id: str) -> Judgment:
+        return Judgment(settled=False, outcome="unavailable")
 
 
 def _app(db: JobSandbox, confirmation: Any = None) -> Any:

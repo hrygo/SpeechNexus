@@ -19,6 +19,8 @@ from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema imp
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 
 _MAX_TIMESTAMP_US = 253_402_300_799_999_999
+# Matches the ``attempts`` CHECK bound in ``job_cancellation_fence_schema``.
+_MAX_ATTEMPTS = 64
 
 
 class ReconciliationStoreUnavailableError(RuntimeError):
@@ -55,7 +57,7 @@ WITH due AS (
         (job_id, attempts, next_check_at_us, updated_at_us)
     SELECT job_id, 1, %(lease_until_us)s, %(now_us)s FROM due
     ON CONFLICT (job_id) DO UPDATE SET
-        attempts = {RECONCILIATION_TABLE}.attempts + 1,
+        attempts = LEAST({RECONCILIATION_TABLE}.attempts + 1, %(max_attempts)s),
         next_check_at_us = EXCLUDED.next_check_at_us,
         updated_at_us = EXCLUDED.updated_at_us
     WHERE {RECONCILIATION_TABLE}.settled_at_us IS NULL
@@ -139,6 +141,11 @@ class PostgresCancellationReconciliationStore:
                     "limit": limit,
                     "lease_until_us": lease_until_us,
                     "accepted_before_us": accepted_before_us,
+                    # The ledger is a schedule, not a give-up counter: an
+                    # acceptance blocked by capacity that is still held must stay
+                    # claimable indefinitely (the CHECK upper bound is 64), so the
+                    # attempt count saturates instead of aborting the claim.
+                    "max_attempts": _MAX_ATTEMPTS,
                 },
             ).fetchall()
             return [

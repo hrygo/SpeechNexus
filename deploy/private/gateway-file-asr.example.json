@@ -6,7 +6,7 @@
   "vad_model_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
   "objects": {
     "endpoint": "http://172.28.0.10:9000",
-    "input_bucket": "speechnexus-inputs",
+    "input_bucket": "speechnexus-results",
     "result_bucket": "speechnexus-results",
     "spool_directory": "/var/lib/speechnexus/spool",
     "tls_ca_file": null,

@@ -23,6 +23,13 @@ to PostgreSQL or starts a container. Mutations that must turn it red:
   ``pending`` migration-head wording, or a lane the bootstrap does not assemble
   presented as selectable. The guard reads the gate's own write surface and
   ``GATEWAY_CONFIGS`` and compares them with that description.
+- naming a bucket in a private gateway example that the deployment does not use:
+  every lane example's ``objects.input_bucket`` must equal the
+  ``SPEECHNEXUS_OBJECT_STORAGE_BUCKET`` value in ``deploy/compose.env.example``
+  and its ``objects.result_bucket`` the ``SPEECHNEXUS_EXECUTION_RESULT_BUCKET``
+  one. A wrong ``input_bucket`` does not fail startup; the gateway rejects the
+  first Job's input with ``execution_input_scope_mismatch`` before it calls the
+  engine, so the Job is quarantined instead of running.
 
 The behaviour that cannot be proven from text - every check runs, a failure
 exits 1, a failure never ``exec``s and a clean run does - is proven by
@@ -34,6 +41,7 @@ exists and that the exit happens after the failure branch.
 from __future__ import annotations
 
 import ast
+import json
 import re
 import unittest
 from pathlib import Path
@@ -41,6 +49,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 COMPOSE = ROOT / "deploy/compose.yaml"
 ENV_EXAMPLE = ROOT / "deploy/compose.env.example"
+PRIVATE_EXAMPLES = ROOT / "deploy/private"
 INIT_STORAGE = ROOT / "deploy/init-object-storage.py"
 PYTHON_IMAGE = ROOT / "deploy/images/python.Dockerfile"
 GATE = ROOT / "deploy/job-startup-gate.py"
@@ -193,6 +202,79 @@ class ObjectStorageInitTests(unittest.TestCase):
             "${SPEECHNEXUS_EXECUTION_RESULT_BUCKET:-speechnexus-results}",
             block,
         )
+
+
+class GatewayExampleBucketAgreementTests(unittest.TestCase):
+    """Every lane example must read and write the buckets the deployment sets.
+
+    A lane example that names its own bucket teaches a deployment the gateway
+    accepts and the API contradicts. The one that cost a full window is
+    `objects.input_bucket`: the Job command carries the asset's
+    `storage.storage_bucket` taken from `SPEECHNEXUS_OBJECT_STORAGE_BUCKET`
+    (``public_job_admission.py:466``), and the gateway refuses any other bucket
+    with ``execution_input_scope_mismatch`` (``execution_objects_minio.py:110``)
+    *before* it calls the engine, so the first Job is quarantined instead of
+    running. `objects.result_bucket` has the same shape against
+    ``SPEECHNEXUS_EXECUTION_RESULT_BUCKET``. Both sides are read here rather than
+    restated, so moving a bucket in the environment example keeps this green and
+    only a drifting lane example turns it red.
+    """
+
+    def env_example_value(self, key: str) -> str:
+        for line in read(ENV_EXAMPLE).splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                continue
+            name, _, value = stripped.partition("=")
+            if name.strip() == key:
+                return value.strip()
+        raise AssertionError(f"deploy/compose.env.example 没有生效的 {key}")
+
+    def buckets_of(self, path: Path) -> dict[str, str] | None:
+        """The bucket leaves of one example, or None when it declares no objects."""
+        objects = json.loads(read(path)).get("objects")
+        if not isinstance(objects, dict):
+            return None
+        return {key: value for key, value in objects.items() if key.endswith("bucket")}
+
+    def test_every_lane_example_reads_the_bucket_the_api_writes_assets_to(self) -> None:
+        artifact = self.env_example_value("SPEECHNEXUS_OBJECT_STORAGE_BUCKET")
+        declared = []
+        for path in sorted(PRIVATE_EXAMPLES.glob("gateway-*.example.json")):
+            buckets = self.buckets_of(path)
+            if buckets is None or "input_bucket" not in buckets:
+                continue
+            declared.append(path.name)
+            self.assertEqual(
+                buckets["input_bucket"],
+                artifact,
+                f"{path.name} 的 objects.input_bucket 必须等于 "
+                f"SPEECHNEXUS_OBJECT_STORAGE_BUCKET={artifact}：Job 命令里的资产桶取自该键"
+                "（/v1/nexus/assets 与 admission 写入的是同一个桶），不一致时首个 Job 在调用"
+                "引擎前被判 execution_input_scope_mismatch 并隔离",
+            )
+        self.assertEqual(
+            sorted(declared),
+            ["gateway-file-asr.example.json", "gateway-file-voice-clone.example.json"],
+            "读取 Job 输入资产的两条 lane（file_asr_v1、file_voice_clone_v1）都必须声明 "
+            "objects.input_bucket；新增一条读取输入资产的 lane 时把它补进这个清单",
+        )
+
+    def test_every_lane_example_stages_results_in_the_execution_result_bucket(self) -> None:
+        result = self.env_example_value("SPEECHNEXUS_EXECUTION_RESULT_BUCKET")
+        checked = []
+        for path in sorted(PRIVATE_EXAMPLES.glob("gateway-*.example.json")):
+            buckets = self.buckets_of(path)
+            if buckets is None:
+                continue
+            checked.append(path.name)
+            self.assertEqual(
+                buckets.get("result_bucket"),
+                result,
+                f"{path.name} 的 objects.result_bucket 必须等于 "
+                f"SPEECHNEXUS_EXECUTION_RESULT_BUCKET={result}：worker 按该键读回 staging 结果",
+            )
+        self.assertTrue(checked, "deploy/private 下应当至少有一份 gateway lane 示例")
 
 
 class DispatcherStartupGateTests(unittest.TestCase):

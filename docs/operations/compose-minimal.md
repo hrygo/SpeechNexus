@@ -39,6 +39,13 @@ docker buildx version
 时 `up --build` 会在解析 Dockerfile 前失败。先修好 Docker Desktop 的 Buildx 插件或
 Linux 的 `docker-buildx-plugin`，不要改用关闭 BuildKit 的构建来绕过。
 
+`deploy/images/minio.Dockerfile` 另有一条构建期出网要求：它按两个通道下载 release 包并按固定
+`sha256` 校验，再取同 tag 的 LICENSE 做第二次校验，后者走 `raw.githubusercontent.com`。
+构建窗口没有这条通路时构建失败。构建失败且本机已有同 tag 镜像
+（`speechnexus-minio:RELEASE.2025-09-07T16-13-09Z`）时，可不起 `--build`、让 Compose 复用
+该镜像继续本轮，其余步骤不变。**这条「无外网复用既有镜像」路径未经本仓库任何窗口取证**，
+它是构建失败时的已知替代，不是受支持的构建方式；有外网时仍按 Dockerfile 构建。
+
 ## 1. 固定服务集合
 
 在仓库根目录执行。先给本次部署一个独占的 Compose 项目名：`deploy/compose.yaml` 第 1 行自带
@@ -245,7 +252,22 @@ chmod 600 "$D/transcription-recipe.json" "$D/gateway-file-asr.json" \
    同一权威声音版本，`native_speaker_id` 精确匹配 `tts_policy.voice`；旧 v1 不再接受。
    [升级规则](file-tts-runtime.md#私有配置格式)要求停止旧 worker 后激活，
    样例映射不提供声音资格；
-4. gateway 两份配置里的 `objects.endpoint` 与 `bucket` 与实际 MinIO 一致；
+4. gateway 配置的 `objects.endpoint` 与实际 MinIO 一致，两个桶名分别绑定到不同的键，不能合并成
+   一句「与 bucket 一致」：
+
+   - 声明了 `objects.input_bucket` 的 lane（`file_asr_v1`、`file_voice_clone_v1`）读的是
+     **Job 输入资产桶**，必须等于 `SPEECHNEXUS_OBJECT_STORAGE_BUCKET`：`/v1/nexus/assets`
+     上传的资产写在这个桶里（`asset_runtime.py:264`），Job 命令携带的
+     `storage.storage_bucket` 也取它（`public_job_admission.py:466`）。写错的后果不是拒绝
+     启动，而是**首个 Job 在调用引擎前被隔离**：gateway 对
+     `reference.storage_bucket != objects.input_bucket` 直接抛
+     `execution_input_scope_mismatch`（`execution_objects_minio.py:110`）。
+   - `objects.result_bucket` 必须等于 `SPEECHNEXUS_EXECUTION_RESULT_BUCKET`，派发 worker
+     按该键读回 staging 结果（参考部署取同一个 `speechnexus-results`，见 §2 的环境文件注释）。
+
+   这两处都不接受 `SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET` 的值：该桶（`speechnexus-inputs`）
+   是同步转写的上传落点（`transcription_runtime.py:111`），与 Job 资产桶是两件事，
+   同名会让人以为「都是输入桶」而照抄。
 5. endpoint 的地址、端口、served model 与 bearer token 是部署网络内的受控值。
 
 把已批准的 Silero ONNX 普通文件放到私有目录，并用其真实摘要更新 ASR 配置。示例中的
@@ -2162,6 +2184,11 @@ profile 的服务不会被停止或删除，网络因仍有端点而删除失败
   项目名——§1 的默认回落是 `speechnexus`，用它去停 `speechnexus-ref` 就是这种情况；
 - 用另一份 `compose.yaml` 执行（别的目录、旧副本，或 `COMPOSE_FILE` 指向别的文件）：项目名
   随之变成那份文件里的 `name:`。
+- `docker compose run --rm` 建立的一次性容器带 `com.docker.compose.oneoff=True` label 且仍算
+  本项目，`down` 不清理它：`--rm` 只在进程正常退出时删除，窗口被打断、该容器仍在运行或它自己
+  又拉起了依赖时都会留下。实测（`DEL-535`，MegaCube）第一次 `down -v` 退出 `0` 后，按项目
+  label 仍看到 1 个 one-off 容器与 2 个网络，网络侧报 `Resource is still in use`；停删该容器
+  与网络后三项才为空。
 
 实测（2026-11-16，Docker Engine 29.9.3、Compose v5.7.0，最小探针项目，均以 `EXIT=0` 结束）：
 
@@ -2187,7 +2214,7 @@ COMMAND …`），`docker network ls` 同理（`NETWORK ID  NAME  DRIVER  SCOPE`
 
 | 非空项 | 先定位 | 删除 | 约束 |
 | --- | --- | --- | --- |
-| 容器 | `docker inspect <容器名> --format '{{index .Config.Labels "com.docker.compose.project"}}'` 核对该容器确实属于本项目 | `docker rm -f <容器名>` | `-f` 跳过优雅停止，处理中的请求会中断 |
+| 容器 | `docker inspect <容器名> --format '{{index .Config.Labels "com.docker.compose.project"}}'` 核对该容器确实属于本项目 | `docker rm -f <容器名>` | `-f` 跳过优雅停止，处理中的请求会中断；删前先看 `docker inspect <容器名> --format '{{index .Config.Labels "com.docker.compose.oneoff"}}'`：值为 `True` 说明它是 `docker compose run` 的一次性容器，同样先 `rm -f` 再删网络 |
 | 网络 | `docker network inspect <网络名> --format '{{range .Containers}}{{.Name}} {{end}}'` | `docker network rm <网络名>` | 仍有端点时报 `network ... has active endpoints`，先删容器 |
 | 卷 | `docker volume inspect <卷名> --format '{{.Driver}} {{.Labels}}'` | `docker volume rm <卷名>` | 容器仍挂载时报 `volume is in use` 且退出码 `1`（实测）；只在确认卷内无需保留的数据后删除 |
 

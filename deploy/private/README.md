@@ -10,6 +10,18 @@ because the file-speech S3 adapter rejects DNS names. If `172.28.0.0/24` is not
 available on the host, change the Compose subnet and all private object
 endpoints together.
 
+The two bucket keys are not interchangeable. A lane that declares
+`objects.input_bucket` (`file_asr_v1`, `file_voice_clone_v1`) reads the **Job
+input asset bucket**, so it must equal `SPEECHNEXUS_OBJECT_STORAGE_BUCKET` —
+the bucket `/v1/nexus/assets` writes to and admission copies into the command's
+`storage.storage_bucket`. `objects.result_bucket` must equal
+`SPEECHNEXUS_EXECUTION_RESULT_BUCKET`. `SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET`
+is neither: it is the synchronous-transcription upload bucket. A mismatched
+`input_bucket` does not fail startup; the gateway rejects the first Job's input
+with `execution_input_scope_mismatch` before it calls the engine, and the Job is
+quarantined. `tests/ci/test_reference_deploy_job_prereqs.py` keeps the committed
+examples on these values.
+
 The ASR `vad_model_file` must point to the approved Silero ONNX artifact, and
 `vad_model_sha256` must be its real SHA-256. The zeros below are intentionally
 invalid for a real execution.

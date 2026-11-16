@@ -65,8 +65,11 @@ def test_debt_detail_is_bounded_and_names_job_and_lease() -> None:
 
     assert detail is not None
     assert detail.startswith("cancellation_debt: 1 accepted cancellation(s)")
-    assert "job-a -> lease-1(lease=reserved, execution=executing)" in detail
-    assert "lease-2(lease=stopping, execution=not_submitted)" in detail
+    assert (
+        "job-a -> lease-1(lease=reserved, execution=executing, subclass=execution-unknown)"
+        in detail
+    )
+    assert "lease-2(lease=stopping, execution=not_submitted, subclass=execution-unknown)" in detail
 
 
 def test_debt_detail_bounds_how_many_jobs_it_names() -> None:
@@ -79,7 +82,7 @@ def test_debt_detail_bounds_how_many_jobs_it_names() -> None:
     assert detail is not None
     assert detail.count(" -> ") == 3
     assert detail.endswith("(+6 more)")
-    assert len(detail) < 400
+    assert len(detail) < 500
 
 
 def test_a_job_with_only_accounted_leases_is_named_without_a_blocking_lease() -> None:
@@ -87,7 +90,8 @@ def test_a_job_with_only_accounted_leases_is_named_without_a_blocking_lease() ->
 
     assert _describe_debt([]) is None
     assert _describe_debt([("job-a", None, None, None)]) == (
-        "cancellation_debt: 1 accepted cancellation(s) still hold capacity: job-a -> no-held-lease"
+        "cancellation_debt: 1 accepted cancellation(s) still hold capacity "
+        "(no-held-lease=1): job-a -> no-held-lease"
     )
 
 
@@ -130,3 +134,47 @@ def test_an_accounted_only_job_is_not_reported_as_unreadable() -> None:
     assert detail is not None
     assert "job-1 -> no-held-lease" in detail
     assert "unavailable" not in detail
+
+
+def test_a_completed_execution_is_labelled_as_its_own_subclass() -> None:
+    """#852 review P1: the two debts need two procedures, so they never share a label.
+
+    A ``succeeded`` execution on a still ``reserved`` lease can never produce a
+    stop, so it is the one class the operator exit closes. Reporting it as the
+    generic "still holds capacity" debt would send an operator to wait for a stop
+    that cannot arrive, and hiding the label would make the operator exit
+    undiscoverable.
+    """
+    detail = _describe_debt(
+        [
+            ("job-done", "lease-done", "reserved", "succeeded"),
+            ("job-unknown", "lease-unknown", "reserved", "unknown_quarantined"),
+        ]
+    )
+
+    assert detail is not None
+    assert "(completed-without-release=1, execution-unknown=1)" in detail
+    assert "lease-done(lease=reserved, execution=succeeded, " in detail
+    assert "subclass=completed-without-release)" in detail
+    assert "subclass=execution-unknown)" in detail
+    # The unknown execution is never advertised as the actionable subclass.
+    assert (
+        "lease-unknown(lease=reserved, execution=unknown_quarantined, subclass=execution-unknown)"
+        in detail
+    )
+
+
+def test_only_reserved_completed_leases_are_the_actionable_subclass() -> None:
+    """The label follows the fact, not the intent: state decides which exit applies."""
+    from speechnexus_backend.speech.infrastructure.readiness import (
+        COMPLETED_WITHOUT_RELEASE,
+        EXECUTION_UNKNOWN,
+        debt_subclass,
+    )
+
+    assert debt_subclass("reserved", "succeeded") == COMPLETED_WITHOUT_RELEASE
+    # A quarantined or executing lease is not a completed-but-unreleased one even
+    # when the execution ended: the quarantine path owns it.
+    assert debt_subclass("quarantined", "succeeded") == EXECUTION_UNKNOWN
+    assert debt_subclass("reserved", "executing") == EXECUTION_UNKNOWN
+    assert debt_subclass("reserved", None) == EXECUTION_UNKNOWN

@@ -91,3 +91,32 @@
 2. 一个已 `succeeded` 的执行，其容量归还的依据是什么：完成路径的释放证据，还是操作员证词？
 3. 若选 A，读模型 `cleanup_state` 在 `cancelling` 期间要不要引入「可能成功」的新值？
    这会扩公开契约，需单独审批。
+
+## 裁决与落地（2026-11-16，方案 B）
+
+选定 **B**：保留状态机与触发器，不放宽
+`quarantine_release.require_releasable`，只给这一类受理一条显式、有界的操作员出口。
+落地方式与本文最初设想的差异，记录如下：
+
+- **不新增路由**：`QuarantineReleaseRequest` 的冻结正文只有
+  `{evidence_kind, evidence_digest, observed_at, reason}`，后端无法在其中核对 drain 事实，
+  钉住 instance/generation 会退化成「操作员说了算」。出口因此是实现侧的操作员命令
+  `python -m speechnexus_backend.completed_release_cli`，公开契约与 `contracts/**` 不变。
+- **证词分离**：不复用未知执行的「实例已终止」证词，新增
+  `completed-release-evidence/v1` 摘要（`lease_id` + `submit_intent_id` +
+  `instance_id` + `instance_generation` + 整份 drain 应答 + `observed_at` + `reason`），
+  并在写事务内按加锁事实重算比对。同一账本、同一释放路径（`LeaseService.release`），
+  但两条证词不通用。
+- **drain 是前提而非建议**：只有 `drain_state='drained'`、
+  `safe_to_stop_instance=true` 且三类未完成计数全 0 才放行；「执行已完成但实例未 drain」
+  与「已 drain」绝不共用一句证词。
+- **判据**：租约 `reserved` + 执行 `succeeded`/`cleanup_state=complete` + 网关
+  `engine_terminal_response` 证据（`execution_stopped=1`、`resources_released=1`）。
+  缺该证据的仍属 #338，不提供出口。
+- 可见面上，`cancellation_debt` 前缀下新增子类
+  `completed-without-release`（与既有的 `execution-unknown` 并列且分别计数），
+  处置顺序写在[生产作业组件文档](../components/production-jobs.md)的既有处置段。
+
+未决问题 1、3 仍然有效（谁优先、`cleanup_state` 是否扩值）；问题 2 的答案已由本方案给出：
+归还依据是「网关终止证据（执行确实结束）+ 操作员对该实例代次的 drain 证词（实例确实干净）」，
+两者都在加锁事务内被重新核对，操作员单独一句话不能释放。

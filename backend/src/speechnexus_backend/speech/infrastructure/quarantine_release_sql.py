@@ -1,10 +1,19 @@
-"""Two-level quarantine release: an immutable ledger read, then one short write.
+"""Two-level operator release: an immutable ledger read, then one short write.
 
 Level one is a ``READ ONLY`` transaction that only reads the ledger row. A
 committed ledger row is the final fact, so a replay never walks the global lock
 order and never competes with admission for pool/host row locks. Level two
 re-checks the ledger after acquiring every business lock in the global order,
-then conditionally closes B's submission and releases A's projections.
+then conditionally releases A's projections.
+
+Two facts can authorize that release, and they are deliberately separate
+functions instead of one widened rule. ``quarantine_release_in_transaction``
+releases an *unknown* execution: it needs the lease ``quarantined``, the intent
+``unknown_quarantined`` and the operator's testimony to close B's submission as
+``aborted``. ``completed_release_in_transaction`` releases a *completed* one: the
+execution fact stays ``succeeded`` and is never rewritten; the operator's
+testimony is a drain of the lease's own instance generation, and the released
+reservation is the one the gateway's terminal evidence already proves.
 """
 
 from __future__ import annotations
@@ -16,6 +25,7 @@ from typing import Any
 
 import rfc8785
 
+from speechnexus_backend.speech.domain import completed_release as completed_release_domain
 from speechnexus_backend.speech.domain.lease_release import ReleaseLease
 from speechnexus_backend.speech.domain.leases import LeaseRejectedError, LeaseResult
 from speechnexus_backend.speech.domain.quarantine_release import (
@@ -238,19 +248,32 @@ def _insert_ledger(
     )
 
 
-def quarantine_release_in_transaction(
-    cursor: LeaseCursor,
-    evidence: ReleaseEvidence,
-    *,
-    clock: Callable[[], int],
-) -> ReleaseOutcome:
-    """Step 2-12 of the release transaction; the caller owns COMMIT and retries.
+_FROZEN_LEASE_COLUMNS = (
+    "lease_id",
+    "operation_id",
+    "attempt_id",
+    "stage_id",
+    "pool_id",
+    "host_node_id",
+    "instance_id",
+    "instance_generation",
+    "gateway_id",
+    "fencing_token",
+    "reserved_slots",
+    *("reserved_" + name for name in DIMENSIONS),
+)
 
-    A returned ledger is the committed-or-replayed fact for this lease. Every
-    guard raises ``QuarantineReleaseRejectedError`` so the adapter rolls back and
-    maps one stable HTTP conflict instead of leaking a driver diagnosis.
+
+def _lock_release_target(cursor: LeaseCursor, lease_id: str) -> Row:
+    """Take the shared lock order and return the locked lease row.
+
+    Both operator releases move the same counters, so both must acquire pool,
+    quota, host, instance, attempt and lease in one order: a second order would
+    let two releases deadlock or observe a partially moved capacity projection.
+    The unlocked read only locates the parent keys; every identity it found is
+    rechecked against the locked lease before any decision runs.
     """
-    rows = _rows(cursor, "SELECT * FROM admission_leases WHERE lease_id = %s", (evidence.lease_id,))
+    rows = _rows(cursor, "SELECT * FROM admission_leases WHERE lease_id = %s", (lease_id,))
     if not rows:
         raise QuarantineReleaseRejectedError("not_found")
     if len(rows) != 1:
@@ -294,28 +317,30 @@ def quarantine_release_in_transaction(
     lease = _one(
         cursor,
         "SELECT * FROM admission_leases WHERE lease_id = %s FOR UPDATE",
-        (evidence.lease_id,),
-    )
-    frozen = (
-        "lease_id",
-        "operation_id",
-        "attempt_id",
-        "stage_id",
-        "pool_id",
-        "host_node_id",
-        "instance_id",
-        "instance_generation",
-        "gateway_id",
-        "fencing_token",
-        "reserved_slots",
-        *("reserved_" + name for name in DIMENSIONS),
+        (lease_id,),
     )
     if (
-        any(hint[key] != lease[key] for key in frozen)
+        any(hint[key] != lease[key] for key in _FROZEN_LEASE_COLUMNS)
         or attempt["workspace_id"] != attempt_hint["workspace_id"]
         or any(instance[key] != lease[key] for key in ("host_node_id", "pool_id", "gateway_id"))
     ):
         raise LeaseRejectedError("reconciliation_required")
+    return lease
+
+
+def quarantine_release_in_transaction(
+    cursor: LeaseCursor,
+    evidence: ReleaseEvidence,
+    *,
+    clock: Callable[[], int],
+) -> ReleaseOutcome:
+    """Step 2-12 of the release transaction; the caller owns COMMIT and retries.
+
+    A returned ledger is the committed-or-replayed fact for this lease. Every
+    guard raises ``QuarantineReleaseRejectedError`` so the adapter rolls back and
+    maps one stable HTTP conflict instead of leaking a driver diagnosis.
+    """
+    lease = _lock_release_target(cursor, evidence.lease_id)
     ledger = _decide(read_ledger(cursor, evidence.lease_id), evidence)
     if ledger is not None:
         return ledger
@@ -354,7 +379,140 @@ def quarantine_release_in_transaction(
     )
 
 
+def _completed_facts(
+    cursor: LeaseCursor,
+    lease: Row,
+    *,
+    drain: completed_release_domain.DrainRecord,
+    observed_at_us: int,
+    reason: str,
+) -> completed_release_domain.CompletedReleaseFacts:
+    """Read the completed-execution gate's facts under the release locks.
+
+    The submit intents are locked here, after the lease, so the facts the gate
+    decides on are the facts ``release_in_transaction`` will act on: the global
+    order (… attempt, lease, submit intents) is the same one the quarantine path
+    takes, and a concurrent gateway write cannot slip between the two reads.
+    """
+    intent_rows = _intents(cursor, lease["lease_id"], locked=True)
+    stops = (
+        _rows(
+            cursor,
+            "SELECT evidence_kind, observed_at_us, execution_stopped, resources_released "
+            "FROM execution_stop_evidence WHERE submit_intent_id = %s",
+            (intent_rows[0]["submit_intent_id"],),
+        )
+        if len(intent_rows) == 1
+        else []
+    )
+    if len(stops) > 1:
+        # One intent carries at most one terminal fact; more is a repair problem,
+        # never a reason to pick the more convenient row.
+        raise LeaseRejectedError("reconciliation_required")
+    return completed_release_domain.CompletedReleaseFacts(
+        lease_id=lease["lease_id"],
+        operation_id=lease["operation_id"],
+        instance_id=lease["instance_id"],
+        instance_generation=int(lease["instance_generation"]),
+        lease_state=lease["lease_state"],
+        lease_cleanup_state=lease["cleanup_state"],
+        budget_released_at_us=lease["budget_released_at_us"],
+        quarantine_observed_at_us=lease["quarantine_observed_at_us"],
+        intents=tuple(
+            completed_release_domain.CompletedIntent(
+                row["submit_intent_id"],
+                row["execution_state"],
+                row["cleanup_state"],
+                row["recorded_at_us"],
+                row["dispatched_at_us"],
+                row["terminated_at_us"],
+                row["version"],
+            )
+            for row in intent_rows
+        ),
+        stop=(
+            None
+            if not stops
+            else completed_release_domain.CompletedStopEvidence(
+                stops[0]["evidence_kind"],
+                stops[0]["observed_at_us"],
+                stops[0]["execution_stopped"],
+                stops[0]["resources_released"],
+            )
+        ),
+        drain=drain,
+        observed_at_us=observed_at_us,
+        reason=reason,
+    )
+
+
+def completed_release_in_transaction(
+    cursor: LeaseCursor,
+    evidence: ReleaseEvidence,
+    drain: completed_release_domain.DrainRecord,
+    *,
+    clock: Callable[[], int],
+) -> ReleaseOutcome:
+    """Return one completed execution's reservation on operator testimony.
+
+    This is the bounded exit for the shape the automatic judgment cannot move: an
+    execution that already reached ``succeeded`` while its admission lease stayed
+    ``reserved``. Isolation refuses it (a completed execution is not an unknown
+    one) and the quarantine release refuses it (it is not ``quarantined``), so the
+    slot stays held and nothing else claims the Job.
+
+    The transaction changes no execution fact. It releases the reservation
+    through the same ``LeaseService.release`` the dispatcher uses, which already
+    accepts a ``succeeded``/``complete`` execution carrying the gateway's own
+    ``engine_terminal_response`` evidence, and it records the operator's
+    testimony in the same append-only ledger the quarantine release publishes.
+    The testimony is pinned to the lease's own instance and generation and must
+    be a drained one, so "completed but never drained" cannot reach a release.
+    """
+    lease = _lock_release_target(cursor, evidence.lease_id)
+    ledger = _decide(read_ledger(cursor, evidence.lease_id), evidence)
+    if ledger is not None:
+        return ledger
+    if lease["lease_state"] == "released":
+        # Every later release of this lease is a replay of the committed fact;
+        # a second, different testimony is a conflict and not a new release.
+        return ReleaseOutcome(_branch_f(cursor, lease, evidence), True)
+    facts = _completed_facts(
+        cursor,
+        lease,
+        drain=drain,
+        observed_at_us=evidence.observed_at_us,
+        reason=evidence.reason,
+    )
+    intent = completed_release_domain.require_completed_releasable(facts)
+    now_us = clock()  # Database time after the last possible lock wait.
+    completed_release_domain.require_observed_at(facts, intent, now_us)
+    expected = completed_release_domain.completed_evidence_digest(
+        lease_id=facts.lease_id,
+        submit_intent_id=intent.submit_intent_id,
+        instance_id=facts.instance_id,
+        instance_generation=facts.instance_generation,
+        drain=drain,
+        observed_at_us=evidence.observed_at_us,
+        reason=evidence.reason,
+    )
+    if expected != evidence.evidence_digest:
+        # The evidence digest is the operator's testimony, so it must cover every
+        # fact this transaction decided on. A digest minted for another identity,
+        # another generation or another drain result cannot authorize this one.
+        raise QuarantineReleaseRejectedError("invalid")
+    result = release_in_transaction(
+        cursor, ReleaseLease(evidence.lease_id, lease["version"]), clock=clock
+    )
+    if result.outcome != "committed":
+        raise LeaseRejectedError("reconciliation_required")
+    return ReleaseOutcome(
+        _insert_ledger(cursor, lease, evidence, result, (intent.submit_intent_id,)), False
+    )
+
+
 __all__ = [
+    "completed_release_in_transaction",
     "operator_stop_evidence_id",
     "quarantine_release_in_transaction",
     "read_ledger",

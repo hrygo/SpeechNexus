@@ -4,15 +4,23 @@ from __future__ import annotations
 
 import random
 import time
+from collections.abc import Callable
 from typing import Any, cast
 
 import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
+from speechnexus_backend.speech.application.completed_releases import (
+    CompletedLeaseSnapshot,
+)
 from speechnexus_backend.speech.application.quarantine_releases import (
     QuarantineSurfaceError,
     QuarantineUnavailableError,
     QuarantineUnknownError,
+)
+from speechnexus_backend.speech.domain.completed_release import (
+    CompletedStopEvidence,
+    DrainRecord,
 )
 from speechnexus_backend.speech.domain.leases import LeaseRejectedError
 from speechnexus_backend.speech.domain.quarantine_release import (
@@ -24,6 +32,7 @@ from speechnexus_backend.speech.domain.quarantine_release import (
 from speechnexus_backend.speech.infrastructure.leases_sql import LeaseCursor
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.quarantine_release_sql import (
+    completed_release_in_transaction,
     quarantine_release_in_transaction,
     read_ledger,
 )
@@ -89,6 +98,77 @@ class _DeadlineCursor:
         return cast(int, self.fetchall()[0]["now_us"])
 
 
+_SNAPSHOT = (
+    "SELECT l.lease_id, l.operation_id, l.attempt_id, l.stage_id, l.instance_id, "
+    "l.instance_generation, l.lease_state, l.cleanup_state, l.budget_released_at_us, "
+    "l.quarantine_observed_at_us, "
+    "i.submit_intent_id, i.execution_state, i.cleanup_state AS execution_cleanup_state, "
+    "i.recorded_at_us, i.dispatched_at_us, i.terminated_at_us, i.version AS intent_version, "
+    "e.evidence_kind, e.observed_at_us AS stop_observed_at_us, e.execution_stopped, "
+    "e.resources_released, n.held_slots AS instance_held_slots, "
+    "n.quarantined_slots AS instance_quarantined_slots, "
+    "f.accepted_at_us AS fence_accepted_at_us, r.settled_at_us AS reconciliation_settled_at_us, "
+    "j.state AS job_state "
+    "FROM admission_leases AS l "
+    "LEFT JOIN submit_intents AS i ON i.lease_id = l.lease_id "
+    "LEFT JOIN execution_stop_evidence AS e ON e.submit_intent_id = i.submit_intent_id "
+    "LEFT JOIN engine_instances AS n ON n.instance_id = l.instance_id "
+    "AND n.instance_generation = l.instance_generation "
+    "LEFT JOIN speech_jobs AS j ON j.job_id = l.operation_id "
+    "LEFT JOIN speech_job_cancellation_fences AS f ON f.job_id = l.operation_id "
+    "LEFT JOIN speech_job_cancellation_reconciliations AS r ON r.job_id = l.operation_id "
+    "WHERE l.lease_id = %s"
+)
+
+
+def _read_completed_snapshot(cursor: LeaseCursor, lease_id: str) -> CompletedLeaseSnapshot | None:
+    """One read-only statement: the lease, its intent, its terminal fact, counters."""
+    cursor.execute(_SNAPSHOT, (lease_id,))
+    rows = cursor.fetchall()
+    if not rows:
+        return None
+    if len(rows) != 1:
+        # A lease carries one intent and one terminal fact. More than one row is a
+        # repair problem: picking ``rows[0]`` would choose which fact to believe.
+        raise QuarantineReleaseRejectedError("reconciliation_required")
+    row = rows[0]
+    stop = (
+        None
+        if row["evidence_kind"] is None
+        else CompletedStopEvidence(
+            row["evidence_kind"],
+            row["stop_observed_at_us"],
+            row["execution_stopped"],
+            row["resources_released"],
+        )
+    )
+    return CompletedLeaseSnapshot(
+        lease_id=row["lease_id"],
+        operation_id=row["operation_id"],
+        attempt_id=row["attempt_id"],
+        stage_id=row["stage_id"],
+        instance_id=row["instance_id"],
+        instance_generation=int(row["instance_generation"]),
+        lease_state=row["lease_state"],
+        lease_cleanup_state=row["cleanup_state"],
+        budget_released_at_us=row["budget_released_at_us"],
+        quarantine_observed_at_us=row["quarantine_observed_at_us"],
+        submit_intent_id=row["submit_intent_id"],
+        execution_state=row["execution_state"],
+        execution_cleanup_state=row["execution_cleanup_state"],
+        recorded_at_us=row["recorded_at_us"],
+        dispatched_at_us=row["dispatched_at_us"],
+        terminated_at_us=row["terminated_at_us"],
+        intent_version=row["intent_version"],
+        stop=stop,
+        fence_accepted_at_us=row["fence_accepted_at_us"],
+        reconciliation_settled_at_us=row["reconciliation_settled_at_us"],
+        job_state=row["job_state"],
+        instance_held_slots=int(row["instance_held_slots"]),
+        instance_quarantined_slots=int(row["instance_quarantined_slots"]),
+    )
+
+
 class PostgresQuarantineReleases:
     """Level-one ledger replay plus the bounded level-two release transaction.
 
@@ -136,6 +216,45 @@ class PostgresQuarantineReleases:
         return ReleaseOutcome(ledger, True)
 
     def commit(self, evidence: ReleaseEvidence) -> ReleaseOutcome:
+        return self._commit(
+            lambda cursor: quarantine_release_in_transaction(cursor, evidence, clock=cursor.clock)
+        )
+
+    def commit_completed(self, evidence: ReleaseEvidence, drain: DrainRecord) -> ReleaseOutcome:
+        """Level two for a completed execution; the same ledger, a different fact."""
+        return self._commit(
+            lambda cursor: completed_release_in_transaction(
+                cursor, evidence, drain, clock=cursor.clock
+            )
+        )
+
+    def completed_snapshot(self, lease_id: str) -> CompletedLeaseSnapshot | None:
+        """Read one lease, its intent, its terminal fact and its instance counters.
+
+        A read-only single statement set under the release identity's own grants:
+        the operator tool identifies the target, prints the capacity it is about
+        to return and verifies the result without a second DSN or the API role.
+        """
+        deadline = time.monotonic() + self._timeout
+        try:
+            with self._pool.connection(timeout=max(0.001, deadline - time.monotonic())) as conn:
+                if time.monotonic() >= deadline:
+                    raise _BudgetExpiredError
+                conn.execute("SET TRANSACTION READ ONLY")
+                with conn.cursor() as raw:
+                    cursor = _DeadlineCursor(cast(LeaseCursor, raw), deadline)
+                    snapshot = _read_completed_snapshot(cursor, lease_id)
+                    if time.monotonic() >= deadline:
+                        raise _BudgetExpiredError
+        except PoolClosed, PoolTimeout, TooManyRequests, _BudgetExpiredError:
+            raise QuarantineUnavailableError from None
+        except psycopg.OperationalError, psycopg.InterfaceError:
+            raise QuarantineUnavailableError from None
+        except (psycopg.Error, ValueError, TypeError, KeyError) as error:
+            raise QuarantineSurfaceError(_surface_defect(error)) from None
+        return snapshot
+
+    def _commit(self, decide: Callable[[_DeadlineCursor], ReleaseOutcome]) -> ReleaseOutcome:
         deadline = time.monotonic() + self._timeout
         for attempt in range(self._max_attempts):
             remaining = deadline - time.monotonic()
@@ -147,9 +266,7 @@ class PostgresQuarantineReleases:
                         raise _BudgetExpiredError
                     with connection.cursor() as raw:
                         cursor = _DeadlineCursor(cast(LeaseCursor, raw), deadline)
-                        outcome = quarantine_release_in_transaction(
-                            cursor, evidence, clock=cursor.clock
-                        )
+                        outcome = decide(cursor)
                         if time.monotonic() >= deadline:
                             raise _BudgetExpiredError
                 return outcome  # Commit acknowledgement precedes success.

@@ -78,11 +78,17 @@ FULL_READ = frozenset(
     }
 )
 
-#: The narrow reads: a lock target and B's immutable submission facts. The
-#: release decision needs the recorded/dispatched times for the observed-at
-#: bounds; command bodies, engine identities and staging keys stay unreadable.
+#: The narrow reads: a lock target, B's immutable submission facts, and the
+#: accepted-cancellation facts the operator exit proves itself. The release
+#: decision needs the recorded/dispatched times for the observed-at bounds and the
+#: fence/judgment/Job-state triple so the tool refuses a Job that was never
+#: cancelled or whose judgment already concluded; command bodies, engine
+#: identities, staging keys and the rest of the Job row stay unreadable.
 READ_COLUMNS: dict[str, frozenset[str]] = {
     "resource_pools": frozenset({"pool_id"}),
+    "speech_jobs": frozenset({"job_id", "state"}),
+    "speech_job_cancellation_fences": frozenset({"job_id", "accepted_at_us"}),
+    "speech_job_cancellation_reconciliations": frozenset({"job_id", "settled_at_us"}),
     "submit_intents": frozenset(
         {
             "submit_intent_id",

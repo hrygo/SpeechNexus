@@ -91,3 +91,50 @@
 2. 一个已 `succeeded` 的执行，其容量归还的依据是什么：完成路径的释放证据，还是操作员证词？
 3. 若选 A，读模型 `cleanup_state` 在 `cancelling` 期间要不要引入「可能成功」的新值？
    这会扩公开契约，需单独审批。
+
+## 裁决与落地（2026-11-16，方案 B）
+
+选定 **B**：保留状态机与触发器，不放宽
+`quarantine_release.require_releasable`，只给这一类受理一条显式、有界的操作员出口。
+落地方式与本文最初设想的差异，记录如下：
+
+- **不新增路由**：`QuarantineReleaseRequest` 的冻结正文只有
+  `{evidence_kind, evidence_digest, observed_at, reason}`，后端无法在其中核对 drain 事实，
+  钉住 instance/generation 会退化成「操作员说了算」。出口因此是实现侧的操作员命令
+  `python -m speechnexus_backend.completed_release_cli`，公开契约与 `contracts/**` 不变。
+- **证词分离**：不复用未知执行的「实例已终止」证词，新增
+  `completed-release-evidence/v1` 摘要（`lease_id` + `submit_intent_id` +
+  `instance_id` + `instance_generation` + 整份 drain 应答 + `observed_at` + `reason`），
+  并在写事务内按加锁事实重算比对。同一账本、同一释放路径（`LeaseService.release`），
+  但两条证词不通用。
+- **drain 是前提而非建议**：只有 `drain_state='drained'`、
+  `safe_to_stop_instance=true` 且三类未完成计数全 0 才放行；「执行已完成但实例未 drain」
+  与「已 drain」绝不共用一句证词。
+- **判据**：租约 `reserved` + 执行 `succeeded`/`cleanup_state=complete` + 网关
+  `engine_terminal_response` 证据（`execution_stopped=1`、`resources_released=1`）。
+  缺该证据的仍属 #338，不提供出口。
+- 可见面上，`cancellation_debt` 前缀下新增子类
+  `completed-without-release`（与既有的 `execution-unknown` 并列且分别计数），
+  处置顺序写在[生产作业组件文档](../components/production-jobs.md)的既有处置段。
+
+未决问题 1、3 仍然有效（谁优先、`cleanup_state` 是否扩值）；问题 2 的答案已由本方案给出：
+归还依据是「网关终止证据（执行确实结束）+ 操作员对该实例代次的 drain 证词（实例确实干净）」，
+两者都在加锁事务内被重新核对，操作员单独一句话不能释放。
+
+### 复审后的收紧（2026-11-16，PR #906 第二轮）
+
+复审对同一实现提出三处实质缺口，均已按「工具自己证明，不依赖手册」落地：
+
+- **drain 的时间窗**：`drain.updated_at` 必须落在执行结束与 `observed_at` 之间
+  （`completed_release_drain_stale`）。摘要只证明证词与字段一致、不是网关签名，所以
+  时间窗**只强制先后**（drain 在本次执行结束之后、记录之前），不强制新鲜度：上界是操作员
+  自填的 `observed_at`，执行结束后任意久取到的真 drain 仍然通过。「现场取 drain」仍是
+  操作要求，是明示限制而非工具保证。
+- **判据与标签对齐**：`completed-without-release` 的判定补上终止证据（
+  `engine_terminal_response` + 两个 flag）；无该证据的 `succeeded` 保持
+  `execution-unknown`，不再被指向必然拒绝它的出口。工具同时自己核验
+  「围栏存在 + 账本未 settled + Job 仍 `cancelling`」，不满足即拒绝。
+- **手册可执行**：drain 请求补齐契约要求的五项正文与组件凭据；新增「跨结算周期复读」
+  与「提交未知时重放同一证词」两步；核对查询按 `lease_id` 过滤。
+- 另外两处一致性修正：`cancellation_debt` 句子的计数单位分列（Job 数与持有租约数），
+  快照读取在出现多行时拒绝而不是取第一行。

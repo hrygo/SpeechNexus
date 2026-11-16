@@ -919,15 +919,29 @@ SELECT 且拒绝任何写权限，未配置时列表返回 `503 model_binding_se
 隔离租约的运维释放另需独立写入身份
 `SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL`：由 owner 运行
 `quarantine_release_grants(schema, role)` 预置的非 owner 角色，持有 schema `USAGE`
-（无 `CREATE`）与九张关系的列级 `SELECT`/`UPDATE`/`INSERT`。它在同一个事务里写
+（无 `CREATE`）与十二张关系的列级 `SELECT`/`UPDATE`/`INSERT`。它在同一个事务里写
 `execution_stop_evidence` 运维证据、关闭唯一提交意图、归还 `workspace_quotas`、
 `host_nodes`、`engine_instances`、`admission_leases` 的容量，并追加
 `admission_quarantine_releases` 账本；其中只有后两张表有 `INSERT`，账本表没有
 `UPDATE`，因为 append-only 触发器负责不可改写。该身份不得复用迁移 owner、`sn_api`
 运行时角色或任何 gateway/worker 写入身份。启动时逐列比对实际 ACL 与声明面：多一列、
 少一列、schema 内任何序列的 `USAGE`/`SELECT`/`UPDATE`、append-only 触发器缺失或未启用
-都会让 API 启动失败并报 `Quarantine release startup rejected`。`compose.yaml` 的 api
-环境以空默认透传本变量，未配置的既有部署仍可渲染并启动，此时
+都会让 API 启动失败并报 `Quarantine release startup rejected`（消息点名出问题的表与列，
+如 `declared surface at speech_jobs.state`）。
+
+**升级必做**：该出口现在自己核验「围栏已受理、账本未 `settled`、Job 仍 `cancelling`」，
+声明面因此新增三张关系的列级只读（`speech_jobs`、`speech_job_cancellation_fences`、
+`speech_job_cancellation_reconciliations`）；可选的取消债务探针身份同时新增
+`execution_stop_evidence` 与 `submit_intents.submit_intent_id`。任何配置了
+`SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL` 或 `SPEECHNEXUS_READINESS_CANCELLATION_DSN`
+的环境，升级时都必须以 owner 重跑 `quarantine_release_grants` 与
+`cancellation_debt_reader_grants` 两个函数。漏跑只有三种可自查的信号：API 启动被拒并
+点名表列（`app.py` 的组合根拒绝装配，不会带错身份上线）；只跑操作员 CLI 时退出码 3、
+输出 `unavailable: quarantine_release_privilege_missing`；探针降级为
+`cancellation_debt: … (jobs: lease-unread=1) … [lease detail unavailable: permission]`，
+且**不会**让 `/readyz` 失败。
+
+`compose.yaml` 的 api 环境以空默认透传本变量，未配置的既有部署仍可渲染并启动，此时
 `POST /v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases` 返回
 `503 quarantine_release_unavailable`（`retryable: true`，须先确认该键是否配置，不要盲目
 轮询）。已配置但运行期授权被回收时返回 `503 quarantine_release_privilege_missing`，迁移

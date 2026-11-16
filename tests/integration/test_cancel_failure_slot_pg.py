@@ -708,7 +708,10 @@ def test_the_readiness_detail_names_the_blocking_lease(
 
         assert detail is not None
         assert detail.startswith("cancellation_debt: 1 accepted cancellation(s)")
-        assert f"{box.job_id} -> {LEASE_SECOND}(lease=reserved, execution=not_submitted)" in detail
+        assert (
+            f"{box.job_id} -> {LEASE_SECOND}(lease=reserved, execution=not_submitted, "
+            "subclass=execution-unknown)" in detail
+        )
 
 
 def test_a_role_without_the_coordination_grants_still_names_the_job() -> None:
@@ -851,7 +854,15 @@ def test_the_optional_reader_identity_reports_the_full_detail() -> None:
         detail = asyncio.run(_debt_probe(box).check())
 
     assert detail is not None
-    assert f"{box.job_id} -> {LEASE}(lease=reserved, execution=unknown_quarantined)" in detail
+    # The subclass tag is what routes the operator: this unknown execution is not
+    # the completed one, so its exit is isolation plus a verified stop.
+    assert (
+        f"{box.job_id} -> {LEASE}(lease=reserved, execution=unknown_quarantined, "
+        "subclass=execution-unknown)" in detail
+    )
+    assert "over 1 held lease(s)" in detail
+    assert "(held leases: execution-unknown=1)" in detail
+    assert "completed-without-release" not in detail
     assert "unavailable" not in detail
 
 

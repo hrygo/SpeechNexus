@@ -245,13 +245,14 @@ jobs:
     needs: [routing]
     if: ${{ needs.routing.outputs.mode == 'full' || needs.routing.outputs.mode == 'web' || needs.routing.outputs.mode == 'no-db' }}
     runs-on: ubuntu-24.04
-    # Budget, not a target: measured 471 s and 502 s wall clock on 2026-11-15
-    # (7:51 and 8:22), of which the two-worker coverage measurement is 413 s. The
-    # old 10 min left 1:38-2:09 of headroom on a protected lane, so one slow
-    # runner attempt would cancel the job instead of failing a test. The project
-    # rule for partitions ("ceiling at least 5 min above the normal slow value",
-    # docs/validation/ci-validation.md) gives 8:22 + 5 min = 15 min. This changes
-    # no selection, assertion or fail-fast behaviour; only a hang reaches it.
+    # Budget, not a target. Each leg now measures four of eight partitions in
+    # four workers: measured 183 s and 245 s wall clock on 2026-11-16 for the
+    # whole job, against 471-502 s when one job measured the entire suite.
+    # The project rule for partitions ("ceiling at least 5 min above the normal
+    # slow value", docs/validation/ci-validation.md) keeps 15 min, which leaves
+    # more than ten minutes of headroom so one slow runner attempt does not
+    # cancel the job instead of failing a test. This changes no selection,
+    # assertion or fail-fast behaviour; only a hang reaches it.
     timeout-minutes: 15
     steps:
       - name: Check out repository

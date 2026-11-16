@@ -308,7 +308,14 @@ def verify_reports(
         if not coverage_data.has_arcs() or not coverage_data.measured_files():
             raise ValueError("Python worker has no branch coverage data")
         files.append(coverage_file)
-    if full is None or observed != set(full) or indices != set(range(base, base + expected)):
+    if full is None or indices != set(range(base, base + expected)):
+        raise ValueError("Python execution did not cover the complete collection exactly once")
+    # A job owns a contiguous slice, so equal-union is the exact-once invariant:
+    # every worker already proved it ran its own partition and overlapped nobody.
+    expected_selection: set[str] = set()
+    for index in range(base, base + expected):
+        expected_selection.update(partition(full, index, count))
+    if observed != expected_selection:
         raise ValueError("Python execution did not cover the complete collection exactly once")
     return files, len(full)
 

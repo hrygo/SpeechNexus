@@ -9,6 +9,7 @@ from httpx import ASGITransport, AsyncClient
 
 from speechnexus_backend.app import create_app
 from speechnexus_backend.speech.application.binding_documents import encode_document
+from speechnexus_backend.speech.domain.binding_drafts import BindingDefinitionIdentityError
 from speechnexus_backend.speech.domain.binding_lifecycle import (
     BindingLifecycleConflictError,
     BindingLifecycleNotFoundError,
@@ -210,6 +211,11 @@ async def test_publication_replay_only_depends_on_the_canonical_intent() -> None
             422,
             "capacity_manifest_mismatch",
         ),
+        (
+            BindingDefinitionIdentityError("asr-quality"),
+            422,
+            "invalid_binding_definition",
+        ),
         (BindingLifecycleUnavailableError(), 503, "binding_result_unknown"),
         (RuntimeError("private-dsn"), 503, "binding_result_unknown"),
     ],
@@ -228,6 +234,11 @@ async def test_publication_errors_are_explicit_and_never_leak_details(
     assert "private-dsn" not in response.text
     if code == "configuration_changed":
         assert 'expected_current_revision="2"' in body["error"]["message"]
+    if code == "invalid_binding_definition":
+        # The stored document, not the caller's request body, is what disagrees;
+        # name the field the operator has to fix.
+        assert body["error"]["param"] == "binding_id"
+        assert "asr-quality" not in response.text
 
 
 @pytest.mark.parametrize(

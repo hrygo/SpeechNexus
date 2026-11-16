@@ -82,8 +82,13 @@ def prepare_binding_draft(request: Any, idempotency_key: str | None = None) -> C
             raise ValueError
         intent = encode_document(request)
         definition = decode_document(intent)
-        binding_id = definition.pop("binding_id")
-        content = encode_document(definition)
+        # The immutable document is what a published revision exposes, and
+        # ``contracts/model-binding.schema.json`` requires its ``binding_id``.
+        # Persist the validated request as-is: dropping the identity into columns
+        # alone stores a document that no catalogue read can attribute to its
+        # binding, which is exactly the deferred failure this writer must prevent.
+        binding_id = definition["binding_id"]
+        content = intent
         # Full-source conditionals (e.g. voice_design engine) are not all present
         # in the create DTO. This synthetic identity is validation-only, never stored.
         draft_to_wire(BindingDraft(binding_id, "1", "binding-validation-only", content, 0))

@@ -44,11 +44,10 @@ OTHER_MODEL = model_document(
     },
     owned_by="speechnexus",
 )
+# The stored document a published revision exposes: the create request the
+# draft writer accepted, identity retained. Registry identity is in columns.
 FULL_DEFINITION: dict[str, Any] = {
-    "schema_version": "1.0.0",
     "binding_id": "tts-quality",
-    "revision": "2",
-    "revision_id": "binding-rev-2",
     "logical_model": "qwen3-tts-customvoice",
     "tasks": ["tts_file"],
     "engine": {
@@ -81,14 +80,6 @@ FULL_DEFINITION: dict[str, Any] = {
         }
     },
     "release_tier": "production",
-    "publication": {
-        "status": "draft",
-        "published_at": None,
-        "retired_at": None,
-        "capacity_manifest_id": None,
-        "qualification_report_id": None,
-        "disabled_reason": None,
-    },
 }
 CAPABILITY_MODEL = capability_model(PUBLICATION, FULL_DEFINITION, owned_by="speechnexus")
 

@@ -238,11 +238,11 @@ def create_binding(
     )
 
 
+# The exact document the draft writer stores: the create request it accepted,
+# with the binding identity retained. Registry identity (revision, revision_id,
+# publication status) lives in columns, never inside this document.
 DEFINITION: dict[str, object] = {
-    "schema_version": "1.0.0",
     "binding_id": "tts-quality",
-    "revision": "1",
-    "revision_id": "binding-rev-1",
     "logical_model": "qwen3-tts-customvoice",
     "tasks": ["tts_file", "tts_realtime"],
     "engine": {
@@ -280,15 +280,6 @@ DEFINITION: dict[str, object] = {
         }
     },
     "release_tier": "production",
-    "publication": {
-        "status": "draft",
-        "published_at": None,
-        "retired_at": None,
-        "capacity_manifest_id": None,
-        "qualification_report_id": None,
-        "disabled_reason": None,
-    },
-    "created_at": "2026-10-27T08:00:00Z",
 }
 
 
@@ -329,14 +320,14 @@ def test_catalogue_lists_one_model_at_the_latest_published_revision(sandbox: San
         sandbox.admin,
         {
             **DEFINITION,
-            "revision": "2",
-            "revision_id": "binding-rev-2",
             "logical_model": "qwen3-tts-customvoice-v2",
             "execution_recipe": {
                 **recipe,
                 "capacity_manifest_id": "cap-tts-quality-2",
             },
         },
+        revision="2",
+        revision_id="binding-rev-2",
     )
     _append(
         sandbox,
@@ -358,12 +349,14 @@ def test_catalogue_lists_one_model_at_the_latest_published_revision(sandbox: San
 
 
 def create_binding_revision(
-    admin: psycopg.Connection[tuple[object, ...]], definition: dict[str, object]
+    admin: psycopg.Connection[tuple[object, ...]],
+    definition: dict[str, object],
+    *,
+    revision: str,
+    revision_id: str,
 ) -> None:
     """Append a second prepared revision without changing the original fixture helper."""
     binding_id = str(definition["binding_id"])
-    revision = str(definition["revision"])
-    revision_id = str(definition["revision_id"])
     key = "sha256:" + ("d" + revision).ljust(64, "d")
     request = "sha256:" + ("e" + revision).ljust(64, "e")
     document = "sha256:" + ("f" + revision).ljust(64, "f")
@@ -453,11 +446,11 @@ async def test_models_conditional_get_over_real_postgres_and_http(sandbox: Sandb
             sandbox.admin,
             {
                 **DEFINITION,
-                "revision": "2",
-                "revision_id": "binding-rev-2",
                 "logical_model": "qwen3-tts-customvoice-v2",
                 "execution_recipe": {**recipe, "capacity_manifest_id": "cap-tts-quality-2"},
             },
+            revision="2",
+            revision_id="binding-rev-2",
         )
         _append(
             sandbox,
@@ -628,10 +621,10 @@ def test_reader_view_exposes_only_published_binding_revisions(sandbox: Sandbox) 
         sandbox.admin,
         {
             **DEFINITION,
-            "revision": "2",
-            "revision_id": "binding-rev-2",
             "logical_model": "qwen3-tts-customvoice-v2",
         },
+        revision="2",
+        revision_id="binding-rev-2",
     )
     _append(
         sandbox,
@@ -809,10 +802,10 @@ def test_retiring_the_newest_revision_does_not_fall_back_to_an_older_one(
         sandbox.admin,
         {
             **DEFINITION,
-            "revision": "2",
-            "revision_id": "binding-rev-2",
             "logical_model": "qwen3-tts-customvoice-v2",
         },
+        revision="2",
+        revision_id="binding-rev-2",
     )
     older = publication(1, "binding-rev-1", object_id="tts-quality")
     newest = publication(2, "binding-rev-2", object_id="tts-quality")

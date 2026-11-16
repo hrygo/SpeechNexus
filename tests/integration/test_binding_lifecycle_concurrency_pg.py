@@ -58,7 +58,7 @@ def test_competing_activations_serialize_and_reject_stale_head(
 ) -> None:
     admin = sandbox.admin
     create_binding(admin, DEFINITION)
-    create_binding_revision(admin, {**DEFINITION, "revision": "2", "revision_id": "binding-rev-2"})
+    create_binding_revision(admin, DEFINITION, revision="2", revision_id="binding-rev-2")
     admin.execute(
         "INSERT INTO speech_publications "
         "(kind, object_id, revision, revision_id, published_at_us) VALUES "

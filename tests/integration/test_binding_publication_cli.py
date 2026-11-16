@@ -33,7 +33,10 @@ from speechnexus_backend.publish_binding import (
     main,
     publish_binding,
 )
-from speechnexus_backend.speech.application.binding_documents import decode_document
+from speechnexus_backend.speech.application.binding_documents import (
+    decode_document,
+    encode_document,
+)
 from speechnexus_backend.speech.application.binding_publication import (
     MISSING_HEAD,
     BindingHeadPreconditionError,
@@ -49,6 +52,7 @@ from speechnexus_backend.speech.domain.binding_publication_evidence import (
     BindingCapacityManifestMismatchError,
     BindingEvidenceConflictError,
 )
+from speechnexus_backend.speech.domain.configuration import document_digest
 from speechnexus_backend.speech.domain.publications import PublicationUnavailableError
 from speechnexus_backend.speech.infrastructure.binding_draft_schema import binding_draft_grants
 from speechnexus_backend.speech.infrastructure.binding_drafts_postgres import PostgresBindingDrafts
@@ -683,3 +687,64 @@ def test_observe_cli_reports_read_failures_without_tracebacks_or_secrets(sandbox
     success = observe(draft.binding_id, base_env)
     assert success.returncode == 0, success.stderr
     assert json.loads(success.stdout)["current_revision"] is None
+
+
+def test_a_stored_document_without_identity_is_an_invalid_request(
+    sandbox: Sandbox, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    draft = create_draft(sandbox)
+    legacy = decode_document(draft.definition)
+    legacy.pop("binding_id")
+    body = encode_document(legacy)
+    key = document_digest(b"legacy-cli-key")
+    sandbox.admin.execute(
+        "INSERT INTO speech_binding_commands "
+        "(key_digest, binding_id, document_version, intent_json, request_digest) "
+        "VALUES (%s, %s, 1, %s, %s)",
+        (key, draft.binding_id, "{}", key),
+    )
+    sandbox.admin.execute(
+        "INSERT INTO speech_binding_revisions "
+        "(binding_id, revision, revision_id, key_digest, document_version, "
+        " definition_json, definition_digest, request_digest, created_at_us) "
+        "VALUES (%s, '2', 'mbrev-legacy-2', %s, 1, %s, %s, %s, 1700000000000002)",
+        (draft.binding_id, key, body.decode("utf-8"), document_digest(body), key),
+    )
+    sandbox.admin.execute(
+        "UPDATE speech_binding_families SET latest_revision = '2' WHERE binding_id = %s",
+        (draft.binding_id,),
+    )
+    monkeypatch.setenv("SPEECHNEXUS_PUBLICATION_WRITER_DATABASE_URL", sandbox.writer_url)
+    monkeypatch.setenv("SPEECHNEXUS_DATABASE_SCHEMA", sandbox.schema)
+    main(["observe", "--binding-id", draft.binding_id, "--schema", sandbox.schema])
+    observed = json.loads(capsys.readouterr().out)
+    arguments = [
+        "--binding-id",
+        draft.binding_id,
+        "--revision",
+        "2",
+        "--revision-id",
+        "mbrev-legacy-2",
+        "--capacity-manifest-id",
+        CAPACITY,
+        "--qualification-report-id",
+        REPORT,
+        "--expected-current-revision",
+        "none",
+        "--expected-catalog-revision",
+        str(observed["catalog_revision"]),
+        "--observed-installation-id",
+        str(observed["installation_id"]),
+        "--observed-database",
+        str(observed["database_name"]),
+        "--idempotency-key",
+        "cli-test-legacy-identity",
+    ]
+    # The document cannot be promoted: exit 2 is the CLI's invalid-request code,
+    # and nothing is written, so the catalogue never sees the legacy shape.
+    with pytest.raises(SystemExit) as refused:
+        main(arguments)
+    assert refused.value.code == 2
+    error = capsys.readouterr().err
+    assert error.startswith("invalid request: stored binding definition does not name binding_id=")
+    assert counts(sandbox) == (0, 2, 0)

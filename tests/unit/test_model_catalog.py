@@ -8,6 +8,7 @@ import pytest
 from jsonschema import Draft202012Validator, FormatChecker
 from referencing import Registry
 
+from speechnexus_backend.speech.application.binding_documents import decode_document
 from speechnexus_backend.speech.application.capability_snapshot import (
     CapabilityPolicy,
     capability_snapshot,
@@ -22,6 +23,8 @@ from speechnexus_backend.speech.application.model_catalog import (
     model_list,
 )
 from speechnexus_backend.speech.domain.publications import Publication
+from speechnexus_backend.speech.interfaces.binding_drafts import prepare_binding_draft
+from tests.support.binding_examples import binding_request
 from tests.support.contracts import ROOT, document, retrieve
 
 _OPENAPI = document(ROOT / "speech-openapi.yaml")
@@ -44,11 +47,10 @@ DEFINITION: dict[str, Any] = {
     "release_tier": "production",
 }
 
+# The stored document a published revision exposes: the create request the draft
+# writer accepted, with identity retained. Registry identity lives in columns.
 FULL_DEFINITION: dict[str, Any] = {
-    "schema_version": "1.0.0",
     "binding_id": "tts-quality",
-    "revision": "3",
-    "revision_id": "binding-rev-3",
     "logical_model": "qwen3-tts-customvoice",
     "tasks": ["tts_file", "tts_realtime"],
     "engine": {
@@ -86,15 +88,6 @@ FULL_DEFINITION: dict[str, Any] = {
         }
     },
     "release_tier": "production",
-    "publication": {
-        "status": "draft",
-        "published_at": None,
-        "retired_at": None,
-        "capacity_manifest_id": None,
-        "qualification_report_id": None,
-        "disabled_reason": None,
-    },
-    "created_at": "2026-10-27T08:00:00Z",
 }
 
 
@@ -256,3 +249,37 @@ def test_snapshot_id_and_etag_are_stable_for_equal_facts() -> None:
     assert matches_if_none_match("W/" + etag, etag)
     assert matches_if_none_match('"other", ' + etag, etag)
     assert not matches_if_none_match('"other"', etag)
+
+
+def test_the_document_the_draft_writer_stores_is_catalogue_readable() -> None:
+    command = prepare_binding_draft(binding_request(), "catalogue-identity-key")
+    definition = decode_document(command.definition)
+    publication = Publication(
+        "binding", command.binding_id, 1, "binding-rev-1", BINDING.published_at_us
+    )
+
+    model = model_document(publication, definition, owned_by="speechnexus")
+    capability = capability_model(publication, definition, owned_by="speechnexus")
+
+    assert model["id"] == command.binding_id
+    _component("Model").validate(model)
+    _component("CapabilityModel").validate(capability)
+
+
+def test_a_published_document_that_names_no_binding_is_not_listed() -> None:
+    command = prepare_binding_draft(binding_request(), "catalogue-legacy-key")
+    legacy = decode_document(command.definition)
+    legacy.pop("binding_id")
+    publication = Publication(
+        "binding", command.binding_id, 1, "binding-rev-1", BINDING.published_at_us
+    )
+
+    # Revisions written before identity was retained cannot prove they name this
+    # binding, so the catalogue read fails instead of guessing; a new revision
+    # (or a counter-identity document) is required.
+    with pytest.raises(ValueError):
+        model_document(publication, legacy, owned_by="speechnexus")
+    with pytest.raises(ValueError):
+        model_document(
+            publication, {**legacy, "binding_id": "other-binding"}, owned_by="speechnexus"
+        )

@@ -10,7 +10,10 @@ from typing import Any
 import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
-from speechnexus_backend.speech.application.binding_documents import decode_document
+from speechnexus_backend.speech.application.binding_documents import (
+    decode_document,
+    require_published_identity,
+)
 from speechnexus_backend.speech.application.binding_publication import (
     MISSING_HEAD,
     BindingHeadPreconditionError,
@@ -19,6 +22,7 @@ from speechnexus_backend.speech.application.binding_publication import (
     BindingPublishIntent,
     BindingRevisionNotFoundError,
 )
+from speechnexus_backend.speech.domain.binding_drafts import BindingDefinitionIdentityError
 from speechnexus_backend.speech.domain.binding_publication_evidence import (
     BindingCapacityManifestMismatchError,
     BindingEvidenceConflictError,
@@ -219,6 +223,9 @@ class PostgresPublications:
                     stored_revision_id=stored[0] if stored is not None else None,
                 )
             definition = decode_document(stored[1].encode("utf-8"))
+            # Only a document that names its own binding may become the published
+            # fact the catalogue reads; publish it here or not at all.
+            require_published_identity(definition, publication.object_id)
             recipe = definition.get("execution_recipe")
             declared = recipe.get("capacity_manifest_id") if isinstance(recipe, dict) else None
             if not isinstance(declared, str) or declared != evidence.capacity_manifest_id:
@@ -373,6 +380,7 @@ class PostgresPublications:
                 BindingEvidenceConflictError,
                 BindingHeadPreconditionError,
                 BindingIntentConflictError,
+                BindingDefinitionIdentityError,
             ),
         )
 

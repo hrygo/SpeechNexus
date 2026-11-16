@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from speechnexus_contracts import ContractValidationError
-from speechnexus_contracts.model_bindings import parse as parse_binding
+from speechnexus_contracts.admin import parse as parse_admin
 
 from speechnexus_backend.speech.domain.publications import Publication
 
@@ -128,13 +128,18 @@ def capability_model(
 ) -> dict[str, Any]:
     """Project one published binding to the capability-snapshot model shape.
 
-    The stored definition is the contract-validated publication fact.  We still
-    verify it here so a malformed published row fails the whole snapshot instead
-    of exposing a plausible-looking capability with incomplete domains.
+    The stored document is the create request the write path accepted (plus the
+    ``binding_id`` the published revision names); registry identity — revision,
+    revision_id, publication status — lives in columns and is composed into the
+    wire revision by :func:`revision_to_wire`, never inside the stored document.
+    Validating it against that wire contract would demand fields no stored draft
+    holds, so we verify the contract the document does claim.  A malformed
+    published row still fails the whole snapshot instead of exposing a
+    plausible-looking capability with incomplete domains.
     """
     model = model_document(publication, definition, owned_by=owned_by, readiness=readiness)
     try:
-        parse_binding("ModelBindingRevision", dict(definition))
+        parse_admin("ModelBindingCreateRequest", dict(definition))
     except ContractValidationError, TypeError, ValueError:
         raise ValueError("Published binding does not satisfy its contract") from None
     domains = definition.get("parameter_domains")

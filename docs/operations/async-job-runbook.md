@@ -814,8 +814,16 @@ worker healthcheck: False
 
 按顺序启动：先让基础拓扑（含 gateway）healthy，再启用 profile：
 
+镜像构建只有一处真相：[最小部署面 §0](compose-minimal.md#0-构建前提) 的一次性
+`build <显式服务名>`（含 `api`、`gateway`，不含 `minio`）。这里只 `up -d`，不带 `--build`：
+`api` 与 `gateway` 经 `depends_on` 带出 `minio`，`up --build` 会连带构建
+`deploy/images/minio.Dockerfile`，而它在构建期取 `raw.githubusercontent.com` 的 LICENSE
+做校验，受限网络主机上以 `target minio: failed to solve` 失败并让整条 `up` 失败
+（#900、#905）；首次构建后镜像就是本次 checkout 的代码，`up -d` 不需要也不应再带
+`--build`。
+
 ```bash
-docker compose --env-file deploy/compose.env -f deploy/compose.yaml up -d --build api gateway
+docker compose --env-file deploy/compose.env -f deploy/compose.yaml up -d api gateway
 docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
   --profile job-dispatch up -d
 ```
@@ -889,11 +897,16 @@ SPEECHNEXUS_ASSET_INSPECTION_URL=http://asset-inspector:8080
 SPEECHNEXUS_ASSET_INSPECTION_TOKEN=<上一步输出的令牌>
 ```
 
-2. 首次构建并启动检查器（不带 `--profile asset-inspection` 时这个容器不会被创建）：
+2. 首次显式构建并启动检查器（不带 `--profile asset-inspection` 时这个容器不会被创建）。
+   与其它镜像一样先 `build <显式服务名>`、再 `up -d`（不带 `--build`），理由见
+   [最小部署面 §0](compose-minimal.md#0-构建前提)；`--build` 会把 `depends_on` 的构成也带进
+   计划，构建了哪些镜像就不再只看这一行命令：
 
 ```bash
 docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
-  --profile asset-inspection up -d --build asset-inspector
+  --profile asset-inspection build asset-inspector
+docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
+  --profile asset-inspection up -d asset-inspector
 ```
 
 3. 重建 `api`，让选择器生效。三键在进程启动期解析，改了 `compose.env` 必须重建容器

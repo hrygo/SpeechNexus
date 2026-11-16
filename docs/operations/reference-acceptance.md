@@ -20,6 +20,9 @@ PASS/FAIL/未运行、环境（checkout commit、项目名、gate 模式、schem
   `provision-job-roles.py --print-statements` 渲染的每条 `GRANT` 解析成目录函数检查
   （`has_table_privilege` / `has_column_privilege` / `has_schema_privilege`），与已装 ACL
   逐条做「声明的都在」包含比对，缺任一声明授权即红；重复执行不重建角色、不新增授权；
+- 镜像由显式 `build <服务名>` 构建（`api`、`gateway`、`migrate`、`job-dispatch-worker`），
+  `up` 不带 `--build`：`minio` 不在任何构建计划里，`deploy/images/minio.Dockerfile` 那份
+  `raw.githubusercontent.com` 构建期依赖不进入验收入口（#900、#905）；
 - 私有输入桶与 Artifact/结果桶存在且已启用版本化；
 - API 与 gateway 起来后，`deploy/job-startup-gate.py` 在真实 PostgreSQL、MinIO 与私有配置上
   给出 `OK` 判定；
@@ -81,7 +84,7 @@ reference acceptance: FAIL step=migrate exit=20
 | `migrate` | `alembic.ini` 的 `script_location` 可解析；迁移目录恰好一个 head；`SPEECHNEXUS_MIGRATION_DATABASE_URL` 可用 | `postgres` healthy；`migrate` 用 `--build` 构建镜像后退出 0；`alembic_version` 单行且等于派生 head | 20 |
 | `roles` | §6 基线角色存在；三条 Job DSN 身份互异；`SN_ADMIN_DSN` 是迁移 owner | 首跑：`sn_job_writer sn_job_admission sn_job_dispatch 已创建；grants: N statements；M 项声明授权与已装 ACL 逐条核对全部在位；8 个授权探针通过`。重跑：`三个角色已存在（幂等：未重复 CREATE ROLE，未新增授权）；重渲染 N 条 GRANT、M 项授权与已装 ACL 逐条核对全部在位；8 个授权探针通过` | 30 |
 | `buckets` | `MINIO_*` 与两个桶名键非空；`minio` 可启动 | 每个不同桶名一行 `bucket ready: ... (versioning enabled)`；独立只读核对通过 | 40 |
-| `stack` | 私有配置与批准模型齐备；API/gateway 基线角色已预置 | `docker compose up -d --build --wait api gateway` 退出 0（输出尾行打印），两个服务 `running/healthy`；`up` 非 0 即红，即使旧容器仍是 `running/healthy` | 60 |
+| `stack` | 私有配置与批准模型齐备；API/gateway 基线角色已预置 | `docker compose build api gateway` 与 `docker compose up -d --wait api gateway` 都退出 0（两段输出尾行打印；`build` 只构建点名的两个镜像，`up` 不带 `--build`，因此不会构建 `minio`），两个服务 `running/healthy`；`build` 或 `up` 非 0 即红，即使旧容器仍是 `running/healthy` | 60 |
 | `gate` | `stack` 步已让 api/gateway `running/healthy`；闸门与私有配置可在 `job-dispatch-worker` 内读到 | `job dispatch startup gate: OK`，`ok:` 行给出数据库/对象存储/私有配置结论，`pending:` 行是真引擎与 API 侧 DSN；同时出现 `FAIL:` 行时一律判失败 | 50 |
 | `health` | 容器 healthy 且宿主机端口已发布，端口为 1..65535 的整数 | 四个探针 200：API/gateway 的 `/healthz` 为 `status=ok`，`/readyz` 为 `status=ready` | 70 |
 
@@ -162,7 +165,7 @@ reference acceptance: FAIL step=migrate exit=20
 
 | 表 | 行数 |
 | --- | --- |
-| `MUTATE_SITES` | 8 |
+| `MUTATE_SITES` | 10 |
 | `READ_ARGUMENTS` | 4 |
 | `WRITE_TOKENS` | 7 |
 | `PROBE_CASES` | 9 |
@@ -180,7 +183,9 @@ reference acceptance: FAIL step=migrate exit=20
 | `step_buckets:initialize` | `step_buckets`：minio-init 退出码与建桶输出行数 | `test:test_bucket_names_follow_the_init_script_rules` |
 | `step_buckets:verify` | `bucket_names`：独立只读核对桶数量与版本化 | `test:test_bucket_names_follow_the_init_script_rules` |
 | `step_gate:argv` | `gate_verdict`：闸门 ok/FAIL 判定 | `probe:gate_verdict-fail` |
-| `step_stack:ctx.compose('up', '-d', '--build', '--wait', 'api', 'gateway')` | `step_stack`：compose up 退出码判失败 | `test:test_up_exit_nonzero_with_healthy_ps_is_red` |
+| `step_gate:build` | `step_gate`：worker 镜像 build 退出码判失败（不带 --build 的 up 之前先构建） | `test:test_gate_compose_step_builds_the_worker_before_running_it` |
+| `step_stack:build` | `step_stack`：api + gateway 显式 build 的退出码判失败 | `test:test_stack_builds_api_and_gateway_by_name_before_up` |
+| `step_stack:start` | `step_stack`：compose up 退出码判失败 | `test:test_up_exit_nonzero_with_healthy_ps_is_red` |
 
 #### READ_ARGUMENTS（允许出现在 `read` argv 里的助手、词包装与 `*` 展开段）
 
@@ -251,8 +256,8 @@ reference acceptance: FAIL step=migrate exit=20
   `speech.speech_publications` 的 `REVOKE`）都判失败并点名角色/对象/权限。只存在一部分角色时
   直接失败，列出缺失角色，不覆盖已有身份。
 - `buckets`：`minio-init` 对已存在的桶只补版本化设置并重新确认；核对步独立读取桶与版本化状态。
-- `stack` / `gate` / `health`：`up -d --build --wait` 与只读判定，重复执行结论不变；`gate` 的
-  `run --build` 同样避免旧镜像。
+- `stack` / `gate` / `health`：`build` 显式点名的服务、`up -d --wait` 与只读判定，重复执行结论不变；
+  `gate` 先 `build job-dispatch-worker` 再 `run`，同样避免旧镜像。
 
 ## 启动闸门的两种运行方式
 
@@ -279,7 +284,8 @@ reference acceptance: FAIL step=migrate exit=20
 | `FAIL — 已装 ACL 与声明的 N 条 GRANT 不一致: … 缺少 …` | 按 §6 重新安装点名的 grant 组；不要只补 8 个探针 |
 | `FAIL — 无法解析的授权语句` | `provision-job-roles.py` 渲染出了本入口不认识的 `GRANT` 形态；同步本入口的解析器，不要当作已安装 |
 | `FAIL — 桶核对失败` | 检查 MinIO root 凭据与 `minio-init` 输出，版本化不能被删除后继续 |
-| `FAIL — 栈未起来（docker compose up 退出码 N）` | 看错误信息里的构建输出；旧容器的 `running/healthy` 不代表新一轮构建成功 |
+| `FAIL — 栈镜像构建失败（docker compose build 退出码 N）` | 看构建输出修复 Dockerfile/构建参数；构建只覆盖 `api`、`gateway`，不覆盖 `minio` |
+| `FAIL — 栈未起来（docker compose up 退出码 N）` | 看错误信息里的启动输出；旧容器的 `running/healthy` 不代表新一轮 `up` 成功 |
 | `FAIL — 栈未 healthy: api=...` | 按 §9 失败对照表看容器日志（recipe 摘要、DSN、对象存储健康 URL） |
 | `FAIL — gateway 未 healthy` | 看 `stack` 步失败原因（私有配置、模型、容器日志）；单独执行 `gate` 时先跑 `stack` 或改用 `--gate-mode direct` |
 | `FAIL — 启动闸门判定失败: bucket ... does not exist` | 按闸门点名补桶或版本化，再重跑 `buckets` |

@@ -672,7 +672,7 @@ class StackExitCodeTest(unittest.TestCase):
         self.assertIn("failed to solve", output)
         self.assertNotIn("结论: PASS", output)
 
-    def test_success_prints_the_build_output(self) -> None:
+    def test_success_prints_the_build_and_up_output(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             private = write_private_inputs(root)
@@ -687,16 +687,20 @@ class StackExitCodeTest(unittest.TestCase):
             def responder(argv: tuple[str, ...]) -> Any:
                 text = f" {joined(argv)} "
                 if " up " in text and "api" in argv and "gateway" in argv:
-                    return command(argv, stdout="api Built\napi Started\ngateway Started\n")
+                    return command(argv, stdout="api Started\ngateway Started\n")
+                if " build " in text and "api" in argv:
+                    return command(argv, stdout="api Built\ngateway Built\n")
                 return base(argv)
 
             context, _runner = make_context(root, responder, env=env)
             code, output = run_capture(context, (step("stack"),))
 
         self.assertEqual(code, 0, output)
-        self.assertIn("构建/启动输出", output)
+        self.assertIn("构建输出", output)
+        self.assertIn("启动输出", output)
+        self.assertIn("gateway Built", output)
         self.assertIn("gateway Started", output)
-        self.assertIn("compose up 退出 0", output)
+        self.assertIn("build 与 up 退出 0", output)
 
 
 class StepOrderTest(unittest.TestCase):
@@ -973,7 +977,13 @@ class MainArgumentsTest(unittest.TestCase):
 
 
 class BuildFlagTest(unittest.TestCase):
-    """D7: migrate and gate must build the image they run, not reuse a stale one."""
+    """The images a step runs are built from this checkout, never a stale tag.
+
+    `compose run` reuses an already built image, so the two `run` paths keep
+    `--build`; the stack up does not, because `--build` on `up` also builds `minio`
+    through `depends_on` (#900/#905). There it is an explicit `build` of the two
+    services, and the `up` that follows starts exactly those images.
+    """
 
     def test_migrate_step_builds_before_running(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -986,7 +996,7 @@ class BuildFlagTest(unittest.TestCase):
         self.assertTrue(runs)
         self.assertIn("--build", runs[0])
 
-    def test_gate_compose_step_builds_before_running(self) -> None:
+    def test_gate_compose_step_builds_the_worker_before_running_it(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             private = write_private_inputs(root)
@@ -1003,9 +1013,45 @@ class BuildFlagTest(unittest.TestCase):
             )
             code, output = run_capture(context, (step("gate"),))
         self.assertEqual(code, 0, output)
-        worker_runs = [call for call in runner.calls if "job-dispatch-worker" in call]
-        self.assertTrue(worker_runs)
-        self.assertIn("--build", worker_runs[0])
+        worker_calls = [call for call in runner.calls if "job-dispatch-worker" in call]
+        builds = [call for call in worker_calls if "build" in call]
+        runs = [call for call in worker_calls if "run" in call]
+        self.assertTrue(builds, "the gate must build the worker image, not reuse a tag")
+        self.assertTrue(runs)
+        self.assertNotIn("--build", runs[0], "run --build also builds minio through the netns dep")
+        self.assertLess(
+            runner.calls.index(builds[0]),
+            runner.calls.index(runs[0]),
+            "the build must precede the run that consumes its image",
+        )
+        self.assertEqual(builds[0][-1], "job-dispatch-worker")
+        self.assertNotIn("minio", builds[0])
+
+    def test_stack_builds_api_and_gateway_by_name_before_up(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            private = write_private_inputs(root)
+            write_fixture_repo(root)
+            env = dict(BASE_ENV)
+            env["SPEECHNEXUS_PRIVATE_CONFIG_DIR"] = str(private)
+            context, runner = make_context(
+                root,
+                standard_responder(
+                    ps_output=healthy_services(("api", "gateway")),
+                    compose_document=compose_config_document(private),
+                ),
+                env=env,
+            )
+            code, output = run_capture(context, (step("stack"),))
+        self.assertEqual(code, 0, output)
+        builds = [call for call in runner.calls if "build" in call]
+        ups = [call for call in runner.calls if "up" in call]
+        self.assertTrue(builds, "the stack must build its images explicitly")
+        self.assertTrue(ups)
+        self.assertEqual(builds[0][-2:], ("api", "gateway"))
+        self.assertNotIn("minio", builds[0])
+        self.assertNotIn("--build", ups[0], "up --build also builds minio (#900/#905)")
+        self.assertLess(runner.calls.index(builds[0]), runner.calls.index(ups[0]))
 
 
 class StopOnFailureTest(unittest.TestCase):

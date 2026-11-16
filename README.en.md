@@ -94,8 +94,15 @@ Edit `deploy/compose.env` to replace the example PostgreSQL and MinIO passwords.
 
 ### 2. Build and start
 
+Build the images first with the one-time sequence in
+[minimal deployment §0](docs/operations/compose-minimal.md#0-构建前提): `build` names each
+service and never names `minio`. The `up` below carries no `--build`: `api` and `gateway` reach
+`minio` through `depends_on`, so `up --build` also builds `deploy/images/minio.Dockerfile`,
+which fetches a LICENSE from `raw.githubusercontent.com` at build time and fails the whole
+`up` when that fetch is unavailable (#900, #905).
+
 ```bash
-docker compose --env-file deploy/compose.env -f deploy/compose.yaml up --build -d
+docker compose --env-file deploy/compose.env -f deploy/compose.yaml up -d
 ```
 
 Once services have started, open:

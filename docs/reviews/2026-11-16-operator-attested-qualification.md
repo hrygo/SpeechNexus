@@ -4,7 +4,7 @@
 对比基 `origin/main...HEAD`，21 文件 +4202/−33。审查在独立 worktree `/private/tmp/sn883` 完成，
 隔离 PostgreSQL `sn876-oa-pg:55470`、MySQL `sn876-oa-mysql:55471`。
 
-> 本报告分两轮：**第一轮**针对 `6f118956`（下至「第二轮」标记之前，保持该时点原样），**第二轮**针对返修后的 `82d55a82`（文末「第二轮：返修核实」）。两轮结论都不能合，但第二轮的阻塞理由换成了新的一条：`unverified` 标签在准入侧没有消费者。
+> 本报告按轮记：**第一轮** `6f118956`（下至「第二轮」标记之前，保持该时点原样）、**第二轮** `82d55a82`、**第三轮** `82d55a82`（同 head 的复核与命名/续期核实）、**第四轮** `f77b348b`（文末「第四轮：终核」）。四轮结论均为不能合，阻塞理由逐轮收窄：第一轮是「标签可伪造 + 读面没有身份」，第二轮是「标签诚实但准入不读」，第四轮只剩一条：没有 provenance 行的 grandfather 形状可由发布身份伪造。
 
 **结论：不能合。** 这条路径的关闭状态、写入边界与迁移都做得很干净，运行态快照也确实是零变化；
 但「两种来源在读面上分得开」这个本 PR 的唯一卖点有两条硬缺陷：
@@ -668,3 +668,179 @@ P3-⑪ 授权函数 docstring（`046ed971`）。
 - B 的 controller 行用 0054 形状落库（同一 schema 内无法用同一份 release 证据发布第二个 voice）。
 - 结论时效：核验于 2026-11-16，针对 `82d55a82`；`origin/main` 在此期间前进了 #879/#880 等提交，
   三方 diff 的 merge-base 随之变化，第一轮记录的基线与上下文保持原样。
+
+---
+
+## 第四轮：终核（head `f77b348b`）
+
+核验于 2026-11-16 12:23–12:50（Asia/Shanghai），对象 `f77b348b`：在 `82d55a82` 之上新增
+`0aa55dec`（准入侧读取来源证据、三处共用一份判据）与 `f77b348b`（拒绝点名 + 两条端到端）。
+第三轮（`82d55a82`）记录保持原样，本节只记本轮结论。
+
+### 结论（第四轮）：仍不能合，且只卡一项
+
+**A / B / D / E 全部通过**：新授权确实最小且只读；一份判据被两处真实消费者共用（删改即三处转红）；
+过期声明与已撤销靠内部码可区分；三条变异都能咬住且全部还原。
+
+**唯一不成立的是 C：grandfather 分支不是「不可伪造的形状」。** 作者用「没有 provenance 行」表示
+0055 之前的历史行并予接受，理由是「声明身份对该表没有 `INSERT`，所以谁也造不出这种行」。
+但**资格行本身是发布身份写的**（`builtin_publisher_grants` 给的是列清单外的表级
+`INSERT ON speech_builtin_voice_qualifications`），发布身份完全可以「写资格行、不写 provenance 行」——
+这不是删除，而是根本不需要那条 DELETE 权限。我按这个路子实测成功了：
+用第二轮同一对凭据（声明身份 + 发布身份）造出的资格，被同步 TTS 准入和 public Job 兜底当作
+合法内建资格接受，读面照旧标 `unverified / legacy_pre_0055`。**第二轮的 P1 由此只被收窄，没有被关闭。**
+
+### A. 新授权是否最小且只读 —— **PASS**
+
+用 `public_job_admission_grants` 给运行角色真实建号、真实登录后逐项测量（`has_table_privilege`）：
+
+```
+A1 授权语句条数: 44 | 含 ON ALL TABLES: False | 含 GRANT ALL: False
+A2 speech_builtin_voice_qualification_provenance: [s]
+A2 speech_builtin_voice_operator_attestations: [s]
+A2 speech_builtin_voice_qualifications: [s]        ← 原有只读，未变
+A2 speech_builtin_voice_approvals: [-]              ← 没有任何权限，正确
+A2 speech_publication_heads: [s]                    ← 原有只读，未变
+A2 speech_builtin_voice_probe_authorizations: [-]    ← 没有任何权限，正确
+A2 speech_publications: [s]                         ← 原有只读，未变
+A3 两张新表只有 SELECT: True
+A4 INSERT / UPDATE / DELETE provenance: InsufficientPrivilege
+A4 INSERT / DELETE qualification: InsufficientPrivilege
+A4 INSERT attestation: InsufficientPrivilege
+A4 UPDATE publication_heads: InsufficientPrivilege
+```
+
+没有用 `GRANT … ON ALL TABLES`、没有 `GRANT ALL`，也没有顺手把 `approvals` 或 probe 授权表带进来；
+运行角色对两张新表确实只有 `SELECT`，且对其它一切仍是原状。
+
+### B. 三处是否真共用一份判据 —— **PASS（但你说的第三处其实不是消费者）**
+
+源码核对：
+
+```
+B1 sync TTS 准入 require_builtin_voice: 引用共享判据=True | 自写 source_kind 判据=False
+B1 public Job 兜底 _custom_voice:       引用共享判据=True | 自写 source_kind 判据=False
+B1 启动闸门 has_qualified_voice:        引用共享判据=False | 自写 source_kind 判据=False
+B2 has_qualified_voice 函数体内引用共享判据=False | 引用 require_builtin_voice=False
+```
+
+`has_qualified_voice` 仍是「存在性查询 + `_voice()` 发布查找」，它既不用共享判据，也不调
+`require_builtin_voice`（该文件里的 `require_builtin_voice` 调用属于 `voice_execution_authority`
+与 `_voice` 覆盖）。所以本轮真正共用的只有两处：同步 TTS 准入与 public Job 兜底。
+
+**变异实测（把共享判据改成恒真 `"TRUE"`）**，三处断言全部转红，说明两处消费者确实都走这一份：
+
+```
+FAILED tests/integration/test_operator_attested_qualification_pg.py::test_an_elapsed_declaration_stops_admitting_work
+FAILED tests/integration/test_public_job_admission_http_pg.py::test_a_builtin_qualification_without_source_evidence_is_refused_by_name
+FAILED tests/integration/test_tts_factory_pg.py::test_factory_http_uses_real_postgres_qualification_and_admission
+```
+
+作者那条读源码的防漂移用例也真实有效：在 public Job 兜底里重内联一份
+`source_kind='controller_observed'` 的判据后，`test_every_admission_consumer_uses_the_one_source_evidence_predicate`
+转红。两处限制记在此：
+
+1. 它的第三段对 `has_qualified_voice` 的「断言」是空断言——只检查该文件文本含 `require_builtin_voice(`，
+   而这句话在该文件里由别的函数满足；注释写的「future edit cannot give the startup gate its own
+   existence-only check」因此不成立（它本来就是 existence-only）。后果有限：闸门放行、每个请求仍被
+   准入拒掉（fail-closed 在请求侧），但「伪造行能让服务认为有可播内建声音」这件事没人测。
+2. 该守卫只认字面 `source_kind='controller_observed'`；换个写法（常量、拼接、别名）就能绕过。
+
+### C. grandfather 分支是否真的不可伪造 —— **FAIL（本轮唯一阻塞项）**
+
+作者的依据（原文）：`test_a_historical_row_without_provenance_stays_admitted` 的 docstring
+「A real pre-0055 row has no provenance row at all, which no writer can forge: the declaration
+identity holds no INSERT on that table」，以及设计 §「0054 之前的真历史行 | 没有 | 接受（grandfather）」。
+
+实测反证（`writer` = `operator_attestation_writer_grants` 身份；`publisher` = `builtin_publisher_grants`
++ `publication_grants` 身份，都是仓库里已声明的部署身份）：
+
+```
+C1 writer 身份写入 8 列伪造批准: 成功（probe_authorization_id 为空、无 attestation）
+C2 publisher 身份手工发布（INSERT speech_publications + INSERT speech_builtin_voice_qualifications，
+   不写 provenance 行）: 成功
+C3 publisher 身份 DELETE provenance: InsufficientPrivilege（不需要删——直接不写就行）
+C4 provenance 行数: 0
+C5 同步 TTS 准入 require_builtin_voice: 通过, verifier_id = builtin-customvoice-v1
+C6 public Job 兜底 _custom_voice: 返回 None（无异常 = 当作内建资格）
+C7 读面标签: unverified | evidence: legacy_pre_0055 | provenance_recorded: False
+```
+
+**为什么成立**：`provenance` 是 `speech_builtin_voice_qualifications` 的子表（`FOREIGN KEY
+(voice_id,revision) REFERENCES …qualifications`），数据库层没有任何约束或触发器要求「资格行必须有
+provenance 行」；而写资格行正是发布身份的权限。所以「无 provenance 行」既不等于「历史」，也不等于
+「不可伪造」——它只等于「不是 `publish_builtin_voice` 写的」。
+
+**影响**：第二轮 P1（无证据的资格可被合成使用）没有关闭，只是换了入口。最小攻击集与第二轮相同，
+仍是「声明身份 + 发布身份」这对凭据；差别仅在于攻击者不能再跑文档里的发布命令，而要手写两条
+`INSERT`（发布行、资格行）。审计侧仍会看到 `unverified / legacy_pre_0055`，但准入照收，所以
+「读面说实话、准入不承重」这个第二轮的核心问题在这个形状上原样存在。发布身份是本 PR 承认的发布
+权威，因此这不算越权提权；但它说明本轮宣称的「准入判据收成一份」只收住了有 provenance 行的形状。
+
+按你的要求，**没有设计修法**；只陈述两条事实供裁决：资格行的 `INSERT` 是发布身份的必需权限
+（`publish_builtin_voice` 自己就写这一行），因此「收窄权限」这条路线走不通；作者那条用例把
+grandfather 行为写成了预期，说明这不是漏测，而是设计判断需要被重新审。
+
+### D. 过期声明与已撤销 —— **PASS**
+
+```
+D1 在线声明准入: operator-attested-customvoice-v1
+D2 过期声明: 拒绝 code = qualification_source_unverified
+   detail = the builtin voice's qualification has no backing evidence: publish it through the
+            controller probe path, or record an accepted operator attestation for it, then send a new request
+D3 已撤销: 拒绝 code = policy_or_resource_disabled
+D4 两个内部码可区分: True | qualification_source_unverified 在 _DIAGNOSTIC_CODES: True
+```
+
+过期声明确实停止准入；「已撤销」与「无证据/已过期」在日志里是两个不同的内部码
+（`policy_or_resource_disabled` vs `qualification_source_unverified`），而对外两条都落在既有的
+404/`engine_resource_disabled` 面上——这是对的，运维靠日志分。一句措辞提醒：过期场景的对外句子
+说的是「no backing evidence」，没有提到「声明已过期」，靠内部码能区分，但句子本身对「过期」不够点题。
+
+### E. 变异与基线
+
+| 变异 | 结果 |
+| --- | --- |
+| 共享判据改恒真 | 3 红（同步准入 / Job 兜底 / 真 create_app 端到端） |
+| 在 Job 兜底重内联判据 | 防漂移用例红 |
+| `attestation_missing` 分支（M2） | 1 红：`test_an_operator_approval_without_its_attestation_is_refused` |
+| 给 `require_native_ready` 加入参 | 1 红：`test_the_native_gate_has_no_operator_input` |
+
+四次变异全部还原，`git status --porcelain` 为空。本轮基线：单元 27 + 隔离 PG 集成 26 = **53 passed**；
+`tests/ci` **459 passed / 1647 subtests**；`test_public_job_admission_http_pg.py` 全量通过（需同时给
+PG 与 MySQL DSN，缺 MySQL 时该文件的用例在夹具阶段就 error，不算通过）。
+
+### 关于公开码 `422 voice_not_published` 的判断
+
+可以接受，理由：这个码说的是「这个 revision 不可用」，而证据缺失时它确实不可用，`retryable=False`
+也对；message 里同时点了「no backing evidence」和两种修法（探针路径 / 记录一次被接受的声明），
+运维不会被引去找一个其实已经存在的发布。唯一的保留是：它和「真的没发布」共用一个码，两者只能靠
+message 区分，而这正是 #877 那条规则允许的形态（码表达类别、message 点名具体缺项）。内部码
+`qualification_source_unverified` 已进 `_DIAGNOSTIC_CODES`，同步侧的 404 日志能分开两种原因。
+**不代理改契约。**
+
+### 覆盖限制（第四轮）
+
+- C 的攻击用真实角色 + 真实权限登录，但用仓库夹具的 schema/ledger 形状，没有跑完整 `create_app`
+  链路（端到端那半段由作者的 422/202 用例覆盖，我复跑通过）。
+- 我无法从部署侧证明真实环境里发布身份是否只有这套权限；结论基于仓库声明的
+  `builtin_publisher_grants` + `publication_grants` 组合，以及设计文档明确要求的组合方式。
+- 结论时效：核验于 2026-11-16，针对 `f77b348b`。`#878` 与 `#882` 的 CI 状态未纳入本判断（按你的要求不等）。
+
+### 遗留容器与探针的清理命令（本轮之后不再需要）
+
+```
+# 作者/审查用的一次性容器（宿主侧，仓库外）
+docker rm -f sn876-oa-pg sn876-oa-mysql
+# 探针 schema 与角色（在 sn876-oa-pg 内）
+psql "postgresql://sn_oa:sn_oa_pw@127.0.0.1:55470/sn_oa" -c "DO \$\$ DECLARE r record; BEGIN \
+  FOR r IN SELECT nspname FROM pg_namespace WHERE nspname LIKE 'sn_oa_%' LOOP \
+    EXECUTE format('DROP SCHEMA %I CASCADE', r.nspname); END LOOP; \
+  FOR r IN SELECT rolname FROM pg_roles WHERE rolname LIKE 'sn_oa_%' AND rolname <> 'sn_oa' LOOP \
+    EXECUTE format('DROP OWNED BY %I', r.rolname); EXECUTE format('DROP ROLE %I', r.rolname); END LOOP; END \$\$;"
+# 审查 worktree（报告已推送、内容已在 #882，可删）
+git -C /Users/hrygo/Documents/SpeechNexus worktree remove /private/tmp/sn883-r2
+git -C /Users/hrygo/Documents/SpeechNexus worktree remove /private/tmp/sn883   # 合并 #882 之后
+# 探针脚本（仓库外，无仓库引用）
+rm -rf /private/tmp/sn883-oa-probe
+```

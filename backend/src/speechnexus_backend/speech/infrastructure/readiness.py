@@ -71,12 +71,16 @@ CANCELLATION_DEBT_PREFIX = "cancellation_debt"
 #: (``python -m speechnexus_backend.completed_release_cli``); it is *not* the
 #: unknown-execution debt and must never be handled as one.
 COMPLETED_WITHOUT_RELEASE = "completed-without-release"
-#: Every other blocking lease: the execution is unknown, still running or never
-#: submitted. Those reach a determinate state through isolation or a verified stop.
+#: Every other blocking lease: the execution is unknown, still running, never
+#: submitted, or succeeded without the gateway's terminal fact. Those reach a
+#: determinate state through isolation, a verified stop, or #338.
 EXECUTION_UNKNOWN = "execution-unknown"
-#: Fixed report order: the actionable subclass first, then the rest. The last two
-#: are not dispositions -- they say the lease itself could not be read.
-_DEBT_CLASSES = (COMPLETED_WITHOUT_RELEASE, EXECUTION_UNKNOWN, "lease-unread", "no-held-lease")
+#: Fixed report order for held leases: the actionable subclass first, then the rest.
+_LEASE_CLASSES = (COMPLETED_WITHOUT_RELEASE, EXECUTION_UNKNOWN)
+#: The Job-level labels, used when the lease itself cannot be read.
+_JOB_CLASSES = ("lease-unread", "no-held-lease")
+#: The one evidence kind that makes a completed execution releasable by testimony.
+_TERMINAL_EVIDENCE = "engine_terminal_response"
 #: Identifies the reused readiness session in ``pg_stat_activity``.
 _APPLICATION_NAME = "speechnexus-readiness-debt"
 
@@ -240,38 +244,62 @@ def _failure_category(error: BaseException) -> str:
     return "error"
 
 
-def debt_subclass(lease_state: str | None, execution_state: str | None) -> str:
+def debt_subclass(
+    lease_state: str | None,
+    execution_state: str | None,
+    *,
+    evidence_kind: str | None = None,
+    execution_stopped: int | None = None,
+    resources_released: int | None = None,
+) -> str:
     """Name which accepted cancellation this lease is, so one procedure never covers both.
 
-    ``completed-without-release`` is a reservation whose execution already reached
-    ``succeeded``: no stop will ever be confirmed, so it can only be closed by the
-    operator exit. Every other blocking row is execution-unknown debt, which the
-    isolation and verified-stop rules still own. Collapsing the two would tell an
-    operator to drain a generation that has already finished, or to wait for a stop
-    that cannot arrive.
+    ``completed-without-release`` is the shape the operator exit accepts, so the
+    label applies only when that exit's own gate would: a ``reserved`` lease whose
+    execution is ``succeeded`` *and* whose gateway terminal fact is recorded with
+    both flags. A ``succeeded`` execution without that fact is #338's shape and
+    stays ``execution-unknown`` -- labelling it with an exit that refuses it is
+    worse than no label, because the label's only use is routing.
     """
-    if lease_state == "reserved" and execution_state == "succeeded":
-        return COMPLETED_WITHOUT_RELEASE
-    return EXECUTION_UNKNOWN
+    completed = (
+        lease_state == "reserved"
+        and execution_state == "succeeded"
+        and evidence_kind == _TERMINAL_EVIDENCE
+        and execution_stopped == 1
+        and resources_released == 1
+    )
+    return COMPLETED_WITHOUT_RELEASE if completed else EXECUTION_UNKNOWN
 
 
 def _describe_debt(rows: Sequence[tuple[Any, ...]], *, missing: str | None = None) -> str | None:
-    """One bounded sentence naming Job, lease, both states and the subclass."""
+    """One bounded sentence: two named units, then the per-job drill-down.
+
+    The sentence counts accepted cancellations (Jobs); the parenthetical counts the
+    leases or the unreadable Jobs it is actually classifying. Naming both units is
+    what stops a multi-stage Job from making "3 cancellations" sit next to four
+    subclass counts.
+    """
     if not rows:
         return None
     jobs: dict[str, list[str]] = {}
-    counts: dict[str, int] = {}
-    for job_id, lease_id, lease_state, execution_state in (
-        (row[0], row[1], row[2], row[3]) for row in rows
-    ):
+    lease_counts: dict[str, int] = {}
+    job_counts: dict[str, int] = {}
+    for row in rows:
+        job_id, lease_id, lease_state, execution_state = row[0], row[1], row[2], row[3]
         if lease_id is None:
             # Job-level rows carry no lease identity: say so instead of inventing one.
             label = "no-held-lease" if missing is None else "lease-unread"
             jobs.setdefault(job_id, []).append(label)
-            counts[label] = counts.get(label, 0) + 1
+            job_counts[label] = job_counts.get(label, 0) + 1
             continue
-        subclass = debt_subclass(lease_state, execution_state)
-        counts[subclass] = counts.get(subclass, 0) + 1
+        subclass = debt_subclass(
+            lease_state,
+            execution_state,
+            evidence_kind=row[4] if len(row) > 4 else None,
+            execution_stopped=row[5] if len(row) > 5 else None,
+            resources_released=row[6] if len(row) > 6 else None,
+        )
+        lease_counts[subclass] = lease_counts.get(subclass, 0) + 1
         jobs.setdefault(job_id, []).append(
             f"{lease_id}(lease={lease_state}, "
             f"execution={execution_state or 'not_submitted'}, subclass={subclass})"
@@ -281,15 +309,29 @@ def _describe_debt(rows: Sequence[tuple[Any, ...]], *, missing: str | None = Non
     hidden = len(jobs) - len(shown)
     suffix = f" (+{hidden} more)" if hidden else ""
     note = f" [lease detail {_UNAVAILABLE}: {missing}]" if missing else ""
-    classes = ", ".join(f"{name}={counts[name]}" for name in _DEBT_CLASSES if counts.get(name))
-    return (
-        f"{CANCELLATION_DEBT_PREFIX}: {len(jobs)} accepted cancellation(s) still hold "
-        f"capacity ({classes}): {detail}{suffix}{note}"
-    )
+    leases = sum(lease_counts.values())
+    head = f"{CANCELLATION_DEBT_PREFIX}: {len(jobs)} accepted cancellation(s) still hold capacity"
+    head += f" over {leases} held lease(s)" if leases else ""
+    scopes = []
+    if lease_counts:
+        scopes.append(
+            "held leases: "
+            + ", ".join(
+                f"{name}={lease_counts[name]}" for name in _LEASE_CLASSES if lease_counts.get(name)
+            )
+        )
+    if job_counts:
+        scopes.append(
+            "jobs: "
+            + ", ".join(
+                f"{name}={job_counts[name]}" for name in _JOB_CLASSES if job_counts.get(name)
+            )
+        )
+    return f"{head} ({'; '.join(scopes)}): {detail}{suffix}{note}"
 
 
 _JOB_LEVEL_DEBT = f"""
-SELECT j.job_id, NULL, NULL, NULL
+SELECT j.job_id, NULL, NULL, NULL, NULL, NULL, NULL
 FROM {job_cancellation_fence_schema.TABLE} AS f
 JOIN {public_job_schema.JOBS} AS j ON j.job_id = f.job_id
 LEFT JOIN {job_cancellation_fence_schema.RECONCILIATION_TABLE} AS r ON r.job_id = f.job_id
@@ -302,7 +344,8 @@ LIMIT %(limit)s
 """
 
 _DEBT = f"""
-SELECT j.job_id, l.lease_id, l.lease_state, i.execution_state
+SELECT j.job_id, l.lease_id, l.lease_state, i.execution_state,
+       e.evidence_kind, e.execution_stopped, e.resources_released
 FROM {job_cancellation_fence_schema.TABLE} AS f
 JOIN {public_job_schema.JOBS} AS j ON j.job_id = f.job_id
 LEFT JOIN {job_cancellation_fence_schema.RECONCILIATION_TABLE} AS r ON r.job_id = f.job_id
@@ -312,6 +355,10 @@ LEFT JOIN admission_leases AS l
        ON l.operation_id = f.job_id
       AND l.lease_state NOT IN ('released', 'quarantined')
 LEFT JOIN submit_intents AS i ON i.lease_id = l.lease_id
+-- The subclass label must match the exit's own gate: a completed execution with
+-- no terminal fact is #338's shape, and routing it to that exit would send the
+-- operator to a command that always refuses it.
+LEFT JOIN execution_stop_evidence AS e ON e.submit_intent_id = i.submit_intent_id
 WHERE j.state = 'cancelling'
   -- A fence with no ledger row is a deployment that never ran the worker: the
   -- acceptance is unclaimed debt, not a settled one.

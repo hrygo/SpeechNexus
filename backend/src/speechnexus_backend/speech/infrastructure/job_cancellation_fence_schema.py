@@ -125,7 +125,15 @@ def cancellation_debt_reader_grants(schema: str, role: str) -> tuple[str, ...]:
         f'GRANT SELECT (job_id, state) ON "{schema}".speech_jobs TO "{role}"',
         f"GRANT SELECT (lease_id, operation_id, lease_state) "
         f'ON "{schema}".admission_leases TO "{role}"',
-        f'GRANT SELECT (lease_id, execution_state) ON "{schema}".submit_intents TO "{role}"',
+        # ``submit_intent_id`` is the join key to the terminal fact, not the
+        # canonical command: it names the intent the gateway answered about.
+        f"GRANT SELECT (submit_intent_id, lease_id, execution_state) "
+        f'ON "{schema}".submit_intents TO "{role}"',
+        # The subclass label needs the gateway's terminal fact: without it a
+        # ``succeeded`` execution that never recorded ``engine_terminal_response``
+        # would be labelled with an exit that always refuses it (#338's shape).
+        f"GRANT SELECT (submit_intent_id, evidence_kind, execution_stopped, "
+        f'resources_released) ON "{schema}".execution_stop_evidence TO "{role}"',
     )
 
 

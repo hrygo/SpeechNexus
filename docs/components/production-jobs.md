@@ -358,19 +358,22 @@ Job 已是本错误码的 `failed` 时只补做隔离；他人写入的终态不
 
    | 形态 | 何时出现 |
    |---|---|
-   | `cancellation_debt: N … (completed-without-release=X, execution-unknown=Y): job-… -> lease-…(lease=reserved, execution=executing, subclass=execution-unknown)` | DSN 指向被授予 `cancellation_debt_reader_grants`（或更宽）的只读身份 |
-   | `cancellation_debt: N … job-… -> lease-unread [lease detail unavailable: permission]` | 该身份能读 Job、围栏与账本，但读不到租约/执行表 |
+   | `cancellation_debt: N accepted cancellation(s) still hold capacity over M held lease(s) (held leases: completed-without-release=X, execution-unknown=Y): job-… -> lease-…(lease=reserved, execution=executing, subclass=execution-unknown)` | DSN 指向被授予 `cancellation_debt_reader_grants`（或更宽）的只读身份 |
+   | `cancellation_debt: N accepted cancellation(s) still hold capacity (jobs: lease-unread=X): job-… -> lease-unread [lease detail unavailable: permission]` | 该身份能读 Job、围栏与账本，但读不到租约/执行/终止证据表 |
    | `cancellation_debt: unavailable (not configured)` | 未配置专用 DSN（默认部署） |
    | `cancellation_debt: unavailable (permission｜relation｜connection｜timeout｜error)` | 探针什么都读不到；分类保证真实故障仍然可见，而不是被吞掉 |
 
    前缀后面紧跟的计数是**分类**，不是装饰：同一个前缀下面的两种债处置完全不同，
-   报告必须让人一眼看出该走哪条路。分类由事实决定，不看意图（`lease-unread` /
-   `no-held-lease` 是第三种情形：这一行根本读不到租约，先补授权或改用钻取查询）：
+   报告必须让人一眼看出该走哪条路。**句子的两个数字各带单位**——`N` 是 Job（受理），
+   `over M held lease(s)` 是租约行，括号里的分类按租约计；多阶段 Job 因此不会出现
+   「3 个受理」旁边挂 4 个计数。分类由事实决定，不看意图：
 
-   | `subclass` | 判定 | 处置 |
+   | `subclass` | 判定（与出口的判据逐条一致） | 处置 |
    |---|---|---|
-   | `completed-without-release` | 租约 `lease_state=reserved` 且执行事实 `execution_state=succeeded` | 本节的**有界操作员出口**（见下面「执行已完成、取消后到」） |
-   | `execution-unknown` | 其余一切（执行未知、仍在跑、从未提交） | 隔离与已验证停止路径；不要用操作员出口 |
+   | `completed-without-release` | 租约 `lease_state=reserved`、执行 `execution_state=succeeded`，**且**有 `execution_stop_evidence` 行 `evidence_kind=engine_terminal_response` 且 `execution_stopped=1`、`resources_released=1` | 本节的**有界操作员出口**（见下面「执行已完成、取消后到」） |
+   | `execution-unknown` | 其余一切（执行未知、仍在跑、从未提交，或 `succeeded` 但缺终止证据） | 隔离与已验证停止路径；缺终止证据的属 #338，不要用操作员出口 |
+
+   `lease-unread` / `no-held-lease` 不是子类：这一行根本读不到租约，先补授权或改用钻取查询。
 
    两类**共用前缀**、**不共用证词**：已完成执行的出口只接受钉在 `instance_id` +
    `instance_generation` 上的 drain 记录，未知执行仍走 `QuarantineReleaseService` 的
@@ -380,7 +383,9 @@ Job 已是本错误码的 `failed` 时只补做隔离；他人写入的终态不
    完整的 `Job → 租约 → 两侧状态` 明细需要一个单独的只读身份，最小授权集合由
    `cancellation_debt_reader_grants(schema, role)` 生成（列级：围栏的 `job_id/accepted_at_us`、
    账本的 `job_id/settled_at_us`、`speech_jobs.job_id/state`、
-   `admission_leases.lease_id/operation_id/lease_state`、`submit_intents.lease_id/execution_state`；
+   `admission_leases.lease_id/operation_id/lease_state`、
+   `submit_intents.submit_intent_id/lease_id/execution_state`、终止证据的
+   `submit_intent_id/evidence_kind/execution_stopped/resources_released`；
    不含规范请求正文、不含对账写权限）。把这个角色的 DSN 配进
    `SPEECHNEXUS_READINESS_CANCELLATION_DSN` 即可；不配就只有上面第二/第四种形态，
    逐条明细改用本节下面的只读钻取查询（由迁移/运维身份执行）。
@@ -434,50 +439,80 @@ ORDER BY f.accepted_at_us, f.job_id, l.lease_id;
 前一条是「债存在」，后两条是「哪一类债」。出口只对这三条同时成立的行生效；任何一条
 不成立都按上面两条处置，不套用本节流程。
 
-**执行顺序是操作步骤，不是建议**。出口分四步：
+工具**自己**核验上面三条判据：围栏缺失、账本已 `settled`、Job 已不是 `cancelling`
+分别得到 `completed_release_not_accepted_cancellation`、
+`completed_release_already_settled`、`completed_release_not_cancelling`。手册是操作
+顺序，不是输入校验；把工具对着错误的 Job 运行只会被拒绝，不会写账本。
+
+**执行顺序是操作步骤，不是建议**。出口分五步：
 
 ```bash
-# 1. 识别：读出 Job、租约、两侧状态和 instance/generation（只读，由迁移/运维身份执行）
-psql "$SPEECHNEXUS_TEST_DATABASE_URL" -c "
-SELECT j.job_id, l.lease_id, l.lease_state, l.cleanup_state AS lease_cleanup_state,
+# 1. 识别：读出 Job、围栏、账本、租约、两侧状态，以及 drain 请求需要的五项事实
+#    （只读，由迁移/运维身份执行）
+psql "$SPEECHNEXUS_DATABASE_URL" -c "
+SELECT j.job_id, j.state AS job_state, f.accepted_at_us, r.settled_at_us,
+       l.lease_id, l.lease_state, l.cleanup_state AS lease_cleanup_state,
+       l.host_node_id, l.pool_id, l.fencing_token,
        l.instance_id, l.instance_generation,
        i.submit_intent_id, i.execution_state, i.cleanup_state AS execution_cleanup_state,
-       e.evidence_kind, e.observed_at_us
+       e.evidence_kind, e.execution_stopped, e.resources_released, e.observed_at_us
 FROM speech_jobs AS j
-JOIN admission_leases AS l ON l.operation_id = j.job_id AND l.lease_state = 'reserved'
+JOIN speech_job_cancellation_fences AS f ON f.job_id = j.job_id
+LEFT JOIN speech_job_cancellation_reconciliations AS r ON r.job_id = j.job_id
+JOIN admission_leases AS l ON l.operation_id = j.job_id AND l.lease_id = '<lease_id>'
 JOIN submit_intents AS i ON i.lease_id = l.lease_id
 LEFT JOIN execution_stop_evidence AS e ON e.submit_intent_id = i.submit_intent_id
-WHERE j.state = 'cancelling' AND j.job_id = 'job-...';"
+WHERE j.state = 'cancelling';"
 
-# 2. 收口：对识别出的**那一个** instance/generation 做 drain，把应答原样存成文件
-curl -fsS -X POST "$GATEWAY_INTERNAL_URL/internal/v1/instances/<instance_id>/drain" \
-  -o /tmp/drain.json
+# 2. 复读确认：跨一个结算周期（默认 60 s 起）再跑一次第 1 步，仍停在同一处才继续。
+#    TtsSettlementWorker 对网关终态 succeeded 调用的就是同一个 LeaseService.release：
+#    它先跑完时租约已经是 released，此时 drain 会误伤该实例上仍在服务的其它 Job。
 
-# 3. 记录证词并释放：一条命令完成「重算摘要 → 写证词 → 释放租约」
+# 3. 收口：对识别出的**那一个** instance/generation 现场 drain，应答原样存盘
+#    请求体五项全部必填，缺一即 422；凭据是网关组件凭据，不是 API key。
+curl -fsS -X POST \
+  "$SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL/internal/v1/instances/<instance_id>/drain" \
+  -H "Authorization: Bearer $SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL" \
+  -H 'Content-Type: application/json' \
+  -H "X-Request-ID: $(uuidgen)" \
+  -d '{"host_node_id":"<host_node_id>","pool_id":"<pool_id>",
+       "instance_generation":<instance_generation>,"fencing_token":<fencing_token>,
+       "max_drain_wait_ms":5000}' \
+  -o "/tmp/drain-<lease_id>.json"
+
+# 4. 记录证词并释放：一条命令完成「重算摘要 → 写证词 → 释放租约」
 SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL=... SPEECHNEXUS_DATABASE_SCHEMA=speech \
 python -m speechnexus_backend.completed_release_cli \
-  --lease-id <lease_id> --drain-response /tmp/drain.json \
+  --lease-id <lease_id> --drain-response "/tmp/drain-<lease_id>.json" \
   --observed-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --reason "ticket #852: drained <instance_id> generation <n>"
 
-# 4. 核对：held_slots 归零，且证词行钉在同一个 instance/generation
-psql "$SPEECHNEXUS_TEST_DATABASE_URL" -c "
+# 5. 核对：held_slots 归零，且证词行钉在同一条租约与同一个 instance/generation
+psql "$SPEECHNEXUS_DATABASE_URL" -c "
 SELECT n.instance_id, n.instance_generation, n.held_slots, n.quarantined_slots,
-       r.evidence_kind, r.instance_id AS released_instance, r.instance_generation AS released_gen,
+       r.lease_id, r.evidence_kind,
+       r.instance_id AS released_instance, r.instance_generation AS released_gen,
        r.evidence_observed_at_us, r.reason
 FROM engine_instances AS n
 LEFT JOIN admission_quarantine_releases AS r
        ON r.instance_id = n.instance_id AND r.instance_generation = n.instance_generation
+      AND r.lease_id = '<lease_id>'
 WHERE n.instance_id = '<instance_id>' AND n.instance_generation = <n>;"
 ```
 
-第 2 步的 drain 应答必须是 `drain_state='drained'`、`safe_to_stop_instance=true` 且三个
+第 3 步的应答必须是 `drain_state='drained'`、`safe_to_stop_instance=true` 且三个
 `*_intent_count` 全为 0；否则命令拒绝执行（`completed_release_not_drained`）。应答里的
 `instance_id`/`instance_generation` 与租约不一致同样拒绝
 （`completed_release_drain_mismatch`）——这就是「钉住实例代次」：给相邻代次做的 drain
 不能授权这条租约的释放。
 
-第 3 步把证词写进既有的 `admission_quarantine_releases` 账本
+**drain 必须现场取，且落在执行结束与记录之间**。应答的 `updated_at` 是网关自己的读取
+时间，必须满足 `terminated_at_us <= updated_at <= observed_at`（无终止时间时下界退到
+派发时间），否则得到 `completed_release_drain_stale`。理由是摘要的性质：它只证明证词
+与它携带的字段一致，**不是网关签名**——一份执行结束前取到的 drain 无法说明实例上已经
+没有活，一份记录之后取到的 drain 也不描述证词声称的那个状态。
+
+第 4 步把证词写进既有的 `admission_quarantine_releases` 账本
 （`evidence_kind=operator_verified_instance_terminated`），并复用
 `LeaseService.release` 归还该租约的槽位与预算。摘要覆盖
 `lease_id`、`submit_intent_id`、`instance_id`、`instance_generation`、整份 drain 应答、
@@ -486,12 +521,19 @@ WHERE n.instance_id = '<instance_id>' AND n.instance_generation = <n>;"
 `cleanup_state=complete` 与网关的 `engine_terminal_response` 原样保留，本出口只归还
 无人释放的预留。
 
-工具**不**改 Job 状态（释放身份按设计读不到 `speech_jobs`）。租约 `released` 之后，
-下一次取消对账领取会发现「全部租约已落地」，按既有第 2 步规则把 Job 推进到
-`failed`/`error_code=cancellation_unconfirmed`，`attempts` 记 `exhausted`，账本不再领取。
-Job 的 `cleanup_state` 在这个终态下仍按公开读模型汇总为 `quarantined`：它表达的是
-「取消被判定为未确认」，不是租约桶的实时求和，租约实际状态以账本和
-`admission_leases` 为准。
+**提交结果未知时重放同一份证词，不要回滚**：账本 append-only，没有回滚路径，同一
+`evidence_digest` 的重放按既有记录应答 `replayed` 且不写第二行；换证词才会得到
+`quarantine_release_conflict`。`unavailable` 表示事务没开始，直接重试安全。
+
+工具只**读** Job 的 `state` 来核验判据，从不写 Job：释放身份对 `speech_jobs` 只有
+`job_id/state` 两列 SELECT。租约 `released` 之后，下一次取消对账领取会发现「全部租约
+已落地」，按既有第 2 步规则把 Job 推进到 `failed`/`error_code=cancellation_unconfirmed`，
+`attempts` 记 `exhausted`，账本不再领取。
+
+读模型在这个窗口里的取值按实测陈述：从释放完成到下一次判定领取之间，Job 仍是
+`cancelling`，`cleanup_state` 报 `pending`（与释放前相同）；判定写入终态之后才汇总为
+`quarantined`。它表达的是「取消被判定为未确认」，不是租约桶的实时求和——两个方向都
+不会把已归还的容量报成可用，租约实际状态以账本和 `admission_leases` 为准。
 
 三条反向情形都是硬性红线，各自有对应测试：
 
@@ -503,6 +545,15 @@ Job 的 `cleanup_state` 在这个终态下仍按公开读模型汇总为 `quaran
   `completed_release_drain_mismatch`、换摘要得到 `invalid`。
 - 允许未 drain 就释放：容量会在实例还有活时被记成可归还。
   同上两个测试断言 `completed_release_not_drained`，且 `held_slots` 保持 1。
+- 接受非现场 drain（不校验 `updated_at` 的时间窗）：执行结束前的应答也会被当成
+  「实例已空」。同上测试断言 `completed_release_drain_stale`。
+- 把标签判据缩成两个状态（不看终止证据）：`succeeded` 但无
+  `engine_terminal_response` 的 #338 形态会被指到必然拒绝它的出口。两个测试分别断言
+  该形态得到 `execution-unknown` 标签、且工具以
+  `completed_release_requires_terminal_evidence` 拒绝。
+- 让工具信任调用者已做识别：没有围栏的 Job 也能被释放。两个测试断言
+  `completed_release_not_accepted_cancellation` / `completed_release_already_settled`，
+  且 `held_slots` 与账本都不动。
 
 
 `quarantine_release` 的 `require_releasable` 契约属于操作员证词子系统，本切片不修改它；

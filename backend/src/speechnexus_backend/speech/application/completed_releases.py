@@ -49,6 +49,9 @@ class CompletedLeaseSnapshot:
     terminated_at_us: int | None
     intent_version: int | None
     stop: CompletedStopEvidence | None
+    fence_accepted_at_us: int | None
+    reconciliation_settled_at_us: int | None
+    job_state: str | None
     instance_held_slots: int
     instance_quarantined_slots: int
 

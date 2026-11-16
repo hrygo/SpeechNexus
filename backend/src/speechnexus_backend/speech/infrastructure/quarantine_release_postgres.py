@@ -106,12 +106,17 @@ _SNAPSHOT = (
     "i.recorded_at_us, i.dispatched_at_us, i.terminated_at_us, i.version AS intent_version, "
     "e.evidence_kind, e.observed_at_us AS stop_observed_at_us, e.execution_stopped, "
     "e.resources_released, n.held_slots AS instance_held_slots, "
-    "n.quarantined_slots AS instance_quarantined_slots "
+    "n.quarantined_slots AS instance_quarantined_slots, "
+    "f.accepted_at_us AS fence_accepted_at_us, r.settled_at_us AS reconciliation_settled_at_us, "
+    "j.state AS job_state "
     "FROM admission_leases AS l "
     "LEFT JOIN submit_intents AS i ON i.lease_id = l.lease_id "
     "LEFT JOIN execution_stop_evidence AS e ON e.submit_intent_id = i.submit_intent_id "
     "LEFT JOIN engine_instances AS n ON n.instance_id = l.instance_id "
     "AND n.instance_generation = l.instance_generation "
+    "LEFT JOIN speech_jobs AS j ON j.job_id = l.operation_id "
+    "LEFT JOIN speech_job_cancellation_fences AS f ON f.job_id = l.operation_id "
+    "LEFT JOIN speech_job_cancellation_reconciliations AS r ON r.job_id = l.operation_id "
     "WHERE l.lease_id = %s"
 )
 
@@ -122,6 +127,10 @@ def _read_completed_snapshot(cursor: LeaseCursor, lease_id: str) -> CompletedLea
     rows = cursor.fetchall()
     if not rows:
         return None
+    if len(rows) != 1:
+        # A lease carries one intent and one terminal fact. More than one row is a
+        # repair problem: picking ``rows[0]`` would choose which fact to believe.
+        raise QuarantineReleaseRejectedError("reconciliation_required")
     row = rows[0]
     stop = (
         None
@@ -152,6 +161,9 @@ def _read_completed_snapshot(cursor: LeaseCursor, lease_id: str) -> CompletedLea
         terminated_at_us=row["terminated_at_us"],
         intent_version=row["intent_version"],
         stop=stop,
+        fence_accepted_at_us=row["fence_accepted_at_us"],
+        reconciliation_settled_at_us=row["reconciliation_settled_at_us"],
+        job_state=row["job_state"],
         instance_held_slots=int(row["instance_held_slots"]),
         instance_quarantined_slots=int(row["instance_quarantined_slots"]),
     )

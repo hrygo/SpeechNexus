@@ -97,6 +97,9 @@ def snapshot(
     submit_intent_id: str | None = INTENT,
     execution_state: str | None = "succeeded",
     execution_cleanup_state: str | None = "complete",
+    fence_accepted_at_us: int | None = 3_000_000,
+    reconciliation_settled_at_us: int | None = None,
+    job_state: str | None = "cancelling",
 ) -> CompletedLeaseSnapshot:
     return CompletedLeaseSnapshot(
         lease_id=LEASE,
@@ -117,6 +120,9 @@ def snapshot(
         terminated_at_us=TERMINATED_AT_US,
         intent_version=intent_version,
         stop=CompletedStopEvidence("engine_terminal_response", TERMINATED_AT_US, 1, 1),
+        fence_accepted_at_us=fence_accepted_at_us,
+        reconciliation_settled_at_us=reconciliation_settled_at_us,
+        job_state=job_state,
         instance_held_slots=held_slots,
         instance_quarantined_slots=0,
     )
@@ -418,4 +424,87 @@ def test_a_dry_run_on_a_released_lease_says_a_retry_would_replay() -> None:
 
     assert code == cli.EXIT_RELEASED
     assert "verdict: already released" in text
+    assert service.calls == []
+
+
+def test_the_tool_refuses_a_job_that_was_never_cancelled() -> None:
+    """#852 review M2: measured -- a Job with no fence released successfully."""
+    service = _Service()
+    adapter = _Adapter()
+    adapter.completed_snapshot = lambda lease_id: snapshot(fence_accepted_at_us=None)  # type: ignore[method-assign]
+
+    code, text = run(adapter=adapter, service=service)
+
+    assert code == cli.EXIT_REFUSED
+    assert "refused: completed_release_not_accepted_cancellation" in text
+    assert service.calls == []
+
+
+def test_the_tool_refuses_a_settled_cancellation() -> None:
+    """A concluded judgment already accounted for this capacity."""
+    service = _Service()
+    adapter = _Adapter()
+    adapter.completed_snapshot = lambda lease_id: snapshot(  # type: ignore[method-assign]
+        reconciliation_settled_at_us=8_000_000
+    )
+
+    code, text = run(adapter=adapter, service=service)
+
+    assert code == cli.EXIT_REFUSED
+    assert "refused: completed_release_already_settled" in text
+    assert service.calls == []
+
+
+def test_the_tool_refuses_a_job_that_is_no_longer_cancelling() -> None:
+    service = _Service()
+    adapter = _Adapter()
+    adapter.completed_snapshot = lambda lease_id: snapshot(job_state="failed")  # type: ignore[method-assign]
+
+    code, text = run(adapter=adapter, service=service)
+
+    assert code == cli.EXIT_REFUSED
+    assert "refused: completed_release_not_cancelling" in text
+    assert service.calls == []
+
+
+def test_an_inconsistent_lease_is_refused_rather_than_summarised() -> None:
+    """Two intents or two terminal facts are a repair problem, not a choice."""
+    from speechnexus_backend.speech.domain.quarantine_release import (
+        QuarantineReleaseRejectedError,
+    )
+
+    class _Ambiguous(_Adapter):
+        def completed_snapshot(self, lease_id: str) -> CompletedLeaseSnapshot | None:
+            raise QuarantineReleaseRejectedError("reconciliation_required")
+
+    code, text = run(adapter=_Ambiguous())
+
+    assert code == cli.EXIT_REFUSED
+    assert "refused: reconciliation_required" in text
+
+
+def test_a_stale_drain_is_refused_before_any_write() -> None:
+    """#852 review M1: a drain taken before the execution ended proves nothing.
+
+    The recorded file is otherwise perfect (drained, zero unfinished work, the
+    right generation): only the gateway's own read time is too early.
+    """
+    service = _Service()
+    stale = cli.parse_drain_response(DRAIN | {"updated_at": "1970-01-01T00:00:04Z"})
+
+    code, text = run(service=service, drain_record=stale)
+
+    assert code == cli.EXIT_REFUSED
+    assert "refused: completed_release_drain_stale" in text
+    assert service.calls == []
+
+
+def test_a_drain_taken_after_the_observation_is_refused_before_any_write() -> None:
+    service = _Service()
+    late = cli.parse_drain_response(DRAIN | {"updated_at": "1970-01-01T00:00:09Z"})
+
+    code, text = run(service=service, drain_record=late)
+
+    assert code == cli.EXIT_REFUSED
+    assert "refused: completed_release_drain_stale" in text
     assert service.calls == []

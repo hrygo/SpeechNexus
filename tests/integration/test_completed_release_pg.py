@@ -16,6 +16,7 @@ the release rules, not that an instance stopped.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import uuid
 from collections.abc import Iterator
@@ -74,6 +75,7 @@ from speechnexus_backend.speech.infrastructure.quarantine_release_schema import 
 from speechnexus_backend.speech.infrastructure.quarantine_release_schema import (
     quarantine_release_grants,
 )
+from speechnexus_backend.speech.infrastructure.readiness import CancellationDebtProbe
 
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
@@ -256,6 +258,7 @@ def _sandbox(
     execution_state: str = "succeeded",
     cleanup_state: str = "complete",
     terminal_evidence: str | None = "engine_terminal_response",
+    cancelled: bool = True,
 ) -> Iterator[ReleaseSandbox]:
     """One cancelling Job whose execution completed while its lease stayed reserved."""
     url = os.environ.get(VARIABLE)
@@ -300,6 +303,15 @@ def _sandbox(
             "'tts-quality', %s, 'cancelling', 2, 1, 1)",
             (job_id, WORKSPACE, DIGEST),
         )
+        if cancelled:
+            # An accepted cancellation is the shape this exit closes: the fence is
+            # written by the accept path and the reconciliation row is the worker's
+            # claim ledger. Neither is optional for the operator exit.
+            admin.execute(
+                "INSERT INTO speech_job_cancellation_fences (job_id, accepted_at_us, request_id) "
+                "VALUES (%s, 3000000, 'request-852-cancel')",
+                (job_id,),
+            )
         admin.execute(
             "INSERT INTO speech_job_submissions (job_id, request_id, client_reference, "
             "effective_configuration_json, execution_revision, progress_unit, progress_total, "
@@ -447,10 +459,18 @@ def test_the_accepted_cancellation_then_closes_as_an_unconfirmed_failure(
     sandbox: ReleaseSandbox,
 ) -> None:
     """The released lease lets the existing judgment close the Job, unchanged."""
+    job_id = box_job_id(sandbox)
     code, _ = _release(sandbox)
     assert code == cli.EXIT_RELEASED
 
-    job_id = box_job_id(sandbox)
+    # Measured: between the release and the next judgment the Job is still
+    # ``cancelling``, so the read model reports ``pending`` -- the pre-release value.
+    # ``quarantined`` only appears once the judgment lands the terminal.
+    pending = sandbox.jobs().get(job_id)
+    assert pending is not None
+    assert pending.state == "cancelling"
+    assert cleanup_state(pending) == "pending"
+
     judgment = UnconfirmedCancellationSettlement(sandbox.jobs(), sandbox.capacity()).settle(job_id)
 
     assert judgment.settled is True
@@ -459,8 +479,9 @@ def test_the_accepted_cancellation_then_closes_as_an_unconfirmed_failure(
     assert (row["state"], row["error_code"]) == ("failed", "cancellation_unconfirmed")
     job = sandbox.jobs().get(job_id)
     assert job is not None
-    # The Job's terminal keeps its documented read-model value: it names *why* the
-    # cancellation ended, not a live sum of the lease bucket a release already moved.
+    # The terminal keeps its documented read-model value: it names *why* the
+    # cancellation ended, not a live sum of the lease bucket a release already
+    # moved. The direction is safe -- it never reports capacity as available.
     assert cleanup_state(job) == "quarantined"
     assert sandbox.rows()["instances"] == [
         {"instance_id": INSTANCE, "held_slots": 0, "quarantined_slots": 0}
@@ -617,3 +638,97 @@ def test_the_digest_function_is_the_documented_canonical_one() -> None:
         observed_at_us=OBSERVED_AT_US,
         reason=REASON,
     )
+
+
+def test_a_job_without_an_accepted_cancellation_is_refused() -> None:
+    """#852 review M2: measured -- a Job with no fence released successfully.
+
+    The tool now proves the identification criteria itself, so an operator who
+    runs it against the wrong Job gets a refusal and an unchanged slot instead of
+    a release nobody can attribute to an accepted cancellation.
+    """
+    with _sandbox(cancelled=False) as box:
+        code, text = _release(box)
+
+        assert code == cli.EXIT_REFUSED
+        assert "completed_release_not_accepted_cancellation" in text
+        assert box.rows()["instances"][0]["held_slots"] == 1
+        assert box.rows()["ledger"] == []
+
+
+def test_a_drain_from_before_the_execution_ended_is_refused(sandbox: ReleaseSandbox) -> None:
+    """#852 review M1 on real storage: a pre-execution drain still released.
+
+    The drain is structurally perfect for the right generation; only the gateway's
+    own read time (``updated_at``) predates the execution's end.
+    """
+    code, text = _release(sandbox, drain=DRAIN | {"updated_at": "1970-01-01T00:00:04Z"})
+
+    assert code == cli.EXIT_REFUSED
+    assert "completed_release_drain_stale" in text
+    assert sandbox.rows()["instances"][0]["held_slots"] == 1
+    assert sandbox.rows()["leases"][0]["lease_state"] == "reserved"
+    assert sandbox.rows()["ledger"] == []
+
+
+def test_a_settled_cancellation_is_refused(sandbox: ReleaseSandbox) -> None:
+    """A concluded judgment already accounted for this capacity."""
+    job_id = box_job_id(sandbox)
+    sandbox.execute(
+        "INSERT INTO speech_job_cancellation_reconciliations (job_id, attempts, "
+        "next_check_at_us, last_outcome, settled_at_us, updated_at_us) "
+        "VALUES (%s, 1, 8000000, 'settled', 8000000, 8000000)",
+        (job_id,),
+    )
+
+    code, text = _release(sandbox)
+
+    assert code == cli.EXIT_REFUSED
+    assert "completed_release_already_settled" in text
+    assert sandbox.rows()["instances"][0]["held_slots"] == 1
+    assert sandbox.rows()["ledger"] == []
+
+
+def _debt(box: ReleaseSandbox) -> str | None:
+    """The readiness detail, read through this sandbox's own service identity."""
+    probe = CancellationDebtProbe(
+        make_conninfo(os.environ[VARIABLE], user=box.role, password=PASSWORD),
+        schema=box.schema,
+        timeout_seconds=3,
+        grace_seconds=0.001,
+    )
+    return asyncio.run(probe.check())
+
+
+def test_the_label_routes_this_shape_to_the_exit_that_accepts_it(
+    sandbox: ReleaseSandbox,
+) -> None:
+    """#852 review M2: the label and the gate must agree, both ways."""
+    detail = _debt(sandbox)
+
+    assert detail is not None
+    assert "subclass=completed-without-release" in detail
+    assert "over 1 held lease(s)" in detail
+    assert "(held leases: completed-without-release=1)" in detail
+    assert _release(sandbox)[0] == cli.EXIT_RELEASED
+
+
+def test_the_label_does_not_route_the_unproven_shape_to_that_exit() -> None:
+    """A ``succeeded`` execution with no terminal fact is #338's shape, not this one.
+
+    The label exists to route, so it may not point at a command that always
+    refuses. This case proves the routing is honest end to end: the probe says
+    ``execution-unknown`` and the tool refuses with the terminal-evidence code.
+    """
+    with _sandbox(terminal_evidence=None) as box:
+        detail = _debt(box)
+
+        assert detail is not None
+        assert "subclass=execution-unknown" in detail
+        assert "completed-without-release" not in detail
+
+        code, text = _release(box)
+
+        assert code == cli.EXIT_REFUSED
+        assert "completed_release_requires_terminal_evidence" in text
+        assert box.rows()["ledger"] == []

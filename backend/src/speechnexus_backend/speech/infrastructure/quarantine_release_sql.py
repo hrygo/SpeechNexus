@@ -393,6 +393,12 @@ def _completed_facts(
     decides on are the facts ``release_in_transaction`` will act on: the global
     order (… attempt, lease, submit intents) is the same one the quarantine path
     takes, and a concurrent gateway write cannot slip between the two reads.
+
+    The accepted-cancellation facts (fence, judgment ledger, Job state) are read
+    without a lock on purpose: the fence row is immutable once written, the
+    judgment can only move to settled, and the release itself re-locks the lease
+    and its submit intent, so a decision taken on these rows either commits
+    against an unchanged lease or is refused by its conditional update.
     """
     intent_rows = _intents(cursor, lease["lease_id"], locked=True)
     stops = (
@@ -408,6 +414,21 @@ def _completed_facts(
     if len(stops) > 1:
         # One intent carries at most one terminal fact; more is a repair problem,
         # never a reason to pick the more convenient row.
+        raise LeaseRejectedError("reconciliation_required")
+    job_id = lease["operation_id"]
+    fence = _rows(
+        cursor,
+        "SELECT job_id, accepted_at_us FROM speech_job_cancellation_fences WHERE job_id = %s",
+        (job_id,),
+    )
+    reconciliation = _rows(
+        cursor,
+        "SELECT job_id, settled_at_us FROM speech_job_cancellation_reconciliations "
+        "WHERE job_id = %s",
+        (job_id,),
+    )
+    job = _rows(cursor, "SELECT job_id, state FROM speech_jobs WHERE job_id = %s", (job_id,))
+    if len(fence) > 1 or len(reconciliation) > 1 or len(job) > 1:
         raise LeaseRejectedError("reconciliation_required")
     return completed_release_domain.CompletedReleaseFacts(
         lease_id=lease["lease_id"],
@@ -440,6 +461,11 @@ def _completed_facts(
                 stops[0]["resources_released"],
             )
         ),
+        fence_accepted_at_us=None if not fence else fence[0]["accepted_at_us"],
+        reconciliation_settled_at_us=(
+            None if not reconciliation else reconciliation[0]["settled_at_us"]
+        ),
+        job_state=None if not job else job[0]["state"],
         drain=drain,
         observed_at_us=observed_at_us,
         reason=reason,

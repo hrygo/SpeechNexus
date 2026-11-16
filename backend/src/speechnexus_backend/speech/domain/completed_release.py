@@ -46,6 +46,8 @@ DRAINED: Final = "drained"
 DRAIN_STATES: Final = frozenset({"draining", "drained", "quarantined"})
 #: What the gateway's own terminal recording writes for a successful execution.
 TERMINAL_EVIDENCE_KIND: Final = "engine_terminal_response"
+#: The only public Job state an accepted, unsettled cancellation can be in.
+CANCELLING: Final = "cancelling"
 MAX_REASON: Final = 2000
 
 
@@ -166,6 +168,14 @@ class CompletedReleaseFacts:
     quarantine_observed_at_us: int | None
     intents: tuple[CompletedIntent, ...]
     stop: CompletedStopEvidence | None
+    #: The Job's accepted-cancellation fence, ``None`` when the Job was never
+    #: cancelled. The exit exists for an accepted cancellation only, so the tool
+    #: checks this itself instead of assuming the operator read the runbook.
+    fence_accepted_at_us: int | None
+    #: When the cancellation judgment concluded; a settled acceptance is final.
+    reconciliation_settled_at_us: int | None
+    #: The public Job state at decision time.
+    job_state: str | None
     drain: DrainRecord
     observed_at_us: int
     reason: str
@@ -185,6 +195,14 @@ class CompletedReleaseFacts:
             integer(self.quarantine_observed_at_us)
         if len(self.intents) > 1:
             raise ValueError("A lease carries at most one submit intent")
+        if self.fence_accepted_at_us is not None:
+            integer(self.fence_accepted_at_us)
+        if self.reconciliation_settled_at_us is not None:
+            integer(self.reconciliation_settled_at_us)
+        if self.job_state is not None and (
+            not isinstance(self.job_state, str) or not self.job_state
+        ):
+            raise ValueError("Invalid job state")
         integer(self.observed_at_us)
         if (
             not isinstance(self.reason, str)
@@ -262,6 +280,50 @@ def prepared_digest(
     )
 
 
+def _require_accepted_cancellation(facts: CompletedReleaseFacts) -> None:
+    """The exit belongs to an accepted, still-open cancellation of a cancelling Job.
+
+    Every clause here was measured on a real schema: a Job that was never
+    cancelled (no fence row), a Job whose cancellation already reached its
+    judgment (settled ledger row), and a Job that is no longer ``cancelling`` all
+    released successfully when the tool trusted its caller. The tool therefore
+    proves the shape itself -- the runbook is an instruction, not an input check.
+    """
+    if facts.fence_accepted_at_us is None:
+        raise CompletedReleaseRejectedError("completed_release_not_accepted_cancellation")
+    if facts.reconciliation_settled_at_us is not None:
+        # The judgment concluded. A release after it would move capacity the
+        # closing decision already accounted for.
+        raise CompletedReleaseRejectedError("completed_release_already_settled")
+    if facts.job_state != CANCELLING:
+        raise CompletedReleaseRejectedError("completed_release_not_cancelling")
+
+
+def _drain_lower_bound(intent: CompletedIntent) -> int:
+    """The execution's own end: a drain taken before it proves nothing."""
+    if intent.terminated_at_us is not None:
+        return intent.terminated_at_us
+    lower = intent.recorded_at_us
+    if intent.dispatched_at_us is not None:
+        lower = max(lower, intent.dispatched_at_us)
+    return lower
+
+
+def require_drain_fresh(facts: CompletedReleaseFacts, intent: CompletedIntent) -> None:
+    """The drain must be of the state the testimony claims, taken when it claims.
+
+    ``drain.updated_at_us`` is the gateway's own read time for that generation.
+    A drain fetched before the execution ended cannot say the instance has nothing
+    left, and one fetched after the testimony was recorded does not describe the
+    state that testimony reports. The digest only proves the testimony matches the
+    fields it carries -- it is not a gateway signature -- so the window is checked
+    here rather than assumed from the operator's diligence.
+    """
+    lower = _drain_lower_bound(intent)
+    if facts.drain.updated_at_us < lower or facts.drain.updated_at_us > facts.observed_at_us:
+        raise CompletedReleaseRejectedError("completed_release_drain_stale")
+
+
 def _require_pinned(facts: CompletedReleaseFacts) -> None:
     """The drain must name the generation this lease reserved, not one nearby."""
     if (
@@ -298,8 +360,9 @@ def require_completed_releasable(facts: CompletedReleaseFacts) -> CompletedInten
     Every clause is a refusal of a *different* fact, so an operator can tell why
     the exit does not apply instead of retrying evidence that cannot become true:
     the lease must be a first release, the execution must be terminal and
-    successful, the gateway must have recorded its terminal response, and the
-    drain must be of this lease's own instance generation and must be drained.
+    successful, the gateway must have recorded its terminal response, the Job must
+    carry an accepted and still-open cancellation, and the drain must be of this
+    lease's own instance generation, taken after that execution ended.
     """
     if (
         facts.lease_state != "reserved"
@@ -322,8 +385,10 @@ def require_completed_releasable(facts: CompletedReleaseFacts) -> CompletedInten
         # evidence is the shape #338 must repair, not something an operator
         # testimony may paper over.
         raise CompletedReleaseRejectedError("completed_release_requires_terminal_evidence")
+    _require_accepted_cancellation(facts)
     _require_pinned(facts)
     _require_drained(facts)
+    require_drain_fresh(facts, intent)
     return intent
 
 
@@ -336,6 +401,7 @@ def replay_conflict(code: str) -> CompletedReleaseRejectedError:
 type CompletedDecision = Literal["released", "replayed"]
 
 __all__ = [
+    "CANCELLING",
     "COMPLETED_EVIDENCE_VERSION",
     "DRAINED",
     "DRAIN_STATES",
@@ -350,5 +416,6 @@ __all__ = [
     "prepared_digest",
     "replay_conflict",
     "require_completed_releasable",
+    "require_drain_fresh",
     "require_observed_at",
 ]

@@ -13,9 +13,11 @@ from speechnexus_backend.speech.domain.completed_release import (
     completed_evidence_digest,
     prepared_digest,
     require_completed_releasable,
+    require_drain_fresh,
     require_observed_at,
 )
 
+ACCEPTED_AT_US = 3_000_000
 TERMINATED_AT_US = 5_000_000
 OBSERVED_AT_US = 7_000_000
 NOW_US = 9_000_000
@@ -65,6 +67,9 @@ def facts(**overrides: object) -> CompletedReleaseFacts:
         "quarantine_observed_at_us": None,
         "intents": (intent(),),
         "stop": CompletedStopEvidence("engine_terminal_response", TERMINATED_AT_US, 1, 1),
+        "fence_accepted_at_us": ACCEPTED_AT_US,
+        "reconciliation_settled_at_us": None,
+        "job_state": "cancelling",
         "drain": drain(),
         "observed_at_us": OBSERVED_AT_US,
         "reason": REASON,
@@ -246,3 +251,71 @@ def test_a_drain_record_refuses_values_the_gateway_never_sends(
 ) -> None:
     with pytest.raises(ValueError):
         drain(**overrides)
+
+
+def test_the_drain_must_be_taken_after_the_execution_ended() -> None:
+    """#852 review M1: a drain of an earlier state says nothing about this one.
+
+    The digest proves the testimony matches the drain fields; it is not a gateway
+    signature. So the window is enforced: the gateway's ``updated_at`` must fall
+    after the execution's own end and no later than the recorded observation.
+    """
+    target = facts()
+    assert target.drain.updated_at_us == 6_000_000
+
+    require_drain_fresh(target, target.intents[0])  # inside the window
+
+    for updated_at_us in (TERMINATED_AT_US - 1, 1):
+        with pytest.raises(CompletedReleaseRejectedError) as early:
+            require_completed_releasable(facts(drain=drain(updated_at_us=updated_at_us)))
+        assert early.value.code == "completed_release_drain_stale"
+    for updated_at_us in (OBSERVED_AT_US + 1, NOW_US):
+        with pytest.raises(CompletedReleaseRejectedError) as late:
+            require_completed_releasable(facts(drain=drain(updated_at_us=updated_at_us)))
+        assert late.value.code == "completed_release_drain_stale"
+
+
+def test_the_drain_window_edges_are_inclusive() -> None:
+    """A drain taken exactly at the execution's end, or at the observation, is valid."""
+    for updated_at_us in (TERMINATED_AT_US, OBSERVED_AT_US):
+        target = facts(drain=drain(updated_at_us=updated_at_us))
+
+        assert require_completed_releasable(target) is target.intents[0]
+
+
+def test_an_execution_without_a_terminal_time_bounds_the_drain_by_its_dispatch() -> None:
+    """The lower bound must not collapse when the gateway recorded no end time."""
+    target = facts(
+        intents=(intent(terminated_at_us=None),),
+        drain=drain(updated_at_us=1_500_000),
+    )
+
+    with pytest.raises(CompletedReleaseRejectedError) as early:
+        require_completed_releasable(target)
+    assert early.value.code == "completed_release_drain_stale"
+
+
+@pytest.mark.parametrize(
+    ("overrides", "code"),
+    [
+        ({"fence_accepted_at_us": None}, "completed_release_not_accepted_cancellation"),
+        ({"reconciliation_settled_at_us": 8_000_000}, "completed_release_already_settled"),
+        ({"job_state": "cancelled"}, "completed_release_not_cancelling"),
+        ({"job_state": "failed"}, "completed_release_not_cancelling"),
+        ({"job_state": None}, "completed_release_not_cancelling"),
+    ],
+)
+def test_the_exit_refuses_a_job_that_was_never_a_settled_free_cancellation(
+    overrides: dict[str, object], code: str
+) -> None:
+    """#852 review M2: the tool proves the identification criteria, not its caller.
+
+    A Job that was never cancelled, one whose judgment already concluded, and one
+    that is no longer ``cancelling`` were all releasable before this gate existed.
+    """
+    values: dict[str, object] = {"fence_accepted_at_us": ACCEPTED_AT_US, "job_state": "cancelling"}
+    values.update(overrides)
+
+    with pytest.raises(CompletedReleaseRejectedError) as refused:
+        require_completed_releasable(facts(**values))
+    assert refused.value.code == code

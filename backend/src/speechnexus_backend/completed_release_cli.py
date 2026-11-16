@@ -115,6 +115,25 @@ _REFUSAL_HINTS: Final = {
         "the drained generation still reports unfinished work or does not assert "
         "safe_to_stop_instance; wait for drained and re-drain"
     ),
+    "completed_release_not_accepted_cancellation": (
+        "this Job carries no accepted cancellation fence; the exit only closes an "
+        "accepted cancellation, so read the Job before choosing an exit"
+    ),
+    "completed_release_already_settled": (
+        "the cancellation judgment already concluded; a release now would move "
+        "capacity that decision already accounted for"
+    ),
+    "completed_release_not_cancelling": (
+        "the Job is not cancelling any more, so its capacity is not this exit's debt"
+    ),
+    "completed_release_drain_stale": (
+        "the drain was not taken between this execution ending and the recorded "
+        "observation; take a fresh drain and finish the runbook in one sitting"
+    ),
+    "reconciliation_required": (
+        "the lease fails its own consistency check (more than one submit intent or "
+        "terminal fact); this needs the repair protocol, not an operator release"
+    ),
     "completed_release_requires_terminal_evidence": (
         "the gateway recorded no engine_terminal_response for this execution; this "
         "shape is not releasable by testimony and needs the stop-evidence protocol"
@@ -247,6 +266,9 @@ def completed_facts(
             ),
         ),
         stop=snapshot.stop,
+        fence_accepted_at_us=snapshot.fence_accepted_at_us,
+        reconciliation_settled_at_us=snapshot.reconciliation_settled_at_us,
+        job_state=snapshot.job_state,
         drain=drain,
         observed_at_us=observed_at_us,
         reason=reason,
@@ -268,6 +290,9 @@ def _target(out: TextIO, snapshot: CompletedLeaseSnapshot) -> None:
         ("execution_state", snapshot.execution_state or "none"),
         ("execution_cleanup_state", snapshot.execution_cleanup_state or "none"),
         ("terminal_evidence", snapshot.stop.evidence_kind if snapshot.stop else "none"),
+        ("job_state", snapshot.job_state or "none"),
+        ("cancellation_fence_accepted_at_us", str(snapshot.fence_accepted_at_us or 0)),
+        ("cancellation_settled_at_us", str(snapshot.reconciliation_settled_at_us or 0)),
     ):
         print(f"  {name}: {value}", file=out)
 
@@ -348,6 +373,9 @@ def execute(
     """The whole exit, from one read-only snapshot to the released capacity."""
     try:
         snapshot = adapter.completed_snapshot(lease_id)
+    except QuarantineReleaseRejectedError as error:
+        print(f"refused: {error.code} ({_REFUSAL_HINTS.get(error.code, 'no hint')})", file=out)
+        return EXIT_REFUSED
     except QuarantineUnavailableError:
         print("unavailable: the lease snapshot could not be read", file=out)
         return EXIT_UNAVAILABLE

@@ -860,7 +860,8 @@ def test_the_optional_reader_identity_reports_the_full_detail() -> None:
         f"{box.job_id} -> {LEASE}(lease=reserved, execution=unknown_quarantined, "
         "subclass=execution-unknown)" in detail
     )
-    assert "(execution-unknown=1)" in detail
+    assert "over 1 held lease(s)" in detail
+    assert "(held leases: execution-unknown=1)" in detail
     assert "completed-without-release" not in detail
     assert "unavailable" not in detail
 

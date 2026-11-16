@@ -54,9 +54,9 @@ controller 制品摘要是受信不可变部署前提下的磁盘 Python 源或�
 
 - 除上述两条证据外的一律拒绝，包括 `source_kind='unverified'`、声明已过窗口、控制器观测缺探针授权、运维自证缺 attestation，以及**没有 provenance 行**。公开 Job 答 `422 voice_not_published`，响应 `message` 按具体状态点名修复动作；同步 TTS 答 `404 voice_not_found`（与已撤销资格一致），并在日志里留 `code=qualification_source_unverified state=…` 与语音身份，几种起因靠日志区分；两者都不是 `backend_unavailable`；
 - 声明窗口过期后，该资格立即停止准入，不需要也不允许改写已记录的行，续期靠发布新的 voice revision；
-- 「没有 provenance 行」不是历史豁免：provenance 是资格行的子表，数据库没有「资格行必须有 provenance 行」的约束，而写资格行是发布身份的必需权限，所以手写资格行或删掉 provenance 行都能造出这个形状。审计读面仍把它标成 `legacy_pre_0055`（记录事实），但准入同样拒绝，恢复方式是重新发布。
+- 「没有 provenance 行」不是历史豁免：provenance 是资格行的子表，数据库没有「资格行必须有 provenance 行」的约束，而写资格行是发布身份的必需权限，所以手写资格行或删掉 provenance 行都能造出这个形状。审计读面仍把它标成 `legacy_pre_0055`（记录事实），但准入同样拒绝。恢复方式是对一个**新的** voice revision 重新取得资格：`speech_publications` 以 `(kind,object_id,revision)` 为键、资格行以 `(voice_id,revision)` 为键，同一 revision 无法补发，重发会以 `publication_conflict` 拒绝（`builtin_voice_publication.py:245-249`）。
 
-**发布说明（已知限制）。** 迁移 `0055` 之前产生的内建资格没有 provenance 行，因此**不再自动被准入接受**（同步 TTS 与公开 Job 都会拒绝），必须重新发布——走控制器探测路径或运维自证路径其一——才能恢复可用；审计读面在此之前仍把这些行标为 `legacy_pre_0055`。
+**发布说明（已知限制）。** 迁移 `0055` 之前产生的内建资格没有 provenance 行，因此**不再自动被准入接受**（同步 TTS 与公开 Job 都会拒绝）。恢复需要**发布一个新的 voice revision**，并为该 revision 走控制器探测路径或运维自证路径取得资格——同一 revision 不能补发，重复发布会以 `publication_conflict` 拒绝。审计读面在恢复前仍把这些行标为 `legacy_pre_0055`。
 
 **不开放的能力。** 声明不是 controller 观测，因此不放行：`require_native_ready` 与探针签发（仍要求 node-controller 的 native runtime 证据，缺失即 `native_runtime_evidence_unavailable`）；算力预算归还与租约结算（`release()` 仍要求授权 stop kind，缺少实测停止即 `execution_cleanup_pending`）；`execution_cleanup_pending` 的清偿；实例生命周期收敛与新 generation（仍要求上一代 `stopped` 且预算 `released`）；`execution_stop_evidence`、`runtime_intent_deliveries` 与 `admission_leases` 的任何写入。声明事务的写目标是且只是 approval 与声明记录两行；`tests/integration/test_operator_attested_qualification_pg.py` 对运行态账本做前后快照以固定这一点。
 

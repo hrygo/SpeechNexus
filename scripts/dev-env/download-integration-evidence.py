@@ -30,6 +30,7 @@ COVERAGE_DATA_LIMIT = 32 * 1024 * 1024
 COVERAGE_ARTIFACT = "workbench-pg-full-coverage"
 COVERAGE_ARTIFACT_LIMIT = 32 * 1024 * 1024
 COVERAGE_PARTS_DIR = "workbench-pg-coverage-parts"
+COVERAGE_WORKERS_MAX = 4
 COVERAGE_SUMMARY = "workbench-pg-coverage.json"
 FETCH_ATTEMPTS = 3
 
@@ -191,7 +192,7 @@ def download_coverage(
     repository: str, run_id: int, output: Path, root: Path, artifacts: list[Any], workers: int
 ) -> None:
     """Fetch the measured dataset; an absent artifact is a failing gate, not a smaller one."""
-    if type(workers) is not int or workers not in (1, 2):
+    if type(workers) is not int or not 1 <= workers <= COVERAGE_WORKERS_MAX:
         raise ValueError("Invalid Python coverage worker count")
     artifact, inventory = select_coverage_artifact(artifacts)
     artifact_id = artifact["id"]

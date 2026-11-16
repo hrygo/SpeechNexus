@@ -249,7 +249,9 @@ def test_integration_evidence_uses_bounded_same_run_cli_with_read_only_access() 
         "CI_RUN_ID": "${{ github.run_id }}",
     }
     assert '--repository "$CI_REPOSITORY" --run-id "$CI_RUN_ID"' in step["run"]
-    assert '--count 12 --coverage-workers 4 --output "$RUNNER_TEMP/integration-shards"' in step["run"]
+    assert (
+        '--count 12 --coverage-workers 4 --output "$RUNNER_TEMP/integration-shards"' in step["run"]
+    )
     assert '--coverage-output "$RUNNER_TEMP/coverage-evidence"' in step["run"]
     assert not any("actions/download-artifact@" in s.get("uses", "") for s in job["steps"])
     assert "if" not in step and "continue-on-error" not in step

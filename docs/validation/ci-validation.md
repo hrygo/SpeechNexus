@@ -515,7 +515,7 @@ uv run python scripts/dev-env/python-coverage.py combine \
 
 - `INTEGRATION_SHARD_COUNT`（`ci-routing.py`）↔ 矩阵 `shard`、`max-parallel`、显示名、`integration_plan` 的 12 组输出、`plan`/下载/`check`/`combine` 的 `--count` 与探测器的 `--shard-count`；`tests/ci/test_ci_routing.py` 钉住常量与工作流参数，`tests/unit/test_integration_shards.py` 与 `tests/contract/test_ci_workflow.py` 钉住矩阵与计数。
 - `SHARD_WORKERS_DEFAULT`/`SHARD_WORKERS_MAX`（`integration-shards.py`）↔ `workbench-pg-probe.py` 的 `INTEGRATION_SHARD_WORKERS` 与 `--shard-workers` ↔ 工作流的 `--shard-workers 2`。
-- `PYTHON_COVERAGE_WORKERS_MAX`（`python-coverage.py`）↔ CLI `choices` ↔ `workbench-pg-probe.py` 的 `coverage_count` 上限 ↔ 工作流的 `--workers 4`；`tests/ci/test_ci_inspection_retirement.py` 钉住工作流里的 worker 数。
+- `PYTHON_COVERAGE_WORKERS_MAX`（`python-coverage.py`）↔ CLI `choices` ↔ `workbench-pg-probe.py` 的 `coverage_count` 上限 ↔ `download-integration-evidence.py` 的 `COVERAGE_WORKERS_MAX` 与门禁的 `--coverage-workers` ↔ 工作流的 `--workers 4`；`tests/ci/test_ci_inspection_retirement.py` 与 `tests/contract/test_ci_workflow.py` 分别钉住工作流里的 worker 数与下载参数。
 - `guards` 作业 ↔ `required_checks` 的 `needs`、`GUARDS_RESULT` 环境变量与无条件校验；`tests/contract/test_ci_workflow.py` 与 `tests/ci/test_node_controller_image_ci.py` 各有一组真值表。
 - 分片内并发的前提是唯一 schema/数据库名（`tests/integration/AGENTS.md`）与固定桶名的竞态处理（`tests/support/minio_bucket.py`）；新增共用固定名资源的模块必须走同一约定，否则只能在该片降为单 worker。
 

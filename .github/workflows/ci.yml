@@ -668,16 +668,6 @@ jobs:
         if: ${{ needs.integration_plan.outputs[format('browser_{0}', matrix.shard)] == 'true' }}
         run: pnpm build
 
-      - name: Restore the Playwright browser package
-        # The headless shell costs about 22 s to fetch on every Web lane. The key
-        # binds the lockfile, so a Playwright upgrade misses the cache instead of
-        # reusing a stale browser; a miss only pays the original download.
-        if: ${{ needs.integration_plan.outputs[format('browser_{0}', matrix.shard)] == 'true' }}
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-
       - name: Install Chromium for browser consumers
         if: ${{ needs.integration_plan.outputs[format('browser_{0}', matrix.shard)] == 'true' }}
         run: python3 scripts/dev-env/prepare-ci-browser.py
@@ -1140,12 +1130,6 @@ jobs:
       # which is the only input an image build has.
       - name: Verify the Web image build context is complete
         run: pnpm verify:web-image
-
-      - name: Restore the Playwright browser package
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install Chromium headless shell for accessibility checks
         run: python3 scripts/dev-env/prepare-ci-browser.py

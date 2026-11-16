@@ -308,3 +308,57 @@ git status --porcelain                   # → 空
 3. （建议，同轮可做）`backend/src/speechnexus_backend/app.py:727-734`：把注释限定为守卫真正
    覆盖的范围（同一 `method+template`、顺序无关），不要让人以为「顺序吞并」已被守住；
    若要真守住，加一条「真实路由的任一具体路径不得被 `is_unimplemented_path` 命中」的断言。
+
+## 第二轮：返修核实（`f73be9e8`）
+
+返修 head `f73be9e8`（父 `bd9d7d0e`，单 commit `fix: 让「字面路由先于模板」成为装配期断言并去掉第二份手写数字`），
+以 squash 合入 `eb894b7b`（基 `25c96360`）。核对 `git diff f73be9e8 eb894b7b -- backend tests/contract
+tests/ci/test_doc_statements.py docs/operations/contract-conformance-audit.md docs/prd.md contracts packages
+tests/unit scripts` 为**空**：返修内容即合入内容；合入树与 `f73be9e8` 的其余差异只来自主干 #871 的三个文件
+（compose 文档与用例）。本节是增量记录，不修改第 1 节 `bd9d7d0e` 时点的结论。
+
+### 逐条核对（我自己验的，不引用作者与主审的转述）
+
+| # | 我上一轮的发现 | 返修做了什么 | 我的核实 |
+| --- | --- | --- | --- |
+| 1 | P1：`test_the_report_path_is_declared_and_not_shadowed_by_the_identifier_route` 用「`Identifier` 排除 `-`」论证两条路由不会混淆，既错又掩盖了注册顺序 | 删该测试，换成三条：契约 + 占位表断言；运行时两码对照；`{job_id}` 先注册的控制组 | `test_job_admission_readiness.py` 19→21 passed，三条全绿；注释已写明 `Identifier` 允许 `-`、真实 job id 是 `job-<hex>`、「只能由 Starlette 先到达哪条路由」决定；控制组断言 `assert_placeholder_ownership` 抛出含 `answers /v1/nexus/jobs/admission-readiness` 的消息，实测成立 |
+| 2 | P2：`assert_placeholder_ownership` 对跨 template 的路径重叠沉默，装配注释把能力说大了 | 新增 `sample_path`/`declared_methods` 与 `shadowed` 推导：按注册顺序遍历**全部**路由，用每条路由自己的模板填出具体路径，方法相交且被更早注册的路由命中就失败；注释同步收窄 | **是通用的**：`unimplemented.py` 里 `admission` 只出现在占位表项（`:89`）与 docstring 示例（`:222`），没有 operationId/路径分支。我另造一对与 #845 无关的真实路由——`/v1/nexus/widgets/{widget_id}` 先注册 + `/v1/nexus/widgets/plan-literal` 后注册 → 抛「an earlier route must not answer the requests a later route serves」；反序 → 沉默。检查对「真实↔真实」同样生效，不是给这一条打的特例 |
+| 3 | （同上，红侧）顺序被测试钉住，但原守卫只覆盖同 template | 移除占位条目时装配期就要失败 | 我做了两个方向的变异（临时改 `app.py`，按字节复原，`git status` 收尾为空，`__pycache__` 清理）：**B1** 把 `include_router(create_unimplemented_router())` 挪到 `return app` 之前（即守卫生效之后）→ `create_app` 直接 `RuntimeError: real routes must not share a method+template with a placeholder; placeholders must be the only owner: GET /v1/nexus/deletions/{deletion_id}, GET /v1/nexus/jobs/admission-readiness, …`（缺失的占位全部列出，共 10 条），进程退出码 1；**B2** 挪到全部 feature router 之后、守卫之前 → `RuntimeError: an earlier route must not answer the requests a later route serves; register the more specific template first and remove a placeholder once its operation ships: /v1/nexus/jobs/{job_id} answers /v1/nexus/jobs/admission-readiness`，退出码 1。两种挪法都在**装配期**炸（`create_app`），不靠测试兜；B1 命中的是「占位未进表」分支，B2 才是新的有序重叠分支 |
+| 4 | P1：审计文档 `:381` 说 10、`:383-384` 与 `:424` 说 9，实测 6+4 | 两处数字全删，改为指向 `KNOWN_UNIMPLEMENTED_OPERATIONS` 与契约 | `grep -nE "(9|10) 条"` 只剩 `:346`（`createVoiceDesign`…`publishVoiceDraftRevision` 这 9 条 **#473 批次名单**）与 `:39/:41` 的审计基线路径/操作计数；当前占位条数一处不剩。`grep "当前[^。]*条"` 只剩 `:381`「§6.1 常量里的每一条」与 `:425` 带【计数为 #473 交付时口径】前缀那句——两处都是指向常量的表述。`:358`（§6.1）原本的「成员、条数与原因以该常量为准，本文不复制」现与 `:383`、`:425` 口径一致 |
+| 5 | P3：占位期 `job_unavailable` 分支不可观测 | 写进审计文档 §6.2 | 原文现为「占位期两种装配态实测都答占位错误，所以 `job_unavailable` 这一分支要等实现装配后才可观测」；与本轮复测一致：Job 面装配时字面路径 `503 operation_not_implemented`、真实 job id `404 job_not_found`；`jobs=None` 时字面路径仍 `503 operation_not_implemented`、job id 形路径 `503 job_unavailable` |
+
+### 我上一轮四条「必须修」的状态
+
+| 上一轮条目 | 状态 |
+| --- | --- |
+| P1 测试：错误的 `Identifier` 论证 + 未表达的真实约束 | **已修**。测试被替换为契约断言 + 运行时两码对照 + 控制组，且约束写进 `app.py:731-737` 注释与 `assert_placeholder_ownership` docstring |
+| P1 文档：§6.2 与 `:424` 的计数自相矛盾 | **已修**。当前占位条数不再手写，三处统一指向门禁常量与契约 |
+| P2 注释：守卫能力被说大 | **已修且加强**。不是只改注释：守卫升级为通用有序重叠检测，两个方向各有一条测试；注释收窄到真正覆盖的宽度 |
+| P3 可选：占位期 503 语义 | **已修**（文档写明，见上表第 5 行） |
+
+### 仍未解决的（`#863` 的输入，写清交给谁）
+
+1. **报告实现未装配**：`GET /v1/nexus/jobs/admission-readiness` 在两种装配态都返回 `503 operation_not_implemented`；树内没有生产者——`job_admission_readiness` 的引用只有模块自身 docstring、`job_errors.py` 的注释与测试。
+2. **轮询者随 `#863` 落地**：`eb894b7b` 树内没有 `admission_watch.py`，`deploy/compose.yaml` 也没有 admission-watch 服务（#857 未合入）；全树提到该路由的 12 个文件里没有消费者。因此占位期没有任何客户端会因 503 而坏，报告与轮询者要一起交付。
+3. **占位期没有 `200` 生产响应**：契约声明 `200` + `AdmissionReadiness`，运行时尚无任何路径返回 200（本轮在装配/未装配两种状态下复测）。
+
+三条都交给 **#863**（OPEN：「准入可观察面 B：选择层与准入层收敛成一个函数，报告走同一路径（拆自 #845）」）。
+另记一条簿记：拆出的 A 片 **#862** 在 PR 合入后仍是 OPEN，不影响本 PR 的代码结论，但应在 `#863` 收口时一并核对。
+
+### 残留问题的变化
+
+* **「闭包只覆盖 `createJob` 枚举过的状态」——没有变化。** `DECLARED_CREATE_STATUSES = (422, 429, 500, 503)` 在返修中未改；`createJob` 的 400/401/403/404/405/409/413 仍是共享响应、码不可枚举，挂在这些状态上的部署态码依旧不可见。
+* 返修引入了两个新的装配期性质（记录、不阻断）：有序重叠检查对**整张表**生效，装配期是 O(n²) 的有序配对（初版实测 72 条路由、返修未增删路由，即约 2.5k 次模板匹配，实测无感）；它同时把「真实路由 `method+template` 重复」也变成装配失败（旧实现只查占位对），属收紧——若将来需要一条刻意不可达的别名路由，会被这条挡住，需显式设计。
+
+### 实跑（前后值我自己取）
+
+| 提交 | 范围 | 结果 |
+| --- | --- | --- |
+| `25c96360`（合并前 main） | `tests/contract`+`tests/ci`+`tests/unit/backend` | **7691 passed**，1648 subtests |
+| `eb894b7b`（合并后 main） | 同上 | **7721 passed**，1648 subtests |
+| `f73be9e8` / `eb894b7b` | `test_job_admission_readiness.py`+`tests/ci` | **478 / 480 passed**，1642 subtests |
+
+* `+30` = 初版 `+26`（19 条新用例 + 6 条生成绑定 + 1 条占位用例）+ 返修 `+4`（readiness 文件 −1+3、`test_unimplemented_operations.py` +2）；两次全绿、0 failed。
+* 主审的 478 与我在合并后测得的 480 差 2，来自主干 #871 在 `tests/ci/test_compose_minimal_role_provisioning.py` 新增的 2 条用例（`git diff f73be9e8 eb894b7b` 该文件 `+2` 个 `def test_`），不是本 PR 成分。
+* 文件级：`test_job_admission_readiness.py` 21 passed（19→21）、`test_unimplemented_operations.py` 39 passed（37→39），两文件合计 60 passed。
+* 本轮变异只在 `/private/tmp/sn872fix` 的临时检出内进行，逐项按字节复原并清理 `__pycache__`；本分支相对 `origin/main` 仍只有这一份报告文件。

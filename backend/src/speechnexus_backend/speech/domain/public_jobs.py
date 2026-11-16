@@ -54,7 +54,7 @@ _ALLOWED_TRANSITIONS: dict[JobState, frozenset[JobState]] = {
     "cancelled": frozenset(),
     "expired": frozenset(),
 }
-_CANCELLATION_UNCONFIRMED = "cancellation_unconfirmed"
+CANCELLATION_UNCONFIRMED = "cancellation_unconfirmed"
 _IDENTIFIER = re.compile(r"[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]\Z")
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _TIMESTAMP = 253_402_300_799_999_999
@@ -308,7 +308,7 @@ def cleanup_state(job: PublicJob) -> CleanupState:
         return "pending"
     if job.state == "cancelled" or job.state == "succeeded":
         return "complete"
-    if job.state == "failed" and job.error_code == _CANCELLATION_UNCONFIRMED:
+    if job.state == "failed" and job.error_code == CANCELLATION_UNCONFIRMED:
         return "quarantined"
     return "not_required"
 
@@ -466,4 +466,4 @@ class JobArtifactFact:
 
 def retryable(job: PublicJob) -> bool:
     """Only a frozen terminal Job may be replaced; a quarantined failure stays held."""
-    return job.state in RETRYABLE_STATES and job.error_code != _CANCELLATION_UNCONFIRMED
+    return job.state in RETRYABLE_STATES and job.error_code != CANCELLATION_UNCONFIRMED

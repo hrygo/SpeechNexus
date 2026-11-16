@@ -262,10 +262,152 @@ request ID，不覆盖他人事实。
 记录 `attempts`、`next_check_at_us`、`last_outcome` 和 `settled_at_us`。worker 以短事务
 `INSERT … ON CONFLICT DO UPDATE … WHERE next_check_at_us <= now` 领取到期行，
 因此同一行不会被两个 worker 同时领取；处理在事务外进行，结果再按 job 条件写回。
-退避从 1 秒起翻倍并封顶，`max_attempts` 用尽后写 `exhausted`，不再无限重试；
+退避从 1 秒起翻倍并封顶；`exhausted` 是该账本唯一的「不再领取」标记，只有确认
+受理已被判定为终态时才写入，它表示判定已落库，不再表示 worker 放弃重试。
 进程重启从账本恢复，已 `settled` 的行不再领取。`CancellationReconciliationWorker` 按有界 interval 驱动 `run_once`；默认只领取受理
 超过 5 秒的围栏，避免与受理侧的即时停止重复竞争。未注入 `on_error` 时存储异常向上
 抛出，注入后记录并继续下一轮，便于组合根显式决定告警与退出策略。
+
+### 取消失败的终态判定
+
+受理过的取消必须**在实现允许的范围内**尽量在界内到达一个明确的算力结论。判定有两条
+独立边界，任一到达即触发：受理时间加
+`SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_CONFIRM_TIMEOUT_SECONDS`（默认 300 秒，
+有界 1–3600），或 `max_attempts` 用尽。越过边界后不再把「继续向网关提问」当作收敛
+手段——有界重试证明不了尚未证明的停止——但也不放弃受阻的受理，而是每次领取都尝试
+一次终态判定；判定不能完成时继续用有界退避重试该行，并把阻塞原因留在可读面上。
+
+**这个目标有一类已知例外，实现确实会停在 `cancelling`**：执行已经是 `succeeded`/`aborted`
+等终态、但拿不到停止证据时，领域规则拒绝隔离一个已完成的执行，Job 因此停在 `cancelling`、
+租约停在 `reserved`、`held_slots` 不归零，账本 `attempts` 饱和在 64（见本节末「执行已
+`succeeded` 而后到的取消」）。公开状态机不允许 `cancelling → succeeded`，所以这条路径没有
+自动收口，只能等 #338 的停止确认协议或操作员处置。这与「界内收口」的目标冲突，属于**已知
+限制而非保证**，已列入发布说明候选。
+
+判定分两步，顺序不可交换：
+
+1. 逐条隔离租约：按 operation 取出全部租约及其执行事实，对每条尚未 `quarantined`/
+   `released` 的租约调用 `LeaseService.quarantine`，`reason_code=cancellation_unconfirmed`，
+   `observed_at_us` 取数据库时钟。领域规则只接受执行事实已是
+   `unknown_quarantined`/`quarantined` 的租约，其余按原状拒绝。**每条都会尝试**，
+   一条被拒不会掩盖其它租约；被拒的租约连同 `lease_state`、`execution_state` 和拒绝
+   原因一起记录，判定结果因此是「已隔离的租约 + 仍未落地的租约」。
+2. 只有**全部**租约都落到确定态（`quarantined`，或本来就 `released`）时，才把 Job 推进到
+   `failed`，`error_code=cancellation_unconfirmed`。`cleanup_state` 因此汇总为
+   `quarantined`：公开读模型显示 `failed/cancellation_unconfirmed`，再次取消与自动重试
+   都被拒绝为 `409 execution_cleanup_pending`（`retryable` 为假、不带 `Retry-After`），
+   不再回报「正在取消」。
+
+只要有租约没落地，Job 就保持在 `cancelling`，不做终态判定：此时读模型汇报的
+`cleanup_state=pending` 与「容量仍被持有」是同一件事，不会出现「对外说已隔离、对内还
+占着槽位」的分裂。冻结的判定不会因为之后又尝试而改变，已写入的判定也不会被改写。
+
+容量的记账口径容易被读错，这里说清三类计数各自移动一次的含义：
+
+- `engine_instances.held_slots` / `quarantined_slots` 与
+  `host_nodes.held_unified_physical_memory_bytes` 按**租约**移动：每隔离一条租约，
+  它的 `reserved_slots` 从 held 桶移到 quarantined 桶，两条租约在同一 attempt 上各自
+  移动一次。
+- `workspace_quotas.held_attempts` / `quarantined_attempts` 按**准入 attempt**移动，
+  且只移动一次：只有该 attempt 首次隔离（`quota_state` 由 `held` 变 `quarantined`）时
+  `held_attempts` 减一、`quarantined_attempts` 加一；同一 attempt 的后续租约隔离不再
+  改动这两个计数。看到 `held_attempts` 只减一而 `quarantined_slots` 加了二，是这一口径，
+  不是漏记。
+- 容量仍然不可用，只是不再被记成「某个执行正持有它」。这与「取消后等租约自然过期」
+  不同：过期后仍未知的租约不得回归可用容量，只能经 `QuarantineReleaseService` 与
+  `/v1/nexus/...` 的操作员证词（`operator_verified_instance_terminated`）显式解除隔离，
+  或等网关补上可证明的停止事实后走既有释放路径。
+
+判定幂等：Job 已是 `cancelled` 时只补做隔离并返回成功，不把 `cancelled` 倒改写；
+Job 已是本错误码的 `failed` 时只补做隔离；他人写入的终态不覆盖，其租约仍按同一规则
+隔离，避免无人记账的占用。
+
+执行已 `succeeded` 而后到的取消仍按同一判定尝试收口，但领域规则会拒绝隔离一个已完成的
+执行，因此这类受理会停在 `cancelling` 并反复进入「无法隔离」的可见面（见下一节），
+直到 #338 的停止确认协议给出可证明的收口；判定路径从不把 `succeeded` 改写成 `cancelled`。
+实测当前行为：Job 恒为 `cancelling`、租约恒为 `reserved`、`held_slots` 不归零、账本
+`attempts` 涨到 64 后饱和并继续以最大退避领取；数据库触发器拒绝 `cancelling → succeeded`，
+所以不存在「自动变成成功」的分支。竞争方案见
+[`docs/plans/2026-11-16-succeeded-then-cancelled.md`](../plans/2026-11-16-succeeded-then-cancelled.md)，
+本切片不改变状态机或触发器。
+
+#### 隔离不了的时候：可见面与处置
+
+「隔离不了」不能等于「静默继续占用」。本切片给出的可见面分三层，全部只读：
+
+1. **就绪与诊断 detail**：`create_app` 装配的 `CancellationDebtProbe`
+   （名字 `cancellation_debt`）在每次 `/readyz` 与
+   `GET /v1/nexus/admin/diagnostics` 中报告「已受理但仍在持有容量的取消」。判定标准是：
+   围栏已受理、账本未 `settled`（或根本没有账本行，即 worker 从未运行过）、Job 仍是
+   `cancelling`、且受理时间距数据库当前时间超过宽限（默认 900 秒，大于默认确认窗口加退避）。
+   它**不**改变聚合状态：`/readyz` 是 `deploy/compose.yaml` 的健康检查，一个 Job 占着
+   它无法归还的槽位，不应该让整个 API 退出服务。告警口径因此是这个固定前缀，
+   不是 HTTP 状态：`cancellation_debt:`。
+
+   探针**永远报告 `ok`**：detail 只承载观察，不参与聚合就绪判定。`/readyz` 是
+   `deploy/compose.yaml` 的健康检查，`admin`/`workbench` 又都 `depends_on: service_healthy`，
+   所以一个诊断让 API 变 503 就等于整套部署起不来——权限不足、连接失败、超时、relation 缺失
+   都只体现在 detail 里。
+
+   它**不**使用 API 自己的 DSN，而是读取可选的专用只读 DSN
+   `SPEECHNEXUS_READINESS_CANCELLATION_DSN`：为填充一个诊断就去给 `sn_api` 加取消账本、
+   围栏、租约或执行表的 SELECT，是拿安全边界换一个字符串。没配这个 DSN 时 detail 是
+   `cancellation_debt: unavailable (not configured)`，其余一切照常。
+
+   detail 的形态对应探针能读到多少：
+
+   | 形态 | 何时出现 |
+   |---|---|
+   | `cancellation_debt: N … job-… -> lease-…(lease=reserved, execution=executing)` | DSN 指向被授予 `cancellation_debt_reader_grants`（或更宽）的只读身份 |
+   | `cancellation_debt: N … job-… -> lease-unread [lease detail unavailable: permission]` | 该身份能读 Job、围栏与账本，但读不到租约/执行表 |
+   | `cancellation_debt: unavailable (not configured)` | 未配置专用 DSN（默认部署） |
+   | `cancellation_debt: unavailable (permission｜relation｜connection｜timeout｜error)` | 探针什么都读不到；分类保证真实故障仍然可见，而不是被吞掉 |
+
+   完整的 `Job → 租约 → 两侧状态` 明细需要一个单独的只读身份，最小授权集合由
+   `cancellation_debt_reader_grants(schema, role)` 生成（列级：围栏的 `job_id/accepted_at_us`、
+   账本的 `job_id/settled_at_us`、`speech_jobs.job_id/state`、
+   `admission_leases.lease_id/operation_id/lease_state`、`submit_intents.lease_id/execution_state`；
+   不含规范请求正文、不含对账写权限）。把这个角色的 DSN 配进
+   `SPEECHNEXUS_READINESS_CANCELLATION_DSN` 即可；不配就只有上面第二/第四种形态，
+   逐条明细改用本节下面的只读钻取查询（由迁移/运维身份执行）。
+
+   探针复用一条连接（`application_name=speechnexus-readiness-debt`），不随每次 `/readyz`
+   轮询新建会话；查询后回滚以保持会话空闲。
+2. **worker 日志**：每次判定被阻塞时，worker 对 stderr 输出一条
+   `cancellation acceptance holds capacity but cannot be isolated`，带 `job_id` 和阻塞
+   明细（哪条租约、租约状态、执行状态、拒绝原因）。
+3. **文档钻取查询**：需要逐行核对时用下面的只读查询，它把 Job、租约和两侧状态连起来：
+
+```sql
+SELECT j.job_id, j.state AS job_state, r.attempts, r.last_outcome,
+       l.lease_id, l.lease_state, l.cleanup_state AS lease_cleanup_state,
+       i.execution_state, i.cleanup_state AS execution_cleanup_state
+FROM speech_job_cancellation_fences AS f
+JOIN speech_jobs AS j ON j.job_id = f.job_id
+LEFT JOIN speech_job_cancellation_reconciliations AS r ON r.job_id = f.job_id
+LEFT JOIN admission_leases AS l
+       ON l.operation_id = f.job_id AND l.lease_state <> 'released'
+LEFT JOIN submit_intents AS i ON i.lease_id = l.lease_id
+WHERE j.state = 'cancelling'
+  AND (r.job_id IS NULL OR r.settled_at_us IS NULL)
+ORDER BY f.accepted_at_us, f.job_id, l.lease_id;
+```
+
+对应的正确处置只有两条，都不需要手工写 SQL 改表：
+
+- **`lease_state=reserved`/`executing` 且执行仍活跃**（`execution_state` 属于
+  `submitting`/`executing`/`stopping`）：走网关的停止入口——对固定 intent 调
+  `/internal/v1/executions/{submit_intent_id}/abort`，实例层面用
+  `/internal/v1/instances/{instance_id}/drain`。网关据此把执行事实写成
+  `unknown_quarantined`/`quarantined`；下一次领取（受退避上限约束）就会隔离该租约、
+  满足「全部落地」条件并把 Job 收口。这正是「外部事实到达后自动完成」的路，
+  也是为什么不能靠改 `state` 或改租约来「释放」容量。
+- **执行已 `succeeded`**：没有可证明的停止，本切片不做收口，保留可见面等 #338；不要
+  手工把 Job 改成 `failed`，也不要手工释放租约。
+
+`quarantine_release` 的 `require_releasable` 契约属于操作员证词子系统，本切片不修改它；
+上面的处置不依赖放宽该契约。自动扫描与告警规则仍归 #528，本切片只保证「占用不会无声」：
+容量账目如实、Job 状态如实、就绪/诊断有 detail、日志有明细、文档有钻取与处置。
 
 只有两类事实允许推进 `cancelled`：网关回报上述“没有执行”终态，或既有停止路径
 验证到 `aborted`、`cleanup_state=complete` 且证据在 `engine_abort_ack`、
@@ -307,7 +449,8 @@ worker 角色使用 `public_job_grants` 与 `cancellation_reconciliation_grants`
    `GatewayCancellationConfirmer` 和 `CancellationReconciliationWorker` 装配在一起；
    `settle_cancelled` 走 `PublicJobs` 的 `status_version` 条件更新并随后归还租约，活跃
    执行通过 `JobCancellationService` + `GatewayJobCancellationStopper` 注入一次有界停止
-   尝试。
+   尝试；确认窗口到期的受理由 `UnconfirmedCancellationSettlement` 隔离租约并把 Job 落
+   `failed/cancellation_unconfirmed`（见上一节）。
 3. 派发器在提交点前观察到 Job 已是 `cancelling` 时写入 not-submitted 观察并返回
    `claim_lost`；收到 `gateway_barrier_fenced` 且 Job 仍是 `cancelling` 时返回 `skipped`，
    不调用 `_fail`。两种情况都由对账 worker 以网关“没有执行”事实结算为 `cancelled`。
@@ -325,8 +468,8 @@ worker 角色使用 `public_job_grants` 与 `cancellation_reconciliation_grants`
 `job_cancellation_worker.py` 是独立进程入口，默认关闭：
 `SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_ENABLED=false` 时只打印关闭状态，
 不创建连接池、不读取网关；设置为 `true` 时才要求数据库 URL/schema、网关 URL 和
-credential 齐全。间隔、批量、最大尝试、最小受理年龄、租约和事务超时分别由
-`SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_{INTERVAL_SECONDS,BATCH_SIZE,MAX_ATTEMPTS,MIN_AGE_SECONDS,LEASE_SECONDS,TRANSACTION_TIMEOUT_SECONDS}`
+credential 齐全。间隔、批量、最大尝试、最小受理年龄、确认窗口、租约和事务超时分别由
+`SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_{INTERVAL_SECONDS,BATCH_SIZE,MAX_ATTEMPTS,MIN_AGE_SECONDS,CONFIRM_TIMEOUT_SECONDS,LEASE_SECONDS,TRANSACTION_TIMEOUT_SECONDS}`
 控制，均有上界。`--once` 只跑一轮，便于部署探针；常驻模式由 SIGINT/SIGTERM 停止。
 
 ```bash
@@ -334,8 +477,11 @@ SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_ENABLED=true SPEECHNEXUS_DATABASE_UR
 ```
 
 worker 与派发器共享同一条 gateway 契约和停止服务；它不会创建新 execution，也不会把
-单独的 404、传输失败或未验证的 abort 当作停止。worker 角色需要 `public_job_grants`
-（读取 Job/submission、cancellation receipt 并条件更新 `state/status_version`）与
+单独的 404、传输失败或未验证的 abort 当作停止。未开启该 worker 的部署没有取消结论的
+推进者：受理后的 `cancelling` 会一直保留，租约继续计入 `held_slots`。参考部署
+`deploy/compose.yaml` 目前不包含该服务，需要按本节命令单独运行并确认开关为 `true`。
+worker 角色需要 `public_job_grants`（读取 Job/submission、cancellation receipt
+并条件更新 `state/status_version`）与
 `cancellation_reconciliation_grants`（围栏列 SELECT、账本读写、not-submitted SELECT）；
 两者都必须在升级到 `0035` 之后应用。启动探针同时检查 `speech_jobs`、
 `speech_job_submissions`、`speech_job_cancellations`、围栏、对账账本和 not-submitted 表，

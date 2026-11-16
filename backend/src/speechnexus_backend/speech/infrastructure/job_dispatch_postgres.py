@@ -10,7 +10,12 @@ from typing import Any, cast
 import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
-from speechnexus_backend.speech.application.leases import LeaseService
+from speechnexus_backend.speech.application.leases import (
+    LeaseIsolation,
+    LeaseIsolationGap,
+    LeaseService,
+    LeaseSnapshot,
+)
 from speechnexus_backend.speech.domain.job_dispatch import (
     DISPATCHABLE_JOB_KIND_UNION,
     DISPATCHABLE_JOB_KINDS,
@@ -24,6 +29,7 @@ from speechnexus_backend.speech.domain.job_dispatch import (
     identifier,
 )
 from speechnexus_backend.speech.domain.lease_release import ReleaseLease
+from speechnexus_backend.speech.domain.leases import QuarantineLease
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
     NOT_SUBMITTED_TABLE,
 )
@@ -531,6 +537,110 @@ class PostgresLeaseSettler:
             # whole attempt for reconciliation instead of releasing one stage.
             return ""
         return str(rows[0]["lease_id"])
+
+    def lease_ids_sync(self, operation_id: str) -> tuple[str, ...]:
+        """Every admission lease of one Job, in a stable order."""
+        return tuple(lease.lease_id for lease in self.leases_sync(operation_id))
+
+    def leases_sync(self, operation_id: str) -> tuple[LeaseSnapshot, ...]:
+        """Every admission lease of one Job with the gateway's execution facts."""
+        identifier(operation_id)
+        try:
+            with self._pool.connection(timeout=self._timeout) as connection:
+                connection.execute("SET TRANSACTION READ ONLY")
+                rows = connection.execute(
+                    "SELECT l.lease_id, l.lease_state, l.cleanup_state, l.reserved_slots, "
+                    "s.execution_state, s.cleanup_state AS execution_cleanup_state "
+                    "FROM admission_leases AS l "
+                    "LEFT JOIN submit_intents AS s ON s.lease_id = l.lease_id "
+                    "WHERE l.operation_id = %s "
+                    "ORDER BY l.lease_id",
+                    (operation_id,),
+                ).fetchall()
+        except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
+            raise DispatchUnavailableError("Lease settlement storage is unavailable") from None
+        return tuple(
+            LeaseSnapshot(
+                lease_id=str(row["lease_id"]),
+                lease_state=str(row["lease_state"]),
+                cleanup_state=str(row["cleanup_state"]),
+                reserved_slots=int(row["reserved_slots"]),
+                execution_state=(
+                    None if row["execution_state"] is None else str(row["execution_state"])
+                ),
+                execution_cleanup_state=(
+                    None
+                    if row["execution_cleanup_state"] is None
+                    else str(row["execution_cleanup_state"])
+                ),
+            )
+            for row in rows
+        )
+
+    def clock_sync(self) -> int:
+        """Read the database clock used to validate an observed timestamp."""
+        try:
+            with self._pool.connection(timeout=self._timeout) as connection:
+                connection.execute("SET TRANSACTION READ ONLY")
+                row = connection.execute(
+                    "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) "
+                    "AS now_us"
+                ).fetchone()
+        except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
+            raise DispatchUnavailableError("Lease settlement storage is unavailable") from None
+        if row is None:
+            raise DispatchUnavailableError("Lease settlement storage returned no clock")
+        return int(row["now_us"])
+
+    def isolate_sync(self, operation_id: str, *, reason_code: str) -> LeaseIsolation | None:
+        """Move every lease of one Job into the quarantined bucket, or say why not.
+
+        Quarantine moves reserved slots and the attempt quota from ``held`` to
+        ``quarantined``: the capacity stays unavailable, but it is no longer
+        reported as held by an execution that is still running. The domain rule
+        decides whether the persisted execution facts authorize that, so a lease
+        whose execution never became ``unknown_quarantined``/``quarantined`` is
+        refused and keeps exactly what its owner recorded.
+
+        Every lease is attempted: one refused lease must not hide the others, or
+        the Job would be judged against a partially isolated operation. ``None``
+        means the leases could not even be read, which is a retryable storage
+        failure rather than a per-lease answer.
+        """
+        try:
+            leases, now_us = self.leases_sync(operation_id), self.clock_sync()
+        except DispatchUnavailableError:
+            return None
+        quarantined: list[str] = []
+        gaps: list[LeaseIsolationGap] = []
+        for lease in leases:
+            if lease.lease_state == "quarantined":
+                quarantined.append(lease.lease_id)
+                continue
+            if lease.lease_state == "released":
+                continue  # Capacity is already back; nothing to isolate.
+            result = self._leases.quarantine(QuarantineLease(lease.lease_id, reason_code, now_us))
+            if result.fact is not None and result.fact.lease_state == "quarantined":
+                quarantined.append(lease.lease_id)
+                continue
+            gaps.append(
+                LeaseIsolationGap(
+                    lease_id=lease.lease_id,
+                    lease_state=lease.lease_state,
+                    cleanup_state=lease.cleanup_state,
+                    execution_state=lease.execution_state,
+                    execution_cleanup_state=lease.execution_cleanup_state,
+                    reserved_slots=lease.reserved_slots,
+                    reason=(
+                        "lease_storage_unavailable"
+                        if result.outcome == "unknown"
+                        else (result.error_code or "reconciliation_required")
+                    ),
+                )
+            )
+        return LeaseIsolation(
+            operation_id=operation_id, quarantined=tuple(quarantined), gaps=tuple(gaps)
+        )
 
     def _release(self, operation_id: str) -> bool:
         lease_id = self._lease_id(operation_id)

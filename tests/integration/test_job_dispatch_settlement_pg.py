@@ -30,7 +30,10 @@ from tests.integration.test_public_job_atomic_admission_pg import (
     _store,
 )
 
-from speechnexus_backend.job_cancellation_runtime import _PublicJobsSettlement
+from speechnexus_backend.job_cancellation_runtime import (
+    UnconfirmedCancellationSettlement,
+    _PublicJobsSettlement,
+)
 from speechnexus_backend.job_dispatch_runtime import (
     JobDispatchSettings,
     build_dispatch_dependencies,
@@ -788,6 +791,7 @@ async def test_cancellation_settlement_returns_the_admission_lease(
     reconciler = JobCancellationReconciler(
         store=PostgresCancellationReconciliationStore(pool),
         confirmer=GatewayCancellationConfirmer(cast(Any, object()), settlement),
+        unconfirmed=UnconfirmedCancellationSettlement(jobs, capacity),
         min_age_seconds=0,
         max_attempts=3,
     )

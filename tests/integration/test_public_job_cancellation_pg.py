@@ -21,6 +21,7 @@ from speechnexus_backend.job_cancellation_runtime import (
 from speechnexus_backend.speech.application.job_cancellation import JobCancellationService
 from speechnexus_backend.speech.application.job_cancellation_reconciliation import (
     JobCancellationReconciler,
+    Judgment,
 )
 from speechnexus_backend.speech.application.job_dispatcher import JobDispatcher
 from speechnexus_backend.speech.application.public_jobs import (
@@ -55,6 +56,13 @@ from speechnexus_backend.speech.infrastructure.job_dispatch_postgres import (
 pytestmark = pytest.mark.integration
 CANCEL = PREFIX + "/{job_id}/cancellations"
 KEY = "synthetic-cancel-key-1"
+
+
+class _NoJudgment:
+    """Stand-in for the terminal judgment: these cases settle or stay pending."""
+
+    def settle(self, job_id: str) -> Judgment:
+        return Judgment(settled=False, outcome="unavailable")
 
 
 def _app(db: JobSandbox, confirmation: Any = None) -> Any:
@@ -362,6 +370,7 @@ async def test_accepted_cancellation_reconciles_from_no_execution_and_restart_co
     reconciler = JobCancellationReconciler(
         store=PostgresCancellationReconciliationStore(jobs_db.pool),
         confirmer=confirmer,
+        unconfirmed=_NoJudgment(),
         min_age_seconds=0,
         max_attempts=3,
     )
@@ -374,6 +383,7 @@ async def test_accepted_cancellation_reconciles_from_no_execution_and_restart_co
     restarted = JobCancellationReconciler(
         store=PostgresCancellationReconciliationStore(jobs_db.pool),
         confirmer=confirmer,
+        unconfirmed=_NoJudgment(),
         min_age_seconds=0,
         max_attempts=3,
     )
@@ -534,6 +544,7 @@ async def test_cancellation_before_submit_converges(
     reconciler = JobCancellationReconciler(
         store=PostgresCancellationReconciliationStore(jobs_db.pool),
         confirmer=GatewayCancellationConfirmer(cast(Any, object()), Settlement()),
+        unconfirmed=_NoJudgment(),
         min_age_seconds=0,
         max_attempts=3,
     )

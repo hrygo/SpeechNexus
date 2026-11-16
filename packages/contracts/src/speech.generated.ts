@@ -3851,15 +3851,16 @@ export interface components {
       };
     };
     /**
-     * @description `execution_cleanup_pending`: the Job is terminal but its original execution
-     *     has not confirmed stop, so it is not reported as cancelled and no capacity
-     *     is released. The cleanup finishes on its own, so `retryable` is true and the
-     *     reply carries `Retry-After`. `idempotency_conflict`: the same key identifies
-     *     another Job cancellation intent.
+     * @description `execution_cleanup_pending`: the Job's original execution has not confirmed
+     *     stop, so capacity is still held and the request is refused. Nothing finishes
+     *     that cleanup on its own, so `retryable` is false and no `Retry-After` is
+     *     returned; the Job body reports the same `retryable: false`, and the
+     *     operator path to an exit is documented in `docs/components/production-jobs.md`.
+     *     `idempotency_conflict`: the same key identifies another Job cancellation
+     *     intent.
      */
     JobCancellationConflict: {
       headers: {
-        "Retry-After"?: components["headers"]["RetryAfter"];
         [name: string]: unknown;
       };
       content: {

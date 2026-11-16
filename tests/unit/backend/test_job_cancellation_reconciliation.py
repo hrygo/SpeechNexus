@@ -12,6 +12,8 @@ from speechnexus_backend.speech.application.job_cancellation_reconciliation impo
     CancellationReconciliationWorker,
     Confirmation,
     JobCancellationReconciler,
+    Judgment,
+    ReconciliationBatch,
 )
 from speechnexus_backend.speech.domain.job_dispatch import submit_intent_identity
 from speechnexus_backend.speech.infrastructure.gateway_cancellation_confirmation import (
@@ -95,18 +97,44 @@ class SequenceConfirmer:
         return Confirmation(cast(Any, outcome))
 
 
+class FakeJudgment:
+    """Records the terminal judgment an unconfirmed acceptance receives."""
+
+    def __init__(
+        self,
+        settled: bool = True,
+        *,
+        outcome: str = "stop_unconfirmed",
+        detail: str = "lease-test reserved (execution_cleanup_pending)",
+    ) -> None:
+        self.settled: bool = settled
+        self.outcome, self.detail = outcome, detail
+        self.calls: list[str] = []
+        self.attempts = 0
+
+    def settle(self, job_id: str) -> Judgment:
+        self.calls.append(job_id)
+        self.attempts += 1
+        if self.settled:
+            return Judgment(settled=True, outcome="exhausted", detail=self.detail)
+        return Judgment(settled=False, outcome=cast(Any, self.outcome), detail=self.detail)
+
+
 def reconciler(
     store: FakeStore,
     confirmer: SequenceConfirmer,
     *,
+    unconfirmed: FakeJudgment | None = None,
     max_attempts: int = 3,
     base_backoff_seconds: float = 1,
     max_backoff_seconds: float = 4,
     batch_size: int = 8,
+    confirm_timeout_seconds: float = 300,
 ) -> JobCancellationReconciler:
     return JobCancellationReconciler(
         store=store,
         confirmer=confirmer,
+        unconfirmed=unconfirmed if unconfirmed is not None else FakeJudgment(),
         max_attempts=max_attempts,
         batch_size=batch_size,
         lease_seconds=10,
@@ -114,6 +142,7 @@ def reconciler(
         max_backoff_seconds=max_backoff_seconds,
         budget_seconds=2,
         min_age_seconds=0,
+        confirm_timeout_seconds=confirm_timeout_seconds,
     )
 
 
@@ -160,10 +189,17 @@ def test_retry_uses_bounded_exponential_backoff() -> None:
     assert store.rows["job-fence-1"]["next_check_at_us"] == NOW + 11_000_000
 
 
-def test_attempt_budget_exhausts_without_infinite_retry() -> None:
+def test_attempt_budget_judges_the_acceptance_instead_of_dropping_it() -> None:
+    """#852: spending the attempt budget used to record `exhausted` and stop.
+
+    Nothing else claims an exhausted row, so the Job kept reporting `cancelling`
+    and its admission lease kept the instance slot reserved forever. The budget
+    now authorizes the terminal judgment instead of replacing it.
+    """
     store = FakeStore([row()])
     confirmer = SequenceConfirmer("pending", "pending", "pending", "pending")
-    worker = reconciler(store, confirmer, max_attempts=2)
+    judgment = FakeJudgment()
+    worker = reconciler(store, confirmer, unconfirmed=judgment, max_attempts=2)
 
     asyncio.run(worker.run_once(now_us=NOW))
     asyncio.run(worker.run_once(now_us=NOW + 1_000_000))
@@ -171,9 +207,86 @@ def test_attempt_budget_exhausts_without_infinite_retry() -> None:
     fourth = asyncio.run(worker.run_once(now_us=NOW + 60_000_000))
 
     assert (third.claimed, third.exhausted) == (1, 1)
+    assert judgment.calls == ["job-fence-1"]
     assert fourth.claimed == 0
     assert store.rows["job-fence-1"]["last_outcome"] == "exhausted"
+    # Two stop attempts, then the judgment ends the row: a settled acceptance
+    # spends no further gateway question.
     assert confirmer.calls == ["job-fence-1", "job-fence-1"]
+
+
+def test_confirmation_window_judges_before_the_attempt_budget_is_spent() -> None:
+    store = FakeStore([row()])
+    confirmer = SequenceConfirmer("pending", "pending", "pending")
+    judgment = FakeJudgment()
+    worker = reconciler(
+        store, confirmer, unconfirmed=judgment, max_attempts=32, confirm_timeout_seconds=2
+    )
+
+    inside = asyncio.run(worker.run_once(now_us=NOW + 1_000_000))
+    assert (inside.claimed, inside.retried, inside.exhausted) == (1, 1, 0)
+    assert judgment.calls == []
+
+    expired = asyncio.run(worker.run_once(now_us=NOW + 2_000_000))
+    assert (expired.claimed, expired.exhausted) == (1, 1)
+    assert judgment.calls == ["job-fence-1"]
+    assert store.rows["job-fence-1"]["last_outcome"] == "exhausted"
+    assert confirmer.calls == ["job-fence-1"]
+
+
+def test_blocked_judgment_keeps_the_fence_claimable_and_the_stop_attempts() -> None:
+    """#852 review P1: capacity that is still held must not be dropped or lied about.
+
+    The judgment cannot isolate the lease because the execution never proved its
+    stop, so the acceptance stays `cancelling`: the row remains claimable, the
+    block is reported per Job, and the confirmer keeps sending the bounded stop
+    attempt instead of the worker walking away from capacity it still holds.
+    """
+    store = FakeStore([row()])
+    confirmer = SequenceConfirmer("pending", "pending", "pending")
+    judgment = FakeJudgment(settled=False, detail="lease-test lease=reserved")
+    worker = reconciler(store, confirmer, unconfirmed=judgment, max_attempts=1)
+
+    blocked = asyncio.run(worker.run_once(now_us=NOW + 400_000_000))
+    again = asyncio.run(worker.run_once(now_us=NOW + 500_000_000))
+
+    assert (blocked.exhausted, blocked.retried, blocked.unavailable) == (0, 1, 0)
+    assert [(item.job_id, item.detail) for item in blocked.blocked] == [
+        ("job-fence-1", "lease-test lease=reserved")
+    ]
+    assert store.rows["job-fence-1"]["last_outcome"] == "stop_unconfirmed"
+    assert store.rows["job-fence-1"]["settled_at_us"] is None
+    # Still claimable: the block is an external condition, not a final answer.
+    assert again.claimed == 1
+    assert judgment.attempts == 2
+    assert confirmer.calls == ["job-fence-1", "job-fence-1"]
+
+
+def test_blocked_judgment_yields_to_a_verified_stop() -> None:
+    """A stop that lands while capacity is blocked still settles the Job."""
+    store = FakeStore([row()])
+    confirmer = SequenceConfirmer("pending", "settled")
+    worker = reconciler(store, confirmer, unconfirmed=FakeJudgment(settled=False), max_attempts=1)
+
+    blocked = asyncio.run(worker.run_once(now_us=NOW + 400_000_000))
+    settled = asyncio.run(worker.run_once(now_us=NOW + 500_000_000))
+
+    assert blocked.blocked
+    assert (settled.settled, settled.exhausted) == (1, 0)
+    assert store.rows["job-fence-1"]["last_outcome"] == "settled"
+
+
+def test_unavailable_judgment_is_retried_as_unavailable() -> None:
+    """A storage failure must not be mistaken for a judgment about capacity."""
+    store = FakeStore([row()])
+    judgment = FakeJudgment(settled=False, outcome="unavailable", detail="lease storage")
+    worker = reconciler(store, SequenceConfirmer("pending"), unconfirmed=judgment, max_attempts=1)
+
+    judged = asyncio.run(worker.run_once(now_us=NOW + 400_000_000))
+
+    assert (judged.exhausted, judged.unavailable, judged.retried) == (0, 1, 1)
+    assert store.rows["job-fence-1"]["last_outcome"] == "unavailable"
+    assert store.rows["job-fence-1"]["settled_at_us"] is None
 
 
 def test_restart_resumes_from_persisted_schedule() -> None:
@@ -189,15 +302,18 @@ def test_restart_resumes_from_persisted_schedule() -> None:
     assert store.rows["job-fence-1"]["attempts"] == 2
 
 
-def test_terminal_unconfirmed_is_exhausted_without_settlement() -> None:
+def test_terminal_execution_is_judged_and_never_settled() -> None:
+    """A succeeded execution while `cancelling` must not be reported as cancelled."""
     store = FakeStore([row()])
     confirmer = SequenceConfirmer("terminal_unconfirmed")
-    worker = reconciler(store, confirmer)
+    judgment = FakeJudgment()
+    worker = reconciler(store, confirmer, unconfirmed=judgment)
 
     outcome = asyncio.run(worker.run_once(now_us=NOW))
 
     assert (outcome.exhausted, outcome.settled) == (1, 0)
-    assert store.rows["job-fence-1"]["last_outcome"] == "terminal_unconfirmed"
+    assert judgment.calls == ["job-fence-1"]
+    assert store.rows["job-fence-1"]["last_outcome"] == "exhausted"
     assert store.rows["job-fence-1"]["settled_at_us"] is None
 
 
@@ -230,11 +346,11 @@ class FlakyReconciler:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def run_once(self, *, now_us: int) -> Any:
+    async def run_once(self, *, now_us: int) -> ReconciliationBatch:
         self.calls += 1
         if self.calls == 1:
             raise RuntimeError("temporary store outage")
-        return None
+        return ReconciliationBatch()
 
 
 def test_periodic_worker_survives_a_store_error_and_stops() -> None:

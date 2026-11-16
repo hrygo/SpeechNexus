@@ -1,6 +1,6 @@
 """Guard the compose-minimal role provisioning steps against doc/code drift.
 
-The runbook creates eighteen non-owner roles (three base identities plus fifteen
+The runbook creates twenty non-owner roles (three base identities plus seventeen
 that arrived with later migrations), calls repository grant functions by name,
 states the current migration head, and runs host commands that import the
 workspace members. A renamed grant function, a re-pointed head, or a host

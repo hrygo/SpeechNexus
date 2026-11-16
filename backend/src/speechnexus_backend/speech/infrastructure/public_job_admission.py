@@ -42,6 +42,11 @@ from speechnexus_backend.speech.infrastructure.admission_codec import (
     prepare_admission,
 )
 from speechnexus_backend.speech.infrastructure.catalog_revision_schema import RETIREMENT_TABLE
+from speechnexus_backend.speech.infrastructure.qualification_source_evidence import (
+    STATE_EVIDENCED,
+    qualification_source_state_sql,
+    source_refusal_detail,
+)
 from speechnexus_backend.speech.infrastructure.runtime_codec import decode_record
 from speechnexus_backend.speech.infrastructure.transcription_submit import build_asr_submit
 from speechnexus_backend.speech.infrastructure.tts_submit import build_tts_submit_from_parameters
@@ -298,6 +303,36 @@ class _CustomVoiceFacts:
     reference_text: str
 
 
+def _require_evidenced_qualification(cursor: _Cursor, voice: dict[str, Any]) -> None:
+    """Refuse a builtin qualification whose source has no evidence, by name.
+
+    The public code stays ``voice_not_published`` -- "this revision is not usable"
+    is exactly the case, and it is deterministic rather than a retry -- but the
+    detail names the qualification evidence, so an operator does not go looking for
+    a publication that is in fact already there (#877/#880 naming rule).
+    """
+    cursor.execute(
+        "SELECT 1 FROM speech_builtin_voice_qualifications q "
+        "WHERE q.voice_id=%s AND q.revision=%s AND q.revision_id=%s",
+        (voice["id"], str(voice["revision"]), voice["revision_id"]),
+    )
+    if not cursor.fetchall():
+        return
+    cursor.execute(
+        "SELECT "
+        f"({qualification_source_state_sql('q')}) AS source_state "
+        "FROM speech_builtin_voice_qualifications q "
+        "WHERE q.voice_id=%s AND q.revision=%s AND q.revision_id=%s",
+        (voice["id"], str(voice["revision"]), voice["revision_id"]),
+    )
+    rows = cursor.fetchall()
+    state = rows[0].get("source_state") if len(rows) == 1 else None
+    if state != STATE_EVIDENCED:
+        raise PublicJobAdmissionRejectedError(
+            "voice_not_published", source_refusal_detail(str(state))
+        )
+
+
 def _custom_voice(
     cursor: _Cursor,
     voice: dict[str, Any],
@@ -327,13 +362,19 @@ def _custom_voice(
         # publication identity; otherwise a partial restore could synthesize a
         # clone through the builtin speaker.
         if voice["revision_id"].startswith("vrev-"):
+            # The fallback is only the builtin path when the qualification's source
+            # is evidenced: a published row with an `unverified` provenance would
+            # otherwise reach the shared speaker without a controller observation
+            # and without an accepted operator declaration.
             cursor.execute(
-                "SELECT 1 FROM speech_builtin_voice_qualifications "
-                "WHERE voice_id=%s AND revision=%s AND revision_id=%s",
+                "SELECT 1 FROM speech_builtin_voice_qualifications q "
+                "WHERE q.voice_id=%s AND q.revision=%s AND q.revision_id=%s",
                 (voice["id"], str(voice["revision"]), voice["revision_id"]),
             )
-            if not cursor.fetchall():
+            qualified = bool(cursor.fetchall())
+            if not qualified:
                 raise PublicJobAdmissionRejectedError("voice_not_published")
+            _require_evidenced_qualification(cursor, voice)
             return None
         # Older synthetic fixtures and operator-authored builtin ids are not
         # ``vrev-*``. A remaining draft still proves the missing row was custom.
@@ -345,6 +386,11 @@ def _custom_voice(
             cursor.execute("SELECT 1 FROM speech_voice_drafts WHERE draft_id=%s", (draft_id,))
             if cursor.fetchall():
                 raise PublicJobAdmissionRejectedError("voice_not_published")
+        # A published row that names a builtin qualification is trusted only with
+        # its evidence: an `unverified` provenance row means the voice was published
+        # with nothing backing its source, so the shared speaker must not serve it.
+        # The absence of a qualification row keeps the historical builtin path.
+        _require_evidenced_qualification(cursor, voice)
         return None
     if len(rows) != 1:
         raise PublicJobAdmissionRejectedError("job_unavailable")

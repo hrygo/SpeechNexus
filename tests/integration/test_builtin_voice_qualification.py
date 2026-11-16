@@ -28,6 +28,9 @@ from speechnexus_backend.speech.infrastructure.builtin_voice_grants import (
 from speechnexus_backend.speech.infrastructure.builtin_voice_qualification import (
     require_builtin_voice,
 )
+from speechnexus_backend.speech.infrastructure.qualification_source_evidence import (
+    SOURCE_UNVERIFIED,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -193,6 +196,26 @@ def test_migration_admission_revocation_and_reader_permissions(
         "INSERT INTO speech_builtin_voice_qualifications VALUES "
         "('voice-vivian','1','voice-rev-1','binding-rev-1','approval-1',%s::jsonb,'Vivian')",
         (json.dumps(facts["public_document"]),),
+    )
+    # A qualification row without its provenance row is a row nobody vouched for:
+    # writing a qualification is a required permission of the publishing identity, so
+    # an unprovenanced row is exactly what a hand-published one looks like. Admission
+    # requires the evidence, and says which repair it needs.
+    with db.cursor() as cursor, pytest.raises(AdmissionRejectedError) as unbacked:
+        _require(cursor)
+    assert unbacked.value.code == SOURCE_UNVERIFIED
+    assert "no qualification source recorded" in (unbacked.value.detail or "")
+    # What `publish_builtin_voice` writes in the same transaction: the controller
+    # observation names the probe authorization only the controller identity can mint.
+    db.execute(
+        "INSERT INTO speech_builtin_voice_probe_authorizations "
+        "(authorization_id,source_approval_id,voice_id,intent) "
+        "VALUES ('probe-auth-1','source-1','voice-vivian','{}'::jsonb)"
+    )
+    db.execute(
+        "INSERT INTO speech_builtin_voice_qualification_provenance "
+        "(voice_id,revision,source_kind,evidence_kind,probe_authorization_id) "
+        "VALUES ('voice-vivian','1','controller_observed','probe_authorization','probe-auth-1')"
     )
     with db.cursor() as cursor:
         _require(cursor)

@@ -4,6 +4,7 @@ The caller holds the voice catalogue advisory lock in its admission transaction.
 This module never creates or updates qualification evidence.
 """
 
+import logging
 from typing import Any, cast
 
 from speechnexus_contracts import ContractValidationError
@@ -12,6 +13,14 @@ from speechnexus_contracts.voice_catalogue_http import validate_response
 from speechnexus_backend.speech.domain.admission import AdmissionRejectedError
 from speechnexus_backend.speech.domain.builtin_voice_qualification import BuiltinVoiceFacts
 from speechnexus_backend.speech.infrastructure.publications_sql import PublicationCursor
+from speechnexus_backend.speech.infrastructure.qualification_source_evidence import (
+    SOURCE_UNVERIFIED,
+    STATE_EVIDENCED,
+    qualification_source_state_sql,
+    source_refusal_detail,
+)
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def require_builtin_voice(
@@ -33,7 +42,8 @@ def require_builtin_voice(
 ) -> dict[str, Any]:
     cursor.execute(
         "SELECT a.facts, floor(extract(epoch FROM a.expires_at)*1000000)::bigint AS expiry_us, "
-        "floor(extract(epoch FROM clock_timestamp())*1000000)::bigint AS now_us "
+        "floor(extract(epoch FROM clock_timestamp())*1000000)::bigint AS now_us, "
+        f"({qualification_source_state_sql('q')}) AS source_state "
         "FROM speech_builtin_voice_qualifications q "
         "JOIN speech_builtin_voice_approvals a ON a.approval_id=q.approval_id "
         "AND a.voice_id=q.voice_id AND a.revision=q.revision "
@@ -78,6 +88,22 @@ def require_builtin_voice(
     rows = cursor.fetchall()
     if len(rows) != 1:
         raise AdmissionRejectedError("policy_or_resource_disabled")
+    state = rows[0].get("source_state")
+    if state != STATE_EVIDENCED:
+        # The row is published, unexpired and matches this request, but nothing
+        # evidences where its qualification came from: name that instead of
+        # answering the generic refusal an operator would read as "nothing here".
+        # The log line keeps the code and the state: "revoked qualification" and "no
+        # evidence for this qualification" reach the sync TTS surface as the same
+        # 404, and only the log can tell an operator which one happened.
+        _LOGGER.warning(
+            "builtin voice qualification refused: voice=%s revision=%s code=%s state=%s",
+            voice_id,
+            revision,
+            SOURCE_UNVERIFIED,
+            state,
+        )
+        raise AdmissionRejectedError(SOURCE_UNVERIFIED, source_refusal_detail(cast(str, state)))
     try:
         BuiltinVoiceFacts(rows[0]["facts"])
         validate_response("getVoiceRevision", 200, {"body": rows[0]["facts"]["public_document"]})

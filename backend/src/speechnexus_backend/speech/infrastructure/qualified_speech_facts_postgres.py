@@ -23,6 +23,9 @@ from speechnexus_backend.speech.infrastructure.builtin_voice_qualification impor
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.publication_schema import model_catalog_reader_grants
+from speechnexus_backend.speech.infrastructure.qualification_source_evidence import (
+    qualification_source_evidenced_sql,
+)
 from speechnexus_backend.speech.infrastructure.speech_facts_postgres import (
     PostgresSpeechFacts,
     _publication,
@@ -54,10 +57,18 @@ class QualifiedPostgresSpeechFacts(PostgresSpeechFacts):
         self._qualified_pool, self._recipe, self._qualified_timeout = pool, recipe, timeout_seconds
 
     def has_qualified_voice(self) -> bool:
-        """A bounded startup gate; each later request is independently rechecked."""
+        """A bounded startup gate; each later request is independently rechecked.
+
+        The candidate list carries the shared source-evidence predicate as well as
+        the per-row recheck: assembling the synchronous surface for a voice whose
+        qualification has no evidence would turn the 404 into "TTS is not enabled
+        for this deployment", which is a different and less accurate statement.
+        """
         rows = self._read(
-            "SELECT voice_id,revision FROM speech_builtin_voice_qualifications "
-            "WHERE binding_revision_id=%s ORDER BY voice_id,revision LIMIT 64",
+            "SELECT q.voice_id,q.revision FROM speech_builtin_voice_qualifications q "
+            "WHERE q.binding_revision_id=%s "
+            f"AND ({qualification_source_evidenced_sql('q')}) "
+            "ORDER BY q.voice_id,q.revision LIMIT 64",
             (self._recipe.approved.binding_revision_id,),
         )
         return any(self._voice(row["voice_id"], int(row["revision"])) is not None for row in rows)

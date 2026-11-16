@@ -439,6 +439,17 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
     quarantine_release_tables = (
         {"admission_quarantine_releases"} if db.dialect == "postgresql" else set()
     )
+    # The operator-attested qualification declaration and the published-source
+    # provenance ledger (0055). Both are private to the qualification writer and
+    # publisher identities, outside the shared coordination surface.
+    qualification_provenance_tables = (
+        {
+            "speech_builtin_voice_operator_attestations",
+            "speech_builtin_voice_qualification_provenance",
+        }
+        if db.dialect == "postgresql"
+        else set()
+    )
     assert binding_tables <= {row["name"] for row in rows}
     assert profile_tables <= {row["name"] for row in rows}
     assert publication_tables <= {row["name"] for row in rows}
@@ -450,6 +461,7 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
     assert voice_publication_tables <= {row["name"] for row in rows}
     assert workspace_command_tables <= {row["name"] for row in rows}
     assert quarantine_release_tables <= {row["name"] for row in rows}
+    assert qualification_provenance_tables <= {row["name"] for row in rows}
     assert (
         {row["name"] for row in rows}
         - {
@@ -468,6 +480,7 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
         - voice_publication_tables
         - workspace_command_tables
         - quarantine_release_tables
+        - qualification_provenance_tables
         == (set(SPEECH_UPDATES) | set(GATEWAY_UPDATES))
     )
     if db.dialect == "postgresql":
@@ -484,6 +497,7 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
                 | voice_publication_tables
                 | workspace_command_tables
                 | quarantine_release_tables
+                | qualification_provenance_tables
             ):
                 with (
                     pytest.raises(psycopg.errors.InsufficientPrivilege),

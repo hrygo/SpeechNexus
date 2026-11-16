@@ -210,6 +210,33 @@ requires, in order, all of it verifiable only against a running deployment:
    64-hex token are only proven by a request: nothing in the files reaches the
    engine.
 
+Item 4 has two independent sources, and the durable ledger records which one
+produced each published qualification:
+
+- **Controller-observed probe** (`builtin-customvoice-v1` / `1`, eight fixed
+  checks): requires a `node-controller` and a controlled probe window. Its
+  behaviour is unchanged.
+- **Operator attestation** (`operator-attested-customvoice-v1`): for engines whose
+  lifecycle the deployment operator manages outside `node-controller` — the case
+  this bootstrap describes ("engine lifecycle is operator/external"). It is
+  fail-closed: without an explicit trust declaration file naming this database,
+  schema, installation and instance, nothing is written and the attempt stops with
+  `error: trust_declaration_missing` (exit 4). No code path falls back from the
+  probe to attestation because a controller is absent.
+
+`speechnexus-attest-builtin-voice` records the attestation under its own minimal
+non-owner identity `sn_operator_attestation`, which §6 of the runbook provisions
+in both the fresh-install and the upgrade path; its host-side DSN
+(`SPEECHNEXUS_OPERATOR_ATTESTATION_WRITER_DATABASE_URL`) is exported with the host
+port and is deliberately not forwarded to any container, so an unset DSN stops the
+command before it connects and names the variable. The existing
+`speechnexus-publish-builtin-voice` publishes the recorded approval, and
+`speechnexus-qualification-provenance` prints `source_kind` per voice
+(`controller_observed` / `operator_attested`). An attestation never releases
+compute, settles a lease, converges an instance lifecycle or supplies native
+runtime evidence; the exact boundary and the named refusal codes are in
+[builtin voice qualification](../docs/operations/builtin-voice-qualification.md#外部托管引擎的-operator-声明资格).
+
 The narrow-scope real `200` was observed on MegaCube in the 2026-11-03 window; this
 reference deployment has not re-run it.
 

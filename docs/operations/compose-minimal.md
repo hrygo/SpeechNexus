@@ -171,7 +171,7 @@ PY
 
 生成的口令在第一次引导时写入 `deploy/compose.env`，此后复用；重新生成就是轮换，必须同时改
 角色口令与使用它的 DSN，只改文件里的口令会让 DSN 与角色口令不一致、连接直接失败。§6 预置的
-十五个非基线角色口令按同一规则在 §6 首次引导时生成并写回同一文件。
+十六个非基线角色口令按同一规则在 §6 首次引导时生成并写回同一文件。
 
 上面的 Python 片段必须通过环境变量 `SN_ROOT` 取得仓库绝对路径；若直接手工执行，
 先运行 `export SN_ROOT="$ROOT"`。编辑 `deploy/compose.env`，按实际部署核对以下配置：
@@ -379,7 +379,7 @@ curl -fsS http://127.0.0.1:59000/minio/health/live
 上述命令经 Compose 服务名 `postgres` 进入容器，因此不绑定容器名：项目名取自 §1 的
 `COMPOSE_PROJECT_NAME`，容器实际叫 `<项目名>-postgres-1`，直接写死它会得到
 `No such container`。用户与数据库名对应默认配置；若部署值不同，先核对实际名称再查询。
-仓库当前迁移链的 head 为 `0054_artifact_deleted_ledger`；实际部署必须以所用发布制品中的唯一
+仓库当前迁移链的 head 为 `0055_operator_attestation`；实际部署必须以所用发布制品中的唯一
 head 为准，查询结果须与之相符。不要把旧版 `0027_gateway_abort_intents` 或
 `0039_public_job_progress` 当作当前 head，也不要跳过检查或手工修改版本表。
 
@@ -388,7 +388,8 @@ head 为准，查询结果须与之相符。不要把旧版 `0027_gateway_abort_
 以下脚本必须使用 **迁移 owner DSN** 运行，创建 API、gateway writer、gateway query、工作区
 writer、审计 reader、实例读取 reader、隔离释放、公开目录 reader、Artifact reader、资源池
 reader、binding 列表 reader、binding 写、binding admin reader、binding 生命周期、Artifact
-保留期清理、同步 TTS 结算与独立工作台后端的运行/清理两个身份共十八个独立非 owner 角色。工作台两个角色的
+保留期清理、同步 TTS 结算、外部托管引擎的资格声明、资格来源审计读取与独立工作台后端的
+运行/清理两个身份共二十个独立非 owner 角色。工作台两个角色的
 授权目标是工作台自己的命名空间，本脚本只创建角色，授权由 §6 的迁移步安装。每个透传键当前是否有预置步骤见文末
 [透传 DSN 覆盖表](#透传-dsn-覆盖表)，未预置的键及其原因见
 [故意不预置的身份](#故意不预置的身份)。预设发布的写角色 `sn_profile_writer` 不在此脚本内：
@@ -406,7 +407,8 @@ reader、binding 列表 reader、binding 写、binding admin reader、binding �
 
 工作区 writer、审计 reader、实例读取 reader、隔离释放、公开目录 reader、Artifact reader、
 资源池 reader、binding 列表 reader、binding 写、binding admin reader、binding 生命周期、
-Artifact 保留期清理、同步 TTS 结算与工作台运行/清理共十五个角色的口令在
+Artifact 保留期清理、同步 TTS 结算、外部托管引擎资格声明、资格来源审计读取与工作台运行/清理
+共十七个角色的口令在
 `deploy/compose.env.example` 里只有 `change-me-*` 占位。口令在第一次引导时生成并写入
 `deploy/compose.env`，此后复用；重新生成就是轮换，必须同时 `ALTER ROLE ... PASSWORD`
 并改写对应 DSN，只改文件里的口令会让连接失败。口令不打印到终端，只在建角色脚本和下面的
@@ -426,12 +428,12 @@ set +a
 export SN_ADMIN_DSN="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:${SPEECHNEXUS_POSTGRES_HOST_PORT:-55432}/${POSTGRES_DB}"
 ```
 
-生成这十五个口令并写回 `deploy/compose.env`：只替换空值和 `change-me-*` 占位，已经是随机
+生成这十七个口令并写回 `deploy/compose.env`：只替换空值和 `change-me-*` 占位，已经是随机
 值的键原样保留，因此重跑本步不会把已建角色的口令换成新值（换口令要按轮换步骤同时改 DSN）。
 值来自 `secrets.token_urlsafe(32)`，字母表是 `A-Za-z0-9_-`，不含引号、空白、`#`、`$` 和
 换行，所以按 `KEY=value` 原样落盘即可，既不需要引号也不需要转义，放进
 `postgresql://role:pass@` 的 userinfo 也不需要百分号编码；脚本仍会核对生成值的字符集，
-不符合就停止，不会写出半截配置。文件以 `0600` 落盘，脚本结束前核对不再有占位值。这十五个
+不符合就停止，不会写出半截配置。文件以 `0600` 落盘，脚本结束前核对不再有占位值。这十七个
 键是 host 侧输入：`deploy/compose.yaml` 不引用它们、也没有 `env_file`，只有 DSN 会按需透传
 给容器，口令本身不进任何容器环境。
 
@@ -456,6 +458,8 @@ KEYS = (
     "SPEECHNEXUS_BINDING_LIFECYCLE_ROLE_PASSWORD",
     "SPEECHNEXUS_SPEECH_SETTLEMENT_ROLE_PASSWORD",
     "SPEECHNEXUS_ARTIFACT_RETENTION_ROLE_PASSWORD",
+    "SPEECHNEXUS_OPERATOR_ATTESTATION_ROLE_PASSWORD",
+    "SPEECHNEXUS_QUALIFICATION_READER_ROLE_PASSWORD",
     "SPEECHNEXUS_WORKBENCH_RUNTIME_ROLE_PASSWORD",
     "SPEECHNEXUS_WORKBENCH_CLEANUP_ROLE_PASSWORD",
 )
@@ -538,6 +542,10 @@ from speechnexus_backend.speech.infrastructure.quarantine_release_schema import 
 from speechnexus_backend.speech.infrastructure.binding_disable_targets_schema import (
     disable_settlement_grants,
 )
+from speechnexus_backend.speech.infrastructure.builtin_voice_grants import (
+    operator_attestation_writer_grants,
+    qualification_reader_grants,
+)
 from speechnexus_backend.speech.infrastructure.qualified_speech_facts_postgres import (
     speech_synthesis_reader_grants,
 )
@@ -572,6 +580,14 @@ roles = {
     "sn_workbench_runtime": os.environ["SPEECHNEXUS_WORKBENCH_RUNTIME_ROLE_PASSWORD"],
     "sn_workbench_cleanup": os.environ["SPEECHNEXUS_WORKBENCH_CLEANUP_ROLE_PASSWORD"],
     "sn_artifact_retention": os.environ["SPEECHNEXUS_ARTIFACT_RETENTION_ROLE_PASSWORD"],
+    # External-engine qualification: the host-side attestation command appends one
+    # approval plus one declaration row and holds nothing wider.
+    "sn_operator_attestation": os.environ["SPEECHNEXUS_OPERATOR_ATTESTATION_ROLE_PASSWORD"],
+    # The provenance report runs on the host and only needs to read the ledger:
+    # qualifications, approvals, the provenance labels and the evidence rows that
+    # back them. It must not be the schema owner, or the audit would confirm
+    # whatever the writer wrote without any privilege boundary in between.
+    "sn_qualification_reader": os.environ["SPEECHNEXUS_QUALIFICATION_READER_ROLE_PASSWORD"],
 }
 with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     # PostgreSQL 角色属于整个集群，即使数据库是专用的也要先核对。
@@ -650,6 +666,15 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     # UPDATE(artifact_state, deleted_at_us) and nothing else. It refuses to start on a role that
     # holds any wider authority, so it cannot share `sn_api`'s schema privileges.
     for statement in artifact_retention_grants(schema, "sn_artifact_retention"):
+        conn.execute(statement)
+    # An operator-attested qualification is declared by its own minimal identity:
+    # column-level INSERT on the approval ledger plus one attestation row, no
+    # UPDATE/DELETE anywhere and no publication-head authority.
+    for statement in operator_attestation_writer_grants(schema, "sn_operator_attestation"):
+        conn.execute(statement)
+    # The provenance audit reads published qualifications and the evidence rows
+    # behind their source label; it is read-only and holds no write anywhere.
+    for statement in qualification_reader_grants(schema, "sn_qualification_reader"):
         conn.execute(statement)
     for statement in gateway_query_grants(schema, "sn_gateway_query"):
         conn.execute(statement)
@@ -756,8 +781,8 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
         "sn_audit_reader sn_model_instance_reader sn_quarantine_release "
         "sn_catalog_reader sn_artifact_reader sn_resource_pool_reader "
         "sn_binding_list_reader sn_binding_writer sn_binding_admin_reader "
-        "sn_binding_lifecycle sn_artifact_retention sn_speech_settlement "
-        "sn_workbench_runtime sn_workbench_cleanup"
+        "sn_binding_lifecycle sn_artifact_retention sn_operator_attestation "
+        "sn_speech_settlement sn_workbench_runtime sn_workbench_cleanup"
     )
 PY
 ```
@@ -770,6 +795,8 @@ CREATE 权限，停止启动服务；不要用超级用户连接绕过检查。A
 `sn_workspace_writer`、`sn_audit_reader`、`sn_model_instance_reader` 与
 `sn_quarantine_release` 四个此前已有写回，本节新增十一个）；脚本替换同名空行或追加，不打印
 口令。写回脚本用 `os.environ[...]` 读取上面已写回文件的那十五个口令变量，两者必须一一对应；
+`sn_qualification_reader` 不在此列：它只服务宿主侧审计命令，口令在环境文件里，连接地址按
+下一节用 host 端口现场拼出，本 Compose 不转发。
 变量已持久化，所以换 shell 后先 `. deploy/compose.env` 再执行即可，未载入环境文件时它会因
 缺少 `SPEECHNEXUS_*_ROLE_PASSWORD` 抛 `KeyError` 而不是写出一组空口令。
 
@@ -1284,6 +1311,65 @@ Artifact 桶与 gateway staging 结果桶的存在和版本化，全部通过后
 `VALIDATE CONSTRAINT` 把它补成看起来完整的假时刻；如要补，先由运维确认这些行的真实移除
 时刻来源。列注释同样写明了这一语义。
 
+### 外部托管引擎的资格声明角色 `sn_operator_attestation`
+
+生命周期由运维掌握、没有 node-controller 参与的外部引擎，其 builtin 声音资格由
+`speechnexus-attest-builtin-voice` 在单个事务内写入一条 approval 与一条声明记录。
+仓库授权函数 `operator_attestation_writer_grants` 以 `sn_operator_attestation` 为目标声明该
+身份的全部授权：只读核对所需的来源批准、binding 与 release 证据、注册账本、资源池与工作区
+配额，列级 `INSERT` 追加 approval，并追加声明记录；不持有任何表的
+`UPDATE`/`DELETE`/`TRUNCATE`，也没有资格、发布或 publication head 的写权限。持有发布 head 权限的身份会被
+`writer_identity_forbidden` 拒绝——重指 head 足以撤回一条公开资格，因此不能由声明身份持有。
+
+这条路径默认关闭，也不被任何容器自动启用：命令在宿主执行，`deploy/compose.yaml` 不转发该键，
+`deploy/compose.env.example` 只带口令占位。未导出连接地址时命令在连接前退出并点名变量，不会
+把「没有 controller」读成「声明通过」：
+
+```text
+error: SPEECHNEXUS_OPERATOR_ATTESTATION_WRITER_DATABASE_URL is not set
+```
+
+宿主侧按 host 端口导出（容器内的 `postgres` 别名在宿主不可解析）：
+
+```bash
+export SPEECHNEXUS_OPERATOR_ATTESTATION_WRITER_DATABASE_URL="postgresql://sn_operator_attestation:${SPEECHNEXUS_OPERATOR_ATTESTATION_ROLE_PASSWORD}@127.0.0.1:${SPEECHNEXUS_POSTGRES_HOST_PORT:-55432}/${POSTGRES_DB}"
+```
+
+随后先记录声明、再发布（两者都要求私有 recipe 与 release 证据齐备）：
+
+```bash
+uv run speechnexus-attest-builtin-voice \
+  --schema speech --workspace-id <workspace> \
+  --trust-declaration-file /etc/speechnexus/operator-trust.json \
+  --attestation-request-file /etc/speechnexus/operator-attestation.json \
+  --artifact-pin <artifact-pin.json> --manifest <manifest.json> \
+  --report <report.json> --scenario-evidence <scenario.json>
+uv run speechnexus-publish-builtin-voice ...
+```
+
+发布后用**只读审计身份**核对来源。`sn_qualification_reader` 只持有
+`qualification_reader_grants` 声明的读权限（已发布资格、批准、`provenance` 标签，以及支撑
+标签的声明记录与 probe 授权），没有任何写权限；用 owner 跑这条审计等于让写者自己作证。
+宿主侧按 host 端口导出该 DSN（容器内的 `postgres` 别名在宿主不可解析）：
+
+```bash
+export SPEECHNEXUS_QUALIFICATION_READER_DATABASE_URL="postgresql://sn_qualification_reader:${SPEECHNEXUS_QUALIFICATION_READER_ROLE_PASSWORD}@127.0.0.1:${SPEECHNEXUS_POSTGRES_HOST_PORT:-55432}/${POSTGRES_DB}"
+uv run speechnexus-qualification-provenance --schema speech
+```
+
+`SPEECHNEXUS_QUALIFICATION_READER_DATABASE_URL` 是 host 侧键，本 Compose 不转发；命令以
+`SET TRANSACTION READ ONLY` 打开事务，读失败退出码为 3，从不把「没读出来」当成资格结论。
+`source_kind` 只有三种取值：`controller_observed`（必须带 `probe_authorization_id`）、
+`operator_attested`（必须带 `attestation_id`）、`unverified`（两者都没有，显式标为来源未知，
+不会因为缺少某行被算作控制器观测）。
+
+信任声明文件（`speechnexus-operator-attested-engine-v1`）是部署方对「这些实例的生命周期由
+运维掌握」的显式决定：目标安装、逐实例白名单、必须承认的能力缺口清单、单次声明时长上限
+（≤30 天）。它是部署方私有输入，放在仓库外、权限 `0600`；仓库不提供默认声明，缺失即拒绝。
+声明成功不等于引擎可服务：本路径不产生 native runtime 证据、停止证据、预算释放或实例生命
+周期收敛，同步 TTS 仍要求执行网关与该实例的 live 策略一致。边界与具名错误码见
+[builtin voice qualification](builtin-voice-qualification.md#外部托管引擎的-operator-声明资格)。
+
 ### 预设发布资格输入与 sn_profile_writer 角色
 
 `POST /v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/publications` 在写入前只
@@ -1478,8 +1564,9 @@ curl -sS -w '\nhttp=%{http_code}\n' -X POST \
 后，用同一个迁移 owner 连接对既有角色重放对应的授权函数即可，`GRANT` 是追加式操作，
 重复执行不改变既有权限。`0049_workspace_commands` 之后新增的工作区写、审计读取、实例读取、
 隔离释放，以及本节新增的公开目录、Artifact、资源池、binding 列表、binding 写、
-binding admin 读取、binding 生命周期、同步 TTS 结算、Artifact 保留清理与工作台运行/清理两个身份共十五个角色在既有部署上
-同样需要预置：下面的脚本先按需创建这十五个角色，再重放全部相关授权。工作台授权针对工作台
+binding admin 读取、binding 生命周期、同步 TTS 结算、Artifact 保留清理、外部托管引擎资格声明
+、资格来源审计读取与工作台运行/清理两个身份共十七个角色在既有部署上同样需要预置：下面的脚本先按需创建这十七个
+角色，再重放全部相关授权。工作台授权针对工作台
 命名空间，由 §6 的 `speechnexus-workbench-migrate` 幂等重放，不在本脚本内。角色尚不存在时，
 先用 §6 的口令步骤生成口令（该步只填空值和占位值，已有随机值原样保留）；角色已存在时用其
 现有口令，脚本不会修改已存在角色的口令，用新生成的口令写连接地址会连不上。实例
@@ -1519,6 +1606,10 @@ from speechnexus_backend.speech.infrastructure.quarantine_release_schema import 
 from speechnexus_backend.speech.infrastructure.binding_disable_targets_schema import (
     disable_settlement_grants,
 )
+from speechnexus_backend.speech.infrastructure.builtin_voice_grants import (
+    operator_attestation_writer_grants,
+    qualification_reader_grants,
+)
 from speechnexus_backend.speech.infrastructure.qualified_speech_facts_postgres import (
     speech_synthesis_reader_grants,
 )
@@ -1541,6 +1632,8 @@ new_roles = {
     "sn_binding_admin_reader": os.environ["SPEECHNEXUS_BINDING_ADMIN_READER_ROLE_PASSWORD"],
     "sn_binding_lifecycle": os.environ["SPEECHNEXUS_BINDING_LIFECYCLE_ROLE_PASSWORD"],
     "sn_artifact_retention": os.environ["SPEECHNEXUS_ARTIFACT_RETENTION_ROLE_PASSWORD"],
+    "sn_operator_attestation": os.environ["SPEECHNEXUS_OPERATOR_ATTESTATION_ROLE_PASSWORD"],
+    "sn_qualification_reader": os.environ["SPEECHNEXUS_QUALIFICATION_READER_ROLE_PASSWORD"],
     "sn_speech_settlement": os.environ["SPEECHNEXUS_SPEECH_SETTLEMENT_ROLE_PASSWORD"],
     # The workbench unit's roles are created here too; their grants live in the
     # workbench namespace and are replayed idempotently by
@@ -1577,6 +1670,13 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     # UPDATE(artifact_state, deleted_at_us) only, and it refuses to start on
     # anything wider.
     for statement in artifact_retention_grants(schema, "sn_artifact_retention"):
+        conn.execute(statement)
+    # An operator-attested qualification is declared by its own minimal identity:
+    # column-level INSERT on the approval ledger plus one attestation row, no
+    # UPDATE/DELETE anywhere and no publication-head authority.
+    for statement in operator_attestation_writer_grants(schema, "sn_operator_attestation"):
+        conn.execute(statement)
+    for statement in qualification_reader_grants(schema, "sn_qualification_reader"):
         conn.execute(statement)
     # Synchronous TTS: the api identity needs the same voice/binding reads plus the
     # settlement root write, and the settlement runtime its own exact surface. Both
@@ -1646,7 +1746,8 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
 print(
     "gateway, workspace writer, audit reader, instance reader, quarantine release, "
     "catalogue reader, Artifact reader, resource pool reader, binding list reader, "
-    "binding writer, binding admin reader and binding lifecycle grants refreshed"
+    "binding writer, binding admin reader, binding lifecycle, artifact retention and "
+    "operator attestation grants refreshed"
 )
 PY
 ```
@@ -1808,6 +1909,14 @@ DSN）。健康检查打 `/v1/workbench/status`，它只在真实 lifespan 预�
 表中没有死键：29 个透传键都有运行时消费者。设置里另有一个不在本表范围的键：
 `SPEECHNEXUS_PUBLICATION_WRITER_DATABASE_URL` 属于 host 侧 `speechnexus-publish-binding`
 CLI 的配置，不经过本 Compose；它不是死键，只是不属于本部署面。
+`SPEECHNEXUS_OPERATOR_ATTESTATION_WRITER_DATABASE_URL` 同理：它是 host 侧
+`speechnexus-attest-builtin-voice` 的配置，宿主用 host 端口导出，本 Compose 不转发它，因此也
+不在上表；它不是死键，角色与授权见
+[外部托管引擎的资格声明角色](#外部托管引擎的资格声明角色-sn_operator_attestation)。
+`SPEECHNEXUS_QUALIFICATION_READER_DATABASE_URL` 同理：它是 host 侧
+`speechnexus-qualification-provenance` 的配置，宿主用 host 端口导出，本 Compose 不转发，
+因此也不在上表；身份为 `sn_qualification_reader`，只读授权见
+[外部托管引擎的资格声明角色](#外部托管引擎的资格声明角色-sn_operator_attestation)。
 
 `SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL` 是同步 TTS 的必要输入：缺失时
 `backend/src/speechnexus_backend/speech_runtime.py:50` 的必填清单不完整，工厂按

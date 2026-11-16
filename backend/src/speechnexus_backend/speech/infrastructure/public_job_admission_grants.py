@@ -31,6 +31,11 @@ _READ_TABLES = (
     "speech_voice_draft_revisions",
     "speech_voice_revisions",
     "speech_builtin_voice_qualifications",
+    # The Job builtin fallback reads the qualification's provenance to decide whether
+    # the source has evidence: the qualification row alone would let a published but
+    # unevidenced row reach the shared speaker (see qualification_source_evidence).
+    "speech_builtin_voice_qualification_provenance",
+    "speech_builtin_voice_operator_attestations",
     "workspace_quotas",
     "resource_pools",
     "host_nodes",

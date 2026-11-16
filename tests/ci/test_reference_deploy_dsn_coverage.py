@@ -261,6 +261,8 @@ ROLE_GRANT_BINDINGS: dict[str, tuple[tuple[str, ...], int]] = {
     "sn_audit_reader": (("audit_reader_grants",), 2),
     "sn_quarantine_release": (("quarantine_release_grants",), 2),
     "sn_artifact_retention": (("artifact_retention_grants",), 2),
+    "sn_operator_attestation": (("operator_attestation_writer_grants",), 2),
+    "sn_qualification_reader": (("qualification_reader_grants",), 2),
     # Synchronous TTS: the api identity keeps its voice/binding reads and its
     # settlement-root write in one declaration, and the settlement runtime only
     # accepts the exact column surface the two worker declarations hand out.
@@ -273,7 +275,7 @@ ROLE_GRANT_BINDINGS: dict[str, tuple[tuple[str, ...], int]] = {
 
 # Roles the runbook creates after the three base identities: the fresh-install
 # script creates all of them, and the existing-deployment upgrade creates the
-# eleven that arrived with later migrations. Losing either path leaves a real
+# seventeen that arrived with later migrations. Losing either path leaves a real
 # deployment half-provisioned.
 BASE_ROLES = {"sn_api", "sn_gateway", "sn_gateway_query"}
 UPGRADE_PATH_ROLES = {
@@ -289,6 +291,8 @@ UPGRADE_PATH_ROLES = {
     "sn_binding_admin_reader",
     "sn_binding_lifecycle",
     "sn_artifact_retention",
+    "sn_operator_attestation",
+    "sn_qualification_reader",
     "sn_speech_settlement",
     "sn_workbench_runtime",
     "sn_workbench_cleanup",

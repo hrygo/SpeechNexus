@@ -632,7 +632,9 @@ class PostgresPublicJobs:
                         except AdmissionRejectedError as error:
                             if error.code == "version_conflict" and attempt == 0:
                                 raise _RetryAdmissionError from None
-                            raise _AdmissionRefusedError(self._public_code(error.code)) from None
+                            raise _AdmissionRefusedError(
+                                self._public_code(error.code), error.detail
+                            ) from None
                     _insert(connection, job, admitted=admitted)
                     row = _select_job(connection, job.job_id)
                 return JobCreateResult("created", _job(row))

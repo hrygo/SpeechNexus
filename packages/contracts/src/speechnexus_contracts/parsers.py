@@ -3,6 +3,7 @@
 from typing import Any, Literal, overload
 
 from .models import (
+    AdmissionReadiness,
     Artifact,
     Asset,
     AssetUploadRequest,
@@ -86,6 +87,10 @@ def parse(name: Literal["PronunciationRevision"], value: Any) -> PronunciationRe
 
 @overload
 def parse(name: Literal["ModelList"], value: Any) -> ModelList: ...
+
+
+@overload
+def parse(name: Literal["AdmissionReadiness"], value: Any) -> AdmissionReadiness: ...
 
 
 def parse(name: str, value: Any) -> Any:

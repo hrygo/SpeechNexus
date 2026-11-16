@@ -378,10 +378,15 @@ Starlette 307 到规范路径（复核实测见
 错误码、`retryable` 与 `X-Request-ID`；下表为 #473 前后同口径实测。
 
 【#473 已交付】PR #474（`7e539980`）合入占位路由与专用错误码，随后的 #476（`176ddb06`）补可证伪的映射扫描守卫、
-#477（`88aabdd5`）补 405 信封与移除路径白名单。当前实测口径：9 条未实现操作全部返回
+#477（`88aabdd5`）补 405 信封与移除路径白名单。当前实测口径：§6.1 常量里的每一条未实现操作都返回
 `503 operation_not_implemented`（`service_unavailable_error`、`retryable=false`、`X-Should-Retry: false`、
-`Cache-Control: no-store`、回显 `X-Request-ID`）；其中 6 条指向 `OperationNotImplemented` 组件，
-`getOperation`/`createRealtimeSession`/`connectRealtime` 三条沿用 `ServiceUnavailable` 声明。
+`Cache-Control: no-store`、回显 `X-Request-ID`）；成员、条数与各自引用的响应组件以该常量和契约为准，本文不复制。
+【#845 契约切片】`getJobAdmissionReadiness`（`GET /v1/nexus/jobs/admission-readiness`）也在该常量中，并沿用
+`ServiceUnavailable`（与 `getOperation`/`createRealtimeSession`/`connectRealtime` 同类：改为专用组件会从版本化面
+移除 `Retry-After` 头）：它冻结的 503 是 Job 面未装配时的 `job_unavailable`，占位错误只是尚未装配时的回答。
+报告本身未实现，`status`/`cause` 的语义已在契约中冻结；占位期两种装配态实测都答占位错误，所以 `job_unavailable`
+这一分支要等实现装配后才可观测。该路径与 `getJob` 的 `{job_id}` 同前缀，字面路由必须先于匹配它的模板注册
+（`assert_placeholder_ownership` 按注册顺序检查），否则请求会被当成一个 job id。
 **可辨识性只能靠 `error.code`**：已实现但依赖未装配的 `GET /v1/nexus/jobs` 同样返回 503
 `service_unavailable_error`/`retryable=false`（错误码 `job_unavailable`），状态码、类型与重试标记三者完全不足以区分。
 本表 36–39 行的占位值属 #473 基线：#514/#495/#519 已把这些操作交给真实实现（分别为 400
@@ -417,7 +422,7 @@ HTTP GET，真实 WebSocket 升级仍由框架拒绝，属已知边界。
 统一响应的共同约束（`contracts/speech-openapi.yaml::OperationNotImplemented`）：状态 503、`error.type` 为
 `service_unavailable_error`、`error.code` 恒为 `operation_not_implemented`、`error.retryable` 恒为 `false`、
 `Cache-Control: no-store`、`X-Should-Retry: false`，且响应头与包封共享同一个 `request_id`。
-【计数为 #473 交付时口径；其后多条操作已实现，当前 9 条占位中 6 条指向该组件、3 条沿用 `ServiceUnavailable`，见上】21 条中的 16 条在契约里指向该组件；其余 5 条（`listPronunciationSets`、`listJobs`、`getOperation`、
+【计数为 #473 交付时口径；其后多条操作已实现，当前占位清单的成员、条数与各自引用的组件以 §6.1 指向的门禁常量和契约为准，本文不复制】21 条中的 16 条在契约里指向该组件；其余 5 条（`listPronunciationSets`、`listJobs`、`getOperation`、
 `createRealtimeSession`、`connectRealtime`）沿用原有的 `ServiceUnavailable` 声明——它接受同一响应体，
 替换会从版本化面移除 `Retry-After` 头，被结构门禁判为破坏性变更（见下）。
 

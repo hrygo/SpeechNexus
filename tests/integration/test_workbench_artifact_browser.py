@@ -18,12 +18,13 @@ same device `test_artifact_http_real_storage.py` already uses for the Artifact r
 What this file does **not** prove is that an engine can produce such a Job — that stays
 `#829`'s open item, and no assertion here claims it.
 
-Prerequisites (each missing one fails or skips by name, never silently):
+Prerequisites (each missing one fails by name, never silently and never as a skip):
 
 * `SPEECHNEXUS_TEST_DATABASE_URL` — an isolated PostgreSQL DSN with namespace and role
   creation rights. Missing is a failure: a skip is not evidence.
 * `SPEECHNEXUS_TEST_MINIO_ENDPOINT`, `SPEECHNEXUS_TEST_MINIO_ACCESS_KEY`,
-  `SPEECHNEXUS_TEST_MINIO_SECRET_KEY` — an isolated MinIO. Missing is an explicit skip.
+  `SPEECHNEXUS_TEST_MINIO_SECRET_KEY` — an isolated MinIO. Missing is a failure naming
+  the missing variables: the object-storage half of this evidence is not optional.
 * Node with `@playwright/test` and its Chromium, plus `web/workbench/dist` built from
   this checkout. The browser program is `workbench-artifact-probe.mjs` beside this
   file; it only reports what the page did, so its evidence can be read beside the
@@ -73,7 +74,7 @@ from speechnexus_backend.app import create_app
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
 from speechnexus_backend.speech.application.readiness import ReadinessService
 from speechnexus_backend.speech.infrastructure.artifact_schema import artifact_reader_grants
-from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
+from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool, speech_pool
 from speechnexus_backend.speech.infrastructure.public_job_schema import public_job_grants
 from speechnexus_backend.speech.infrastructure.public_jobs_postgres import PostgresPublicJobs
 from speechnexus_backend.speech.interfaces.http.version_identity import version_identity_body
@@ -164,11 +165,12 @@ def _required_environment() -> tuple[str, str, str, str]:
             f"Configure an isolated PostgreSQL DSN in {DATABASE_VARIABLE}; skip is not evidence"
         )
     objects = [os.environ.get(name) for name in OBJECT_VARIABLES]
-    if not all(objects):
-        pytest.skip(
+    missing = [name for name, value in zip(OBJECT_VARIABLES, objects, strict=True) if not value]
+    if missing:
+        pytest.fail(
             "Configure an isolated MinIO in "
-            + ", ".join(OBJECT_VARIABLES)
-            + "; skip is not evidence"
+            + ", ".join(missing)
+            + "; missing object storage is not evidence and is never a skip"
         )
     return (database, cast(str, objects[0]), cast(str, objects[1]), cast(str, objects[2]))
 
@@ -444,19 +446,32 @@ def _run_image_tier(image: str, api_url: str, name: str) -> tuple[str, str]:
     )
     assert completed.returncode == 0, completed.stderr
     origin = f"http://127.0.0.1:{port}"
-    deadline = time.monotonic() + 60
-    while time.monotonic() < deadline:
-        try:
-            if httpx.get(origin + "/healthz", timeout=2).status_code == 200:
-                return origin, name
-        except httpx.HTTPError:
-            pass
-        time.sleep(0.2)
-    raise AssertionError("the Web image did not answer /healthz: " + name)
+    try:
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            try:
+                if httpx.get(origin + "/healthz", timeout=2).status_code == 200:
+                    return origin, name
+            except httpx.HTTPError:
+                pass
+            time.sleep(0.2)
+        raise AssertionError("the Web image did not answer /healthz: " + name)
+    except BaseException:
+        # The container exists even when the tier never becomes ready; a failed setup
+        # must not leave it behind for the next run to trip over.
+        subprocess.run(["docker", "rm", "--force", name], capture_output=True, check=False)
+        raise
 
 
 @contextmanager
 def _stack(*, image: str | None) -> Iterator[PageSandbox]:
+    """Stage the real stack; everything created after `try` opens is cleaned in `finally`.
+
+    No resource is created before the `try` opens. Each handle stays absent until its
+    creation succeeds, and `finally` cleans only what exists — so a failure while
+    creating the schema, either role, the bucket or the servers runs the same cleanup
+    instead of leaking the schema, both roles and the bucket.
+    """
     _require_browser()
     url, endpoint, access, secret = _required_environment()
     suffix = uuid.uuid4().hex[:12]
@@ -465,93 +480,107 @@ def _stack(*, image: str | None) -> Iterator[PageSandbox]:
     # are separate principals, and the reader one is verified to hold nothing else.
     role, reader_role = "sn_page_jobs_" + suffix, "sn_page_artifact_" + suffix
     bucket = "sn-page-" + suffix
-    _migrate(url, schema)
-    admin = psycopg.connect(url, row_factory=dict_row, autocommit=True)
-    admin.execute(f'SET search_path TO "{schema}", pg_catalog')
-    admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{PASSWORD}'")
-    admin.execute(f"CREATE ROLE \"{reader_role}\" LOGIN PASSWORD '{PASSWORD}'")
-    for grant in public_job_grants(schema, role):
-        admin.execute(grant)
-    for grant in artifact_reader_grants(schema, reader_role):
-        admin.execute(grant)
-    # The migration already seeds the default workspace; only create it when it is absent.
-    admin.execute(
-        "INSERT INTO speech_workspaces (workspace_id, display_name, workspace_state, "
-        "created_at_us) VALUES (%s, 'Synthetic page workspace', 'active', 1700000000000000) "
-        "ON CONFLICT (workspace_id) DO NOTHING",
-        (WORKSPACE,),
-    )
-    objects = Minio(
-        endpoint.removeprefix("http://").removeprefix("https://"),
-        access_key=access,
-        secret_key=secret,
-        secure=endpoint.startswith("https://"),
-        region="us-east-1",
-    )
-    objects.make_bucket(bucket)
-    objects.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
-    ours = Artifact("artifact-page-transcript-1", "job-page-1", "receipt-page-1", TRANSCRIPT)
-    foreign = Artifact(
-        "artifact-page-transcript-2", "job-page-2", "receipt-page-2", OTHER_TRANSCRIPT
-    )
-    _seed_committed_job(admin, objects, bucket, ours)
-    _seed_committed_job(admin, objects, bucket, foreign)
-    # The read surface is the real composition root's: one read-only public-Job pool over
-    # the committed rows, opened here so the fixture owns its lifetime explicitly.
-    pool = speech_pool(
-        make_conninfo(url, user=role, password=PASSWORD),
-        schema=schema,
-        max_size=2,
-        name="workbench-page-" + suffix,
-    )
-    pool.open()
-    adapter = PostgresPublicJobs(pool, timeout_seconds=3, storage_bucket=bucket)
-    api_app = create_app(
-        settings=_api_settings(url, schema, role, reader_role, endpoint, bucket, access, secret),
-        assets=cast(Any, object()),
-        jobs=PublicJobs(adapter, adapter),
-        readiness=ReadinessService([StaticProbe("fixture")], timeout_seconds=1),
-    )
-    api_url, api_server, api_thread = _serve(api_app)
-    version_override: list[str | None] = [None]
+    admin: psycopg.Connection[dict[str, Any]] | None = None
+    pool: SpeechPool | None = None
+    objects: Minio | None = None
+    api_server: uvicorn.Server | None = None
+    api_thread: threading.Thread | None = None
     front_server: uvicorn.Server | None = None
     front_thread: threading.Thread | None = None
     container: str | None = None
-    if image is None:
-        front_url, front_server, front_thread = _serve(_web_tier(api_url, version_override))
-    else:
-        container = "sn951-page-" + suffix
-        front_url, container = _run_image_tier(image, api_url, container)
-    value = PageSandbox(
-        url=front_url,
-        api_url=api_url,
-        schema=schema,
-        role=role,
-        admin=admin,
-        objects=objects,
-        bucket=bucket,
-        output=ROOT / ".runtime" / "workbench-page" / suffix,
-        version_override=version_override,
-    )
-    value.output.mkdir(parents=True, exist_ok=True)
+    bucket_created = False
     try:
+        admin = psycopg.connect(url, row_factory=dict_row, autocommit=True)
+        _migrate(url, schema)
+        admin.execute(f'SET search_path TO "{schema}", pg_catalog')
+        admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{PASSWORD}'")
+        admin.execute(f"CREATE ROLE \"{reader_role}\" LOGIN PASSWORD '{PASSWORD}'")
+        for grant in public_job_grants(schema, role):
+            admin.execute(grant)
+        for grant in artifact_reader_grants(schema, reader_role):
+            admin.execute(grant)
+        # The migration already seeds the default workspace; only create it when absent.
+        admin.execute(
+            "INSERT INTO speech_workspaces (workspace_id, display_name, workspace_state, "
+            "created_at_us) VALUES (%s, 'Synthetic page workspace', 'active', 1700000000000000) "
+            "ON CONFLICT (workspace_id) DO NOTHING",
+            (WORKSPACE,),
+        )
+        objects = Minio(
+            endpoint.removeprefix("http://").removeprefix("https://"),
+            access_key=access,
+            secret_key=secret,
+            secure=endpoint.startswith("https://"),
+            region="us-east-1",
+        )
+        objects.make_bucket(bucket)
+        # The bucket exists now: `finally` removes it even if the next setup line fails.
+        bucket_created = True
+        objects.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
+        ours = Artifact("artifact-page-transcript-1", "job-page-1", "receipt-page-1", TRANSCRIPT)
+        foreign = Artifact(
+            "artifact-page-transcript-2", "job-page-2", "receipt-page-2", OTHER_TRANSCRIPT
+        )
+        _seed_committed_job(admin, objects, bucket, ours)
+        _seed_committed_job(admin, objects, bucket, foreign)
+        # The read surface is the real composition root's: one read-only public-Job pool
+        # over the committed rows, opened here so the fixture owns its lifetime.
+        pool = speech_pool(
+            make_conninfo(url, user=role, password=PASSWORD),
+            schema=schema,
+            max_size=2,
+            name="workbench-page-" + suffix,
+        )
+        pool.open()
+        adapter = PostgresPublicJobs(pool, timeout_seconds=3, storage_bucket=bucket)
+        api_app = create_app(
+            settings=_api_settings(
+                url, schema, role, reader_role, endpoint, bucket, access, secret
+            ),
+            assets=cast(Any, object()),
+            jobs=PublicJobs(adapter, adapter),
+            readiness=ReadinessService([StaticProbe("fixture")], timeout_seconds=1),
+        )
+        api_url, api_server, api_thread = _serve(api_app)
+        version_override: list[str | None] = [None]
+        if image is None:
+            front_url, front_server, front_thread = _serve(_web_tier(api_url, version_override))
+        else:
+            container = "sn951-page-" + suffix
+            front_url, container = _run_image_tier(image, api_url, container)
+        value = PageSandbox(
+            url=front_url,
+            api_url=api_url,
+            schema=schema,
+            role=role,
+            admin=admin,
+            objects=objects,
+            bucket=bucket,
+            output=ROOT / ".runtime" / "workbench-page" / suffix,
+            version_override=version_override,
+        )
+        value.output.mkdir(parents=True, exist_ok=True)
         yield value
     finally:
-        pool.close()
+        if pool is not None:
+            pool.close()
         if container is not None:
             subprocess.run(["docker", "rm", "--force", container], capture_output=True, check=False)
         if front_server is not None and front_thread is not None:
             front_server.should_exit = True
             front_thread.join(timeout=10)
-        api_server.should_exit = True
-        api_thread.join(timeout=10)
-        for item in objects.list_objects(bucket, recursive=True, include_version=True):
-            objects.remove_object(bucket, item.object_name, version_id=item.version_id)
-        objects.remove_bucket(bucket)
-        admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
-        for name in (role, reader_role):
-            admin.execute(f'DROP ROLE IF EXISTS "{name}"')
-        admin.close()
+        if api_server is not None and api_thread is not None:
+            api_server.should_exit = True
+            api_thread.join(timeout=10)
+        if objects is not None and bucket_created:
+            for item in objects.list_objects(bucket, recursive=True, include_version=True):
+                objects.remove_object(bucket, item.object_name, version_id=item.version_id)
+            objects.remove_bucket(bucket)
+        if admin is not None:
+            admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+            for name in (role, reader_role):
+                admin.execute(f'DROP ROLE IF EXISTS "{name}"')
+            admin.close()
 
 
 @pytest.fixture
@@ -615,6 +644,7 @@ def _assert_page_read_the_same_artifact(evidence: dict[str, Any], expected: Arti
     assert expected.job_id in evidence["job"]["identityRows"]
     assert evidence["alerts"] == [], evidence["alerts"]
     assert evidence["pageErrors"] == [], evidence["pageErrors"]
+    assert evidence["consoleErrors"] == [], evidence["consoleErrors"]
     assert evidence["outbound"] == [], evidence["outbound"]
 
 
@@ -757,6 +787,6 @@ def test_the_page_is_served_under_the_deployed_response_headers(sandbox: PageSan
     assert page.headers["content-security-policy"] == SECURITY_HEADERS["Content-Security-Policy"]
     evidence = _probe(sandbox, "csp", mode="identity")
     assert evidence["pageErrors"] == [], evidence["pageErrors"]
-    assert not any("unsafe-eval" in text for text in evidence["consoleErrors"]), evidence[
-        "consoleErrors"
-    ]
+    # An empty console is part of the CSP gate: `unsafe-eval` (or any other console
+    # error) must not appear, so the deployed policy renders this page silently.
+    assert evidence["consoleErrors"] == [], evidence["consoleErrors"]

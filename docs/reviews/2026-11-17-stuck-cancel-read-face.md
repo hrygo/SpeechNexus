@@ -1,7 +1,9 @@
 # 取消卡住读面区分的非作者审查（PR #951 / issue #852）
 
-审查对象：PR #951 `fix/stuck-cancel-capacity`，head `4ed1f379d98608ca8b44abd95bef16cfae8574e4`。
-比对基线 `origin/main` = `5ffb4eb7`，`git merge-base origin/main HEAD` = `94a76674`；三点 diff
+审查对象：PR #951 `fix/stuck-cancel-capacity`。
+第一轮 head `4ed1f379d98608ca8b44abd95bef16cfae8574e4`；第二轮（返修第 1 轮）head
+`f89c78a6b812d05cbbb62b2658c108fb5d56d062`（父 `4ed1f379`），第二轮增量复核见 §8。
+第一轮比对基线 `origin/main` = `5ffb4eb7`，`git merge-base origin/main HEAD` = `94a76674`；三点 diff
 共 5 个文件（`backend/src/speechnexus_backend/speech/infrastructure/readiness.py`、
 `docs/components/production-jobs.md`、`docs/operations/async-job-runbook.md`、
 `tests/integration/test_cancel_failure_slot_pg.py`、`tests/integration/test_completed_release_pg.py`），
@@ -16,9 +18,14 @@ PG 容器 `sn951-review-pg`（`127.0.0.1:55481`，`sn951`），每例自建 sche
 
 ## 结论
 
-**不能合（as-of `4ed1f379`）。** 新增的 `never claimed` 对「围栏存在、账本无行」这一形状
-的判定是正确的，容量语义、只读性、探针永不失败、detail 截断保留都成立；但有两个必须先修的
-阻断项：
+**可合（第二轮，as-of `f89c78a6`）。** 第一轮（`4ed1f379`）的阻断项 B1/B2 已在第二轮闭合：
+读面按同一账本时刻报出 `never claimed` / `never claimable (exhausted)` / `due now` 三类，
+按 Job 去重且共用同一段 CASE；文档删除了「worker 在跑」等反推；参考窗口统一为 `exhausted`
+形状并有用例；混合计数、去重、降级、截断、只读与领取后消失都有断言，M1–M5 变异均红在点名
+用例上。第二轮只剩非阻断建议（§8.5），没有发现新的行为缺陷。
+
+下面 §1–§7 保留第一轮的事实与证据，作为返修依据；§8 是第二轮增量复核。第一轮结论为
+**不能合（as-of `4ed1f379`）**，当时的两个阻断项是：
 
 - **B1（语义与文档）**：`never claimed` 编码的是「**历史上从未**领取」，不是「**当前**没有
   推进者」。首次领取后、以及账本已是 `exhausted`（永久不再领取）的行，读面都不再报这个
@@ -32,9 +39,9 @@ PG 容器 `sn951-review-pg`（`127.0.0.1:55481`，`sn951`），每例自建 sche
 B1 既需要改文档，也需要（或明确不做并写清）补一个可观察的「当前没有推进者 / 永久不可再
 领取」信号；B2 是纯测试补齐。两项修完可以复审，不需要重做容量或状态机。
 
-## 1. 阻断项
+## 1. 第一轮阻断项（均已在第二轮闭合）
 
-### B1 `never claimed` 是「历史从未领取」，文档却把它当「当前有没有推进者」
+### B1（第一轮，已闭合）`never claimed` 是「历史从未领取」，文档却把它当「当前有没有推进者」
 
 涉及代码与文档：
 
@@ -118,7 +125,7 @@ row"。而本 PR 新增测试的 docstring（`tests/integration/test_cancel_fail
 - 证据面：给出真实窗口的账本查询结果（或把结论改成「本次修的是 no-worker 部署形状，
   不声称覆盖历史 exhausted 窗口」），并让两个 docstring/PR 正文的参考窗口陈述一致。
 
-### B2 新增断言对「计数恒值」和「降级分支」不敏感
+### B2（第一轮，已闭合）新增断言对「计数恒值」和「降级分支」不敏感
 
 涉及：
 
@@ -313,7 +320,7 @@ M6 的失败被 `ReconciliationStoreUnavailableError` 泛化（CHECK 被 `psycop
 
 ## 7. 复核环境与收尾
 
-- 被审 head 上相关测试：`tests/integration/test_cancel_failure_slot_pg.py` **18 passed**，
+- 第一轮被审 head 上相关测试：`tests/integration/test_cancel_failure_slot_pg.py` **18 passed**，
   加上 `tests/integration/test_completed_release_pg.py` 共 **34 passed**；
   `tests/integration/test_debt_probe_plans_pg.py` **1 passed**。
 - `ruff check` / `ruff format --check`（被改的 3 个 Python 文件）通过。
@@ -322,3 +329,169 @@ M6 的失败被 `ReconciliationStoreUnavailableError` 泛化（CHECK 被 `psycop
 - 文档门禁：`UV_NO_CONFIG=1 uv run python scripts/dev-env/check-doc-refs.py` →
   `RESULT PASS`、`SCOPE terminal problems=0`；本文件属 `docs/reviews` 过程记录，其记录项
   按门禁设计只计数、不参与终态门禁。
+
+## 8. 第二轮复核（`f89c78a6`）
+
+### 8.1 范围与实跑
+
+返修第 1 轮 head `f89c78a6b812d05cbbb62b2658c108fb5d56d062`（父 `4ed1f379`）。
+`git diff 4ed1f379..f89c78a6` 共 6 个文件、+311/−67：`readiness.py`、`job_cancellation_fence_schema.py`、
+两份文档、两份测试；**仍无 `deploy/**` 代码改动**。新增代码用一段共享的
+`_SCHEDULE_STATE_SQL`（`backend/src/speechnexus_backend/speech/infrastructure/readiness.py:120`）
+和每查询一次的数据库时钟 `_NOW_CLOCK`（同文件 `:111`），完整查询与 Job 级降级查询都引用它
+（同文件 `:432`、`:456`）。
+
+在 `/tmp/sn951-subject`（第二轮 detach 到 `f89c78a6`）与独立 PG `127.0.0.1:55481` 实跑：
+
+```bash
+UV_NO_CONFIG=1 SPEECHNEXUS_TEST_DATABASE_URL='postgresql://…@127.0.0.1:55481/sn951' \
+  uv run pytest tests/integration/test_cancel_failure_slot_pg.py \
+                 tests/integration/test_completed_release_pg.py -q
+# 39 passed in 18.03s（cancel 23 + completed 16）
+
+… pytest tests/integration/test_debt_probe_plans_pg.py -q
+# 1 passed
+
+… pytest tests/integration/test_stop_evidence_debt_pg.py -q
+# 6 passed
+
+uv run ruff check <4 changed .py files>        # All checks passed!
+uv run ruff format --check <4 changed .py files>  # already formatted
+```
+
+第一轮报告里的 18/34 是本轮之前的数字；第二轮两个受影响文件合计 39 passed（另加 plan 1、
+stop-evidence 6）。审查人未修改被审代码；全部变异在 `/tmp/sn951-subject` 内逐条施加并以
+备份 `cmp` 还原，收尾 `git status --porcelain` 为空。
+
+### 8.2 B1 闭合
+
+**判定：闭合。** 三条事实现在都由同一段 CASE 在**同一数据库时刻**算出，且完整读面与 Job 级
+降级读面共用该 CASE：
+
+- `never claimed`：`r.job_id IS NULL`，即账本无行；首次领取后消失，文档明确它只描述历史，
+  不再反推「现在有没有进程」（`docs/components/production-jobs.md:360` 起的表、
+  `docs/operations/async-job-runbook.md:1285` 起的 §13.1 都已删掉第一轮点名的
+  「worker 在跑」「推进者已经在工作」两处）。
+- `never claimable (exhausted)`：`settled_at_us IS NULL AND last_outcome = 'exhausted'`；
+  与 `_CLAIM` 的 `last_outcome IS DISTINCT FROM 'exhausted'` 同义，重跑不会领取。
+- `due now`：未 settled、非 exhausted、`next_check_at_us <= now`；`now` 与宽限过滤共用
+  `_NOW_CLOCK`，不使用进程时钟（同文件 `:111`）。
+
+实跑混合部署（主 Job 两条租约、无账本；另 1 无账本、2 exhausted、2 due）：
+
+```
+cancellation_debt: 6 accepted cancellation(s) still hold capacity over 2 held lease(s)
+(held leases: execution-unknown=2; jobs: no-held-lease=5;
+ never claimed: 2; never claimable (exhausted): 2; due now: 2): …
+```
+
+主 Job 的两条租约只计 1 个 `never claimed`，三类合计 6，与 6 个受理一一对应；没有重复、
+没有同一 Job 落两类。Job 级降级路径也实测三种齐全：
+
+```
+(jobs: lease-unread=1; never claimed: 1)
+(jobs: lease-unread=1; never claimable (exhausted): 1)
+(jobs: lease-unread=1; due now: 1)
+```
+
+参考窗口证据已统一：`tests/integration/test_cancel_failure_slot_pg.py:791`
+（`test_the_reference_window_shape_is_never_claimable_again`）插入 `attempts=8`、
+`last_outcome='exhausted'`、`settled_at_us=NULL`，断言 detail 只有
+`never claimable (exhausted): 1`，并断言 `run_once` 的 `(claimed, settled) == (0, 0)`；
+模块 docstring 与本 PR 新增测试 docstring 都改为「参考窗口是 exhausted 行」，不再与
+`docs/reviews/2026-11-16-cancel-failure-slot-release.md:138` 的旧复盘冲突。B1 的语义与
+证据面都闭合。
+
+### 8.3 B2 闭合与变异
+
+**判定：第一轮点名的 B2 项闭合；另发现一条非阻断测试缺口（M6）。** 新用例覆盖：
+
+- 混合计数 `2 never claimed + 2 exhausted + 2 due`，同时证明按 Job 去重
+  （`tests/integration/test_cancel_failure_slot_pg.py:850`）；
+- `never claimed` 领取后消失，且领取后仍保留完整阻塞明细（同文件 `:751`）；
+- 参考窗口 `exhausted` 不再被领取（同文件 `:791`）；
+- `due now` 的正例（同文件 `:821`）；
+- Job 级降级路径的 `never claimed`（同文件 `:973`）；
+- 只读快照不变（同文件 `:876`）；
+- 40 个长 id、detail ≤ 512、`never claimed: 40` 保留（同文件 `:892`）。
+
+本次独立施加的变异（完整 `test_cancel_failure_slot_pg.py`，`-q --tb=line`）：
+
+| 变异 | 实测 | 红在 |
+|---|---|---|
+| M1 计数恒值 `1` | `2 failed, 21 passed` | mixed、truncation |
+| M2 删 exhausted 分支 | `2 failed, 21 passed` | reference-window、mixed |
+| M3 删 due 分支 | `2 failed, 21 passed` | due-now、mixed |
+| M4 `IS NULL` → `IS NOT NULL`（共享首支） | `7 failed, 16 passed`（作者记 8，其选择集未复核） | never-claimed、reference、due、mixed、truncation、Job 级、full-detail |
+| M5 把 Job 级查询的 `schedule_state` 换成常量 `'scheduled'` | `1 failed, 22 passed` | `test_a_role_without_the_coordination_grants_still_names_the_job` |
+
+M5 的原文说「只翻 Job 级 CASE 首支」，但当前 head 的两个查询共用同一段 CASE，没有可单独
+翻转的 Job 级首支；用等价的「Job 级常量」变异复现，红色仍落在点名的降级用例上，说明该
+路径的标记确实有断言。
+
+**M6（本轮新发现，非阻断）**：把 `WHEN r.next_check_at_us <= now_clock.now_us THEN 'due'`
+改成 `WHEN r.next_check_at_us IS NOT NULL THEN 'due'`，整套 23 条仍 **`23 passed`**。原因是
+没有一条用例使用「`next_check_at_us` 在未来」的受理：现有 due 用例都用 `0`（远在过去）。
+直接场景实测当前实现是正确的：
+
+```
+SCHEDULED detail: … (held leases: execution-unknown=1): …   # 无 due now
+CLAIM before due: 0
+CLAIM at/after due: 1
+```
+
+即未来 `next_check_at_us` 不会被报 `due now`，到点后 `_CLAIM` 才会领取；缺的是一条把
+「未来不是 due」钉住的负例。建议补一条（`next_check_at_us = now + 1h`，断言 detail 不含
+`due now`，并断言到期前 `claimed=0`、到期后 `claimed=1`），即可让 M6 变红。
+
+### 8.4 授权变更：必需、最小、升级影响
+
+`cancellation_debt_reader_grants` 在
+`backend/src/speechnexus_backend/speech/infrastructure/job_cancellation_fence_schema.py:140`
+把账本授权从 `job_id, settled_at_us` 扩为 `job_id, settled_at_us, last_outcome, next_check_at_us`。
+核对结论：
+
+- **CASE 必需**：共享 CASE 只读账本的这四列；`_DEBT`/`_JOB_LEVEL_DEBT` 均不读 `attempts` 或
+  `updated_at_us`。
+- **最小且只读**：`information_schema.column_privileges` 实测只有上述 4 列（无表级授权）；
+  以该角色执行 `SELECT attempts` 与 `UPDATE … SET attempts=99` 均 `InsufficientPrivilege`。
+  新增两列是调度状态，不含请求内容；没有新增关系或写权限。
+- **升级影响**：只影响重跑授权函数，不需要迁移。以旧授权（仅 `job_id, settled_at_us`）实跑，
+  `_DEBT` 与 `_JOB_LEVEL_DEBT` 都读不到新列，探针整体变成
+  `cancellation_debt: unavailable (permission)`；`/readyz` 仍 `ready=True`、`status=ok`，
+  同族 `stop_evidence_debt` 仍可执行（返回 `None`，不因这两列降级）。这与
+  `docs/components/production-jobs.md:412`、`:419` 的升级说明一致，升级动作写明了
+  「以 owner 重跑 `cancellation_debt_reader_grants`」。
+
+**非阻断文档缺口**：`deploy/README.md:988` 与
+`docs/operations/compose-minimal.md:1223` 仍把漏授权的自查信号写成
+`cancellation_debt: … (jobs: lease-unread=1) …`；本次实测旧授权下是
+`unavailable (permission)`，不是 Job 级降级形态。`docs/releases/mvp-0.1.0.md:161` 也仍写
+「`cancellation_debt` 不受影响」，与本轮新增列的实际降级相反。`docs/components/production-jobs.md:416`
+的「旧的四列授权（账本只有 `job_id/settled_at_us`）」措辞也自相矛盾（旧账本授权是两列）。
+建议同步这三处；组件文档是主文档且已正确，故不阻断，但部署自检/发布说明应跟上。
+
+### 8.5 非阻断残留
+
+1. **M6 测试缺口**（§8.3）：未来 `next_check_at_us` 未被负例钉住；建议补一条。
+2. **时钟源不同**：读面用数据库 `clock_timestamp()`（`backend/src/speechnexus_backend/speech/infrastructure/readiness.py:111`），worker 的领取
+   用进程时钟 `int(time.time() * 1_000_000)`（`backend/src/speechnexus_backend/job_cancellation_runtime.py:445`）。
+   过滤字段（settled/exhausted/`next_check <= now`）逐条一致，单机/NTP 同步下等价；时钟偏差时
+   `due now` 可能相对 worker 提前或滞后。文档已注明 `now` 取数据库时钟，但
+   `docs/components/production-jobs.md:368` 的「与 worker 的领取谓词逐条一致」宜收窄为
+   「过滤条件一致」或补一句时钟口径。
+3. **部署自检文档**（§8.4）：`deploy/README.md:988`、`docs/operations/compose-minimal.md:1223`、
+   `docs/releases/mvp-0.1.0.md:161` 与实测降级信号不一致；组件文档
+   `docs/components/production-jobs.md:416` 的「旧的四列授权」措辞需改为「旧账本两列授权」。
+4. **`scheduled` 窗口未命名**：`next_check_at_us` 在未来的行不打印任何标记；文档
+   （`docs/components/production-jobs.md:378` 起）说无 worker 时读面「在 never claimed 与
+   due now 之间变化」，实际中间还有一段 ≤ 退避上限（默认 300 s）的无标记窗口。这不是错误
+   （`due now` 只在到期后出现），但建议在文档里点明这个有界窗口。
+5. **M5 的表述**：PR 正文的「只翻 Job 级 CASE 首支」在当前 head 上不可直接施加（两查询共享
+   CASE）；这不影响闭合结论，但返修记录宜改成可复现的等价变异。
+
+### 8.6 第二轮结论
+
+**可合（第二轮）。** B1/B2 已闭合，授权变更必需、最小、只读，旧授权降级如实且不失败
+`/readyz`。上面 5 条均为非阻断建议，其中 M6 是唯一一条能让测试继续变绿的变异，建议在合并
+前或紧随其后补上；不构成新的行为缺陷，也不改变本轮结论。

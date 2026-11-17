@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
+# ---- usage-start
 # Re-runnable check for the "empty database → POST /v1/nexus/jobs returns 202"
-# path documented in docs/operations/compose-minimal-from-zero.md.
+# path documented in docs/operations/compose-minimal-from-zero.md §13.
 #
 # It drives only the parts of that path that live above the Compose topology:
 # publish one binding through the public admin routes, upload one inspected
@@ -9,30 +10,42 @@
 # roles, api, gateway) comes from compose-minimal.md §0–§7; this script refuses
 # to run against a stack whose probes are not 200.
 #
-# Every phase asserts the failure it is supposed to see, so the two counter-
-# examples stay executable instead of being a one-off manual note:
-#
-#   * without the publication step the create call must be
-#     422 model_not_published          (phase counterexample-unpublished)
+# What a PASS proves. Each phase asserts the outcome it is supposed to see, and
+# two of them are counter-examples kept executable instead of being a one-off
+# manual note:
+#   * without the publication step the create call must be 422 model_not_published
 #   * with a workspace quota whose policy_revision differs from the recipe the
 #     registration must fail and name quota_policy_conflict
-#                                      (phase counterexample-policy)
+# `--phase all` additionally starts by asserting the database is untouched
+# (publications, binding_revisions, workspace_quotas, host_nodes,
+# engine_instances and held_slots are all 0), so a green `all` means "from an
+# empty database to 202". Phase create only passes on a real 202; the capacity
+# refusal is the separate phase create-expect-429, so a used stack cannot pass
+# this script by falling into the 429 branch.
 #
 # Nothing here fabricates a row: the asset comes from POST /v1/nexus/assets,
 # the binding from the three admin routes, and host_nodes / workspace_quotas /
 # engine_instances from `speechnexus-register-engine`. The engine behind the
-# registration probe is a local /health-only stand-in (see --engine-stub):
-# it proves the registration path, not that a model can transcribe. This script
+# registration probe is a local /health-only stand-in (see --engine-stub): it
+# proves the registration path, not that a model can transcribe. This script
 # does not build images, run migrations, or edit deploy/compose.yaml.
+#
+# Phases: require-empty probe counterexample-unpublished publish asset register
+#         create create-expect-429 counterexample-policy
 #
 # Usage:
 #   scripts/dev-env/check-from-empty-first-job.sh --phase all
+#   scripts/dev-env/check-from-empty-first-job.sh --phase require-empty
 #   scripts/dev-env/check-from-empty-first-job.sh --phase counterexample-unpublished
 #   scripts/dev-env/check-from-empty-first-job.sh --phase create --asset-id asset-…
+#   scripts/dev-env/check-from-empty-first-job.sh --phase create-expect-429 --asset-id asset-…
+#
+# --require-empty runs the empty-start assertion before any single phase.
 #
 # Exit codes: 0 every assertion of the selected phases holds; 1 an assertion
 # failed or a prerequisite probe is not 200; 2 the selected phase needs an input
 # this run cannot derive (missing --asset-id, unreadable compose env, no venv).
+# ---- usage-end
 
 set -euo pipefail
 
@@ -54,11 +67,13 @@ ENGINE_STUB_PORT="18100"
 ENGINE_STUB_PID=""
 ASSET_ID=""
 KEEP_STUB="0"
+REQUIRE_EMPTY="0"
 HTTP_BODY=""
 
 
 usage() {
-  sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  awk '/^# ---- usage-start/{on=1;next} /^# ---- usage-end/{on=0} on' "${BASH_SOURCE[0]}" \
+    | sed 's/^# \{0,1\}//'
 }
 
 fail() {
@@ -89,6 +104,7 @@ while [ "$#" -gt 0 ]; do
     --engine-stub-port) ENGINE_STUB_PORT="${2:?--engine-stub-port needs a value}"; shift 2 ;;
     --asset-id) ASSET_ID="${2:?--asset-id needs a value}"; shift 2 ;;
     --keep-engine-stub) KEEP_STUB="1"; shift ;;
+    --require-empty) REQUIRE_EMPTY="1"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; fail "unknown argument: $1" ;;
   esac
@@ -306,6 +322,32 @@ phase_probe() {
     [ "$status" = "200" ] || fail "probe $url returned ${status:-<no answer>}; finish compose-minimal.md §0–§7 first"
     pass "probe $url 200"
   done
+}
+
+# Assert the database is untouched, so a PASS means "from an empty database".
+# Every count below is written by a product entry point (publish, asset upload,
+# registration, create), so a non-zero row means the stack was already used.
+phase_require_empty() {
+  local problems="" value
+  for pair in \
+    "speech_publications:publications" \
+    "speech_binding_revisions:binding_revisions" \
+    "workspace_quotas:workspace_quotas" \
+    "host_nodes:host_nodes" \
+    "engine_instances:engine_instances"; do
+    value="$(sql_scalar "select count(*) from speech.${pair%%:*}")"
+    if [ "$value" != "0" ]; then
+      problems="$problems ${pair##*:}=$value"
+    fi
+  done
+  value="$(sql_scalar "select coalesce(sum(held_slots),0) from speech.engine_instances")"
+  if [ "$value" != "0" ]; then
+    problems="$problems held_slots=$value"
+  fi
+  if [ -n "$problems" ]; then
+    fail "the stack is not empty ($problems): a PASS here has to mean 'from an empty database', so start from fresh PostgreSQL and MinIO volumes (docker compose … down -v) and re-run"
+  fi
+  pass "empty start: publications=0 binding_revisions=0 workspace_quotas=0 host_nodes=0 engine_instances=0 held_slots=0"
 }
 
 phase_counterexample_unpublished() {
@@ -565,28 +607,44 @@ phase_create() {
   phase_probe
   local asset_id="${ASSET_ID:-$(state_get asset_id)}" status
   [ -n "$asset_id" ] || { printf 'run --phase asset first, or pass --asset-id\n' >&2; exit 2; }
+
+  # This phase only passes on a real 202. The refusal a used stack produces is a
+  # separate assertion (phase create-expect-429), never a silent alternative:
+  # otherwise a green run would not prove that the happy path was reached.
+  local held
+  held="$(sql_scalar "select coalesce(sum(held_slots),0) from speech.engine_instances")"
+  if [ "$held" != "0" ]; then
+    fail "create expects a free capacity slot but $held slot(s) are already held: assert the capacity refusal with --phase create-expect-429, or start from an empty stack"
+  fi
+
   local work
   work="$(mktemp -d)"
   printf '{"kind":"asr","model":"%s","input":{"audio_asset_id":"%s"}}\n' "$BINDING_ID" "$asset_id" > "$work/job.json"
-
-  # The one-shot registration writes one slot (max_slots=1 in the example recipe).
-  # A queued Job holds it until it finishes, so a second create on the same stack
-  # is the capacity branch, not a broken deployment. Assert whichever holds.
-  local held
-  held="$(sql_scalar "select coalesce(sum(held_slots),0) from speech.engine_instances")"
   status="$(http_post /v1/nexus/jobs "$work/job.json")"
-  if [ "$held" = "0" ]; then
-    expect_status 202 "$status" "create Job on a fully provisioned stack"
-    local job_id
-    job_id="$(response_field id)"
-    [ -n "$job_id" ] || fail "create response carried no Job id"
-    pass "Job $job_id queued ($(response_field status))"
-    state_put job_id "$job_id"
-  else
-    expect_status 429 "$status" "create Job while $held slot(s) are already held"
-    expect_error_code job_capacity_exhausted "create Job while $held slot(s) are already held"
-    pass "capacity branch holds: the queued Job still holds the only slot, so the next create is 429"
-  fi
+  expect_status 202 "$status" "create Job on a fully provisioned stack"
+  local job_id
+  job_id="$(response_field id)"
+  [ -n "$job_id" ] || fail "create response carried no Job id"
+  pass "Job $job_id queued ($(response_field status))"
+  state_put job_id "$job_id"
+  rm -rf "$work"
+}
+
+# The capacity refusal is its own assertion: the example recipe registers one
+# slot (max_slots=1), so a queued Job holds it until the lease is released or
+# admission's deadline expires.
+phase_create_expect_429() {
+  phase_probe
+  local asset_id="${ASSET_ID:-$(state_get asset_id)}" status
+  [ -n "$asset_id" ] || { printf 'run --phase asset first, or pass --asset-id\n' >&2; exit 2; }
+  local work held
+  work="$(mktemp -d)"
+  held="$(sql_scalar "select coalesce(sum(held_slots),0) from speech.engine_instances")"
+  printf '{"kind":"asr","model":"%s","input":{"audio_asset_id":"%s"}}\n' "$BINDING_ID" "$asset_id" > "$work/job.json"
+  status="$(http_post /v1/nexus/jobs "$work/job.json")"
+  expect_status 429 "$status" "create Job while $held slot(s) are already held"
+  expect_error_code job_capacity_exhausted "create Job while $held slot(s) are already held"
+  pass "capacity refusal holds with $held held slot(s): the next create is 429 job_capacity_exhausted"
   rm -rf "$work"
 }
 
@@ -647,17 +705,23 @@ run_phase() {
     asset) phase_asset ;;
     register) phase_register ;;
     create) phase_create ;;
+    create-expect-429) phase_create_expect_429 ;;
+    require-empty) phase_require_empty ;;
     counterexample-policy) phase_counterexample_policy ;;
     *) usage >&2; fail "unknown phase: $1" ;;
   esac
 }
 
 if [ "$PHASE" = "all" ]; then
-  for step in probe counterexample-unpublished publish asset register create; do
+  for step in require-empty probe counterexample-unpublished publish asset register create counterexample-policy; do
     printf '\n== phase %s ==\n' "$step"
     run_phase "$step"
   done
 else
+  if [ "$REQUIRE_EMPTY" = "1" ] && [ "$PHASE" != "require-empty" ]; then
+    printf '\n== phase require-empty ==\n'
+    phase_require_empty
+  fi
   run_phase "$PHASE"
 fi
 

@@ -350,10 +350,11 @@ binding 身份必须等于 §7.1 发布出来的 `revision_id`；反过来先注
 head 与实例对不上的 `ready` 实例，创建 Job 仍然失败。
 
 创建 Job 时的判定顺序是固定的，据此可以判断缺的是哪一项：先解析 binding（无已发布 head →
-`422 model_not_published`，`speech/application/public_jobs.py:822`），再取该工作空间的配额行（无行 →
-`422 workspace_not_configured`，`public_job_admission.py:196`），然后才找 ready 实例
-（找不到 → `429 job_capacity_exhausted`，`public_job_admission.py:248`）。因此「没有实例时
-返回 429」只在 binding 与配额都已存在时成立；空库上最先看到的是 422。
+`422 model_not_published`，`speech/application/public_jobs.py:835`），再校验输入资产（未就绪 →
+`422 asset_not_ready`，`speech/application/public_jobs.py:1490`），然后取该工作空间的配额行（无行 →
+`422 workspace_not_configured`，`public_job_admission.py:201`），最后才找 ready 实例
+（找不到 → `429 job_capacity_exhausted`，`public_job_admission.py:253`）。因此「没有实例时
+返回 429」只在 binding、输入资产与配额都已成立时成立；空库上最先看到的是 422。
 
 从空库到第一个 `202` 的完整顺序（含输入资产与 `asset-inspector` 这一步）、每步的预期输出与两条反例的实跑记录见[从零实跑 §13](compose-minimal-from-zero.md#13-从空库到第一个-202-的步骤清单)。
 

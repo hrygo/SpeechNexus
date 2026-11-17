@@ -298,7 +298,7 @@ HTTP/1.1 422 Unprocessable Content
 | D1 | `docs/operations/compose-minimal.md:361`（同类还有 `:880`、`:920`、`:1064`、`:1077`） | 核对命令硬编码默认项目名的容器名 `speechnexus-postgres-1`；用独立 Compose 项目（本项目 Agent 约定要求）时直接 `No such container` | 改成 `"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml exec -T postgres psql …`，或在第 1 节声明项目名变量并统一使用 |
 | D2 | `deploy/compose.yaml:90`、`:850` 与 `docs/operations/compose-minimal.md:79` | 子网与 MinIO 静态地址硬编码；文档只说"一起调整部署配置"，没有环境变量或受支持的 override 入口。本机 `172.28.0.0/24` 已被其它项目占用，从零必须改仓库文件（含四份 private 示例） | 提供 `SPEECHNEXUS_COMPOSE_SUBNET` / `SPEECHNEXUS_MINIO_STATIC_IP` 之类的 env 键，或提供并测试一份受支持的 override 文件 |
 | D3 | `docs/operations/compose-minimal.md:246` 与 `deploy/engines/file-asr-audio/artifact-pin.json:139` | VAD 模型只有一句"把已批准的 Silero ONNX 普通文件放到私有目录"：没有获取来源、没有校验命令；仓库钉的摘要是 `sha256:1a153a22…`，与常见 Silero 发行版（本轮实测 `597d30b3…`）不同。网关只校验配置里的摘要，因此"任何 Silero ONNX"都能过闸门，但没人能判断哪份是"已批准" | 在 §3 增加受控来源与 `sha256` 核对步骤（例如用 `artifact-pin.json` 的摘要校验），并说明摘要不符时网关的具体报错 |
-| D4 | `docs/operations/async-job-runbook.md:32` | 第 4 项写"没有实例时创建返回 `429 job_capacity_exhausted`"；从零实测先得到 `422 model_not_published`（binding 未发布），容量判定在 `public_job_admission.py:219`，排在绑定与配额之后 | 改成"已发布 binding 且工作空间配额存在时，才由容量返回 429；从零未发布 binding 时先 422" |
+| D4 | `docs/operations/async-job-runbook.md:32` | 第 4 项写"没有实例时创建返回 `429 job_capacity_exhausted`"；从零实测先得到 `422 model_not_published`（binding 未发布），容量判定在 `public_job_admission.py:253`，排在绑定、输入资产与配额之后 | 改成"已发布 binding 且工作空间配额存在时，才由容量返回 429；从零未发布 binding 时先 422" |
 | D5 | `docs/operations/async-job-runbook.md:109` | "只配 writer 时创建仍返回 `503 job_unavailable`"；实测（writer 已配、admission 为空、无 binding）返回 `422 model_not_published`。只有请求走到准入时才会是 503 | 加"在有已发布 binding 的部署上"限定，并同时给出从零会先看到的 422 |
 | D6 | `docs/operations/async-job-runbook.md:319`、`:704`，以及 `docs/operations/compose-minimal.md` 第 6 节 | 两份手册都假设"已发布 binding + 完整 execution_defaults + 工作空间配额"是既有事实，却没有任何步骤产生它们；第 6 节只写回 `SPEECHNEXUS_BINDING_WRITER_DATABASE_URL`，没有草稿/发布命令。结果是"照文档起一套"永远创建不出 Job | 二选一：补一节"从零发布一个 binding（含 manifest 与 evidence）"并纳入自检；或明确写"本参考部署不产生 binding，异步 Job 需要另按 [发布 binding](publish-binding-revision.md) 与[绑定生命周期](binding-lifecycle.md) 取证"，同时把它列为创建 Job 的前置 |
 | D7 | `deploy/job-startup-gate.py:538`（守卫 SQL 在 `backend/src/speechnexus_backend/job_dispatch_runtime.py:337` 的 `has_schema_privilege`） | 迁移未执行时，角色守卫先于 `migration_findings` 运行，`has_schema_privilege` 对不存在的 `speech` schema 抛 `InvalidSchemaName`，未捕获 → 直接 traceback 退出；手册承诺的"迁移缺失点名"不出现 | 先跑 `migration_findings`（它用 `to_regclass`，schema 缺失也安全），或给守卫 SQL 加 `to_regnamespace(schema) IS NOT NULL` 前置判断，并捕获 `InvalidSchemaName` |
@@ -521,7 +521,7 @@ volumes_end
 | # | 步骤 | 权威命令 | 前置检查 | 预期输出 | 缺失时 |
 | --- | --- | --- | --- | --- | --- |
 | 1 | 定项目名、子网、宿主端口 | [§1](compose-minimal.md#1-固定服务集合)、[§1.1](compose-minimal.md)、[§2](compose-minimal.md#2-准备环境文件) | `"${COMPOSE[@]}" … config \| grep -E 'ipv4_address:\|subnet:\|published:'` | 与 `deploy/compose.env` 里 `SPEECHNEXUS_COMPOSE_SUBNET` / `SPEECHNEXUS_MINIO_STATIC_IP` / 宿主端口一致 | 子网被占时网络创建 `Pool overlaps`；两项都由 env 承载，**不需要改仓库文件** |
-| 2 | 应用镜像 | [§0](compose-minimal.md#0-构建前提) | `docker images` 里有 `<项目>-api` 等 6 个 | `BUILD_EXIT=0`；`minio` 复用同 tag 既有镜像 | 缺 `speechnexus-minio:<tag>` 时 `up` 会现场构建并在取 LICENSE 处失败 |
+| 2 | 应用镜像 | [§0](compose-minimal.md#0-构建前提) | `docker images` 里有 `<项目>-api` 等 7 个 | `BUILD_EXIT=0`；`minio` 复用同 tag 既有镜像 | 缺 `speechnexus-minio:<tag>` 时 `up` 会现场构建并在取 LICENSE 处失败 |
 | 3 | 私有文件 + VAD 摘要 | [§3](compose-minimal.md#3-准备私有文件) | `python3 -m json.tool` 六份 + `chmod 600` 检查 | `vad_model_sha256` 等于仓库钉的摘要 | 全零摘要拒绝启动；摘要与文件不符只在首个 Job 的执行段暴露（§4 记录） |
 | 4 | postgres / minio / 桶 | [§4](compose-minimal.md#4-启动数据库与对象存储) | `curl -fsS http://127.0.0.1:<S3端口>/minio/health/live` | `bucket ready: speechnexus-inputs (versioning enabled)` 与 `…-results…` | 桶缺失 → 派发启动闸门点名桶名与键名 |
 | 5 | 迁移到唯一 head | [§5](compose-minimal.md#5-迁移到唯一-head) | `select version_num from speech.alembic_version` | 唯一 head | 未迁移：API 起不来（traceback）、闸门先抛 `InvalidSchemaName` |
@@ -594,8 +594,8 @@ workspace_quotas` / `INSERT INTO host_nodes` 只出现在 `engine_registration.p
 
 ### 13.4 可复跑脚本与两条反例
 
-`scripts/dev-env/check-from-empty-first-job.sh`（阶段分派在
-[`scripts/dev-env/check-from-empty-first-job.sh:642`](../../scripts/dev-env/check-from-empty-first-job.sh)）
+`scripts/dev-env/check-from-empty-first-job.sh`（空库断言在
+[`scripts/dev-env/check-from-empty-first-job.sh:330`](../../scripts/dev-env/check-from-empty-first-job.sh)）
 把第 9–14 步做成可按阶段重跑、每步自带断言的脚本：
 
 ```bash
@@ -603,17 +603,27 @@ scripts/dev-env/check-from-empty-first-job.sh --phase all \
   --url http://127.0.0.1:8137 --gateway-url http://127.0.0.1:8138 --project <Compose 项目名>
 ```
 
-它不构建镜像、不跑迁移、不改 `deploy/compose.yaml`；阶段为 `probe`、`counterexample-unpublished`、
-`publish`、`asset`、`register`、`create`、`counterexample-policy`，任一断言不成立即以非零退出。
-两条反例是脚本里的常驻检查，不是一次性手工记录：
+它不构建镜像、不跑迁移、不改 `deploy/compose.yaml`；阶段为 `require-empty`、`probe`、
+`counterexample-unpublished`、`publish`、`asset`、`register`、`create`、`create-expect-429`、
+`counterexample-policy`，任一断言不成立即以非零退出。
 
-1. **去掉「发布 binding」这步** → 对同一 binding 只建草稿、不发布，创建必须
-   `422 model_not_published`（`--phase counterexample-unpublished`）。
-2. **让 `policy_revision` 与已有配额不一致** → 改配方 `policy_revision_id` 后重跑注册，必须
-   非零退出并点名 `quota_policy_conflict`（`--phase counterexample-policy`）；阶段结束自动恢复配方。
+**这里的 `PASS` 证明什么，不含糊：**
 
-脚本自身被文档按 `path:line` 引用，删掉文件会让 `scripts/dev-env/check-doc-refs.py` 变红——
-"删掉断言就必须有检查变红"这条在这里由文档引用门禁承担，不需要新的测试文件。
+- `--phase all` **第一步**是 `require-empty`：断言 `speech_publications`、`speech_binding_revisions`、
+  `workspace_quotas`、`host_nodes`、`engine_instances` 五行计数与 `held_slots` 全为 `0`。任一非零就
+  退出 `1` 并逐项点名（例如 `publications=1 binding_revisions=2 held_slots=1`），所以绿色的 `all`
+  等价于「从这个空库走到了 `202`」，在已用过的栈上重跑会直接失败而不是悄悄通过。
+- `create` 阶段**只在真的拿到 `202` 时**才 `PASS`；容量拒绝是独立的 `create-expect-429` 阶段
+  （断言 `429` + `job_capacity_exhausted`）。已占用容量的栈上跑 `create` 会失败并提示改用
+  `create-expect-429`，不允许两个分支共用一个模式。
+- 两条反例都是常驻检查：`counterexample-unpublished` 与 `counterexample-policy`，`all` 里都会跑到；
+  第二条改的是私有配方，阶段结束自动恢复（再注册回到 `already_ready`）。
+
+**已知限制。** 脚本文件被本文档按 `path:line` 引用，所以删掉文件会让
+`scripts/dev-env/check-doc-refs.py` 报 `MISSING`、`RESULT FAIL`。但那个门禁只管文件是否存在、
+行号是否越界：**保留文件、只删掉脚本里的某一条断言，门禁仍然是 `PASS`**。断言本身的判据是每个阶段
+的预期状态码与错误码，改坏或删掉它只有重跑对应阶段才会红（`create` 阶段现在就是这个作用——判定
+标准从「202 或 429 都算过」收紧成「只有 202 算过」）。
 
 ## 14. 本轮实跑：从空库到 `202`（2026-11-17，macOS）
 
@@ -633,7 +643,7 @@ GPU 引擎）的区别是**这次没有真实引擎**，注册针对的是一个
 | 隔离 | 项目名 `sn935`，子网 `172.31.0.0/24`（`SPEECHNEXUS_COMPOSE_SUBNET`），宿主端口 `8137`/`8138`/`55443`/`59010`/`59011`（全部走 `deploy/compose.env`，**没有改任何仓库文件**） |
 | 应用镜像 | 本轮从该 SHA 的源码构建 7 个：`sn935-api f6fb167e6021`、`sn935-gateway 96ae65bf1de3`、`sn935-migrate d421c1336e4f`、`sn935-engine-register 8fb142486a31`、`sn935-job-dispatch-worker 51c4034a9365`、`sn935-minio-init ffbe17302a9e`、`sn935-asset-inspector 38e3cfaf5d66`；`BUILD_EXIT=0` |
 | `minio` 镜像 | 复用同 tag 既有镜像 `speechnexus-minio:RELEASE.2025-09-07T16-13-09Z`，未从源码构建 |
-| VAD 模型 | `/Users/hrygo/Library/Application Support/SpeechRail/models/vad/silero_vad.onnx`，2327524 字节，`sha256:1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3`，与 `deploy/engines/file-asr-audio/artifact-pin.json:139` 钉的摘要**逐字相同**（§4 那次本机只有另一份 `597d30b3…`，因此这里 D3 的摘要核对这次是过的） |
+| VAD 模型 | 本机已有的 Silero ONNX（操作主机私有目录下的 `silero_vad.onnx`，不记录绝对路径），2327524 字节，`sha256:1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3`，与 `deploy/engines/file-asr-audio/artifact-pin.json:139` 钉的摘要**逐字相同**（§4 那次本机只有另一份 `597d30b3…`，因此这里 D3 的摘要核对这次是过的） |
 | 未起 | `job-dispatch-worker`、`web`、`workbench-api`；没有真实引擎 |
 
 ### 14.2 拓扑层实跑输出
@@ -754,7 +764,7 @@ http=202
 | D12 | 实例已 `ready` 后 `GET /v1/models` 仍报 `"engine_ready":false,"admission_state":"unavailable"`：目录的 readiness 是静态投影，从未接入实例事实 | `backend/src/speechnexus_backend/speech/infrastructure/model_catalog_postgres.py:35`（`readiness or ReadinessFacts()` 恒为空），`public_job_admission` 才是真判据 | 本轮只记录：不要用 `/v1/models` 的 readiness 判断能否创建 Job；runbook §7.1 第 4 步「未注册实例时是 unavailable」暗示它会变，需要订正措辞 |
 | D13 | `api` 的 `/readyz` 现在有四项检查（多 `cancellation_debt`、`stop_evidence_debt`） | `compose-minimal.md:2218` 起写两项 | 文档漂移，记录于此 |
 | D14 | 发布新 revision 后实例身份失效：直接重跑注册被 `instance_config_conflict` 拒绝；创建变成 `429 job_capacity_exhausted`，message 是「no engine instance is registered for model …」 | `engine_registration.py:604`、`public_job_admission.py:211`–`:253` | 记录：换 revision 需要新的 generation/实例轮换路径，本轮**未验证**该路径 |
-| D15 | 单个注册实例的 `max_slots=1`，一个 queued Job 就占满：同一栈上第二次创建是 `429`，message 为「Job capacity is exhausted; retry after the indicated delay.」 | 配方 `runtime_plan.max_slots`、`public_job_admission.py:253` | 不是缺陷，是容量语义；写进 §13 判定表第 4 项 |
+| D15 | 单个注册实例的 `max_slots=1`，一个 queued Job 就占满：同一栈上第二次创建是 `429`，message 为「Job capacity is exhausted; retry after the indicated delay.」 | 配方 `runtime_plan.max_slots`、`public_job_admission.py:253` | 不是缺陷，是容量语义：占用持续到该 Job 的租约被释放或准入截止（`retry_after`）到期；写进 §13 判定表第 4 项 |
 
 ### 14.6 未验证项
 
@@ -768,7 +778,54 @@ http=202
 | `job-dispatch-worker` 启动闸门与派发 | 未验证（本轮） | 不需要真实引擎也能起闸门，但本轮目标止于 `202`；§4.9 与 §11 各有记录 |
 | 同步 ASR/TTS | 未验证 | 不在本卡范围；§12 记录同步 TTS 的前置形态 |
 
-### 14.7 收尾
+### 14.7 审查后复跑（同一台机器，新空卷）
+
+首轮交付后，审查指出「脚本绿」并不能证明「从空库」——`create` 阶段曾在两条分支里择一通过
+（`held_slots≠0` 时就断言 `429`），同一栈上重跑也会 `PASS`。脚本已按此收紧：`all` 第一步断言空库
+（五行计数与 `held_slots` 全为 0），`create` 只在真 `202` 时通过，容量拒绝改为独立的
+`create-expect-429`。在新空卷上复跑：
+
+```text
+$ scripts/dev-env/check-from-empty-first-job.sh --phase all --project sn935 …   # 退出码 0
+== phase require-empty ==
+PASS empty start: publications=0 binding_revisions=0 workspace_quotas=0 host_nodes=0 engine_instances=0 held_slots=0
+== phase counterexample-unpublished ==
+PASS create Job without the publication step: error code model_not_published
+== phase publish ==
+PASS published model-compose-example revision 1 as mbrev-f7e859d84f5a4ab9bb8d113b7177935b
+PASS activated model-compose-example revision 1
+== phase asset ==
+PASS asset asset-b3ae1489a0484c2199f68459881fb7b7 ready (audio/wav, 1000 ms)
+== phase register ==
+PASS engine-register outcome: registered
+PASS workspace_quotas: workspace-default|8|policy-revision-compose-example
+PASS host_nodes: node-local-1|active
+PASS engine_instances: instance-asr-1|1|ready|mbrev-f7e859d84f5a4ab9bb8d113b7177935b|capacity-manifest-compose-example
+== phase create ==
+PASS Job job-daeeb965f3c94175872bafaa399e03b8 queued (queued)
+== phase counterexample-policy ==
+PASS counterexample holds: policy_revision mismatch is exit 4 and names quota_policy_conflict
+RESULT PASS
+```
+
+同一栈上重跑（证明脚本绿不再能被「用过的栈」伪造）：
+
+```text
+$ … --phase all                    → 退出码 1
+FAIL the stack is not empty ( publications=1 binding_revisions=2 workspace_quotas=1
+     host_nodes=1 engine_instances=1 held_slots=1): a PASS here has to mean 'from an
+     empty database', so start from fresh PostgreSQL and MinIO volumes (… down -v) and re-run
+
+$ … --phase create                 → 退出码 1
+FAIL create expects a free capacity slot but 1 slot(s) are already held: assert the
+     capacity refusal with --phase create-expect-429, or start from an empty stack
+
+$ … --phase create-expect-429      → RESULT PASS
+PASS create Job while 1 slot(s) are already held: error code job_capacity_exhausted
+PASS capacity refusal holds with 1 held slot(s): the next create is 429 job_capacity_exhausted
+```
+
+### 14.8 收尾
 
 测后按 `compose-minimal.md` §10.1 的三项 label filter 复核并 `down -v`；`deploy/compose.env`
 与 `deploy/.runtime/private/**` 是本机运行态（git 忽略），不入库。本轮没有修改任何仓库文件里的

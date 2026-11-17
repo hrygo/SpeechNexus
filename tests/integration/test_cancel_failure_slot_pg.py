@@ -682,6 +682,40 @@ def _debt_probe(box: CancelSandbox) -> CancellationDebtProbe:
     )
 
 
+def _add_acceptance(
+    box: CancelSandbox,
+    *,
+    ledger: tuple[str, int, int] | None = None,
+    job_id: str | None = None,
+) -> str:
+    """A second accepted cancellation: Job and fence, plus an optional ledger row.
+
+    ``ledger`` is ``(last_outcome, attempts, next_check_at_us)``. The extra Job holds
+    no lease, so the full read degrades it to ``no-held-lease``: the point is that the
+    schedule scopes count Jobs, not leases, and several Jobs can share one schema.
+    """
+    job_id = job_id or "job-" + uuid.uuid4().hex
+    box.execute(
+        "INSERT INTO speech_jobs (job_id, workspace_id, kind, model_id, request_digest, "
+        "state, status_version, created_at_us, updated_at_us) VALUES (%s, %s, 'tts', "
+        "'tts-quality', %s, 'cancelling', 2, 1, 1)",
+        (job_id, WORKSPACE, DIGEST),
+    )
+    box.execute(
+        "INSERT INTO speech_job_cancellation_fences (job_id, accepted_at_us, request_id) "
+        "VALUES (%s, %s, 'request-852')",
+        (job_id, ACCEPTED_AT_US),
+    )
+    if ledger is not None:
+        outcome, attempts, next_check_at_us = ledger
+        box.execute(
+            f"INSERT INTO {RECONCILIATION_TABLE} (job_id, attempts, next_check_at_us, "
+            "last_outcome, settled_at_us, updated_at_us) VALUES (%s, %s, %s, %s, NULL, 1)",
+            (job_id, attempts, next_check_at_us, outcome),
+        )
+    return job_id
+
+
 def test_the_readiness_detail_names_the_blocking_lease(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -714,6 +748,228 @@ def test_the_readiness_detail_names_the_blocking_lease(
         )
 
 
+def test_the_detail_says_when_no_worker_has_ever_claimed_the_acceptance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#852: "still holds capacity" alone reads as progress; ``never claimed`` says it is not.
+
+    This is the no-worker deployment shape -- a fence with no reconciliation-ledger
+    row -- not the reference window: the reference window's own ledger row is
+    ``exhausted`` (see this module's docstring and
+    ``docs/reviews/2026-11-16-cancel-failure-slot-release.md``), which
+    ``test_the_reference_window_shape_is_never_claimable_again`` covers. The mark is
+    historical: the first claim removes it, and its absence never proves a worker is
+    running.
+    """
+    with _sandbox((LEASE, ACTIVE_DOCUMENT_STATE)) as box:
+        unclaimed = asyncio.run(_debt_probe(box).check())
+        assert unclaimed is not None
+        assert unclaimed.startswith("cancellation_debt: 1 accepted cancellation(s)")
+        assert "(held leases: execution-unknown=1; never claimed: 1)" in unclaimed
+        assert "never claimable" not in unclaimed
+        assert "due now" not in unclaimed
+
+        _install_client(monkeypatch, box.job_id, ACTIVE_DOCUMENT_STATE)
+        reconciler = _reconciler(box, confirm_timeout_seconds=WINDOW_US / 1_000_000)
+        asyncio.run(reconciler.run_once(now_us=ACCEPTED_AT_US + 1_000_000))
+        asyncio.run(reconciler.run_once(now_us=ACCEPTED_AT_US + WINDOW_US + 1))
+
+        # A worker has now claimed the acceptance and recorded why it is blocked: the
+        # historical mark is gone, and the blocked lease is still named in full.
+        claimed = asyncio.run(_debt_probe(box).check())
+        assert claimed is not None
+        assert claimed.startswith("cancellation_debt: 1 accepted cancellation(s)")
+        assert "never claimed" not in claimed
+        assert "never claimable" not in claimed
+        assert (
+            f"{box.job_id} -> {LEASE}(lease=reserved, execution=executing, "
+            "subclass=execution-unknown)" in claimed
+        )
+        assert box.rows()["ledger"][0]["last_outcome"] == "stop_unconfirmed"
+
+
+def test_the_reference_window_shape_is_never_claimable_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#852 reference window: fence present, ledger row ``exhausted``, restart ``claimed=0``.
+
+    ``docs/reviews/2026-11-16-cancel-failure-slot-release.md`` records the window's
+    ledger as ``last_outcome=exhausted`` with ``settled_at_us=NULL`` and a restart as
+    ``claimed=0``: the claim predicate excludes ``exhausted``, so nothing can advance
+    it. The read face must say that instead of looking exactly like a blocked row a
+    worker will retry -- and rerunning the worker must stay a no-op.
+    """
+    with _sandbox((LEASE, QUARANTINED_DOCUMENT_STATE)) as box:
+        box.execute(
+            f"INSERT INTO {RECONCILIATION_TABLE} (job_id, attempts, next_check_at_us, "
+            "last_outcome, settled_at_us, updated_at_us) "
+            "VALUES (%s, 8, 0, 'exhausted', NULL, 1)",
+            (box.job_id,),
+        )
+
+        detail = asyncio.run(_debt_probe(box).check())
+        assert detail is not None
+        assert "(held leases: execution-unknown=1; never claimable (exhausted): 1)" in detail
+        assert "never claimed" not in detail
+        assert "due now" not in detail
+
+        _install_client(monkeypatch, box.job_id)
+        batch = asyncio.run(_reconciler(box).run_once(now_us=ACCEPTED_AT_US + WINDOW_US + 1))
+        assert (batch.claimed, batch.settled) == (0, 0)
+
+
+def test_a_claimable_acceptance_is_reported_as_due_now(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ledger row that is claimable at this instant is named as such.
+
+    ``due now`` is the post-first-claim no-worker shape: the row is scheduled, so the
+    detail must not read as "a worker is advancing it". The same predicate that reports
+    it is the one the worker claims with, so a healthy worker also lands here between
+    polls -- only a mark that persists says nobody is advancing.
+    """
+    with _sandbox((LEASE, ACTIVE_DOCUMENT_STATE)) as box:
+        box.execute(
+            f"INSERT INTO {RECONCILIATION_TABLE} (job_id, attempts, next_check_at_us, "
+            "last_outcome, settled_at_us, updated_at_us) "
+            "VALUES (%s, 1, 0, 'pending', NULL, 1)",
+            (box.job_id,),
+        )
+
+        detail = asyncio.run(_debt_probe(box).check())
+        assert detail is not None
+        assert "(held leases: execution-unknown=1; due now: 1)" in detail
+        assert "never claimed" not in detail
+        assert "never claimable" not in detail
+
+        _install_client(monkeypatch, box.job_id, ACTIVE_DOCUMENT_STATE)
+        batch = asyncio.run(_reconciler(box).run_once(now_us=ACCEPTED_AT_US + WINDOW_US + 1))
+        assert batch.claimed == 1
+
+
+def test_the_schedule_scopes_count_jobs_across_a_mixed_deployment() -> None:
+    """Three ledger facts on one read: exact per-Job counts, independent of lease rows.
+
+    The main Job holds two leases and has no ledger row, so it must count once under
+    ``never claimed``; the extra Jobs add one more never-claimed, two exhausted and two
+    due. A constant count cannot satisfy this, and counting ledger rows instead of Jobs
+    cannot either.
+    """
+    with _sandbox((LEASE, ACTIVE_DOCUMENT_STATE), (LEASE_SECOND, None)) as box:
+        _add_acceptance(box)  # never claimed
+        _add_acceptance(box, ledger=("exhausted", 8, 0))
+        _add_acceptance(box, ledger=("exhausted", 8, 0))
+        _add_acceptance(box, ledger=("pending", 1, 0))
+        _add_acceptance(box, ledger=("pending", 1, 0))
+
+        detail = asyncio.run(_debt_probe(box).check())
+
+    assert detail is not None
+    assert detail.startswith("cancellation_debt: 6 accepted cancellation(s) still hold capacity")
+    assert "over 2 held lease(s)" in detail
+    assert (
+        "(held leases: execution-unknown=2; jobs: no-held-lease=5; "
+        "never claimed: 2; never claimable (exhausted): 2; due now: 2)" in detail
+    )
+
+
+def test_reading_the_debt_leaves_the_capacity_account_untouched() -> None:
+    """The probe is read-only: capacity, leases and the ledger must not move."""
+    with _sandbox((LEASE, QUARANTINED_DOCUMENT_STATE)) as box:
+        _add_acceptance(box, ledger=("exhausted", 8, 0))
+        _add_acceptance(box, ledger=("pending", 1, 0))
+        before = box.rows()
+        detail = asyncio.run(_debt_probe(box).check())
+        after = box.rows()
+
+    assert detail is not None
+    assert before["engine_instances"] == [
+        {"instance_id": INSTANCE, "held_slots": 1, "quarantined_slots": 0}
+    ]
+    assert before == after
+
+
+def test_the_schedule_counts_survive_detail_truncation() -> None:
+    """Many long Job ids truncate the drill-down, never the counted scopes."""
+    with _sandbox((LEASE, ACTIVE_DOCUMENT_STATE)) as box:
+        for _ in range(39):
+            _add_acceptance(box, job_id="job-" + uuid.uuid4().hex + "-" + "x" * 72)
+        detail = asyncio.run(_debt_probe(box).check())
+
+    assert detail is not None
+    assert len(detail) <= 512
+    assert detail.endswith("... (truncated)")
+    assert "never claimed: 40" in detail
+
+
+def test_a_job_already_left_cancelling_is_documented_as_a_blind_spot() -> None:
+    """#852 residual, pinned: capacity held after the Job left ``cancelling``.
+
+    Both debt reads are gated on ``state = 'cancelling'`` because that is the only
+    shape the live-state index (migration 0056) can reach; a Job that closed as
+    ``cancelled`` while its release was refused, or was failed by another owner
+    while the lease stayed reserved, is therefore *not* in the detail. This case
+    pins the current behaviour so the documented drill-down query stays the only
+    read surface for it, and states what closing it needs (a held-lease access
+    path, i.e. another migration).
+    """
+    with _sandbox((LEASE, QUARANTINED_DOCUMENT_STATE)) as box:
+        jobs = box.jobs()
+        current = jobs.get(box.job_id)
+        assert current is not None
+        assert (
+            jobs.settle_cancelled(box.job_id, expected_version=current.status_version).state
+            == "cancelled"
+        )
+
+        after = box.rows()
+        assert after["speech_jobs"][0]["state"] == "cancelled"
+        # Capacity is still held: the release this worker would retry never ran.
+        assert after["admission_leases"][0]["lease_state"] == "reserved"
+        assert after["engine_instances"] == [
+            {"instance_id": INSTANCE, "held_slots": 1, "quarantined_slots": 0}
+        ]
+        # ... and the polled read surface does not name it (the pinned limitation).
+        assert asyncio.run(_debt_probe(box).check()) is None
+
+        named = box.query(
+            "SELECT j.job_id FROM speech_job_cancellation_fences AS f "
+            "JOIN speech_jobs AS j ON j.job_id = f.job_id "
+            "JOIN admission_leases AS l ON l.operation_id = f.job_id "
+            "WHERE l.lease_state NOT IN ('released', 'quarantined')"
+        )
+        assert named == [{"job_id": box.job_id}]
+
+
+def test_lease_attempts_saturate_at_64_and_stay_claimable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#852 known limitation: the claim clamp must stay a schedule, not a counter.
+
+    ``LEAST(attempts + 1, 64)`` exists because a blocked acceptance must stay
+    claimable indefinitely; reverting it to ``attempts + 1`` would surface as a
+    CHECK violation hours later, when the default backoff reaches the bound.
+    Seeded at the bound so the regression is visible in one pass.
+    """
+    with _sandbox((LEASE, ACTIVE_DOCUMENT_STATE)) as box:
+        _install_client(monkeypatch, box.job_id, ACTIVE_DOCUMENT_STATE)
+        reconciler = _reconciler(box, confirm_timeout_seconds=WINDOW_US / 1_000_000)
+        asyncio.run(reconciler.run_once(now_us=ACCEPTED_AT_US + 1_000_000))
+        box.execute(
+            f"UPDATE {RECONCILIATION_TABLE} SET attempts = 64, next_check_at_us = 0 "
+            "WHERE job_id = %s",
+            (box.job_id,),
+        )
+
+        first = asyncio.run(reconciler.run_once(now_us=ACCEPTED_AT_US + WINDOW_US + 1))
+        # The claim lease plus the 300 s maximum backoff must elapse before the next pass
+        # may claim the row again; a claim that never becomes due again is the regression.
+        second = asyncio.run(reconciler.run_once(now_us=ACCEPTED_AT_US + WINDOW_US + 301_000_000))
+
+        assert (first.claimed, second.claimed) == (1, 1)
+        assert box.rows()["ledger"][0]["attempts"] == 64
+
+
 def test_a_role_without_the_coordination_grants_still_names_the_job() -> None:
     """The debt probe degrades instead of failing under a minimal-privilege role.
 
@@ -730,6 +986,9 @@ def test_a_role_without_the_coordination_grants_still_names_the_job() -> None:
     assert detail is not None
     assert detail.startswith("cancellation_debt: 1 accepted cancellation(s)")
     assert f"{box.job_id} -> lease-unread" in detail
+    # The Job-level path carries the same ledger fact: a downgraded role must not lose
+    # the one mark that says nothing has ever claimed this acceptance.
+    assert "(jobs: lease-unread=1; never claimed: 1)" in detail
     assert "[lease detail unavailable: permission]" in detail
 
 
@@ -861,7 +1120,9 @@ def test_the_optional_reader_identity_reports_the_full_detail() -> None:
         "subclass=execution-unknown)" in detail
     )
     assert "over 1 held lease(s)" in detail
-    assert "(held leases: execution-unknown=1)" in detail
+    # The acceptance was never claimed (no ledger row): the same sentence must say
+    # that the deployment has no driver, or "cancellation in progress" is a lie (#852).
+    assert "(held leases: execution-unknown=1; never claimed: 1)" in detail
     assert "completed-without-release" not in detail
     assert "unavailable" not in detail
 

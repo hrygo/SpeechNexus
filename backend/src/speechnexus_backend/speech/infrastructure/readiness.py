@@ -96,6 +96,34 @@ EXECUTION_UNKNOWN = "execution-unknown"
 _LEASE_CLASSES = (COMPLETED_WITHOUT_RELEASE, EXECUTION_UNKNOWN)
 #: The Job-level labels, used when the lease itself cannot be read.
 _JOB_CLASSES = ("lease-unread", "no-held-lease")
+#: Fixed report order and wording for the ledger-side schedule facts. The three are
+#: mutually exclusive on one acceptance, and each states a fact about the durable
+#: ledger as of this read -- never about a process: the probe cannot see whether a
+#: worker is running or whether reconciliation is enabled. Naming them is what stops
+#: "still holds capacity" from reading as progress (#852).
+_SCHEDULE_SCOPES: tuple[tuple[str, str], ...] = (
+    ("never_claimed", "never claimed"),
+    ("exhausted", "never claimable (exhausted)"),
+    ("due", "due now"),
+)
+#: The database clock, read once per query: the grace filter and the ``due`` state
+#: must agree on "now", and neither may use the process clock.
+_NOW_CLOCK = (
+    "CROSS JOIN (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) "
+    "AS now_us) AS now_clock"
+)
+#: One computed schedule state per acceptance, shared verbatim by both debt reads so
+#: the full and the Job-level view cannot classify the same row differently. The
+#: branches mirror the reconciliation store's ``_CLAIM`` predicate: no ledger row means
+#: never claimed, ``exhausted`` is never claimed again, and ``next_check_at_us`` is the
+#: schedule that makes a row claimable now.
+_SCHEDULE_STATE_SQL = """CASE
+           WHEN r.job_id IS NULL THEN 'never_claimed'
+           WHEN r.settled_at_us IS NOT NULL THEN 'settled'
+           WHEN r.last_outcome = 'exhausted' THEN 'exhausted'
+           WHEN r.next_check_at_us <= now_clock.now_us THEN 'due'
+           ELSE 'scheduled'
+       END"""
 #: The one evidence kind that makes a completed execution releasable by testimony.
 _TERMINAL_EVIDENCE = "engine_terminal_response"
 #: Identifies the reused readiness session in ``pg_stat_activity``.
@@ -120,6 +148,26 @@ class CancellationDebtProbe:
     that does not provision such a role passes ``None`` and gets
     ``unavailable (not configured)``. Like ``/readyz`` itself, the probe reuses one
     connection instead of opening a new one on every poll.
+
+    The parenthetical also splits the same Job count by the durable ledger fact that
+    decides *what can advance each acceptance*, because "still holds capacity" alone
+    reads as an in-progress cancellation -- the misinformation #852 recorded. The
+    three marks are mutually exclusive, and each proves only a ledger fact, never
+    that a process is running: the probe cannot see workers, and it cannot see the
+    reconciliation switch.
+
+    * ``never claimed: N`` -- the fence has no ledger row, so nothing has claimed this
+      acceptance since the fence was written. A first claim removes the mark, so its
+      absence never means a worker is running;
+    * ``never claimable (exhausted): N`` -- the ledger row is ``exhausted``, which the
+      worker's claim predicate never selects again: only an operator exit can close
+      it, and running the worker for another pass is not one;
+    * ``due now: N`` -- the ledger row is claimable at this instant
+      (``next_check_at_us <= now``, not settled, not exhausted). A healthy worker also
+      lands here between polls, so only a mark that persists says nobody is advancing.
+
+    The three counts are part of the counted scopes, ahead of the per-Job detail, so
+    detail truncation cannot drop them; each counts Jobs, not leases.
 
     The detail degrades instead of failing, in three observable shapes:
 
@@ -308,20 +356,28 @@ def debt_subclass(
 
 
 def _describe_debt(rows: Sequence[tuple[Any, ...]], *, missing: str | None = None) -> str | None:
-    """One bounded sentence: two named units, then the per-job drill-down.
+    """One bounded sentence: two named units, the schedule split, then the drill-down.
 
     The sentence counts accepted cancellations (Jobs); the parenthetical counts the
-    leases or the unreadable Jobs it is actually classifying. Naming both units is
-    what stops a multi-stage Job from making "3 cancellations" sit next to four
-    subclass counts.
+    leases or the unreadable Jobs it is actually classifying, plus the three ledger
+    facts that say what can still advance each Job. Naming the units is what stops a
+    multi-stage Job from making "3 cancellations" sit next to four subclass counts,
+    and what stops "still holds capacity" from reading as progress (#852).
     """
     if not rows:
         return None
     jobs: dict[str, list[str]] = {}
     lease_counts: dict[str, int] = {}
     job_counts: dict[str, int] = {}
+    schedule_jobs: dict[str, set[str]] = {state: set() for state, _ in _SCHEDULE_SCOPES}
     for row in rows:
         job_id, lease_id, lease_state, execution_state = row[0], row[1], row[2], row[3]
+        # The state decides what can advance this acceptance, so it is counted per Job:
+        # every lease row of one Job repeats the same ledger fact. The guard keeps
+        # synthetic rows (and a query that does not carry the column) from inventing one.
+        schedule = row[7] if len(row) > 7 else None
+        if isinstance(schedule, str) and schedule in schedule_jobs:
+            schedule_jobs[schedule].add(job_id)
         if lease_id is None:
             # Job-level rows carry no lease identity: say so instead of inventing one.
             label = "no-held-lease" if missing is None else "lease-unread"
@@ -363,18 +419,24 @@ def _describe_debt(rows: Sequence[tuple[Any, ...]], *, missing: str | None = Non
                 f"{name}={job_counts[name]}" for name in _JOB_CLASSES if job_counts.get(name)
             )
         )
+    for state, name in _SCHEDULE_SCOPES:
+        # Fixed order and one entry per non-empty state: the operator reads this as the
+        # split of the same Job count, so it may not depend on which rows came back first.
+        if schedule_jobs[state]:
+            scopes.append(f"{name}: {len(schedule_jobs[state])}")
     return _bounded_detail(f"{head} ({'; '.join(scopes)}): {detail}{suffix}{note}")
 
 
 _JOB_LEVEL_DEBT = f"""
-SELECT j.job_id, NULL, NULL, NULL, NULL, NULL, NULL
+SELECT j.job_id, NULL, NULL, NULL, NULL, NULL, NULL,
+       {_SCHEDULE_STATE_SQL} AS schedule_state
 FROM {job_cancellation_fence_schema.TABLE} AS f
 JOIN {public_job_schema.JOBS} AS j ON j.job_id = f.job_id
 LEFT JOIN {job_cancellation_fence_schema.RECONCILIATION_TABLE} AS r ON r.job_id = f.job_id
+{_NOW_CLOCK}
 WHERE j.state = 'cancelling'
   AND (r.job_id IS NULL OR r.settled_at_us IS NULL)
-  AND f.accepted_at_us
-      <= CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) - %(grace_us)s
+  AND f.accepted_at_us <= now_clock.now_us - %(grace_us)s
 ORDER BY f.accepted_at_us, f.job_id
 LIMIT %(limit)s
 """
@@ -387,10 +449,15 @@ LIMIT %(limit)s
 # The index only holds `running`/`cancelling` rows, so the write cost stays with the live set.
 _DEBT = f"""
 SELECT j.job_id, l.lease_id, l.lease_state, i.execution_state,
-       e.evidence_kind, e.execution_stopped, e.resources_released
+       e.evidence_kind, e.execution_stopped, e.resources_released,
+       -- One ledger-side schedule fact per acceptance: never claimed, permanently
+       -- unclaimable, or claimable now. The read face names all three so "still holds
+       -- capacity" is never the only thing an operator sees (#852).
+       {_SCHEDULE_STATE_SQL} AS schedule_state
 FROM {job_cancellation_fence_schema.TABLE} AS f
 JOIN {public_job_schema.JOBS} AS j ON j.job_id = f.job_id
 LEFT JOIN {job_cancellation_fence_schema.RECONCILIATION_TABLE} AS r ON r.job_id = f.job_id
+{_NOW_CLOCK}
 -- Only a lease that still holds capacity is a blocker: `quarantined` is an
 -- accounted state and `released` returned the capacity.
 LEFT JOIN admission_leases AS l
@@ -402,11 +469,9 @@ LEFT JOIN submit_intents AS i ON i.lease_id = l.lease_id
 -- operator to a command that always refuses it.
 LEFT JOIN execution_stop_evidence AS e ON e.submit_intent_id = i.submit_intent_id
 WHERE j.state = 'cancelling'
-  -- A fence with no ledger row is a deployment that never ran the worker: the
-  -- acceptance is unclaimed debt, not a settled one.
+  -- A fence with no ledger row is unclaimed debt; the schedule state above names it.
   AND (r.job_id IS NULL OR r.settled_at_us IS NULL)
-  AND f.accepted_at_us
-      <= CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) - %(grace_us)s
+  AND f.accepted_at_us <= now_clock.now_us - %(grace_us)s
 ORDER BY f.accepted_at_us, f.job_id, l.lease_id
 LIMIT %(limit)s
 """

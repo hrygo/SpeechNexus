@@ -114,3 +114,4 @@ grep -o 'sha256:[0-9a-f]\{64\}' web/workbench/dist/assets/*.js | sort -u
 - 契约与生成消费者：[contracts/README.md](../../contracts/README.md)、[packages/contracts/README.md](../../packages/contracts/README.md)。
 - 部署构建命令与构建窗口判据：[deploy/README.md](../../deploy/README.md)。
 - 发布就绪判定表的 F-CLIENT 行：[MVP 发布就绪判定表](../plans/mvp-release-readiness.md)。
+- 页面读取同一 Job 同一 Artifact 的自动化取证：[tests/integration/test_workbench_artifact_browser.py](../../tests/integration/test_workbench_artifact_browser.py)。它用真实 PostgreSQL、真实 MinIO、真实 API 组合根与 `web/workbench/dist`，在真实 Chromium 里恢复一条已成功 Job 后下载该 Job 的 transcript Artifact，并比对下载字节的 SHA-256、`/content` 的 `etag` 与 `content-length`、以及对端自报的 `contract_digest`；设 `WORKBENCH_PAGE_IMAGE` 时同一判定再经 Web 镜像的 nginx、CSP 与 `/v1/` 代理执行一遍。Job 与 Artifact 行由夹具提交（无引擎推理），因此它证明的是读取路径与同版锚点，不是引擎产出。

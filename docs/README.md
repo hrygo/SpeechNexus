@@ -14,6 +14,7 @@
 | [组件与实现说明](components/README.md) | 组件职责、接口、事务及实现接线 |
 | [运维与部署文档](operations/README.md) | 安装配置、运行恢复与发布操作 |
 | [配置前提扫描](operations/configuration-prerequisites.md) | 哪些键配置了却不生效、当前是点名拒绝还是文档声明；含元守护的覆盖与盲区 |
+| [启动闸门的失败输出形态](operations/startup-gate-output.md) | 每个单元的闸门阶段、实测输出（一行 `FAIL:` / traceback / 退出码）、文档承诺、一致性与处置 |
 | [验证规则](validation/README.md) | CI 调度与契约变更结构检查的范围和限制 |
 | [上线前检查脚本](operations/release-preflight.md) | C0–C11 局部检查和 C12 独立验收要求；默认不写产品数据库，但会加载 shell 配置，可能访问网络及写缓存；另有历史候选假设 |
 | [MVP 0.1.0 发布说明](releases/mvp-0.1.0.md) | 版本标识（镜像 tag、包版本、契约 `info.version`、`contract_digest`）及其关系、已取证能力、部署入口、升级与回滚步骤（含迁移不可回退的核实过程）、11 条已知限制及逐条处置 |

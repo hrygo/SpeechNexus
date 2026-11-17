@@ -2299,6 +2299,8 @@ instance 来“绕过”冲突；先核对旧 head、owner 和 readiness 证据�
 
 ## 9. 失败时先看什么
 
+每一步「拒绝启动」的判定跑在哪一层、实测打印什么（一行 `FAIL:` 还是 traceback，退出码几）、文档承诺什么，见[启动闸门的失败输出形态](startup-gate-output.md)；下表只给现象与首查项。
+
 | 现象 | 优先检查 |
 | --- | --- |
 | Compose 报 `required variable ... is missing a value` | `deploy/compose.env` 缺少对应键；不要用 shell 临时变量代替可复现配置文件 |

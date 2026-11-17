@@ -533,6 +533,33 @@ def test_a_blank_dispatch_dsn_never_tries_to_connect() -> None:
     assert passed == []
 
 
+def test_an_unsafe_schema_is_named_instead_of_escaping_as_a_value_error() -> None:
+    """#928: the identifier guard used to run inside the migration check.
+
+    A schema that is not a safe lowercase identifier raised ``ValueError`` before any
+    failure line was printed, so the entry point died with a traceback while the
+    documents promised one named line per missing prerequisite. The gate must name
+    ``SPEECHNEXUS_DATABASE_SCHEMA`` and never reach ``connect``: an invalid schema is
+    not a database problem, and connecting first would report the wrong prerequisite.
+    """
+
+    def connect(dsn: str) -> Any:  # pragma: no cover - must not be called
+        raise AssertionError("the gate must not connect before validating the schema")
+
+    findings, passed = GATE.database_findings(
+        connect,
+        {
+            GATE.RUNTIME_DSN_ENV: "postgresql://sn_job_dispatch:pw@postgres:5432/speechnexus",
+            GATE.SCHEMA_ENV: "bad-schema!",
+        },
+        "head",
+    )
+    assert passed == []
+    assert len(findings) == 1
+    assert findings[0].startswith(f"{GATE.SCHEMA_ENV} is not a safe lowercase SQL identifier")
+    assert "the schema the migration profile populated" in findings[0]
+
+
 def test_database_findings_runs_the_head_the_probes_and_the_writes(
     monkeypatch: Any,
 ) -> None:

@@ -535,16 +535,34 @@ def database_findings(
     schema = env.get(SCHEMA_ENV, "speech").strip() or "speech"
     kinds = dispatch_kinds(env)
     try:
-        connection = connect(dsn)
-    except Exception as error:
-        # psycopg reports the host, database and server error but never the
-        # password, so this stays safe to print and tells auth from network
-        # failures instead of only "not ready".
-        reason = str(error).strip().splitlines()[0][:300]
+        _identifier(schema)
+    except ValueError:
+        # The identifier guard used to run first inside the migration check, so a
+        # schema name that is not a safe lowercase identifier escaped as a ValueError
+        # traceback with no FAIL line at all (#928). Name the key instead: the
+        # operator cannot repair a gate that never printed its own refusal.
         return (
             [
-                f"{DSN_ENV} cannot connect to PostgreSQL: {reason or 'no detail'}; "
-                "the dispatch role or the database network is not ready"
+                f"{SCHEMA_ENV} is not a safe lowercase SQL identifier, so the gate "
+                "cannot name the migration ledger or run the role guard: use the "
+                "schema the migration profile populated (the default is `speech`)"
+            ],
+            [],
+        )
+    try:
+        connection = connect(dsn)
+    except Exception as error:
+        # psycopg's connect failures carry no SQLSTATE (measured: a wrong password, a
+        # closed port, a missing database and a missing role all report
+        # ``sqlstate is None``), and its message names the server, the port, the
+        # database and the login. The gate promises one named line per missing
+        # prerequisite without a deployment input in it, so only the exception type
+        # and a human sentence are printed (#928 review M2).
+        return (
+            [
+                f"{DSN_ENV} cannot connect to PostgreSQL "
+                f"({type(error).__name__}); the dispatch role, the database name or "
+                "the database network is not ready"
             ],
             [],
         )

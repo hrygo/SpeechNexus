@@ -34,17 +34,19 @@ Prerequisites (each missing one fails by name, never silently and never as a ski
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import io
 import json
 import os
 import socket
 import subprocess
+import sys
 import threading
 import time
 import uuid
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
@@ -60,6 +62,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from minio import Minio
 from minio.commonconfig import ENABLED
+from minio.error import S3Error
 from minio.versioningconfig import VersioningConfig
 from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
@@ -220,15 +223,18 @@ def _seed_committed_job(
     artifact: Artifact,
     *,
     model: str = MODEL,
-) -> None:
+) -> tuple[str, str]:
     """One succeeded Job whose committed transcript Artifact is readable.
 
     The rows are the same committed shape the result publisher writes; the object is a
     real versioned object, so the Artifact routes verify a real digest instead of a stub.
+    Returns the object key and version so cleanup can delete the exact version it wrote,
+    even on a path where listing the bucket is what failed.
     """
+    object_key = f"private/artifacts/{artifact.id}/object"
     written = objects.put_object(
         bucket,
-        f"private/artifacts/{artifact.id}/object",
+        object_key,
         io.BytesIO(artifact.content),
         len(artifact.content),
         content_type="application/json",
@@ -280,10 +286,11 @@ def _seed_committed_job(
             artifact.bytes,
             artifact.sha256,
             artifact.receipt_id,
-            f"private/artifacts/{artifact.id}/object",
+            object_key,
             written.version_id,
         ),
     )
+    return object_key, written.version_id
 
 
 def _api_settings(
@@ -319,19 +326,98 @@ def _api_settings(
     )
 
 
+# S3 answers that mean the request was refused or had nothing to act on, so no bucket
+# can have been created; cleanup after a failed `make_bucket` need not report these.
+_NOTHING_CREATED = frozenset(
+    {"NoSuchBucket", "SignatureDoesNotMatch", "AccessDenied", "InvalidAccessKeyId"}
+)
+
+
+def _cancel_tasks(loop: asyncio.AbstractEventLoop) -> None:
+    for task in asyncio.all_tasks(loop):
+        task.cancel()
+
+
+def _stop_server(server: uvicorn.Server, thread: threading.Thread) -> None:
+    server.should_exit = True
+    thread.join(timeout=10)
+    if thread.is_alive():
+        raise RuntimeError("the server thread did not stop after shutdown")
+
+
+def _remove_listed_versions(objects: Minio, bucket: str) -> None:
+    for item in objects.list_objects(bucket, recursive=True, include_version=True):
+        objects.remove_object(bucket, item.object_name, version_id=item.version_id)
+
+
+def _remove_seeded_objects(objects: Minio, bucket: str, seeded: list[tuple[str, str]]) -> None:
+    for key, version_id in seeded:
+        objects.remove_object(bucket, key, version_id=version_id)
+
+
+def _remove_bucket(objects: Minio, bucket: str) -> None:
+    _remove_listed_versions(objects, bucket)
+    objects.remove_bucket(bucket)
+
+
+def _drop_roles(admin: psycopg.Connection[dict[str, Any]], names: tuple[str, str]) -> None:
+    for name in names:
+        admin.execute(f'DROP ROLE IF EXISTS "{name}"')
+
+
 def _serve(app: FastAPI) -> tuple[str, uvicorn.Server, threading.Thread]:
-    """Serve one app on a loopback port; the browser needs real HTTP, not ASGI transport."""
+    """Serve one app on a loopback port; the browser needs real HTTP, not ASGI transport.
+
+    The server owns its event loop so a startup that never finishes can be aborted: the
+    timeout path cancels the loop's tasks, joins the thread and closes the socket.
+    `should_exit` alone does not interrupt a lifespan that is still starting, and a
+    daemon thread stuck there would outlive the failure still holding the port.
+    """
     sock = socket.socket()
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(("127.0.0.1", 0))
     port = sock.getsockname()[1]
     server = uvicorn.Server(uvicorn.Config(app, log_level="error", access_log=False, lifespan="on"))
-    thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
+    loop_slot: list[asyncio.AbstractEventLoop] = []
+    crash: list[BaseException] = []
+
+    def run() -> None:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop_slot.append(loop)
+        try:
+            loop.run_until_complete(server.serve(sockets=[sock]))
+        except BaseException as error:
+            # A startup failure or this helper's own cancellation lands here; `_serve`
+            # reports the first and the timeout path reports the second.
+            crash.append(error)
+        finally:
+            loop.close()
+
+    thread = threading.Thread(target=run, daemon=True)
     thread.start()
-    deadline = time.monotonic() + 20
-    while not server.started:
-        assert time.monotonic() < deadline, "the app did not start"
-        time.sleep(0.01)
+    try:
+        deadline = time.monotonic() + 20
+        while not server.started:
+            if crash:
+                raise AssertionError(
+                    f"the app did not start: {type(crash[0]).__name__}: {crash[0]}"
+                ) from crash[0]
+            if not thread.is_alive():
+                raise AssertionError("the app did not start: the server thread exited")
+            if time.monotonic() >= deadline:
+                raise AssertionError("the app did not start")
+            time.sleep(0.01)
+    except BaseException:
+        server.should_exit = True
+        if loop_slot:
+            loop = loop_slot[0]
+            # The loop may already have stopped on its own; cancellation is best effort.
+            with suppress(RuntimeError):
+                loop.call_soon_threadsafe(_cancel_tasks, loop)
+        thread.join(timeout=10)
+        sock.close()
+        raise
     return f"http://127.0.0.1:{port}", server, thread
 
 
@@ -471,6 +557,10 @@ def _stack(*, image: str | None) -> Iterator[PageSandbox]:
     creation succeeds, and `finally` cleans only what exists — so a failure while
     creating the schema, either role, the bucket or the servers runs the same cleanup
     instead of leaking the schema, both roles and the bucket.
+
+    Cleanup steps fail independently: one broken step must not skip the rest or replace
+    the failure that caused the unwind. A cleanup failure is attached to the original
+    exception as a note; if the body succeeded, it is raised on its own naming the step.
     """
     _require_browser()
     url, endpoint, access, secret = _required_environment()
@@ -489,6 +579,7 @@ def _stack(*, image: str | None) -> Iterator[PageSandbox]:
     front_thread: threading.Thread | None = None
     container: str | None = None
     bucket_created = False
+    seeded: list[tuple[str, str]] = []
     try:
         admin = psycopg.connect(url, row_factory=dict_row, autocommit=True)
         _migrate(url, schema)
@@ -513,16 +604,31 @@ def _stack(*, image: str | None) -> Iterator[PageSandbox]:
             secure=endpoint.startswith("https://"),
             region="us-east-1",
         )
-        objects.make_bucket(bucket)
-        # The bucket exists now: `finally` removes it even if the next setup line fails.
+        try:
+            objects.make_bucket(bucket)
+        except BaseException as error:
+            # CreateBucket can commit server-side even when its reply is lost, so a
+            # client error does not prove the bucket is absent. `bucket_created` is
+            # still false, so remove it here rather than leaving it to `finally`.
+            try:
+                _remove_bucket(objects, bucket)
+            except BaseException as cleanup_error:
+                if not (
+                    isinstance(cleanup_error, S3Error) and cleanup_error.code in _NOTHING_CREATED
+                ):
+                    error.add_note(
+                        "cleanup after make_bucket failed: "
+                        f"{type(cleanup_error).__name__}: {cleanup_error}"
+                    )
+            raise
         bucket_created = True
         objects.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
         ours = Artifact("artifact-page-transcript-1", "job-page-1", "receipt-page-1", TRANSCRIPT)
         foreign = Artifact(
             "artifact-page-transcript-2", "job-page-2", "receipt-page-2", OTHER_TRANSCRIPT
         )
-        _seed_committed_job(admin, objects, bucket, ours)
-        _seed_committed_job(admin, objects, bucket, foreign)
+        seeded.append(_seed_committed_job(admin, objects, bucket, ours))
+        seeded.append(_seed_committed_job(admin, objects, bucket, foreign))
         # The read surface is the real composition root's: one read-only public-Job pool
         # over the committed rows, opened here so the fixture owns its lifetime.
         pool = speech_pool(
@@ -562,25 +668,49 @@ def _stack(*, image: str | None) -> Iterator[PageSandbox]:
         value.output.mkdir(parents=True, exist_ok=True)
         yield value
     finally:
+        failures: list[tuple[str, BaseException]] = []
+
+        def cleanup(name: str, action: Callable[[], object]) -> None:
+            """Run one cleanup step; a failure must not skip the steps after it."""
+            try:
+                action()
+            except BaseException as error:
+                failures.append((name, error))
+
         if pool is not None:
-            pool.close()
+            cleanup("pool", pool.close)
         if container is not None:
-            subprocess.run(["docker", "rm", "--force", container], capture_output=True, check=False)
+            cleanup(
+                "image container",
+                lambda: subprocess.run(
+                    ["docker", "rm", "--force", container], capture_output=True, check=False
+                ),
+            )
         if front_server is not None and front_thread is not None:
-            front_server.should_exit = True
-            front_thread.join(timeout=10)
+            cleanup("front server", lambda: _stop_server(front_server, front_thread))
         if api_server is not None and api_thread is not None:
-            api_server.should_exit = True
-            api_thread.join(timeout=10)
+            cleanup("api server", lambda: _stop_server(api_server, api_thread))
         if objects is not None and bucket_created:
-            for item in objects.list_objects(bucket, recursive=True, include_version=True):
-                objects.remove_object(bucket, item.object_name, version_id=item.version_id)
-            objects.remove_bucket(bucket)
+            # The versions this fixture wrote are deleted by identity first: a bucket
+            # listing that fails must not leave the bucket non-empty and then block
+            # its own removal.
+            cleanup("seeded objects", lambda: _remove_seeded_objects(objects, bucket, seeded))
+            cleanup("bucket listing", lambda: _remove_listed_versions(objects, bucket))
+            cleanup("bucket", lambda: objects.remove_bucket(bucket))
         if admin is not None:
-            admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
-            for name in (role, reader_role):
-                admin.execute(f'DROP ROLE IF EXISTS "{name}"')
-            admin.close()
+            cleanup("schema", lambda: admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+            cleanup("roles", lambda: _drop_roles(admin, (role, reader_role)))
+            cleanup("admin connection", admin.close)
+
+        if failures:
+            report = "; ".join(
+                f"{name}: {type(error).__name__}: {error}" for name, error in failures
+            )
+            original = sys.exc_info()[1]
+            if original is not None:
+                original.add_note("cleanup failed after the original error: " + report)
+            else:
+                raise RuntimeError("cleanup failed: " + report) from failures[0][1]
 
 
 @pytest.fixture

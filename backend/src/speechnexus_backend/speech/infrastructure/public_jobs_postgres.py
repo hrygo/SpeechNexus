@@ -26,6 +26,7 @@ from speechnexus_backend.speech.application.voice_drafts import (
     voice_input_shape,
 )
 from speechnexus_backend.speech.domain.admission import AdmissionRejectedError
+from speechnexus_backend.speech.domain.job_prerequisites import prerequisite_detail
 from speechnexus_backend.speech.domain.public_jobs import (
     CANCELLATION_UNCONFIRMED,
     JOB_STATES,
@@ -663,8 +664,12 @@ class PostgresPublicJobs:
                 return JobCreateResult("unknown", error_code="outcome_unknown")
             except psycopg.errors.QueryCanceled:
                 return JobCreateResult("unknown", error_code="outcome_unknown")
-            except psycopg.Error:
-                return JobCreateResult("rejected", error_code="storage_rejected")
+            except psycopg.Error as error:
+                return JobCreateResult(
+                    "rejected",
+                    error_code="storage_rejected",
+                    detail=prerequisite_detail(error),
+                )
         return JobCreateResult("unknown", error_code="outcome_unknown")
 
     def create_revision(
@@ -781,9 +786,13 @@ class PostgresPublicJobs:
             return RevisionCreateResult("unknown", error_code="outcome_unknown")
         except psycopg.errors.QueryCanceled:
             return RevisionCreateResult("unknown", error_code="outcome_unknown")
-        except psycopg.Error:
+        except psycopg.Error as error:
             # See create(): a deterministic database refusal is not a conflict.
-            return RevisionCreateResult("rejected", error_code="storage_rejected")
+            return RevisionCreateResult(
+                "rejected",
+                error_code="storage_rejected",
+                detail=prerequisite_detail(error),
+            )
 
     def cancel(
         self,
@@ -935,8 +944,8 @@ class PostgresPublicJobs:
                 )
                 updated = _select_job(connection, job_id)
             return None if updated is None else _job(updated)
-        except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
-            raise PublicJobUnavailableError from None
+        except (psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests) as error:
+            raise PublicJobUnavailableError(prerequisite_detail(error)) from None
 
     def advance(
         self,
@@ -979,8 +988,8 @@ class PostgresPublicJobs:
             return _job(row)
         except PublicJobConflictError, PublicJobUnavailableError:
             raise
-        except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
-            raise PublicJobUnavailableError from None
+        except (psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests) as error:
+            raise PublicJobUnavailableError(prerequisite_detail(error)) from None
 
     def _read(
         self,
@@ -1008,8 +1017,8 @@ class PostgresPublicJobs:
             TypeError,
             KeyError,
             PublicationUnavailableError,
-        ):
-            raise PublicJobUnavailableError from None
+        ) as error:
+            raise PublicJobUnavailableError(prerequisite_detail(error)) from None
 
     @contextmanager
     def _transaction(self, deadline: float) -> Iterator[_DeadlineConnection]:
@@ -1034,9 +1043,9 @@ class PostgresPublicJobs:
                 connection.arm()
                 committing = True
             _remaining(deadline)
-        except psycopg.Error:
+        except psycopg.Error as error:
             if committing:
-                raise PublicJobUnavailableError from None
+                raise PublicJobUnavailableError(prerequisite_detail(error)) from None
             raise
 
 

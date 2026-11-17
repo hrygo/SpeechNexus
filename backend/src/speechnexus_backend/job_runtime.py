@@ -10,6 +10,11 @@ from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
 from speechnexus_backend.speech.application.voice_drafts import VoiceDrafts
 from speechnexus_backend.speech.application.voice_publications import VoicePublications
+from speechnexus_backend.speech.domain.job_prerequisites import ADMISSION_DSN
+from speechnexus_backend.speech.infrastructure.job_schema_preflight import (
+    JobSchemaNotMigratedError,
+    require_migrated_schema,
+)
 from speechnexus_backend.speech.infrastructure.job_writer_columns import (
     JOB_WRITER_INSERT_COLUMNS,
 )
@@ -165,13 +170,9 @@ _JOB_REQUIRED_UPDATE = frozenset(REQUIRED_UPDATE_COLUMNS)
 # A writer-only deployment keeps reads and cancellations, but a create has no
 # admission role to reserve capacity with. The store used to answer the bare
 # ``503 job_unavailable``, which read like a database outage; the runtime names the
-# blank key instead (never a value) (#877 item 1).
-_ADMISSION_DSN_BLANK = (
-    "SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL is blank: a create cannot reserve "
-    "capacity or write its Job in one admission transaction, so no Job is written. "
-    "Reads and cancellations keep working without it; set it to the same database "
-    "as SPEECHNEXUS_JOB_WRITER_DATABASE_URL."
-)
+# blank key instead (never a value) (#877 item 1). The text is the shared table's,
+# so the operator map in docs/operations/compose-minimal.md stays one source (#920).
+_ADMISSION_DSN_BLANK = ADMISSION_DSN.detail
 _PUBLICATION_SUBJECT = "Voice publisher"
 
 
@@ -232,6 +233,14 @@ class JobRuntime:
                 pool.open()
                 with pool.connection(timeout=3) as connection:
                     connection.execute("SET LOCAL statement_timeout='3s'")
+                    # A database that never ran the migration profile is refused by
+                    # name here: the role guard below would otherwise report the
+                    # absent relations as missing grants (#920 item 3).
+                    require_migrated_schema(
+                        connection,
+                        self._settings.database_schema,
+                        (*REQUIRED_SELECT, *_ADMISSION_REQUIRED_SELECT),
+                    )
                     _verify_privileges(connection, self._settings.database_schema)
                 admission_pool = self._open_admission_pool()
                 self._admission_pool = admission_pool
@@ -297,10 +306,11 @@ class JobRuntime:
                     self._diagnostics = None
                 if not isinstance(error, Exception):
                     raise
-                # A split-database configuration is a composition error, not the
-                # migration/role fault the generic message describes; keep its own
-                # named repair (the pool cleanup above already ran).
-                if isinstance(error, _SplitJobDatabaseError):
+                # A split-database configuration is a composition error and an
+                # unmigrated database has its own named repair; neither is the
+                # migration/role fault the generic message describes, so both keep
+                # their own answer (the pool cleanup above already ran).
+                if isinstance(error, (_SplitJobDatabaseError, JobSchemaNotMigratedError)):
                     raise
                 raise ValueError(
                     "Public Job writer startup rejected; verify migration and writer role"
@@ -321,6 +331,11 @@ class JobRuntime:
         try:
             with pool.connection(timeout=3) as connection:
                 connection.execute("SET LOCAL statement_timeout='3s'")
+                require_migrated_schema(
+                    connection,
+                    self._settings.database_schema,
+                    _ADMISSION_REQUIRED_SELECT,
+                )
                 _verify_admission_privileges(connection, self._settings.database_schema)
         except BaseException:
             pool.close()

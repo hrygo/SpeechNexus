@@ -2313,6 +2313,7 @@ instance 来“绕过”冲突；先核对旧 head、owner 和 readiness 证据�
 | `engine-register` 报 `invalid_recipe` | recipe 结构、摘要、stage/instance 或 binding plan 不一致 |
 | `engine-register` 报 `quota_policy_conflict` / `quota_capacity_conflict` | 该工作空间已有配额行：`policy_revision` 必须与本次注册提供的值一致、`max_attempts` 不得更小；不要用改行的方式绕过，先确认哪个部署先写了这行 |
 | `engine-register` 报 `host_capacity_insufficient` | `--host-capacity`（缺省 `steady + per_slot × max_slots`，至少覆盖 `peak`）小于计划需求，或该节点已有 held/quarantined 占用；先核对实际容量再调整计划 |
+| `POST /v1/nexus/jobs`（及列表、读取、取消、重试、事件流）返回 `503 job_unavailable` | 优先当「缺前置」读，不要当引擎或容量故障：`error.message` 已按 §9.1 的表点名缺哪个键或该跑哪条命令；`retryable: false`，重试同一请求不会改变结果 |
 | `POST /v1/nexus/jobs` 返回 `422 model_not_published` | 没有任何已发布 binding 作为该 `model` 的 head，或 `execution_recipe` / catalogue 尚未就绪；先按[异步 Job 手册 §7.1](async-job-runbook.md#71-发布-binding注册与创建-job-的前置) 发布（从空库首次创建时这是最先出现的错误，早于引擎与容量判定） |
 | `POST /v1/nexus/jobs` 返回 `422 workspace_not_configured` | 该工作空间没有 `workspace_quotas` 行——即没为它注册过引擎；配额只由 §8 的注册写入，重试不会改变结果 |
 | `POST /v1/nexus/jobs` 返回 `422 job_binding_incomplete` | 已发布 binding 的不可变定义缺少 `execution_defaults.<kind>` 字段，或实例的 `manifest_id` / `binding_revision_id` 与该 binding 不一致；`execution_defaults` 在 admin 响应里不回显（`speech/interfaces/binding_drafts.py:56`），须回到创建草稿时的请求体核对 |
@@ -2324,6 +2325,43 @@ instance 来“绕过”冲突；先核对旧 head、owner 和 readiness 证据�
 | 同一端点返回 `503 quarantine_release_failed` | 存储以未声明的错误拒绝了事务，已确认回滚且未释放容量；按 API 日志的 `sqlstate` 定位，不要当业务冲突处理 |
 | 公开 `/v1/audio/speech` 返回 `503 backend_unavailable`（`retryable: false`）且 API 日志有 `Synchronous speech unavailable` | 先修装配，不要重试：`speech-recipe.json` 缺失/摘要不符时 API 启动即失败；`SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL` 为空或资格缺失时工厂保持关闭（API 日志点名缺失键与「no current qualified voice」）。用 `uv run --all-packages python scripts/dev-env/check-tts-assembly.py --private-dir deploy/.runtime/private` 逐字段核对：三份私有文件各自过生产 loader，输出按「仍是样例值 / 不一致 / 本地检查通过 / 无法从文件判定」四类列出，另单列只由 loader 校验的叶子；只有前两类为空才 exit 0，而 `exit 0` 只说明文件已替换且相互一致，**不代表可受理**（结算 DSN、实例注册、声音资格、真实引擎仍未验证）。装配后仍需真实引擎与合格声音版本；另见[同步 TTS 装配要求](../components/synchronous-speech.md) |
 | 音频上传（`asr_input`、`voice_reference`）返回 `503 asset_inspection_unavailable` | `SPEECHNEXUS_ASSET_INSPECTOR` 默认 `text`，只校验 `text_input`；要接收音频须同时配置 `audio`、检查器 URL 与令牌。这是刻意 fail-closed 的默认值，不是同步 TTS 或文本 ASR 的故障 |
+
+### 9.1 「缺什么 → 看到什么 → 做什么」：Job 前置条件映射表
+
+Job 路由在前置缺失时一律返回 `503 job_unavailable`（响应体结构与 `retryable: false` 不变），
+区别只在 `error.message`：它点名缺失的条件与修复动作，绝不包含 DSN 取值、主机、库名、
+用户名或凭据。下表是唯一的运维映射，逐行对应
+`backend/src/speechnexus_backend/speech/domain/job_prerequisites.py` 中的
+`JOB_PREREQUISITES`：实现、公开响应与本表共用同一份常量，
+`tests/ci/test_job_prerequisite_map.py` 按行比对条件、`detail` 原文与动作，改一侧不改另一侧即红。
+
+不同缺失不共用同一句文案：同一台部署分别触发两行时，响应能直接指出该配哪个键。
+
+只有「迁移完全没跑」（关系缺失，SQLSTATE `42P01`/`3F000`）会落到 `schema_not_migrated`：
+一个中途停下的迁移可能只是缺列（`42703`），那种驱动错误仍归 `store_unavailable` 那一行，
+即通用文案加「看 api 日志」，不会被误报成「该跑迁移」，也不会被错报成授权故障（#920 review R1）。
+
+未迁移在**两个时点**上表现不同，别按同一句话预期：
+
+- **进程已在跑**（启动后库被回退、或指向了另一个 schema）：读、创建、取消各出口都返回上表
+  `schema_not_migrated` 那一行的原文，`503`、无 traceback；这是 `tests/integration/test_public_job_prerequisites_pg.py`
+  实跑的形态。
+- **启动期未迁移**（库从未迁移过）：迁移前置检查（`job_schema_preflight.py` 的
+  `require_migrated_schema`）在**角色守卫之前**判定，抛出的 `JobSchemaNotMigratedError` 消息就是上表原文；
+  但它发生在 ASGI lifespan 里，uvicorn 在启动失败时打印该异常及其 traceback（`Exception in 'lifespan'
+  protocol`）、以**退出码 3** 结束进程。因此启动期**不是**「一行 `FAIL:`、无 traceback」。能打印一行
+  `FAIL: ...` 并以退出码 1 结束的，是**同步装配阶段**的结算预检（`SettlementPreflightUnavailableError`，
+  见 `backend/src/speechnexus_backend/speech_runtime.py` 的 `build_speech`）：它在 uvicorn 加载应用时就失败，可被
+  `speechnexus_backend/main.py` 捕获。两者都不再报「角色缺授权」这种错方向的诊断。
+
+| 缺失条件（`condition`） | 响应 `detail`（`error.message` 原文） | 观察到的场景与做什么 |
+| --- | --- | --- |
+| `writer_dsn_blank` | `SPEECHNEXUS_JOB_WRITER_DATABASE_URL is blank: the Job surface is not assembled, so no Job route can create, read or cancel. Set that key for the api process; it is the identity that reads and writes Job storage.` | writer DSN 是装配整条 Job 面的唯一键；它为空时连读取都不可用，所以这里只点名它；**该做什么**：`Set SPEECHNEXUS_JOB_WRITER_DATABASE_URL in the api environment.` |
+| `admission_dsn_blank` | `SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL is blank: a create cannot reserve capacity and write its Job in one admission transaction, so no Job is written. Reads and cancellations keep working; set it to the same database as the Job writer.` | writer 已配置、只缺 admission 时，读取与取消仍可用，只有创建被拒；**该做什么**：`Set SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL to the Job writer's database.` |
+| `schema_not_migrated` | `The Job database has not run the migration profile: a required relation is missing, so no Job can be stored. Run docker compose --profile migration run --rm migrate, then restart the api process.` | `UndefinedTable` / `InvalidSchemaName`（SQLSTATE `42P01` / `3F000`）归到这一行：先迁移，不要当权限问题重试；**该做什么**：`Run docker compose --profile migration run --rm migrate.` |
+| `role_privileges_missing` | `The Job role lacks a grant the store needs, so the database refused the read or the write. Run scripts/dev-env/provision-job-roles.py for the api role, then send a new request.` | `InsufficientPrivilege`（SQLSTATE `42501`）归到这一行：关系存在但角色缺授权，重放授权脚本，不改迁移；**该做什么**：`Run scripts/dev-env/provision-job-roles.py for the api role.` |
+| `store_unavailable` | `Job storage is unavailable.` | 不属于配置缺失：解码缺陷、连接池超时等真实故障保持这句通用文案，不点名任何键；**该做什么**：`Read the api log for the storage failure; no configuration key is missing.` |
+
 
 ## 10. 停止与清理边界
 

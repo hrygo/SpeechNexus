@@ -74,6 +74,7 @@ from speechnexus_backend.speech.application.voice_drafts import VoiceDrafts
 from speechnexus_backend.speech.application.voice_publications import VoicePublications
 from speechnexus_backend.speech.application.voice_retirements import VoiceRetirements
 from speechnexus_backend.speech.application.workspaces import WorkspaceService
+from speechnexus_backend.speech.domain.job_prerequisites import WRITER_DSN
 from speechnexus_backend.speech.infrastructure.gateway_job_cancellation import (
     GatewayJobCancellationStopper,
 )
@@ -545,37 +546,33 @@ def create_app(
         return job_runtime.jobs if job_runtime is not None else None
 
     def job_unavailable_detail() -> str | None:
-        """Name the blank Job DSNs that leave the whole surface unassembled.
+        """Name the one prerequisite that leaves the whole Job surface unassembled.
 
-        Both DSNs are optional at the settings layer, so a deployment can start
-        without them. Every Job route then answered the same
+        The writer DSN is optional at the settings layer, so a deployment can start
+        without it. Every Job route then answered the same
         ``503 job_unavailable`` / "Job storage is unavailable.", which names no
-        configuration item and reads like an outage; the key names tell an operator
-        what to set (#877 item 1). Values never leave the settings object.
+        configuration item and reads like an outage (#877 item 1).
+
+        The answer names *one* key: the writer DSN is what assembles the surface, and
+        ``_refuse_job_companion_database_without_writer`` above already refuses an
+        admission DSN that could never be opened, so blaming the admission key here
+        would point an operator at a key that cannot change this refusal. A missing
+        admission DSN is named by the create answer instead, which is the operation it
+        actually blocks (#920). Values never leave the settings object.
         """
         if jobs is not None or job_runtime is not None:
             # The surface is assembled; a request-time failure of this kind has no
             # configuration cause to name.
             return None
-        blank = [
-            key
-            for key, value in (
-                ("SPEECHNEXUS_JOB_WRITER_DATABASE_URL", resolved_settings.job_writer_database_url),
-                (
-                    "SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL",
-                    resolved_settings.job_admission_database_url,
-                ),
-            )
-            if value is None
-        ]
-        if not blank:
+        if resolved_settings.job_writer_database_url is not None:
+            # Defensive and currently unreachable: with the writer set, ``create_app``
+            # either assembles ``job_runtime`` or refuses the deployment
+            # (``_refuse_job_companion_database_without_writer``), so "writer set but
+            # no surface" has no shape to name here (#920 review R3). Kept so a future
+            # caller that returns None from ``get_jobs`` cannot fall through to the
+            # writer-key answer, which would be wrong for it.
             return None
-        return (
-            "The Job surface is not assembled because these keys are blank: "
-            + ", ".join(blank)
-            + ". Set both Job DSNs for the api process; without them the deployment "
-            "cannot create, read or cancel a Job."
-        )
+        return WRITER_DSN.detail
 
     def get_voice_drafts() -> VoiceDrafts | None:
         if voice_drafts is not None:

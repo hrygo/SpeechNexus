@@ -59,7 +59,10 @@ from speechnexus_backend.speech.domain.public_jobs import (
     cleanup_state,
     identifier,
 )
-from speechnexus_backend.speech.interfaces.http.job_errors import job_error
+from speechnexus_backend.speech.interfaces.http.job_errors import (
+    job_error,
+    job_storage_error,
+)
 from speechnexus_backend.speech.interfaces.http.middleware import REQUEST_ABORT_KEY
 
 PREFIX = "/v1/nexus/jobs"
@@ -512,9 +515,9 @@ async def _create(
     except JobAdmissionRejectedError as error:
         return job_error(error.code, request_id, detail=error.detail)
     except PublicJobUnavailableError as error:
-        return job_error("job_unavailable", request_id, detail=error.detail)
-    except JobRejectedError:
-        return job_error("job_unavailable", request_id)
+        return job_storage_error(request_id, error)
+    except JobRejectedError as error:
+        return job_storage_error(request_id, error)
     except ValueError, TypeError, ContractValidationError:
         return job_error("invalid_job_request", request_id)
 
@@ -544,8 +547,8 @@ def _list(service: PublicJobs, request: Request, request_id: str) -> Response:
         )
     except ValueError:
         return job_error("invalid_job_request", request_id)
-    except PublicJobUnavailableError:
-        return job_error("job_unavailable", request_id)
+    except PublicJobUnavailableError as error:
+        return job_storage_error(request_id, error)
     try:
         # One batched Artifact read per page instead of one read per Job.
         facts = service.artifacts_page(page)
@@ -566,14 +569,19 @@ def _list(service: PublicJobs, request: Request, request_id: str) -> Response:
             media_type="application/json",
             headers={"Cache-Control": "no-store"},
         )
-    except PublicJobUnavailableError, ValueError:
-        return job_error("job_unavailable", request_id)
+    except (PublicJobUnavailableError, ValueError) as error:
+        return job_storage_error(request_id, error)
 
 
 def _read(service: PublicJobs, job_id: str, request_id: str) -> Response:
     try:
         identifier(job_id)
         job = service.get(job_id)
+    except PublicJobUnavailableError as error:
+        # The store refused the read: a storage outage here used to escape as an
+        # unhandled 500 on the most-called Job route, which is the same missing
+        # prerequisite the list route already names (#920 review M2).
+        return job_storage_error(request_id, error)
     except PublicJobNotFoundError, ValueError:
         return job_error("job_not_found", request_id)
     try:
@@ -587,8 +595,8 @@ def _read(service: PublicJobs, job_id: str, request_id: str) -> Response:
             media_type="application/json",
             headers={"Cache-Control": "no-store"},
         )
-    except PublicJobUnavailableError, ContractValidationError, ValueError:
-        return job_error("job_unavailable", request_id)
+    except (PublicJobUnavailableError, ContractValidationError, ValueError) as error:
+        return job_storage_error(request_id, error)
 
 
 def _cancellation_response(view: CancellationView) -> Response:
@@ -617,12 +625,15 @@ def _cancel(
         return job_error("idempotency_conflict", request_id)
     except JobOutcomeUnknownError:
         return job_error("job_outcome_unknown", request_id)
+    # ContractValidationError is a ValueError subclass: this clause must stay
+    # above the 404 one, or a contract-invalid persisted document reads as a
+    # missing Job instead of storage (#920 review M2).
+    except ContractValidationError:
+        return job_storage_error(request_id)
     except PublicJobNotFoundError, ValueError:
         return job_error("job_not_found", request_id)
     except PublicJobUnavailableError as error:
-        return job_error("job_unavailable", request_id, detail=error.detail)
-    except ContractValidationError:
-        return job_error("job_unavailable", request_id)
+        return job_storage_error(request_id, error)
 
 
 def _retry(
@@ -672,14 +683,17 @@ def _retry(
         return job_error("voice_draft_not_generatable", request_id)
     except JobAdmissionRejectedError as error:
         return job_error(error.code, request_id, detail=error.detail)
-    except JobRejectedError:
-        return job_error("job_unavailable", request_id)
+    except JobRejectedError as error:
+        return job_storage_error(request_id, error)
+    # ContractValidationError is a ValueError subclass: this clause must stay
+    # above the 404 one, or a contract-invalid persisted document reads as a
+    # missing Job instead of storage (#920 review M2).
+    except ContractValidationError:
+        return job_storage_error(request_id)
     except PublicJobNotFoundError, ValueError:
         return job_error("job_not_found", request_id)
     except PublicJobUnavailableError as error:
-        return job_error("job_unavailable", request_id, detail=error.detail)
-    except ContractValidationError:
-        return job_error("job_unavailable", request_id)
+        return job_storage_error(request_id, error)
 
 
 def _open_stream(
@@ -696,12 +710,15 @@ def _open_stream(
     try:
         identifier(job_id)
         service.get(job_id)
+    # ContractValidationError is a ValueError subclass: this clause must stay
+    # above the 404 one, or a contract-invalid persisted document reads as a
+    # missing Job instead of storage (#920 review M2).
+    except ContractValidationError:
+        return job_storage_error(request_id)
     except PublicJobNotFoundError, ValueError:
         return job_error("job_not_found", request_id)
     except PublicJobUnavailableError as error:
-        return job_error("job_unavailable", request_id, detail=error.detail)
-    except ContractValidationError:
-        return job_error("job_unavailable", request_id)
+        return job_storage_error(request_id, error)
     return _EventStreamResponse(
         _event_stream(service, job_id, after_seq, heartbeat_seconds=heartbeat_seconds),
         media_type="text/event-stream",

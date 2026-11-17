@@ -5,6 +5,11 @@ from __future__ import annotations
 from speechnexus_contracts import parse
 from starlette.responses import JSONResponse
 
+from speechnexus_backend.speech.domain.job_prerequisites import (
+    STORE_UNAVAILABLE,
+    prerequisite_of_error,
+)
+
 _ERRORS: dict[str, tuple[int, str, str]] = {
     "invalid_job_request": (400, "invalid_request_error", "Invalid Job request."),
     "job_request_too_large": (
@@ -130,7 +135,7 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
     # The one code that reports the Job store itself: the transaction could not
     # read or write durable state. Nothing an operator can do to an engine repairs
     # it, and no admission refusal may borrow it (#828 review B3).
-    "job_unavailable": (503, "service_unavailable_error", "Job storage is unavailable."),
+    "job_unavailable": (503, "service_unavailable_error", STORE_UNAVAILABLE.detail),
     # The pinned instance is ready, but its readiness receipt elapsed. The store is
     # healthy and no Job row was written; an operator re-signs the receipt and the
     # same request is then admitted. Recovery needs that out-of-band step, so the
@@ -291,3 +296,37 @@ def job_error(
             },
         ),
     )
+
+
+def job_storage_error(
+    request_id: str,
+    error: BaseException | None = None,
+    *,
+    headers: dict[str, str] | None = None,
+) -> JSONResponse:
+    """Answer ``job_unavailable``, naming the missing prerequisite when one applies.
+
+    This is the single decision point for the Job surface's storage answer. A
+    refusal that already knows its missing item -- the store naming a blank key --
+    carries it on ``error.detail``; otherwise the table in
+    ``speech/domain/job_prerequisites.py`` classifies the driver failure (SQLSTATE
+    "undefined relation/schema" is a missing migration, "insufficient privilege" a
+    missing grant). A refusal with no configuration cause keeps the declared "Job
+    storage is unavailable." message, so a decoder defect never advertises a key an
+    operator would change for nothing (#920).
+
+    ``detail`` is always the table's own text: it names environment variable keys and
+    commands, never a DSN value, host, database name, user or credential. This
+    boundary chooses between texts, it does not redact them: a producer that starts
+    passing a new ``detail`` (``speech/infrastructure`` names a concrete missing item,
+    as the voice and binding refusals already do) inherits that constraint and must
+    keep it -- the table's own leak test in
+    ``tests/unit/backend/test_job_unavailable_prerequisites.py`` guards the rows, not
+    somebody else's sentence (#920 review R4).
+    """
+    known = getattr(error, "detail", None) if error is not None else None
+    detail = known if isinstance(known, str) and known.strip() else None
+    if detail is None:
+        found = prerequisite_of_error(error)
+        detail = None if found is None else found.detail
+    return job_error("job_unavailable", request_id, headers=headers, detail=detail)

@@ -24,16 +24,22 @@ from __future__ import annotations
 
 import re
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from tests.ci.startup_gates import (
     EXACT_LINE,
     GATES,
+    NO_PROMISE,
     ONE_FAIL_LINE,
     PROCESS_TEST_MODULES,
+    TRACEBACK_SHAPE,
+    UNVERIFIED,
+    Gate,
     inconsistent_rows,
-    process_evidence_rows,
+    quote_problems,
     render_table,
+    shape_rows,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -94,11 +100,43 @@ class StartupGateTableTests(unittest.TestCase):
 
     def test_every_promised_shape_names_a_process_level_case(self) -> None:
         missing = [
-            gate.slug
-            for gate in process_evidence_rows()
-            if gate.case is None or gate.case not in self.cases
+            gate.slug for gate in shape_rows() if gate.case is None or gate.case not in self.cases
         ]
         self.assertEqual(missing, [])
+
+    def test_a_named_case_that_does_not_exist_is_red(self) -> None:
+        for gate in GATES:
+            if gate.case is not None:
+                self.assertIn(gate.case, self.cases, f"{gate.slug} names a missing case")
+
+    def test_every_quoted_product_message_exists_in_the_file_it_names(self) -> None:
+        """#928 review A1: a row cannot quote a line the product no longer prints."""
+        problems = [problem for gate in GATES for problem in quote_problems(gate, ROOT)]
+        self.assertEqual(problems, [])
+
+    def test_an_undeclared_or_stale_quote_turns_the_check_red(self) -> None:
+        subject = GATES[0]
+        injected = replace(
+            subject,
+            quotes=(
+                *subject.quotes,
+                ("a message the product never prints", "deploy/job-startup-gate.py"),
+            ),
+        )
+        self.assertTrue(quote_problems(injected, ROOT))
+        moved = replace(
+            subject,
+            quotes=(
+                (
+                    "The Job database has not run the migration profile: a required "
+                    "relation is missing, so no Job can be stored.",
+                    "deploy/job-startup-gate.py",
+                ),
+            ),
+        )
+        self.assertTrue(quote_problems(moved, ROOT))
+        stale = replace(subject, quotes=())
+        self.assertTrue(quote_problems(stale, ROOT))
 
     def test_an_unreconciled_row_cannot_carry_evidence(self) -> None:
         for gate in inconsistent_rows():
@@ -113,11 +151,12 @@ class StartupGateTableTests(unittest.TestCase):
         slugs = [gate.slug for gate in GATES]
         self.assertEqual(len(slugs), len(set(slugs)))
         for gate in GATES:
+            self.assertIsInstance(gate, Gate)
             for field in (gate.unit, gate.stage, gate.observed, gate.promise, gate.agrees):
                 self.assertTrue(field.strip(), f"{gate.slug} has an empty column")
             self.assertIn(
                 gate.promise_kind,
-                {ONE_FAIL_LINE, EXACT_LINE, "无格式承诺", "未验证"},
+                {ONE_FAIL_LINE, TRACEBACK_SHAPE, EXACT_LINE, NO_PROMISE, UNVERIFIED},
                 f"{gate.slug} carries an unknown promise kind",
             )
 

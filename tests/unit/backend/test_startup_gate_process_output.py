@@ -173,7 +173,13 @@ def test_job_dispatch_gate_connect_failure_names_no_server_or_login() -> None:
     connect_lines = [line for line in fail_lines(result) if "cannot connect to PostgreSQL" in line]
     assert len(connect_lines) == 1
     assert "SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL" in connect_lines[0]
-    assert "the dispatch role or the database network is not ready" in connect_lines[0]
+    # psycopg reports no SQLSTATE for a connect failure, so the type name is the only
+    # classification a gate can print without echoing the driver's text (#928 M2).
+    assert "(OperationalError)" in connect_lines[0]
+    assert (
+        "the dispatch role, the database name or the database network is not ready"
+        in (connect_lines[0])
+    )
     # A psycopg message names the server address and, on an auth failure, the login
     # name; the gate must classify the failure instead of echoing it.
     assert_no_leak(result)
@@ -271,3 +277,56 @@ def test_every_gate_failure_is_cheap_enough_for_a_startup_case(entry: list[str])
 
     assert result.returncode == 1
     assert_no_traceback(result)
+
+
+# ------------------------------------------------ job-dispatch-worker entry point
+
+WORKER = "speechnexus_backend.job_dispatch_worker"
+WORKER_SETTINGS = {
+    "SPEECHNEXUS_PROCESS_ROLE": "job-worker",
+    "SPEECHNEXUS_NODE_ID": "node-local-1",
+    "SPEECHNEXUS_INSTANCE_ID": "instance-local-1",
+    # A closed port: the settings validate, then the planner/publisher assembly fails
+    # exactly as it would against a database that is not ready.
+    "SPEECHNEXUS_DATABASE_URL": "postgresql://sn_job_dispatch:pw_secret@127.0.0.1:1/sn892",
+    "SPEECHNEXUS_DATABASE_SCHEMA": "speech",
+    "SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL": "http://127.0.0.1:1",
+    "SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL": "0123456789abcdef",
+    "SPEECHNEXUS_EXECUTION_GATEWAY_TIMEOUT_SECONDS": "5",
+    "SPEECHNEXUS_JOB_DISPATCH_BATCH_SIZE": "4",
+    "SPEECHNEXUS_JOB_DISPATCH_LEASE_MS": "30000",
+    "SPEECHNEXUS_JOB_DISPATCH_POLL_SECONDS": "1",
+    "SPEECHNEXUS_JOB_DISPATCH_JOB_TIMEOUT_SECONDS": "60",
+    "SPEECHNEXUS_JOB_DISPATCH_MAX_ATTEMPTS": "3",
+    "SPEECHNEXUS_JOB_DISPATCH_INTERVAL_SECONDS": "1",
+    "SPEECHNEXUS_JOB_DISPATCH_STORAGE_TIMEOUT_SECONDS": "5",
+    "SPEECHNEXUS_OBJECT_STORAGE_ENDPOINT": "http://127.0.0.1:1",
+    "SPEECHNEXUS_OBJECT_STORAGE_BUCKET": "speechnexus-results",
+    "SPEECHNEXUS_EXECUTION_RESULT_BUCKET": "speechnexus-results",
+    "SPEECHNEXUS_OBJECT_STORAGE_ACCESS_KEY": "access",
+    "SPEECHNEXUS_OBJECT_STORAGE_SECRET_KEY": "secret",
+}
+
+
+def test_job_dispatch_worker_refuses_without_settings_in_one_line() -> None:
+    """The worker's own entry point names its refusal instead of dumping a traceback."""
+    result = run_entry(["-m", WORKER], {})
+
+    assert result.returncode == 1
+    assert_no_traceback(result)
+    assert result.stdout == ""
+    assert result.stderr == "Job dispatch unavailable; no lease was claimed.\n"
+    assert_no_leak(result)
+
+
+def test_job_dispatch_worker_separates_an_unassembled_planner_with_exit_two() -> None:
+    """A validated configuration whose planner cannot be built is a different refusal."""
+    result = run_entry(["-m", WORKER], WORKER_SETTINGS, timeout=60)
+
+    assert result.returncode == 2
+    assert_no_traceback(result)
+    assert result.stderr == (
+        "Job dispatch unavailable: planner and result publisher are not assembled; "
+        "no lease was claimed.\n"
+    )
+    assert_no_leak(result)

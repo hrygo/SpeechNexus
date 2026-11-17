@@ -29,7 +29,7 @@ date: 2026-11-08
 | 编号 | 前置 | 缺失时的可观察症状 | 缺它的 Job 表现 |
 | --- | --- | --- | --- |
 | 1 | API 的 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL` 与 `SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL` | `POST /v1/nexus/jobs` 返回 `503 job_unavailable`，`message` 点名空白的键名（两条都空则两条都列，只空 admission 时由创建路径点名它） | 没有 Job 可被 claim |
-| 2 | 迁移到唯一 head（`migration` profile，`speechnexus-job-migrate --schema speech`） | Job/准入关系不存在，迁移版本表为空；worker 闸门先比对迁移头并点名 `speech.alembic_version is missing: run the migration profile`，API 启动则以 `FAIL: ... migration profile` 拒绝（都不再是 traceback） | 创建失败或进程启动即退出 |
+| 2 | 迁移到唯一 head（`migration` profile，`speechnexus-job-migrate --schema speech`） | Job/准入关系不存在，迁移版本表为空；worker 闸门先比对迁移头并点名 `speech.alembic_version is missing: run the migration profile`（一行 `FAIL:`、退出码 `1`）。API 启动期不是一行 `FAIL:`，而是 traceback + 退出码 `3`：迁移预检在 ASGI lifespan 里跑，uvicorn 启动失败即 `sys.exit(3)`；API 里以一行 `FAIL:` 结束的只有**同步装配**的结算预检（[启动闸门的失败输出形态](startup-gate-output.md)） | 创建失败或进程启动即退出 |
 | 3 | 派发角色与五组 grant（启用 `voice_validation` 再加两张 `SELECT`） | worker 的启动闸门点名缺授权的表/列并退出，`restart: unless-stopped` 下形成重启循环 | 启动期失败，不领取租约 |
 | 4 | 真实引擎与已注册 `ready` 实例（`engine-registration` profile，同一次写入实例、`host_nodes` 与 `workspace_quotas`），且该 binding 已发布、该工作空间有配额行；readiness 收据未过期（`engine-readiness` profile 定时续期） | 未发布 binding 时创建返回 `422 model_not_published`（`message` 点名发布 binding 与注册引擎）；有 binding、该工作空间没有配额行时返回 `422 workspace_not_configured`；两者都在、但没有匹配的 `ready` 实例时返回 `429 job_capacity_exhausted`（`message` 点名未注册的引擎/实例，已注册但非 `ready` 时点名现有状态）；实例在但收据过期返回 `503 engine_not_ready`（非 `job_unavailable`） | 分别停在绑定解析、配额判定与容量判定，没有可执行实例 |
 | 5 | gateway 的 `result_bucket` 存在、被 `minio-init` 创建并启用版本化，且与 env 一致 | worker 的启动闸门点名缺桶/缺版本化/配置不一致并退出 | 启动期失败，不领取租约 |

@@ -172,26 +172,6 @@ def _identifier(value: str) -> str:
     return value
 
 
-# A driver's connect failure is never echoed: psycopg's text names the server
-# address, the port and the database, and an authentication failure quotes the
-# login name. The gate's promise is one named line per missing prerequisite with no
-# DSN fragment, host, database or user in it, so the classification below carries
-# the operator-relevant difference instead (refused login vs. unreachable server vs.
-# anything else, by exception type). SQLSTATE is a protocol value, not an input.
-_REFUSED_LOGIN_PREFIXES = ("28",)
-_UNREACHABLE_PREFIXES = ("08", "57P03")
-
-
-def _connection_failure_class(error: Exception) -> str:
-    sqlstate = getattr(error, "sqlstate", None)
-    if isinstance(sqlstate, str):
-        if sqlstate.startswith(_REFUSED_LOGIN_PREFIXES):
-            return "the login was refused"
-        if sqlstate.startswith(_UNREACHABLE_PREFIXES):
-            return "the server is unreachable"
-    return type(error).__name__
-
-
 def dispatch_kinds(env: Mapping[str, str]) -> tuple[str, ...]:
     """Return the configured lane kinds, defaulting to the worker's own default."""
     raw = env.get(KINDS_ENV, "asr,tts")
@@ -572,11 +552,17 @@ def database_findings(
     try:
         connection = connect(dsn)
     except Exception as error:
+        # psycopg's connect failures carry no SQLSTATE (measured: a wrong password, a
+        # closed port, a missing database and a missing role all report
+        # ``sqlstate is None``), and its message names the server, the port, the
+        # database and the login. The gate promises one named line per missing
+        # prerequisite without a deployment input in it, so only the exception type
+        # and a human sentence are printed (#928 review M2).
         return (
             [
                 f"{DSN_ENV} cannot connect to PostgreSQL "
-                f"({_connection_failure_class(error)}); the dispatch role or the "
-                "database network is not ready"
+                f"({type(error).__name__}); the dispatch role, the database name or "
+                "the database network is not ready"
             ],
             [],
         )

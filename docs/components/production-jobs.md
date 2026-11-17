@@ -338,7 +338,7 @@ Job 已是本错误码的 `failed` 时只补做隔离；他人写入的终态不
 1. **就绪与诊断 detail**：`create_app` 装配的 `CancellationDebtProbe`
    （名字 `cancellation_debt`）在每次 `/readyz` 与
    `GET /v1/nexus/admin/diagnostics` 中报告「已受理但仍在持有容量的取消」。判定标准是：
-   围栏已受理、账本未 `settled`（或根本没有账本行，即 worker 从未运行过）、Job 仍是
+   围栏已受理、账本未 `settled`（或根本没有账本行，即从未领取过这条受理）、Job 仍是
    `cancelling`、且受理时间距数据库当前时间超过宽限（默认 900 秒，大于默认确认窗口加退避）。
    它**不**改变聚合状态：`/readyz` 是 `deploy/compose.yaml` 的健康检查，一个 Job 占着
    它无法归还的槽位，不应该让整个 API 退出服务。告警口径因此是这个固定前缀，
@@ -358,23 +358,37 @@ Job 已是本错误码的 `failed` 时只补做隔离；他人写入的终态不
 
    | 形态 | 何时出现 |
    |---|---|
-   | `cancellation_debt: N accepted cancellation(s) still hold capacity over M held lease(s) (held leases: completed-without-release=X, execution-unknown=Y; never claimed=N): job-… -> lease-…(lease=reserved, execution=executing, subclass=execution-unknown)` | DSN 指向被授予 `cancellation_debt_reader_grants`（或更宽）的只读身份 |
-   | `cancellation_debt: N accepted cancellation(s) still hold capacity (jobs: lease-unread=X): job-… -> lease-unread [lease detail unavailable: permission]` | 该身份能读 Job、围栏与账本，但读不到租约/执行/终止证据表 |
+   | `cancellation_debt: N accepted cancellation(s) still hold capacity over M held lease(s) (held leases: completed-without-release=X, execution-unknown=Y; never claimed: Z; never claimable (exhausted): W; due now: V): job-… -> lease-…(lease=reserved, execution=executing, subclass=execution-unknown)` | DSN 指向被授予 `cancellation_debt_reader_grants`（或更宽）的只读身份 |
+   | `cancellation_debt: N accepted cancellation(s) still hold capacity (jobs: lease-unread=X; never claimed: Z; never claimable (exhausted): W; due now: V): job-… -> lease-unread [lease detail unavailable: permission]` | 该身份能读 Job、围栏与账本，但读不到租约/执行/终止证据表 |
    | `cancellation_debt: unavailable (not configured)` | 未配置专用 DSN（默认部署） |
    | `cancellation_debt: unavailable (permission｜relation｜connection｜timeout｜error)` | 探针什么都读不到；分类保证真实故障仍然可见，而不是被吞掉 |
 
-   `never claimed=N` 这一项回答的是「这份部署有没有推进者」，不是「进度到哪里」：
-   它数的是**围栏存在、而对账账本里没有对应行**的受理，也就是**从来没有 worker 领取过**
-   这一条。默认部署（`SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_ENABLED` 为 `false`
-   且没有常驻 `job_cancellation_worker`）只会出现这个形态——公开面答 `202 cancelling`，
-   而库里没有任何组件会推进它。带这个计数时**不要**按「正在取消」处置：先按本节末尾
-   「默认部署没有推进者」把 worker 跑起来（`--once` 一轮即可），再读一次 detail，
-   它会从 `never claimed=N` 变成阻塞明细或消失。它属于计数括号，不会被 detail 截断。
+   括号里的三对**账本时刻**事实互斥、按固定顺序出现，`N` 都数 **Job（受理）**，不按租约：
+
+   | 标记 | 判定（与 worker 的领取谓词逐条一致） | 证明什么 | 不证明什么 |
+   |---|---|---|---|
+   | `never claimed: N` | 账本无行 | 自围栏写入以来没有任何进程领取过这条受理 | 不证明「现在没有进程在跑」；它描述历史，首次领取后就不再出现 |
+   | `never claimable (exhausted): N` | 账本行 `settled_at_us IS NULL AND last_outcome = 'exhausted'` | 不会再被自动领取：领取谓词的 `last_outcome IS DISTINCT FROM 'exhausted'` 永远排除它，只有操作员出口能处置 | 不证明 Job 已终态，也不证明容量已归还 |
+   | `due now: N` | 账本行 `settled_at_us IS NULL AND last_outcome IS DISTINCT FROM 'exhausted' AND next_check_at_us <= now` | 此刻处于可领取状态（下一轮领取会选中它） | 不证明没有推进者：健康 worker 在两个轮询之间也会让该值为真，**持续出现**才说明没人推进 |
+
+   `now` 取数据库时钟，与宽限判定使用同一个值。**探针看不到进程是否在跑，也看不到
+   `SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_ENABLED` 等部署配置**——它只读台账，
+   因此任何「有阻塞明细 = worker 在跑」的推断都不成立。配置了
+   `SPEECHNEXUS_READINESS_CANCELLATION_DSN`、但没有常驻 worker 的部署，读面会在
+   `never claimed`（从未领取）与 `due now`（领取过、`next_check_at_us` 又已到期）之间变化；
+   未配置该 DSN 时是 `unavailable (not configured)`，看不到这些标记。
+
+   带这些标记时**不要**按「正在取消」处置：先按本节末尾「取消对账 worker 与开关」把 worker
+   跑起来。一轮之后 `never claimed` 消失，该受理按其 `next_check_at_us` 变成 `due now`
+   （到期后）或先进入阻塞明细；这只证明它被领取过，不证明有常驻 worker。
+   `never claimable (exhausted)` 不受「再跑一轮」影响：重跑多少轮都不会领取它。
+   三个计数都在 detail 的括号里、位于逐 Job 明细之前，`_bounded_detail` 的截断只丢弃明细，
+   丢不掉它们。
 
    前缀后面紧跟的计数是**分类**，不是装饰：同一个前缀下面的两种债处置完全不同，
-   报告必须让人一眼看出该走哪条路。**句子的两个数字各带单位**——`N` 是 Job（受理），
-   `over M held lease(s)` 是租约行，括号里的分类按租约计；多阶段 Job 因此不会出现
-   「3 个受理」旁边挂 4 个计数。分类由事实决定，不看意图：
+   报告必须让人一眼看出该走哪条路。**句子的数字各带单位**——`N` 是 Job（受理），
+   `over M held lease(s)` 与 `held leases` 分类是租约行，`jobs` 分类与三个账本标记是 Job；
+   多阶段 Job 因此不会出现「3 个受理」旁边挂 4 个计数。分类由事实决定，不看意图：
 
    | `subclass` | 判定（与出口的判据逐条一致） | 处置 |
    |---|---|---|
@@ -390,13 +404,20 @@ Job 已是本错误码的 `failed` 时只补做隔离；他人写入的终态不
 
    完整的 `Job → 租约 → 两侧状态` 明细需要一个单独的只读身份，最小授权集合由
    `cancellation_debt_reader_grants(schema, role)` 生成（列级：围栏的 `job_id/accepted_at_us`、
-   账本的 `job_id/settled_at_us`、`speech_jobs.job_id/state`、
+   账本的 `job_id/settled_at_us/last_outcome/next_check_at_us`、`speech_jobs.job_id/state`、
    `admission_leases.lease_id/operation_id/lease_state`、
    `submit_intents.submit_intent_id/lease_id/execution_state`、终止证据的
    `submit_intent_id/evidence_kind/execution_stopped/resources_released`；
-   不含规范请求正文、不含对账写权限）。把这个角色的 DSN 配进
-   `SPEECHNEXUS_READINESS_CANCELLATION_DSN` 即可；不配就只有上面第二/第四种形态，
-   逐条明细改用本节下面的只读钻取查询（由迁移/运维身份执行）。
+   不含规范请求正文、不含对账写权限）。账本那两列是调度状态，不是请求内容——三个账本标记
+   全部由它们算出，缺授权时两条查询都会整体降级为 `unavailable (permission)`。
+   把这个角色的 DSN 配进 `SPEECHNEXUS_READINESS_CANCELLATION_DSN` 即可；不配就只有上面
+   第二/第四种形态，逐条明细改用本节下面的只读钻取查询（由迁移/运维身份执行）。
+
+   **升级必做**：既有部署的该身份若还是旧的四列授权（账本只有 `job_id/settled_at_us`），
+   升级后必须以 owner 重跑 `cancellation_debt_reader_grants`，否则 `cancellation_debt`
+   的两条查询（完整形态与 Job 级降级形态）都读不到新列，读面变成
+   `cancellation_debt: unavailable (permission)`（不会让 `/readyz` 失败，但会失去 Job 级
+   明细与三个账本标记）；同族的 `stop_evidence_debt` 不读这两列，不受影响。
 
    探针复用一条连接（`application_name=speechnexus-readiness-debt`），不随每次 `/readyz`
    轮询新建会话；查询后回滚以保持会话空闲。

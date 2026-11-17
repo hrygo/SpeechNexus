@@ -1280,7 +1280,7 @@ FAIL(配置写了但不对,任何阶段都必须修):前置 1
 | worker 在、但网关调用全部失败 | worker 的网络命名空间是否仍指向当前 gateway 容器 | 6 |
 | 迁移报 `alembic_version` 不存在或版本偏低 | 迁移是否执行到目标库、发布制品 head | 2 |
 | api 启动退出并打印 `FAIL: ... migration profile` | 同一数据库是否执行过迁移（预检读不到准入表即拒绝启动） | 2 |
-| 取消后 Job 停在 `cancelling`、`held_slots` 不归零 | 先看 `/readyz` 的 `cancellation_debt:` 是否带 `never claimed=N`（见 §13.1） | 6 |
+| 取消后 Job 停在 `cancelling`、`held_slots` 不归零 | 先看 `/readyz` 的 `cancellation_debt:` 是否带 `never claimed: N`／`never claimable (exhausted): N`／`due now: N`（见 §13.1） | 6 |
 
 ### 13.1 取消没有推进时的三步判断
 
@@ -1289,19 +1289,29 @@ FAIL(配置写了但不对,任何阶段都必须修):前置 1
 默认 `false`）。因此「取消后不归还」先分清是哪一种，再动手：
 
 1. **读面**：`GET /readyz` 与 `GET /v1/nexus/admin/diagnostics` 的 `cancellation_debt` detail。
+   探针**只读台账**，看不到进程是否在跑，也看不到 `..._ENABLED` 等部署配置；下面每个标记
+   都只是「截至本次读取」的账面事实，不能反推 worker 状态。受理后 900 秒宽限内不会出现在
+   detail 里（判据用数据库时钟）。
    - `unavailable (not configured)`：没有配 `SPEECHNEXUS_READINESS_CANCELLATION_DSN`，这份部署
      **看不到**这类债（探针永不失败，所以「绿」不代表没有债）。
-   - `never claimed=N`：围栏存在但账本没有行——**从来没有 worker 领取过**，这种部署里
-     公开面的 `202 cancelling` 不会自己前进。
-   - 有阻塞明细（`job -> lease(lease=…, execution=…, subclass=…)`）：worker 在跑，被外部
-     事实挡住；`subclass=completed-without-release` 走有界操作员出口，其余走隔离/停止路径。
+   - `never claimed: N`：围栏存在但账本没有行——自围栏写入以来没有任何进程领取过。首次领取后
+     它就不再出现；它的消失不说明有 worker 在跑。
+   - `never claimable (exhausted): N`：账本行是 `exhausted`，领取谓词永不再选中它；再跑多少轮
+     `--once` 也不会推进，这类只能按第 3 步的操作员出口处置。
+   - `due now: N`：账本行此刻可领取（`next_check_at_us` 已过、未 `settled`、非 `exhausted`）。
+     健康 worker 在两个轮询之间也可能短暂命中，**持续出现**才说明没人推进。
+   - 有阻塞明细（`job -> lease(lease=…, execution=…, subclass=…)`）：只说明租约仍持有容量、
+     执行处于什么状态，**不**说明 worker 在跑；`subclass=completed-without-release` 走有界
+     操作员出口，其余走隔离/停止路径。
 2. **推进**：先跑一轮有界 pass（不需要常驻，也不需要新依赖）：
 
    ```bash
    SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_ENABLED=true    SPEECHNEXUS_DATABASE_URL=postgresql:///speech    SPEECHNEXUS_DATABASE_SCHEMA=speech    SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL=http://gateway:8010    SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL=...    python -m speechnexus_backend.job_cancellation_worker --once
    ```
 
-   一轮之后重读 detail：`never claimed` 消失说明推进者已经在工作，剩下的是阻塞明细。
+   一轮之后重读 detail：`never claimed` 消失，该受理按 `next_check_at_us` 变成 `due now`
+   （到期后）或先进入阻塞明细。这只证明它被领取过，不证明有常驻 worker；`exhausted` 的行
+   不会被这一轮领取。
    时间上界：确认窗口 `CONFIRM_TIMEOUT_SECONDS`（默认 `300` s）+ 退避上限 `300` s；
    期间槽位**不可用**，隔离后也从 `held` 移到 `quarantined`，容量仍被计费。
 3. **要回槽位**：执行已 `unknown_quarantined`/`quarantined` 的，隔离后只能经

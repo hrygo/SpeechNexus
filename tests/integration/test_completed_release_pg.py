@@ -712,6 +712,10 @@ def test_the_label_routes_this_shape_to_the_exit_that_accepts_it(
     # No ledger row in this fixture: the same sentence must also say that no worker
     # has claimed the acceptance, so "still holds capacity" is not read as progress.
     assert "(held leases: completed-without-release=1; never claimed: 1)" in detail
+    # The two ledger-derived marks can only come from a ledger row, so this shape must
+    # not invent them: the three facts are mutually exclusive on one acceptance.
+    assert "never claimable" not in detail
+    assert "due now" not in detail
     assert _release(sandbox)[0] == cli.EXIT_RELEASED
 
 

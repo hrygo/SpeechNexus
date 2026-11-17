@@ -29,11 +29,15 @@ PRD = "docs/prd.md"
 COMPOSE = "docs/operations/compose-minimal.md"
 DEPLOY_README = "deploy/README.md"
 MANIFEST = "docs/plans/delivery-issues.json"
+RUNBOOK = "docs/operations/async-job-runbook.md"
+CATALOG_RUNTIME = "backend/src/speechnexus_backend/model_catalog_runtime.py"
 COPIED_FILES = (
     DEPLOY_README,
     PRD,
     COMPOSE,
     MANIFEST,
+    RUNBOOK,
+    CATALOG_RUNTIME,
     "docs/README.md",
     "docs/plans/delivery-tracking.md",
     "docs/architecture/speech-api.md",
@@ -149,3 +153,21 @@ class DocumentedCapabilityGuardTests(unittest.TestCase):
     def test_the_stale_planner_claim_turns_red(self) -> None:
         self._rewrite(MANIFEST, "生产 planner 与结果发布器已装配", "生产 planner 未装配")
         self._assert_red("生产 planner 未装配")
+
+    def test_the_live_readiness_wording_turns_red(self) -> None:
+        """D12: the runbook read the readiness block as live state (#876)."""
+        self._rewrite(
+            RUNBOOK,
+            "是**静态投影**（fail-closed），不是实时状态",
+            "反映实时状态",
+        )
+        self._assert_red("catalogue-readiness-projection")
+
+    def test_a_deleted_projection_comment_turns_red(self) -> None:
+        """The comment is what keeps the projection static; deleting it is a revert."""
+        self._rewrite(
+            CATALOG_RUNTIME,
+            "                # Static, fail-closed projection, never a live admission answer. No\n",
+            "",
+        )
+        self._assert_red("Static, fail-closed projection")

@@ -12,7 +12,9 @@ pinned here as executable assertions:
     `docs/operations/compose-minimal.md` must cite the terminal-state writer line,
     name the step this deployment does not verify, and never call it missing again;
   * the production planner is assembled in the dispatch runtime, so no current
-    document or the delivery matrix may claim it is not.
+    document or the delivery matrix may claim it is not;
+  * the catalogue's `nexus.readiness` block in the async-Job runbook is a static,
+    fail-closed projection, and the comment that keeps it static must stay.
 
 Each claim also pins its citation: a doc that cites `path:line` must cite a line
 that still contains the expected symbol. Reverting the doc or the code therefore
@@ -46,6 +48,8 @@ PRD = "docs/prd.md"
 SPEECH_API = "docs/architecture/speech-api.md"
 MANIFEST = "docs/plans/delivery-issues.json"
 MATRIX = "docs/plans/delivery-tracking.md"
+RUNBOOK = "docs/operations/async-job-runbook.md"
+CATALOG_RUNTIME = "backend/src/speechnexus_backend/model_catalog_runtime.py"
 
 DOCUMENTED_ROUTES_ANCHOR = "公开 Job 路由已装配"
 ROUTE_PATTERN = re.compile(r"`(GET|POST|PUT|PATCH|DELETE) (/v1/nexus/jobs[^`\s]*)`")
@@ -57,6 +61,13 @@ STALE_PLANNER_PHRASES = (
     "生产派发 planner 尚未装配",
     "planner 未装配",
     "planner 尚未装配",
+)
+# The two wordings that made the catalogue's readiness block read as a live admission
+# answer (#876 D12): an instance that was `ready` and a Job that answered `202` then
+# looked like a broken engine or a broken catalogue.
+STALE_LIVE_READINESS_PHRASES = (
+    "反映实时状态",
+    "在未注册实例时是",
 )
 
 
@@ -182,6 +193,17 @@ CLAIMS = (
         required=("生产 planner 均已装配",),
         forbidden=STALE_PLANNER_PHRASES,
         anchor=(DISPATCH_RUNTIME, "StoredCommandPlanner("),
+    ),
+    Claim(
+        name="catalogue-readiness-projection",
+        doc=RUNBOOK,
+        required=(
+            "是**静态投影**（fail-closed），不是实时状态",
+            "**不随实例注册、实例 `ready` 或 Job `202` 变化**",
+            "不表示引擎故障或不可准入",
+        ),
+        forbidden=STALE_LIVE_READINESS_PHRASES,
+        anchor=(CATALOG_RUNTIME, "Static, fail-closed projection"),
     ),
 )
 

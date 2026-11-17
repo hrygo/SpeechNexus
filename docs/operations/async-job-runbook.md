@@ -474,8 +474,16 @@ curl -sS http://127.0.0.1:8000/v1/models
 
 预期 `200`，`data` 里是该 binding 的目录项：`id` 为 `binding_id`、`nexus.binding` 为
 `{"id": …, "revision": "<十进制文本>"}`（`publication.reference`，`speech/domain/publications.py:61`；**没有
-`revision_id`**，`revision_id` 只在 `speech_publication_heads` 与私有输入里用），
-`nexus.readiness.admission_state` 在未注册实例时是 `unavailable`。
+`revision_id`**，`revision_id` 只在 `speech_publication_heads` 与私有输入里用）。
+`nexus.readiness` 是**静态投影**（fail-closed），不是实时状态。生产装配
+（`backend/src/speechnexus_backend/model_catalog_runtime.py:92`）构造目录时不传 readiness 事实，
+缺少证据一律保守取 `false` / `unavailable`，四项恒为 `configured=true`、`engine_ready=false`、
+`quality_qualified=false`、`admission_state=unavailable`（`docs/prd.md` 的 M-CATALOG 即此语义），
+**不随实例注册、实例 `ready` 或 Job `202` 变化**。`unavailable` 只表示该目录没有建立这项事实，
+不表示引擎故障或不可准入；契约对该取值的定义（「现在不能准入」）要目录真的接入实时事实才成立，
+本装配不产生它。实时准入事实不由该端点承载：判「现在能不能建 Job」看 `POST /v1/nexus/jobs` 的
+实际应答码（第 11 节），契约声明的实时报告是 `GET /v1/nexus/jobs/admission-readiness`
+（带 `workspace_id`，当前仍是占位、跟踪 `#863`）。
 
 `DEL-535`（基线 `origin/main` `c0172a22`）当时在这里拿到的是 `503 model_catalogue_unavailable`，
 **不是角色没配**：catalog 要求定义里的 `binding_id` 等于发布的 `object_id`

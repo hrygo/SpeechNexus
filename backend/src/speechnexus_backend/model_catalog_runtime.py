@@ -89,6 +89,18 @@ class ModelCatalogRuntime:
                 with pool.connection(timeout=3) as connection:
                     connection.execute("SET LOCAL statement_timeout='3s'")
                     self._verify_read_only(connection)
+                # Static, fail-closed projection, never a live admission answer. No
+                # readiness fact can reach this reader: its grant admits published
+                # tables only (READABLE), while every fact admission turns on --
+                # engine_instances, runtime_instance_heads, resource_pools,
+                # workspace_quotas, speech_assets -- sits outside it, so a grant wide
+                # enough to answer "can a create be admitted now" is rejected at
+                # startup. Admission is per workspace as well, and /v1/models carries
+                # no workspace. The catalogue therefore reports the ReadinessFacts
+                # defaults (engine_ready=false, quality_qualified=false,
+                # admission_state=unavailable) and answers no admission question; live
+                # answers are the create response and the contract's
+                # admission-readiness route (#863).
                 self.catalogue = PostgresModelCatalog(
                     pool, timeout_seconds=self._settings.model_catalog_read_timeout_seconds
                 )

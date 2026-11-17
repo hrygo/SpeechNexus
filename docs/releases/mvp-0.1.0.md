@@ -7,7 +7,7 @@ date: 2026-11-16
 
 # SpeechNexus MVP 0.1.0 发布说明
 
-本说明陈述该版本实际具备的能力、部署与运维入口、升级与回滚边界，以及 11 条已知限制。每一
+本说明陈述该版本实际具备的能力、部署与运维入口、升级与回滚边界，以及 12 条已知限制。每一
 条都带证据档位与出处：**只有 A 档（真实部署或真实引擎上的端到端）计入「能做什么」**；B 档
 （真实进程、真实 PostgreSQL、真实对象存储，但未走真实引擎或未在参考部署上）与 C 档
 （组件级、fake、契约级）只说明「实现存在」，不是发布承诺。档位定义与逐行推导见
@@ -309,7 +309,7 @@ head，见下），但有三个地方会**硬拒绝启动**，以及四类数据
 
 ## 6. 已知限制
 
-以下 11 条与 [issue #912](https://github.com/hrygo/SpeechNexus/issues/912) 的清单一一对应，按
+以下 12 条与 [issue #912](https://github.com/hrygo/SpeechNexus/issues/912) 的清单一一对应，按
 「使用者会踩到什么 → 怎么处置」重写。「处置」列只有两种取值：**可操作**（有命令或步骤能消掉或
 绕过）与**无处置，只能避免**（技术上没有出口，唯一的做法是不进入该场景）。
 
@@ -326,6 +326,7 @@ head，见下），但有三个地方会**硬拒绝启动**，以及四类数据
 | 9 | 调语音侧删除：`POST /v1/nexus/deletion-plans`、`POST /v1/nexus/deletions`、`GET /v1/nexus/deletions/{id}` 恒返回 `503 operation_not_implemented` | **无处置，只能避免**：语音侧删除不在首发范围（实施卡 #819 仍 open），要删语音侧内容只能按资产 TTL 与对象版本策略处理，不能用这两个入口。工作台侧删除可用（见 §2），但含已保存资产的项目删除在未配对象区时会停在 `cleanup_state=pending`（行已擦除、对象字节待结清） | `backend/src/speechnexus_backend/speech/interfaces/http/unimplemented.py:82`（三行占位）；[判定表第 9 行](../plans/mvp-release-readiness.md) |
 | 10 | 用 `/readyz` 200 判断「可以创建 Job 了」——它不反映 Job 准入可用性，也不反映有多少容量被未收口的取消占着 | **可操作**：`/readyz` 与 `GET /v1/nexus/admin/diagnostics` 里的 `cancellation_debt` detail 才是那部分事实的读面（它**永远报告 `ok`**，不进聚合状态，因为 `/readyz` 是 Compose 健康检查，一个 Job 占着槽位不该让整套部署起不来）。判断「能不能建 Job」用 `POST /v1/nexus/jobs` 的实际应答码，或 `check-async-job-prereqs.py`。**债务极大时探针会变盲而不是变红**：探针自身的超时先于服务预算到期，`check()` 捕获后只把 detail 降级成 `unavailable (timeout)`，`/readyz` 仍是 `200`——所以「绿」在积压很大时只代表「没查出」，不代表「没有债」。实测代价随**仍持有容量的租约数**增长（≈1.2–2.4 µs/条），`≥5 万`条时单次约 111 ms（占探针预算 4.6%）；`cancellation_debt` 另有一段随上线时长线性增长的历史扫描，`0056` 的索引把它从 37.4 ms 降到 0.90 ms | [隔离不了的时候：可见面与处置](../components/production-jobs.md#隔离不了的时候可见面与处置) |
 | 11 | 以为浏览器侧已被完整验证：浏览器覆盖只有 Chromium 无头；CI 不跑镜像内 nginx 的完整链路 | **无处置，只能避免**：三个 Playwright 配置都用 `chromium`（`playwright.a11y.config.mjs:19`、`playwright.behavior.config.mjs:27`、`playwright.deployed.config.mjs:29`）；CI 的 deployed-headers 门禁（`.github/workflows/ci.yml:1184`）是把**同一份构建产物**用从 `deploy/web/nginx.conf` 解析出的响应头起静态服务、跑 Chromium 首屏，不是跑镜像里的 nginx 容器。因此不要据 CI 绿宣称「浏览器已通过」；发布前在默认部署上人工跑一次同版核对第 3 项 | `.github/workflows/ci.yml` 的 Web job；`playwright.deployed.config.mjs` |
+| 12 | 以为「启动失败的输出里没有凭据」——**不成立**：`api` 的 lifespan 失败是 traceback，里面原样带着驱动的连接报文（真口令错时含 `connection to server at "<host>", port <port> failed: FATAL: password authentication failed for user "<role>"`，一次失败打印两次）；`gateway` 控制面、`job-dispatch-worker` 的两条路径同样是 traceback | **无处置，只能避免**：**一行结论类**的闸门（结算预检、asset-inspector、workbench-migrate、workbench-api、`speechnexus-job-dispatch-worker` 自身入口）确实不泄露，实测按 SQLSTATE 分类后只留「登录被拒 / 服务器不可达 / 异常类型名」；但 traceback 类单元打印的是驱动原文，**任何「启动失败不泄露凭据」的通稿都是假的**。处置只有一条：这四类单元的输出**不要整段贴进公开 issue 或聊天**，要贴就贴 `FAIL:` 行与异常类型名 | `docs/operations/startup-gate-output.md` 的 24 行表；`docs/operations/async-job-runbook.md` §1；`compose-minimal.md` §9.1 |
 
 **一处已不再成立的历史观察**：`DEL-535` 当时见到的 `GET /v1/models` → `503 model_catalogue_unavailable` 在本版本已不复现——`DEL-537` 在同一路径上实测 `200`。要注意的是它的 `readiness` 仍是**保守投影**（`engine_ready=false`、`admission_state=unavailable`），因为默认目录不接实时 readiness 证据（`docs/prd.md:1011` 的既定行为）。**不要用这个响应判断能不能建Job**：同一套部署上 Job 实际创建并成功。判「能不能建 Job」看 `POST /v1/nexus/jobs` 的实际应答码（见已知限制 10 与 [缺什么 → 看到什么 → 做什么](../operations/compose-minimal.md) §9.1）。
 

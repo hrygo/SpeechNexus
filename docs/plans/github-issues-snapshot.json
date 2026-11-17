@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-14T17:17:14+08:00",
+  "fetched_at": "2026-11-17T21:18:47+08:00",
   "issues": [
     {
       "number": 336,
@@ -1120,8 +1120,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/572",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "参考部署跑通一次异步 Job 的端到端前置",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [],
       "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/342"
     },
@@ -1196,50 +1196,102 @@
       "parent_issue_url": null
     },
     {
-      "number": 740,
-      "html_url": "https://github.com/hrygo/SpeechNexus/issues/740",
+      "number": 819,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/819",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "文件任务面板的关键状态转换没有一条真实浏览器测试：连续切片都把「未在真实浏览器手点」写进未验证项",
+      "title": "语音侧删除：预检、确认与删除账本的最小可验收实现（吸收 #540）",
       "state": "open",
       "state_reason": null,
       "labels": [],
       "parent_issue_url": null
     },
     {
-      "number": 750,
-      "html_url": "https://github.com/hrygo/SpeechNexus/issues/750",
+      "number": 845,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/845",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "渲染派发把上游六类 422 折叠成一个无原因的拒绝：可分信息在适配器被 from None 丢弃，工作台只能靠本地猜",
+      "title": "创建可准入没有可观察信号：收据过期时所有建 Job 503，而 /readyz 与容器状态全绿",
       "state": "open",
       "state_reason": null,
       "labels": [],
       "parent_issue_url": null
     },
     {
-      "number": 754,
-      "html_url": "https://github.com/hrygo/SpeechNexus/issues/754",
+      "number": 852,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/852",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "429 job_capacity_exhausted 被报成「结果未知」：一个带 Retry-After 的可重试拒绝，让用户在不该重放的时候重放",
+      "title": "取消后算力不归还：Job 卡在 unknown_quarantined / execution_cleanup_pending，租约 reserved、槽位不释放",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "bug"
+        }
+      ],
+      "parent_issue_url": null
+    },
+    {
+      "number": 862,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/862",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "准入可观察面 A：契约收成单值 cause（拆自 #845，先行片）",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:program"
+        }
+      ],
+      "parent_issue_url": null
+    },
+    {
+      "number": 863,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/863",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "准入可观察面 B：选择层与准入层收敛成一个函数，报告走同一路径（拆自 #845）",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:program"
+        }
+      ],
+      "parent_issue_url": null
+    },
+    {
+      "number": 885,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/885",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "参考部署上打出一次真实同步 TTS 200：F-TTS 的 A 档收口",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
+    },
+    {
+      "number": 941,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/941",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "契约在 /v1/models 给 admission_state 一个不可能满足的定义（无 workspace 维度 vs 按 workspace 的准入）",
       "state": "open",
       "state_reason": null,
       "labels": [],
       "parent_issue_url": null
     },
     {
-      "number": 755,
-      "html_url": "https://github.com/hrygo/SpeechNexus/issues/755",
+      "number": 957,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/957",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "渲染派发把 409 族与 401/403/415 也折成一个无原因的码：该等、该换键、该换凭据被说成同一件事",
+      "title": "参考部署上打出一次真实同步 ASR 200：F-ASR 的 A 档收口",
       "state": "open",
       "state_reason": null,
       "labels": [],
-      "parent_issue_url": null
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
     },
     {
-      "number": 757,
-      "html_url": "https://github.com/hrygo/SpeechNexus/issues/757",
+      "number": 959,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/959",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "纯 web 改动永远不会跑 Web 集成分片：改前端破坏真实浏览器集成测试时 PR 阶段无任何信号（#745 就是这么红的）",
+      "title": "取消债务探针：补 due now 的未来 next_check 负例，并对齐三处部署自检信号",
       "state": "open",
       "state_reason": null,
       "labels": [],

@@ -1,6 +1,8 @@
 # 工作台同一 Job 同一 Artifact 同版证据的非作者审查（PR #952，关联 #829）
 
-**第二轮复核（head `5b9a19bb`）：未闭合，不放行。** 第 1、3 项闭合；第 2 项仍有三个边界（`make_bucket` 建桶后客户端报错、清理自身失败掩盖原始错误、`_serve` 启动超时线程未停），见文末「第二轮复核」。第一轮结论与证据保留如下。
+**第三轮复核（head `5fbea085`）：可合（第三轮）。** A/B/C 三个边界均已闭合：`make_bucket` 建桶后报错会按已知桶名清桶；`finally` 每步独立清理、原始异常加 note、成功体清理失败抛点名步骤的 `RuntimeError`；`_serve` 超时取消任务/join/关 socket，3 次挂起 app 均只剩 `MainThread` 且端口可复绑。C 的 uvicorn `CancelledError` ERROR 栈只在启动超时路径出现，不改变 pytest/CI 结果。第二轮「未闭合」保留为历史。
+
+**第二轮复核（历史，head `5b9a19bb`）：当时未闭合，第三轮已闭合。** 第 1、3 项闭合；第 2 项仍有三个边界（`make_bucket` 建桶后客户端报错、清理自身失败掩盖原始错误、`_serve` 启动超时线程未停），见文末「第二轮复核」。第一轮结论与证据保留如下。
 
 **第一轮（head `d1885d0e`）：不能合。** 核心判定本身是硬的：真实 Chromium 对真实 PostgreSQL、真实 MinIO、真实 API 组合根与
 `web/workbench/dist` 执行「恢复已成功 Job → 下载该 Job 的 transcript Artifact」，五项事实都有取值
@@ -9,12 +11,12 @@
 阻断的是三处证据边界，不是产品缺陷：MinIO 缺失时 `pytest.skip`（退出码 0）、setup 失败泄漏
 schema/角色/桶、以及 PR 正文声称的 console error 为空在测试里没有任何断言。
 
-审查对象：`test/workbench-same-job-artifact`，第一轮 head `d1885d0e`（父 `94a76674`），第二轮 head `5b9a19bb`（父 `d1885d0e`）。审查分支
+审查对象：`test/workbench-same-job-artifact`，第一轮 head `d1885d0e`（父 `94a76674`），第二轮 head `5b9a19bb`（父 `d1885d0e`），第三轮 head `5fbea085`（父 `5b9a19bb`）。审查分支
 `review/952-same-job-artifact` 从 `origin/main`（`5ffb4eb7`）新建，本报告是该分支唯一改动。被审
-工作树 `/tmp/sn952-subject`（第一轮 detached `d1885d0e`，第二轮 detached `5b9a19bb`），审查工作树 `/tmp/sn952-review`。我不是作者，
+工作树 `/tmp/sn952-subject`（第一轮 detached `d1885d0e`，第二轮 detached `5b9a19bb`，第三轮 detached `5fbea085`），审查工作树 `/tmp/sn952-review`。我不是作者，
 没有改被审代码；所有变异都在被审工作树内做并还原，收尾时两个工作树 `git status --porcelain` 为空。
 
-**行号口径：** 第一轮 §0–§9 的 `file:line` 按 head `d1885d0e` 计；文末「第二轮复核」按 head `5b9a19bb` 计，逐条另标。环境：macOS 26 arm64，Python 3.14.9
+**行号口径：** 第一轮 §0–§9 的 `file:line` 按 head `d1885d0e` 计；「第二轮复核」按 head `5b9a19bb` 计；「第三轮复核」按 head `5fbea085` 计，逐条另标。环境：macOS 26 arm64，Python 3.14.9
 （`UV_NO_CONFIG=1 uv sync --locked --all-packages --all-groups`），Node 26.12.1，pnpm 12.14.0，
 Playwright `@playwright/test` 1.64.1 + `chromium-1248`。隔离服务为我自己起的
 `sn952-review-pg`（PostgreSQL 16-alpine，`127.0.0.1:55482`）与 `sn952-review-minio`
@@ -791,3 +793,149 @@ CSP 用例仍先逐字比较 `content-security-policy` 头（`:787`），再用�
 - 镜像层仍是本地手工跑（CI 未设 `WORKBENCH_PAGE_IMAGE`）。
 - 真实引擎产出的 Job/Artifact、完整 compose 栈仍同第一轮，未验证。
 - 作者 PR 正文的 `sn951-pg`/MinIO 清理叙事未复核；我用独立的 `sn952-review-*` 容器，收尾已删除。
+
+---
+
+## 第三轮复核（head `5fbea085`）
+
+**结论：可合（第三轮）。** A/B/C 三个边界均已闭合；修前/修后用同一注入对比，差异落在实现代码上，不是
+测试壳。C 的 uvicorn `CancelledError` ERROR 栈只在启动超时路径出现，不改变 pytest/CI 结果；3 次挂起
+app 均只剩 `MainThread`，端口 3/3 可复绑。新 head 的 CI 分片在本轮复核时仍在跑，见 R3.6。
+
+### R3.0 增量口径
+
+`git diff --stat 5b9a19bb..5fbea085` = 1 文件 +158/−28，只改
+`tests/integration/test_workbench_artifact_browser.py`；probe 未改。第三轮行号按 `5fbea085`。
+
+### R3.1 A：`make_bucket` 建桶后客户端报错：闭合
+
+实现（`tests/integration/test_workbench_artifact_browser.py:607-623`）：
+
+```python
+try:
+    objects.make_bucket(bucket)
+except BaseException as error:
+    try:
+        _remove_bucket(objects, bucket)
+    except BaseException as cleanup_error:
+        if not (isinstance(cleanup_error, S3Error) and cleanup_error.code in _NOTHING_CREATED):
+            error.add_note("cleanup after make_bucket failed: " + ...)
+    raise
+bucket_created = True
+```
+
+`_remove_bucket`（`:358-360`）先列版本、逐版本删、再删桶；`_NOTHING_CREATED`（`:331-333`）含
+`NoSuchBucket`、`SignatureDoesNotMatch`、`AccessDenied`、`InvalidAccessKeyId`。**同一注入**
+（monkeypatch `Minio.make_bucket` 先真正建桶再抛）在旧/新 head 上：
+
+```text
+OLD 5b9a19bb:
+raised: RuntimeError simulated lost CreateBucket response after the bucket exists
+notes: []
+事后 buckets: ['sn-page-a014141fd3ea']          # 残留
+
+NEW 5fbea085:
+raised: RuntimeError simulated lost CreateBucket response after the bucket exists
+notes: []
+事后 buckets: []                                # 已清
+```
+
+旧 head 还残留 schema/角色（第二轮已记录），新 head schema/角色/桶均 0/0/[]。**闭合。**
+
+### R3.2 B：清理失败不掩盖原始异常：闭合
+
+`finally` 现在把每一步放进 `cleanup(name, action)`（`tests/integration/test_workbench_artifact_browser.py:671-713`），
+单步失败只追加 `failures`，后续步骤继续；有原始异常时 `original.add_note(...)`，否则
+`raise RuntimeError("cleanup failed: " + report) from failures[0][1]`。桶清理先按
+`seeded` 里的 `(key, version_id)` 精确删（`:700-703`），再列版本兜底，再 `remove_bucket`。
+
+**同一注入**（`Minio.list_objects` 在清理时抛，测试体抛 `ValueError("original body failure")`）：
+
+```text
+OLD 5b9a19bb:
+raised: RuntimeError cleanup list_objects failed      # 原始 ValueError 被替换
+notes: []
+事后 schema/角色/桶: sn_page_int_f8098d210ee7 + 两角色 + sn-page-f8098d210ee7
+
+NEW 5fbea085:
+raised: ValueError original body failure              # 原始异常保留
+notes: ['cleanup failed after the original error: bucket listing: RuntimeError: cleanup list_objects failed']
+事后 schema/角色/桶: 0/0/[]
+```
+
+**测试体成功、清理失败**（同一 `list_objects` 注入，`with _stack: pass`）：
+
+```text
+raised: RuntimeError cleanup failed: bucket listing: RuntimeError: cleanup list_objects failed
+cause: RuntimeError cleanup list_objects failed
+事后 0/0/[]
+```
+
+`RuntimeError` 点名了失败步骤 `bucket listing`，`__cause__` 保留真实桶删除/列版本失败原因；不是只有
+一句笼统的「cleanup failed」。`add_note` 在仓库最低 Python 上可用：`pyproject.toml:8`
+`requires-python = ">=3.14,<3.15"`，`BaseException.add_note` 自 Python 3.11 起存在，本机 3.14.9
+实测 note 出现在 `exc.__notes__`。**闭合。**
+
+### R3.3 C：`_serve` 启动超时：闭合
+
+`_serve`（`tests/integration/test_workbench_artifact_browser.py:368-420`）现在在自持 event loop 里跑
+`server.serve`，超时路径设置 `should_exit`、`call_soon_threadsafe(_cancel_tasks)`、`join(10)`、
+`sock.close()`，然后重抛。**同一挂起 lifespan**（`await asyncio.sleep(120)`）在旧/新 head：
+
+```text
+OLD 5b9a19bb（一次）:
+raised: the app did not start
+live threads: ['MainThread', 'Thread-1 (run)']     # 线程残留
+
+NEW 5fbea085（连续 3 次）:
+RUN 0 raised: AssertionError: the app did not start
+RUN 0 live threads: ['MainThread']
+RUN 0 port 61587 rebind: OK
+RUN 1 raised: AssertionError: the app did not start
+RUN 1 live threads: ['MainThread']
+RUN 1 port 61674 rebind: OK
+RUN 2 raised: AssertionError: the app did not start
+RUN 2 live threads: ['MainThread']
+RUN 2 port 61748 rebind: OK
+```
+
+**uvicorn `CancelledError` ERROR 栈：** 每次超时 stderr 会打印一段
+`ERROR: Traceback ... asyncio.exceptions.CancelledError`（starlette lifespan 在取消时记录）。它只在
+**启动已经超时** 的路径出现，正常 5 条用例的 `_serve` 不打印；pytest 此时已经因为
+`the app did not start` 失败，ERROR 栈不会改变退出码。`integration-shards.py` 只看 pytest
+report/退出码，不 grep `ERROR` 日志，因此不会被 CI 当成额外失败；如果未来加日志门禁，可临时提高
+uvicorn log level 或对取消路径静音。**判定：闭合；噪声可接受，不是失败源。**
+
+### R3.4 版本、静态检查与完整套件
+
+| 检查 | 结果 |
+| --- | --- |
+| `requires-python` / `add_note` | `>=3.14,<3.15`；`add_note` 3.11+，本机 3.14.9 实测可用 |
+| 完整文件（新 head，真实 PG/MinIO/Chromium/dist） | `5 passed in 17.45s` |
+| 完整文件 + `WORKBENCH_PAGE_IMAGE=…acf633ff…` | `5 passed in 20.24s`，`CHECK image tier …`，0/0/[] |
+| 错误 secret | `1 error in 0.86s`，schema/角色/桶 0/0/[] |
+| `ruff check tests/integration/test_workbench_artifact_browser.py` | `All checks passed!` |
+| `mypy tests/integration/test_workbench_artifact_browser.py` | `Success: no issues found in 1 source file` |
+| `check-doc-refs.py` | `RESULT PASS`，`SCOPE terminal problems=0` |
+
+### R3.5 未验证
+
+- 新 head CI 分片在本轮复核时仍 `IN_PROGRESS`（10 `SUCCESS`、2 `SKIPPED`、15 `IN_PROGRESS`），
+  作者也未声称通过；不能把本地 5 passed 当作 CI 全绿。
+- 镜像层仍是本地手工跑，CI 未设 `WORKBENCH_PAGE_IMAGE`。
+- 真实引擎产出的 Job/Artifact、完整 compose 栈同前两轮，未验证。
+- 作者 PR 正文的 `sn951-pg`/MinIO 清理叙事未复核；我用独立的 `sn952-review-*` 容器。
+
+### R3.6 非阻断备注
+
+- C 的 `CancelledError` ERROR 栈是超时路径噪声；若未来 CI 对 stderr 做 `ERROR` 门禁，需要静音。
+- `_NOTHING_CREATED` 把 `AccessDenied`/`InvalidAccessKeyId` 当作「未创建」；若策略允许建桶但拒绝
+  列/删，桶可能残留且没有 note。当前隔离 MinIO 用 root key，未触发；这是权限模型的边界假设。
+- `_seed_committed_job` 在 `put_object` 成功、SQL 失败时不会返回 `(key, version_id)`，该版本只能靠
+  「bucket listing」兜底；listing 同时失败时 B 的 note 会记录，原始异常仍保留。本轮未观察到单次
+  失败泄漏；这是清理链的剩余依赖，不是第三轮 A/B/C 的阻断项。
+- 第一轮 N2（`SECURITY_HEADERS` 是 nginx 手抄副本、镜像响应头未比较）仍在，属非阻断建议。
+- `_serve` 超时路径的 `thread.join(timeout=10)` 本身不检查 `is_alive`；`_stop_server` 会检查。
+  C 的 3 次挂起 app 均按时退出，未观察到 10s 边界问题。
+
+**第三轮结论：可合（第三轮）。**

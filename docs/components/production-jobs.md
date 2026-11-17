@@ -358,10 +358,18 @@ Job 已是本错误码的 `failed` 时只补做隔离；他人写入的终态不
 
    | 形态 | 何时出现 |
    |---|---|
-   | `cancellation_debt: N accepted cancellation(s) still hold capacity over M held lease(s) (held leases: completed-without-release=X, execution-unknown=Y): job-… -> lease-…(lease=reserved, execution=executing, subclass=execution-unknown)` | DSN 指向被授予 `cancellation_debt_reader_grants`（或更宽）的只读身份 |
+   | `cancellation_debt: N accepted cancellation(s) still hold capacity over M held lease(s) (held leases: completed-without-release=X, execution-unknown=Y; never claimed=N): job-… -> lease-…(lease=reserved, execution=executing, subclass=execution-unknown)` | DSN 指向被授予 `cancellation_debt_reader_grants`（或更宽）的只读身份 |
    | `cancellation_debt: N accepted cancellation(s) still hold capacity (jobs: lease-unread=X): job-… -> lease-unread [lease detail unavailable: permission]` | 该身份能读 Job、围栏与账本，但读不到租约/执行/终止证据表 |
    | `cancellation_debt: unavailable (not configured)` | 未配置专用 DSN（默认部署） |
    | `cancellation_debt: unavailable (permission｜relation｜connection｜timeout｜error)` | 探针什么都读不到；分类保证真实故障仍然可见，而不是被吞掉 |
+
+   `never claimed=N` 这一项回答的是「这份部署有没有推进者」，不是「进度到哪里」：
+   它数的是**围栏存在、而对账账本里没有对应行**的受理，也就是**从来没有 worker 领取过**
+   这一条。默认部署（`SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_ENABLED` 为 `false`
+   且没有常驻 `job_cancellation_worker`）只会出现这个形态——公开面答 `202 cancelling`，
+   而库里没有任何组件会推进它。带这个计数时**不要**按「正在取消」处置：先按本节末尾
+   「默认部署没有推进者」把 worker 跑起来（`--once` 一轮即可），再读一次 detail，
+   它会从 `never claimed=N` 变成阻塞明细或消失。它属于计数括号，不会被 detail 截断。
 
    前缀后面紧跟的计数是**分类**，不是装饰：同一个前缀下面的两种债处置完全不同，
    报告必须让人一眼看出该走哪条路。**句子的两个数字各带单位**——`N` 是 Job（受理），
@@ -444,6 +452,34 @@ WHERE j.state = 'cancelling'
 ORDER BY f.accepted_at_us, f.job_id, l.lease_id;
 ```
 
+同一条查询只覆盖 **Job 仍是 `cancelling`** 的形态：它是轮询读面（`cancellation_debt`）
+能覆盖的全部，因为二者的判据都由迁移 `0056` 的 `state = 'cancelling'` 访问路径给出。
+**Job 已经离开 `cancelling` 而租约仍持有容量**的形态（`cancelled` 后释放被拒、或被他人写成
+`failed` 而租约仍 `reserved`）不在该读面上——轮询探针看不到它。这是当前实现的**已知
+盲区**：解除它需要一条「仍持有容量的租约」访问路径（新迁移），在那之前这条形态只能靠
+逐行核对。下面第二条只读查询是这类形态目前**唯一**的读面：
+
+```sql
+-- 取消已受理、Job 已不在 cancelling，但租约仍持有容量（轮询读面看不到的形态）
+SELECT j.job_id, j.state AS job_state, j.error_code,
+       l.lease_id, l.lease_state, l.cleanup_state AS lease_cleanup_state,
+       i.execution_state, i.cleanup_state AS execution_cleanup_state,
+       r.attempts, r.last_outcome, r.settled_at_us
+FROM speech_job_cancellation_fences AS f
+JOIN speech_jobs AS j ON j.job_id = f.job_id
+JOIN admission_leases AS l
+  ON l.operation_id = f.job_id
+ AND l.lease_state NOT IN ('released', 'quarantined')
+LEFT JOIN submit_intents AS i ON i.lease_id = l.lease_id
+LEFT JOIN speech_job_cancellation_reconciliations AS r ON r.job_id = f.job_id
+WHERE j.state <> 'cancelling'
+ORDER BY f.accepted_at_us, f.job_id, l.lease_id;
+```
+
+这类形态的处置仍是「修生产者，不是改表」：租约仍 `reserved` 说明释放没有落地，
+先按本节末尾「取消对账 worker 与开关」把 worker 跑起来让它重试释放（`cancelled` 的受理
+重试只做释放）；执行事实仍未知的按上面两条走网关停止或证词。**不要**手工改 `state`。
+
 对应的正确处置只有两条，都不需要手工写 SQL 改表：
 
 - **`lease_state=reserved`/`executing` 且执行仍活跃**（`execution_state` 属于
@@ -457,6 +493,20 @@ ORDER BY f.accepted_at_us, f.job_id, l.lease_id;
   走下面「执行已完成、取消后到」的有界操作员出口；**没有**该证据的属于 #338 的停止
   确认协议范围，本切片不提供出口。两种情况都**不要**手工把 Job 改成 `failed`，
   也**不要**手工释放租约。
+
+##### 有界出入口：谁推进、多久、期间槽位可用吗
+
+取消失败后的容量不会自行归还，也不存在「等租约自然过期」这条答案：租约到期只改变
+可领取性，不改变 `held_slots`/`quarantined_slots` 的记账，也不归还预算。真正能把它推到底
+的只有下表这些出入口，"有界"指的是**每一步都有上界**，不是"一定会自动完成"。
+
+| 事实形态 | 谁推进 | 多久内 | 期间槽位可用吗 | 怎么把槽位要回来 |
+| --- | --- | --- | --- | --- |
+| 执行 `unknown_quarantined`/`quarantined`（本轮参考窗口的形态） | 对账 worker：隔离租约 → Job 落 `failed/cancellation_unconfirmed` | 受理后 `CONFIRM_TIMEOUT_SECONDS`（默认 300 s，上限 3600 s）或尝试预算用尽，二者先到；之后每轮领取按退避重试，上限 300 s | **不可用**：槽位从 `held` 移到 `quarantined`，容量仍被计费 | 隔离完成后只能经 `QuarantineReleaseService` 的 `operator_verified_instance_terminated` 证词解除 |
+| 执行仍活跃（`submitting`/`executing`/`stopping`） | 操作员按网关 `/abort`、`/drain` 写入执行事实；worker 下一轮领取隔离 | 网关应答即落库；worker 侧受退避上限 300 s | **不可用**（仍 `reserved`，被执行持有） | 网关给出停止事实后自动隔离并收口；否则走上面的证词 |
+| 执行已 `succeeded` 且有 `engine_terminal_response` 证据 | `python -m speechnexus_backend.completed_release_cli` 现场取 drain → 复读 → 释放 | 一次人工操作（跨一个结算周期复读） | **不可用** | 有界操作员出口（见下一小节五步） |
+| 执行已 `succeeded` 但缺终止证据 | **没有推进者**，等 #338 的停止确认协议 | 无界 | **不可用** | 无；`/readyz` 与 diagnostics 的 detail 持续点名 |
+| 部署未启用对账 worker（默认 `deploy/compose.yaml`） | **没有推进者**：没有任何进程会领取围栏 | 无界，直到有人运行 worker | **不可用** | 启用并运行 worker（见「取消对账 worker 与开关」），或按下面的钻取查询人工处置 |
 
 ##### 执行已完成、取消后到：有界操作员出口
 

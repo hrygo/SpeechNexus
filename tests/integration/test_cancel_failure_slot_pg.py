@@ -714,6 +714,104 @@ def test_the_readiness_detail_names_the_blocking_lease(
         )
 
 
+def test_the_detail_says_when_no_worker_has_ever_claimed_the_acceptance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#852: "still holds capacity" alone reads as progress; the scope says it is not.
+
+    The reference window had a fence and no reconciliation-ledger row, so the
+    deployment had no driver at all: every retry-shaped read of the Job answered
+    ``202 cancelling`` for a cancellation nothing would ever advance. The debt
+    detail must distinguish that shape from a blocked-but-advancing one, otherwise
+    the only visible surface repeats the public surface's misinformation.
+    """
+    with _sandbox((LEASE, ACTIVE_DOCUMENT_STATE)) as box:
+        unclaimed = asyncio.run(_debt_probe(box).check())
+        assert unclaimed is not None
+        assert unclaimed.startswith("cancellation_debt: 1 accepted cancellation(s)")
+        assert "never claimed: 1" in unclaimed
+
+        _install_client(monkeypatch, box.job_id, ACTIVE_DOCUMENT_STATE)
+        reconciler = _reconciler(box, confirm_timeout_seconds=WINDOW_US / 1_000_000)
+        asyncio.run(reconciler.run_once(now_us=ACCEPTED_AT_US + 1_000_000))
+        asyncio.run(reconciler.run_once(now_us=ACCEPTED_AT_US + WINDOW_US + 1))
+
+        # A worker has now claimed the acceptance and recorded why it is blocked.
+        claimed = asyncio.run(_debt_probe(box).check())
+        assert claimed is not None
+        assert claimed.startswith("cancellation_debt: 1 accepted cancellation(s)")
+        assert "never claimed" not in claimed
+        assert box.rows()["ledger"][0]["last_outcome"] == "stop_unconfirmed"
+
+
+def test_a_job_already_left_cancelling_is_documented_as_a_blind_spot() -> None:
+    """#852 residual, pinned: capacity held after the Job left ``cancelling``.
+
+    Both debt reads are gated on ``state = 'cancelling'`` because that is the only
+    shape the live-state index (migration 0056) can reach; a Job that closed as
+    ``cancelled`` while its release was refused, or was failed by another owner
+    while the lease stayed reserved, is therefore *not* in the detail. This case
+    pins the current behaviour so the documented drill-down query stays the only
+    read surface for it, and states what closing it needs (a held-lease access
+    path, i.e. another migration).
+    """
+    with _sandbox((LEASE, QUARANTINED_DOCUMENT_STATE)) as box:
+        jobs = box.jobs()
+        current = jobs.get(box.job_id)
+        assert current is not None
+        assert (
+            jobs.settle_cancelled(box.job_id, expected_version=current.status_version).state
+            == "cancelled"
+        )
+
+        after = box.rows()
+        assert after["speech_jobs"][0]["state"] == "cancelled"
+        # Capacity is still held: the release this worker would retry never ran.
+        assert after["admission_leases"][0]["lease_state"] == "reserved"
+        assert after["engine_instances"] == [
+            {"instance_id": INSTANCE, "held_slots": 1, "quarantined_slots": 0}
+        ]
+        # ... and the polled read surface does not name it (the pinned limitation).
+        assert asyncio.run(_debt_probe(box).check()) is None
+
+        named = box.query(
+            "SELECT j.job_id FROM speech_job_cancellation_fences AS f "
+            "JOIN speech_jobs AS j ON j.job_id = f.job_id "
+            "JOIN admission_leases AS l ON l.operation_id = f.job_id "
+            "WHERE l.lease_state NOT IN ('released', 'quarantined')"
+        )
+        assert named == [{"job_id": box.job_id}]
+
+
+def test_lease_attempts_saturate_at_64_and_stay_claimable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#852 known limitation: the claim clamp must stay a schedule, not a counter.
+
+    ``LEAST(attempts + 1, 64)`` exists because a blocked acceptance must stay
+    claimable indefinitely; reverting it to ``attempts + 1`` would surface as a
+    CHECK violation hours later, when the default backoff reaches the bound.
+    Seeded at the bound so the regression is visible in one pass.
+    """
+    with _sandbox((LEASE, ACTIVE_DOCUMENT_STATE)) as box:
+        _install_client(monkeypatch, box.job_id, ACTIVE_DOCUMENT_STATE)
+        reconciler = _reconciler(box, confirm_timeout_seconds=WINDOW_US / 1_000_000)
+        asyncio.run(reconciler.run_once(now_us=ACCEPTED_AT_US + 1_000_000))
+        box.execute(
+            f"UPDATE {RECONCILIATION_TABLE} SET attempts = 64, next_check_at_us = 0 "
+            "WHERE job_id = %s",
+            (box.job_id,),
+        )
+
+        first = asyncio.run(reconciler.run_once(now_us=ACCEPTED_AT_US + WINDOW_US + 1))
+        # The claim lease plus the 300 s maximum backoff must elapse before the next pass
+        # may claim the row again; a claim that never becomes due again is the regression.
+        second = asyncio.run(reconciler.run_once(now_us=ACCEPTED_AT_US + WINDOW_US + 301_000_000))
+
+        assert (first.claimed, second.claimed) == (1, 1)
+        assert box.rows()["ledger"][0]["attempts"] == 64
+
+
 def test_a_role_without_the_coordination_grants_still_names_the_job() -> None:
     """The debt probe degrades instead of failing under a minimal-privilege role.
 
@@ -861,7 +959,9 @@ def test_the_optional_reader_identity_reports_the_full_detail() -> None:
         "subclass=execution-unknown)" in detail
     )
     assert "over 1 held lease(s)" in detail
-    assert "(held leases: execution-unknown=1)" in detail
+    # The acceptance was never claimed (no ledger row): the same sentence must say
+    # that the deployment has no driver, or "cancellation in progress" is a lie (#852).
+    assert "(held leases: execution-unknown=1; never claimed: 1)" in detail
     assert "completed-without-release" not in detail
     assert "unavailable" not in detail
 

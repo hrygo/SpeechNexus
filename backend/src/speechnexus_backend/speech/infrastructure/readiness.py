@@ -96,6 +96,11 @@ EXECUTION_UNKNOWN = "execution-unknown"
 _LEASE_CLASSES = (COMPLETED_WITHOUT_RELEASE, EXECUTION_UNKNOWN)
 #: The Job-level labels, used when the lease itself cannot be read.
 _JOB_CLASSES = ("lease-unread", "no-held-lease")
+#: Prefix of the scope that names acceptances no worker has ever claimed. This is the
+#: deployment-shape fact the reference window needed: a ``202 cancelling`` that nothing
+#: can advance is not an in-progress cancellation, so the read surface must say which one
+#: it is. It survives detail truncation because it is part of the counted scopes.
+UNCLAIMED_SCOPE = "never claimed"
 #: The one evidence kind that makes a completed execution releasable by testimony.
 _TERMINAL_EVIDENCE = "engine_terminal_response"
 #: Identifies the reused readiness session in ``pg_stat_activity``.
@@ -120,6 +125,13 @@ class CancellationDebtProbe:
     that does not provision such a role passes ``None`` and gets
     ``unavailable (not configured)``. Like ``/readyz`` itself, the probe reuses one
     connection instead of opening a new one on every poll.
+
+    The ``never claimed`` scope answers the question the reference window could not:
+    the fence has no reconciliation-ledger row, so **no worker has ever claimed this
+    acceptance** and nothing will advance it. A deployment that only reports
+    ``still hold capacity`` reads as "cancellation in progress", which is the
+    misinformation #852 recorded; the scope says which shape the deployment is in.
+    It is part of the counted scopes so detail truncation cannot drop it.
 
     The detail degrades instead of failing, in three observable shapes:
 
@@ -320,8 +332,13 @@ def _describe_debt(rows: Sequence[tuple[Any, ...]], *, missing: str | None = Non
     jobs: dict[str, list[str]] = {}
     lease_counts: dict[str, int] = {}
     job_counts: dict[str, int] = {}
+    unclaimed: set[str] = set()
     for row in rows:
         job_id, lease_id, lease_state, execution_state = row[0], row[1], row[2], row[3]
+        if len(row) > 7 and row[7] is True:
+            # No reconciliation-ledger row for this acceptance: no worker has run since
+            # the fence was written, so nothing will advance it (#852).
+            unclaimed.add(job_id)
         if lease_id is None:
             # Job-level rows carry no lease identity: say so instead of inventing one.
             label = "no-held-lease" if missing is None else "lease-unread"
@@ -363,11 +380,15 @@ def _describe_debt(rows: Sequence[tuple[Any, ...]], *, missing: str | None = Non
                 f"{name}={job_counts[name]}" for name in _JOB_CLASSES if job_counts.get(name)
             )
         )
+    if unclaimed:
+        # Counted, not annotated per row: the parenthetical is where the operator reads
+        # how the number splits, and "nothing has ever claimed this" is exactly such a split.
+        scopes.append(f"{UNCLAIMED_SCOPE}: {len(unclaimed)}")
     return _bounded_detail(f"{head} ({'; '.join(scopes)}): {detail}{suffix}{note}")
 
 
 _JOB_LEVEL_DEBT = f"""
-SELECT j.job_id, NULL, NULL, NULL, NULL, NULL, NULL
+SELECT j.job_id, NULL, NULL, NULL, NULL, NULL, NULL, r.job_id IS NULL
 FROM {job_cancellation_fence_schema.TABLE} AS f
 JOIN {public_job_schema.JOBS} AS j ON j.job_id = f.job_id
 LEFT JOIN {job_cancellation_fence_schema.RECONCILIATION_TABLE} AS r ON r.job_id = f.job_id
@@ -387,7 +408,10 @@ LIMIT %(limit)s
 # The index only holds `running`/`cancelling` rows, so the write cost stays with the live set.
 _DEBT = f"""
 SELECT j.job_id, l.lease_id, l.lease_state, i.execution_state,
-       e.evidence_kind, e.execution_stopped, e.resources_released
+       e.evidence_kind, e.execution_stopped, e.resources_released,
+       -- No ledger row means no worker ever claimed this acceptance: the deployment
+       -- has no progress driver, which is a different disposition from "blocked".
+       r.job_id IS NULL
 FROM {job_cancellation_fence_schema.TABLE} AS f
 JOIN {public_job_schema.JOBS} AS j ON j.job_id = f.job_id
 LEFT JOIN {job_cancellation_fence_schema.RECONCILIATION_TABLE} AS r ON r.job_id = f.job_id

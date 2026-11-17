@@ -1,18 +1,20 @@
 # 工作台同一 Job 同一 Artifact 同版证据的非作者审查（PR #952，关联 #829）
 
-**不能合。** 核心判定本身是硬的：真实 Chromium 对真实 PostgreSQL、真实 MinIO、真实 API 组合根与
+**第二轮复核（head `5b9a19bb`）：未闭合，不放行。** 第 1、3 项闭合；第 2 项仍有三个边界（`make_bucket` 建桶后客户端报错、清理自身失败掩盖原始错误、`_serve` 启动超时线程未停），见文末「第二轮复核」。第一轮结论与证据保留如下。
+
+**第一轮（head `d1885d0e`）：不能合。** 核心判定本身是硬的：真实 Chromium 对真实 PostgreSQL、真实 MinIO、真实 API 组合根与
 `web/workbench/dist` 执行「恢复已成功 Job → 下载该 Job 的 transcript Artifact」，五项事实都有取值
 断言；浏览器落盘字节的 SHA-256 由 `node:crypto` 对下载文件重算，我用「对象存另一份字节、提交行仍报
 原摘要」的变异验证它确实会红；三条反例（另一 Job 的制品、篡改 `sha256`、两侧摘要不等）都能红。
 阻断的是三处证据边界，不是产品缺陷：MinIO 缺失时 `pytest.skip`（退出码 0）、setup 失败泄漏
 schema/角色/桶、以及 PR 正文声称的 console error 为空在测试里没有任何断言。
 
-审查对象：`test/workbench-same-job-artifact`，head `d1885d0e`（父 `94a76674`）。审查分支
+审查对象：`test/workbench-same-job-artifact`，第一轮 head `d1885d0e`（父 `94a76674`），第二轮 head `5b9a19bb`（父 `d1885d0e`）。审查分支
 `review/952-same-job-artifact` 从 `origin/main`（`5ffb4eb7`）新建，本报告是该分支唯一改动。被审
-工作树 `/tmp/sn952-subject`（detached `d1885d0e`），审查工作树 `/tmp/sn952-review`。我不是作者，
+工作树 `/tmp/sn952-subject`（第一轮 detached `d1885d0e`，第二轮 detached `5b9a19bb`），审查工作树 `/tmp/sn952-review`。我不是作者，
 没有改被审代码；所有变异都在被审工作树内做并还原，收尾时两个工作树 `git status --porcelain` 为空。
 
-**行号口径：** 下文 `file:line` 按被审 head `d1885d0e` 计。环境：macOS 26 arm64，Python 3.14.9
+**行号口径：** 第一轮 §0–§9 的 `file:line` 按 head `d1885d0e` 计；文末「第二轮复核」按 head `5b9a19bb` 计，逐条另标。环境：macOS 26 arm64，Python 3.14.9
 （`UV_NO_CONFIG=1 uv sync --locked --all-packages --all-groups`），Node 26.12.1，pnpm 12.14.0，
 Playwright `@playwright/test` 1.64.1 + `chromium-1248`。隔离服务为我自己起的
 `sn952-review-pg`（PostgreSQL 16-alpine，`127.0.0.1:55482`）与 `sn952-review-minio`
@@ -588,3 +590,204 @@ Chromium 缺失的失败信息是原始 Node 栈（`browserType.launch: Executab
 `sn952-review-pg`、`sn952-review-minio` 容器与桶已删除；`sn_page_int_%`/`sn_page_%` 计数为 0，
 `sn-page-*` 桶为空；未触碰主工作区、`sn892-pg`、`speechnexus-coordination-mysql` 或
 `speechnexus-test-minio`。
+---
+
+## 第二轮复核（head `5b9a19bb`）
+
+**结论：未闭合，不放行。** 第 1、3 项闭合；第 2 项的常规路径闭合，但三个边界仍未闭合：
+`make_bucket` 已建桶但客户端报错时 `bucket_created` 仍未置位、清理自身失败会掩盖原始错误并跳过后续
+清理、`_serve` 启动超时后 uvicorn 线程未停。下面只审增量，第一轮证据保留在上文。
+
+### R0. 增量口径
+
+`git diff --stat d1885d0e..5b9a19bb` = 1 文件 +125/−95，只改
+`tests/integration/test_workbench_artifact_browser.py`；`tests/integration/workbench-artifact-probe.mjs`
+未改（`git diff --stat` 可验）。本轮新行号按 `5b9a19bb`；第一轮 §0–§9 的行号仍按 `d1885d0e`。
+
+### R1. 第 1 项 MinIO 缺失：闭合
+
+`_required_environment` 现在先收集缺失变量名，再 `pytest.fail`：
+
+- `tests/integration/test_workbench_artifact_browser.py:168-173`：`missing = [...]` + `pytest.fail`，
+  错误信息只列 `missing`，不再 `pytest.skip`。
+- 模块 docstring `tests/integration/test_workbench_artifact_browser.py:21-27` 同步为
+  「Missing is a failure naming the missing variables」。
+
+实测三变量全缺：
+
+```text
+$ env -u SPEECHNEXUS_TEST_MINIO_ENDPOINT -u SPEECHNEXUS_TEST_MINIO_ACCESS_KEY \
+      -u SPEECHNEXUS_TEST_MINIO_SECRET_KEY \
+      SPEECHNEXUS_TEST_DATABASE_URL=… UV_NO_CONFIG=1 uv run pytest -m integration \
+      "tests/integration/test_workbench_artifact_browser.py::test_the_page_is_served_under_the_deployed_response_headers" -q
+E  Failed: Configure an isolated MinIO in SPEECHNEXUS_TEST_MINIO_ENDPOINT,
+   SPEECHNEXUS_TEST_MINIO_ACCESS_KEY, SPEECHNEXUS_TEST_MINIO_SECRET_KEY;
+   missing object storage is not evidence and is never a skip
+1 error in 0.45s        # rc=1
+```
+
+只缺 secret：
+
+```text
+$ env -u SPEECHNEXUS_TEST_MINIO_SECRET_KEY … pytest … -q
+E  Failed: Configure an isolated MinIO in SPEECHNEXUS_TEST_MINIO_SECRET_KEY;
+   missing object storage is not evidence and is never a skip
+1 error in 0.44s        # rc=1
+```
+
+**判定：闭合。** 不再有 skip/exit 0；变量点名精确到缺失项，不是笼统列三个名字。
+
+### R2. 第 2 项 setup 清理：常规路径闭合，三个边界未闭合
+
+#### R2.1 已闭合的部分
+
+`_stack` 现在把 `admin`、`pool`、`objects`、两个 server/thread、`container` 都先置 `None`，
+`admin = psycopg.connect(...)` 和 `_migrate` 起都在 `try` 内
+（`tests/integration/test_workbench_artifact_browser.py:483-563`）；`finally` 按「句柄存在才清理」
+（`:564-583`）。作者给的错误 secret 路径实测：
+
+```text
+$ SPEECHNEXUS_TEST_MINIO_SECRET_KEY=wrong_secret_for_leak_probe … pytest … -q
+E  minio.error.S3Error: … code: SignatureDoesNotMatch … bucket_name: sn-page-e640b597092c
+1 error in 0.89s        # rc=1
+
+$ psql … -Atc "SELECT count(*) FROM pg_namespace WHERE nspname LIKE 'sn_page_int_%';
+                 SELECT count(*) FROM pg_roles WHERE rolname LIKE 'sn_page_%';"
+0
+0
+$ MinIO list_buckets()（sn-page- 前缀）
+[]
+```
+
+断言失败路径也验了：把主用例的 `_probe` 指向 `job-page-2` / `artifact-page-transcript-2`，期望仍是
+`ours`，`1 failed in 2.61s`（摘要 `635601…` vs `0c6f94…`），事后 schema/角色/桶计数仍为 0/0/[]。
+镜像层 `1 passed in 5.57s`，事后同样 0/0/[]，`sn951-page-*` 容器为空。`_serve` 立即失败（模拟）时
+`_stack` 的 DB/对象清理也走通，0/0/[]；说明「常规 setup 失败 / 断言失败 / 镜像启动超时」不再泄漏
+schema、角色、桶。
+
+#### R2.2 边界一：`make_bucket` 建桶后客户端报错，`bucket_created` 仍为 false
+
+代码顺序是：
+
+```python
+objects.make_bucket(bucket)   # tests/integration/test_workbench_artifact_browser.py:516
+bucket_created = True         # :518
+```
+
+如果服务端已创建桶、客户端因响应丢失/超时抛错，`:518` 不执行；`finally` 的条件
+`if objects is not None and bucket_created:`（`:575`）为 false，桶不会被删。用 monkeypatch 让
+`Minio.make_bucket` 先真正建桶再抛 `RuntimeError`（模拟 CreateBucket 响应丢失）：
+
+```text
+setup error: simulated lost CreateBucket response after the bucket exists
+# 事后
+pg_namespace sn_page_int_%: 0
+pg_roles sn_page_%: 0
+buckets: ['sn-page-865bfb8d2aae']      # 残留，已手工删除
+```
+
+这正是「建了但没登记」：桶是服务端真实资源，但登记标志只在客户端成功后置位。**未闭合。**
+修法：`finally` 只要 `objects is not None` 就对已知 `bucket` 尝试删版本/删桶，容忍 `NoSuchBucket`；
+或调用前先置标志并处理 `BucketAlreadyOwnedByYou`，不要只依赖成功返回。
+
+#### R2.3 边界二：清理自身失败会掩盖原始错误并跳过后续清理
+
+`finally` 里 `pool.close()`、`objects.list_objects/remove_*`、`admin.execute(DROP SCHEMA/ROLE)` 没有
+逐步 `try/except`（`tests/integration/test_workbench_artifact_browser.py:564-583`）。用 monkeypatch 让
+`Minio.list_objects` 在清理时抛错，同时测试体抛 `ValueError("original body failure")`：
+
+```text
+raised: RuntimeError cleanup list_objects failed
+# 原始 ValueError 被替换
+# 事后
+sn_page_int_67da17649c5d
+sn_page_jobs_67da17649c5d
+sn_page_artifact_67da17649c5d
+buckets: ['sn-page-67da17649c5d']      # 已手工清理
+```
+
+清理异常既掩盖原始错误，又让后面的 `DROP SCHEMA`/`DROP ROLE` 不执行，三个资源全留。**未闭合。**
+修法：每个清理步骤单独 `try/except` 收集失败，保证后续步骤继续；最后以原始异常为主，清理失败作为
+附加信息（`add_note`/日志），不要用清理异常覆盖它。
+
+#### R2.4 边界三：`_serve` 启动超时后线程未停
+
+`_serve`（`tests/integration/test_workbench_artifact_browser.py:322-335`）启动线程后等
+`server.started`，超时在 `:333` 直接 `assert` 抛错；`server`/`thread` 是局部变量，没有在
+`except/finally` 里 `should_exit`/`join`。`_stack` 里 `api_server`/`api_thread` 只在 `_serve` 正常返回后
+才赋值（`:544`），所以 `finally` 的 `:571-574` 看不到它们。直接用一个 lifespan 挂起的 app 调
+`_serve`：
+
+```text
+raised: the app did not start
+live threads: ['MainThread', 'Thread-1 (run)']
+```
+
+DB/对象资源仍会被 `_stack` 的 `finally` 清掉（模拟 `_serve` 立即失败，0/0/[]），但 uvicorn 线程
+（以及它持有的 socket）留到进程退出。**未闭合。** 注意：镜像层 readiness 超时是另一条路径，
+`_run_image_tier` 的 `try/except BaseException`（`:449-463`）会 `docker rm --force`，这条已修；
+作者声称的「启动超时也回收」只覆盖了镜像容器，没有覆盖 `_serve` 的 API/front 启动超时。
+
+#### R2.5 `DROP ROLE` 依赖
+
+正常路径和错误 secret 路径都在 `DROP SCHEMA ... CASCADE` 后 `DROP ROLE`，实测角色计数 0；测试角色
+只有 schema 内授权、不拥有对象，未观察到依赖未解。若清理在 `DROP SCHEMA` 前失败，角色会留下
+（R2.3 已覆盖）；这不是独立的 `DROP ROLE` 依赖缺陷。
+
+### R3. 第 3 项 `consoleErrors`：闭合
+
+`_assert_page_read_the_same_artifact` 增加
+`assert evidence["consoleErrors"] == []`（`tests/integration/test_workbench_artifact_browser.py:647`），
+CSP 用例也改成同一断言（`:792`）。注入 `console.error("sn952 injected console error")`：
+
+```text
+$ pytest … "…::test_the_page_reads_the_same_jobs_artifact" -q
+E  AssertionError: ['sn952 injected console error']
+1 failed in 2.66s
+```
+
+删掉 `_assert` 里新增的这一行，同一注入：
+
+```text
+1 passed in 2.68s
+```
+
+证明断言承重。再注入 `console.warn`/`console.info`：
+
+```text
+1 passed in 2.67s
+```
+
+probe 只把 `message.type() === "error"` 放进 `consoleErrors`
+（`tests/integration/workbench-artifact-probe.mjs:77`），warn/info 不进数组，不会误判为红。
+CSP 用例仍先逐字比较 `content-security-policy` 头（`:787`），再用空 console 兜底；原来的
+`unsafe-eval` 文本过滤被更强的「console 全空 + CSP 头逐字相等」取代，未放开 `unsafe-eval`。
+**判定：闭合。** 第一轮 N2（`SECURITY_HEADERS` 是 nginx 手抄副本、镜像头未比较）仍是非阻断建议，
+不影响本轮三项判定。
+
+### R4. 本轮实测汇总
+
+| 检查 | 结果 |
+| --- | --- |
+| 完整文件（新 head，真实 PG/MinIO/Chromium/dist） | `5 passed in 17.70s` |
+| 三变量全缺 MinIO | `1 error in 0.45s`，rc=1，点名三个变量 |
+| 只缺 secret | `1 error in 0.44s`，rc=1，只点名 secret |
+| 错误 secret | `1 error in 0.89s`，`0/0/[]` |
+| 断言失败（读另一 Job） | `1 failed in 2.61s`，`0/0/[]` |
+| 镜像层 | `1 passed in 5.57s`，`0/0/[]`，无 `sn951-page-*` 容器 |
+| 注入 console.error | `1 failed in 2.66s`，`consoleErrors=['sn952 injected console error']` |
+| 删断言后同一注入 | `1 passed in 2.68s` |
+| 注入 console.warn/info | `1 passed in 2.67s` |
+| `make_bucket` 建后抛 | 残留 `sn-page-865bfb8d2aae`，已删 |
+| 清理 `list_objects` 抛 | 原始错误被 `RuntimeError` 掩盖，schema/角色/桶残留，已清理 |
+| `_serve` 启动超时 | `the app did not start`，`Thread-1 (run)` 仍活 |
+| 新 head CI | 所有 required/实际运行的检查 `SUCCESS`（两个 `SKIPPED`：Docs markdown 代码块、Node Controller 镜像矩阵），PR `MERGEABLE` |
+| 文档门禁 | `RESULT PASS`；`SCOPE terminal problems=0`；`refs=1999 fenced=141 MISSING=72 OK=1792 OUT_OF_RANGE=4`（record 不计门禁） |
+
+### R5. 本轮未验证
+
+- `make_bucket` 响应丢失/清理失败/`_serve` 超时三个边界都不在 CI 覆盖内；本轮用 monkeypatch 或
+  直接调用复现，CI 仍全绿。
+- 镜像层仍是本地手工跑（CI 未设 `WORKBENCH_PAGE_IMAGE`）。
+- 真实引擎产出的 Job/Artifact、完整 compose 栈仍同第一轮，未验证。
+- 作者 PR 正文的 `sn951-pg`/MinIO 清理叙事未复核；我用独立的 `sn952-review-*` 容器，收尾已删除。

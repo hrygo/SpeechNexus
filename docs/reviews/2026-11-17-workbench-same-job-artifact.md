@@ -847,7 +847,7 @@ notes: []
 `finally` 现在把每一步放进 `cleanup(name, action)`（`tests/integration/test_workbench_artifact_browser.py:671-713`），
 单步失败只追加 `failures`，后续步骤继续；有原始异常时 `original.add_note(...)`，否则
 `raise RuntimeError("cleanup failed: " + report) from failures[0][1]`。桶清理先按
-`seeded` 里的 `(key, version_id)` 精确删（`:700-703`），再列版本兜底，再 `remove_bucket`。
+`seeded` 里的 `(key, version_id)` 精确删（`:697-699`），再列版本兜底，再 `remove_bucket`。
 
 **同一注入**（`Minio.list_objects` 在清理时抛，测试体抛 `ValueError("original body failure")`）：
 

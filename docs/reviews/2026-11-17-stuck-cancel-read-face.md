@@ -357,6 +357,7 @@ UV_NO_CONFIG=1 SPEECHNEXUS_TEST_DATABASE_URL='postgresql://…@127.0.0.1:55481/s
 
 uv run ruff check <4 changed .py files>        # All checks passed!
 uv run ruff format --check <4 changed .py files>  # already formatted
+uv run pytest tests/unit -q                     # 7513 passed, 3 skipped
 ```
 
 第一轮报告里的 18/34 是本轮之前的数字；第二轮两个受影响文件合计 39 passed（另加 plan 1、

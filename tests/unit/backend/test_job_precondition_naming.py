@@ -25,7 +25,10 @@ from speechnexus_backend.speech.application.public_jobs import (
     ModelNotPublishedError,
     PublicJobs,
 )
-from speechnexus_backend.speech.domain.public_jobs import JobCreateResult
+from speechnexus_backend.speech.domain.public_jobs import (
+    JobCreateResult,
+    PublicJobUnavailableError,
+)
 from speechnexus_backend.speech.infrastructure.public_job_admission import (
     PublicJobAdmissionRejectedError,
     _instance,
@@ -92,6 +95,103 @@ def test_an_unpublished_binding_without_an_instance_names_the_engine() -> None:
     message = str(raised.value)
     assert "engine" in message.lower()
     assert "register" in message.lower()
+
+
+def test_registered_instances_without_a_publication_name_the_publication_step() -> None:
+    """The two repairs behind one 422 are distinguishable, so the answer picks one.
+
+    "No published binding and no instance" is one state; "instances exist but no
+    binding revision is published" is another, and only the first is repaired by
+    registering the engine. A single sentence for both sent the operator of the
+    second state back to engine registration, which changes nothing. This pins the
+    registration-fact arm: the answer names the states and the publication step,
+    and it must not claim that no instance is registered (#877 item 4).
+    """
+
+    class RegisteredButUnpublished(Facts):
+        def latest_binding(self, model_id: str) -> Any:
+            return None
+
+        def engine_instance_states(self, model_id: str) -> tuple[str, ...]:
+            return ("draining", "stopped")
+
+    service = PublicJobs(RegisteredButUnpublished(), Store(), now_us=lambda: NOW)
+
+    with pytest.raises(ModelNotPublishedError) as raised:
+        service.submit(
+            parse("JobCreateRequest", _body(model="model-asr-1")),
+            request_id="req-registered-unpublished",
+            idempotency_key=None,
+        )
+
+    message = str(raised.value)
+    assert "draining" in message and "stopped" in message
+    assert "publish the binding" in message
+    # Registration is not what is missing here, so the other arm's sentence is wrong.
+    assert "no engine instance is registered" not in message
+
+
+def test_the_zero_state_answer_names_both_missing_inputs_and_both_repairs() -> None:
+    """``#877`` item 4's own sentence: publication *and* engine registration.
+
+    From zero both inputs are missing, so an answer that names one of them sends the
+    operator to the wrong step: "The model is not published." pointed at the model
+    catalogue, and a sentence naming only the engine would skip the publication this
+    store needs first. The neighbouring cases pin the other two states, so this one
+    pins the zero-state sentence clause by clause -- it is quoted verbatim in ``#877``
+    and in the closing PR, and a quoted answer without a guard drifts silently.
+    """
+    service = PublicJobs(Facts(), Store(), now_us=lambda: NOW)
+
+    with pytest.raises(ModelNotPublishedError) as raised:
+        service.submit(
+            parse("JobCreateRequest", _body(model="model-asr-1")),
+            request_id="req-zero-state",
+            idempotency_key=None,
+        )
+
+    message = str(raised.value)
+    # Both missing inputs are named ...
+    assert "no published binding revision" in message
+    assert "no engine instance is registered" in message
+    # ... and each one carries its own repair.
+    assert "publish the binding" in message
+    assert "register the engine (engine-registration profile)" in message
+    # It is the zero-state sentence, not the registered-but-unpublished arm.
+    assert "has registered engine instance(s)" not in message
+
+
+async def test_an_unreadable_registration_fact_keeps_the_422_answer() -> None:
+    """The registration fact explains the refusal; it never decides its code.
+
+    ``engine_instance_states`` is a second read that only sharpens the message. If an
+    unreadable one propagated, the create would answer the declared ``503
+    job_unavailable`` storage code -- telling an operator the store is down while the
+    real missing prerequisite is still "publish the binding and register the engine".
+    The refusal therefore keeps its 422 and its code.
+    """
+
+    class UnreadableRegistration(Facts):
+        def latest_binding(self, model_id: str) -> Any:
+            return None
+
+        def engine_instance_states(self, model_id: str) -> tuple[str, ...]:
+            raise PublicJobUnavailableError("the registration fact is unavailable")
+
+    service = PublicJobs(UnreadableRegistration(), Store(), now_us=lambda: NOW)
+    app = create_app(settings=_settings(), jobs=service)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/v1/nexus/jobs", json=_body(model="model-asr-1"))
+
+    assert response.status_code == 422, response.text
+    error = response.json()["error"]
+    assert error["code"] == "model_not_published"
+    assert error["retryable"] is False
+    # The storage answer would be the 503 job_unavailable code with its own sentence;
+    # neither may appear here.
+    assert "Job storage is unavailable." not in error["message"]
+    assert "publish the binding" in error["message"]
 
 
 async def test_the_http_answer_carries_the_named_precondition() -> None:

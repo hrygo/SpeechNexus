@@ -1,7 +1,6 @@
 """Real TCP slow-header/body counterexamples for complete-before-expose input."""
 
 import asyncio
-import math
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -16,35 +15,13 @@ import pytest
 
 from speechnexus_gateway.domain.execution_inputs import ExecutionInputError, ExecutionInputLimits
 from speechnexus_gateway.infrastructure.execution_objects_minio import MinioExecutionInputs
+from tests.support.deadline_budget import (
+    TRICKLE_INTERVAL_SECONDS,
+    assert_cut_at_deadline,
+    calibrated_budget,
+    trickle_frame_count,
+)
 from tests.unit.gateway.test_execution_objects import BODY, reference
-
-# One trickle frame every 30 ms: far faster than any socket inactivity timeout,
-# so peer activity alone cannot extend the read, and far slower than the budgets
-# below, which is what keeps the peer writing when the total deadline fires.
-TRICKLE_INTERVAL_SECONDS = 0.03
-# The peer's trickle total outlives the budget by this factor, so a still-clear
-# `trickled` event proves the read was cut rather than drained at any budget.
-TRICKLE_BUDGET_MULTIPLE = 20
-# The budget races the fast path (dial + HEAD + slow-stage entry) and nothing
-# else. A coverage-traced cold first read spends 25-50 ms on one-time costs, and
-# a stalled runner adds hundreds of ms on top; 0.5 s keeps the deadline away
-# from that tail, which is where the merge gate used to end the read before the
-# slow stage was entered (#938).
-MINIMUM_BUDGET_SECONDS = 0.5
-# A machine whose fast path is genuinely slower gets a proportionally larger
-# budget: the slowest of a few calibration reads times this. The calibration
-# reads also pay the one-time costs, so they stay outside the budgeted read.
-FAST_PATH_MULTIPLE = 10
-CALIBRATION_READS = 3
-# A single stalled calibration read must not blow the test's runtime up: past
-# this ceiling the fast path is a runner problem the failure message shows.
-MAXIMUM_BUDGET_SECONDS = 2.0
-# The deadline, not the peer's end of stream, must end the read, so the read
-# ends at the budget. The upper bound is still an order of magnitude below the
-# trickle total, so a drained read could never reach it, while a scheduler stall
-# of up to one budget in the detection/cleanup path stays green.
-DEADLINE_LOWER_RATIO = 0.9
-DEADLINE_UPPER_RATIO = 2.0
 
 
 class Server(ThreadingHTTPServer):
@@ -155,8 +132,8 @@ async def read(
         pytest.fail("partial or cancelled object reached consumer")
 
 
-async def fast_read(value: MinioExecutionInputs) -> float:
-    """Read the whole object once with no slow stage and return its wall clock.
+async def fast_read(value: MinioExecutionInputs) -> None:
+    """Read the whole object once with no slow stage.
 
     A first read in a fresh worker pays one-time costs -- httpcore/anyio
     imports, the first connection, the first `ThreadingHTTPServer` handler
@@ -164,22 +141,12 @@ async def fast_read(value: MinioExecutionInputs) -> float:
     budgeted read, where they used to be an unaccounted part of the fast path.
     """
 
-    started = time.monotonic()
     async with value.open_verified(
         reference(),
         limits=ExecutionInputLimits(len(BODY), 8, 30),
         cancelled=lambda: False,
     ) as verified:
         assert verified.stream.read() == BODY
-    return time.monotonic() - started
-
-
-async def calibrated_budget(value: MinioExecutionInputs) -> float:
-    """Return a budget an order of magnitude above this machine's fast path."""
-
-    samples = [await fast_read(value) for _ in range(CALIBRATION_READS)]
-    calibrated = FAST_PATH_MULTIPLE * max(samples)
-    return min(MAXIMUM_BUDGET_SECONDS, max(MINIMUM_BUDGET_SECONDS, calibrated))
 
 
 @pytest.mark.parametrize("stage", ["HEAD.headers", "GET.headers", "GET.body"])
@@ -191,32 +158,25 @@ async def test_trickling_input_cannot_extend_total_deadline_and_releases_socket(
     # state that outliving as a bound instead of a guess.
     server.slow_stage = ""
     value = adapter(server, tmp_path)
-    budget = await calibrated_budget(value)
+    budget = await calibrated_budget(lambda: fast_read(value))
     server.slow_stage = stage
     # The peer keeps trickling long past the budget, so only a total deadline
     # can end this read, and it has to do so while the peer still writes.
-    server.trickle_frames = math.ceil(TRICKLE_BUDGET_MULTIPLE * budget / TRICKLE_INTERVAL_SECONDS)
+    server.trickle_frames = trickle_frame_count(budget)
     server.calls.clear()
     started = time.monotonic()
     with pytest.raises(ExecutionInputError, match="execution_input_deadline_exceeded"):
         await read(value, duration_seconds=budget)
     elapsed = time.monotonic() - started
     fast_path = None if server.started_at is None else server.started_at - started
-    observed = (
-        f"budget={budget:.3f}s elapsed={elapsed:.3f}s fast_path={fast_path} "
-        f"trickled={server.trickled.is_set()} "
-        f"calls={[verb for verb, _, _ in server.calls]}"
+    assert_cut_at_deadline(
+        budget=budget,
+        elapsed=elapsed,
+        fast_path=fast_path,
+        started=server.started.is_set(),
+        trickled=server.trickled.is_set(),
+        calls=[verb for verb, _, _ in server.calls],
     )
-    # The slow stage must have been entered: otherwise the deadline ended the
-    # read before the behaviour under test was reached. The order-of-magnitude
-    # margin, not a rerun, is what keeps that from happening at random.
-    assert server.started.is_set(), observed
-    assert fast_path is not None and fast_path < budget, observed
-    # The peer never finished trickling: the read was cut, not drained.
-    assert not server.trickled.is_set(), observed
-    # Ended at the total deadline: near the budget, an order of magnitude from
-    # the trickle total a drained read would have lasted.
-    assert budget * DEADLINE_LOWER_RATIO <= elapsed <= budget * DEADLINE_UPPER_RATIO, observed
     assert [verb for verb, _, _ in server.calls] == (
         ["HEAD"] if stage == "HEAD.headers" else ["HEAD", "GET"]
     )

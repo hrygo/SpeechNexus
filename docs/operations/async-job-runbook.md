@@ -24,6 +24,8 @@ date: 2026-11-08
 
 ## 1. 六项前置速查
 
+下表的症状是结论；每一处闸门跑在哪一层、实测输出形态与退出码，见[启动闸门的失败输出形态](startup-gate-output.md)。
+
 | 编号 | 前置 | 缺失时的可观察症状 | 缺它的 Job 表现 |
 | --- | --- | --- | --- |
 | 1 | API 的 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL` 与 `SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL` | `POST /v1/nexus/jobs` 返回 `503 job_unavailable`，`message` 点名空白的键名（两条都空则两条都列，只空 admission 时由创建路径点名它） | 没有 Job 可被 claim |

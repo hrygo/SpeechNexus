@@ -533,6 +533,104 @@ def test_a_blank_dispatch_dsn_never_tries_to_connect() -> None:
     assert passed == []
 
 
+def test_an_unsafe_schema_is_named_instead_of_escaping_as_a_value_error() -> None:
+    """#928: the identifier guard used to run inside the migration check.
+
+    A schema that is not a safe lowercase identifier raised ``ValueError`` before any
+    failure line was printed, so the entry point died with a traceback while the
+    documents promised one named line per missing prerequisite. The gate must name
+    ``SPEECHNEXUS_DATABASE_SCHEMA`` and never reach ``connect``: an invalid schema is
+    not a database problem, and connecting first would report the wrong prerequisite.
+    """
+
+    def connect(dsn: str) -> Any:  # pragma: no cover - must not be called
+        raise AssertionError("the gate must not connect before validating the schema")
+
+    findings, passed = GATE.database_findings(
+        connect,
+        {
+            GATE.RUNTIME_DSN_ENV: "postgresql://sn_job_dispatch:pw@postgres:5432/speechnexus",
+            GATE.SCHEMA_ENV: "bad-schema!",
+        },
+        "head",
+    )
+    assert passed == []
+    assert len(findings) == 1
+    assert findings[0].startswith(f"{GATE.SCHEMA_ENV} is not a safe lowercase SQL identifier")
+    assert "the schema the migration profile populated" in findings[0]
+
+
+class RefusedConnectionError(Exception):
+    """A driver failure whose text names the server, the database and the login."""
+
+    def __init__(self, message: str, sqlstate: str | None = None) -> None:
+        super().__init__(message)
+        self.sqlstate = sqlstate
+
+
+def test_a_connect_failure_never_echoes_the_driver_message() -> None:
+    """#928: psycopg's text names the host, the database and the login name.
+
+    The gate promises one named line per missing prerequisite with no DSN fragment in
+    it, so the classified reason replaces the driver's message; ``sqlstate`` is a
+    protocol value and carries the operator-relevant difference.
+    """
+
+    def connect(dsn: str) -> Any:
+        raise RefusedConnectionError(
+            'connection to server at "postgres" (10.0.0.5), port 5432 failed: '
+            'FATAL: password authentication failed for user "sn_job_dispatch"',
+            sqlstate="28P01",
+        )
+
+    findings, passed = GATE.database_findings(
+        connect,
+        {
+            GATE.RUNTIME_DSN_ENV: "postgresql://sn_job_dispatch:pw_secret@postgres:5432/speechnexus",
+        },
+        "head",
+    )
+    assert passed == []
+    assert len(findings) == 1
+    assert "cannot connect to PostgreSQL (the login was refused)" in findings[0]
+    for leaked in ("postgres", "10.0.0.5", "5432", "sn_job_dispatch", "pw_secret"):
+        assert leaked not in findings[0]
+
+
+def test_an_unreachable_server_is_classified_without_the_address() -> None:
+    def connect(dsn: str) -> Any:
+        raise RefusedConnectionError(
+            'connection to server at "127.0.0.1", port 55481 failed: Connection refused',
+            sqlstate="08006",
+        )
+
+    findings, _ = GATE.database_findings(
+        connect,
+        {
+            GATE.RUNTIME_DSN_ENV: "postgresql://sn_job_dispatch:pw_secret@127.0.0.1:55481/speechnexus",
+        },
+        "head",
+    )
+    assert "cannot connect to PostgreSQL (the server is unreachable)" in findings[0]
+    for leaked in ("127.0.0.1", "55481", "speechnexus"):
+        assert leaked not in findings[0]
+
+
+def test_an_unclassified_driver_error_degrades_to_its_type_name() -> None:
+    def connect(dsn: str) -> Any:
+        raise RefusedConnectionError('connection to server at "postgres" failed: dns lookup failed')
+
+    findings, _ = GATE.database_findings(
+        connect,
+        {
+            GATE.RUNTIME_DSN_ENV: "postgresql://sn_job_dispatch:pw@postgres:5432/speechnexus",
+        },
+        "head",
+    )
+    assert "cannot connect to PostgreSQL (RefusedConnectionError)" in findings[0]
+    assert "postgres" not in findings[0]
+
+
 def test_database_findings_runs_the_head_the_probes_and_the_writes(
     monkeypatch: Any,
 ) -> None:

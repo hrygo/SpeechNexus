@@ -172,6 +172,26 @@ def _identifier(value: str) -> str:
     return value
 
 
+# A driver's connect failure is never echoed: psycopg's text names the server
+# address, the port and the database, and an authentication failure quotes the
+# login name. The gate's promise is one named line per missing prerequisite with no
+# DSN fragment, host, database or user in it, so the classification below carries
+# the operator-relevant difference instead (refused login vs. unreachable server vs.
+# anything else, by exception type). SQLSTATE is a protocol value, not an input.
+_REFUSED_LOGIN_PREFIXES = ("28",)
+_UNREACHABLE_PREFIXES = ("08", "57P03")
+
+
+def _connection_failure_class(error: Exception) -> str:
+    sqlstate = getattr(error, "sqlstate", None)
+    if isinstance(sqlstate, str):
+        if sqlstate.startswith(_REFUSED_LOGIN_PREFIXES):
+            return "the login was refused"
+        if sqlstate.startswith(_UNREACHABLE_PREFIXES):
+            return "the server is unreachable"
+    return type(error).__name__
+
+
 def dispatch_kinds(env: Mapping[str, str]) -> tuple[str, ...]:
     """Return the configured lane kinds, defaulting to the worker's own default."""
     raw = env.get(KINDS_ENV, "asr,tts")
@@ -535,16 +555,28 @@ def database_findings(
     schema = env.get(SCHEMA_ENV, "speech").strip() or "speech"
     kinds = dispatch_kinds(env)
     try:
-        connection = connect(dsn)
-    except Exception as error:
-        # psycopg reports the host, database and server error but never the
-        # password, so this stays safe to print and tells auth from network
-        # failures instead of only "not ready".
-        reason = str(error).strip().splitlines()[0][:300]
+        _identifier(schema)
+    except ValueError:
+        # The identifier guard used to run first inside the migration check, so a
+        # schema name that is not a safe lowercase identifier escaped as a ValueError
+        # traceback with no FAIL line at all (#928). Name the key instead: the
+        # operator cannot repair a gate that never printed its own refusal.
         return (
             [
-                f"{DSN_ENV} cannot connect to PostgreSQL: {reason or 'no detail'}; "
-                "the dispatch role or the database network is not ready"
+                f"{SCHEMA_ENV} is not a safe lowercase SQL identifier, so the gate "
+                "cannot name the migration ledger or run the role guard: use the "
+                "schema the migration profile populated (the default is `speech`)"
+            ],
+            [],
+        )
+    try:
+        connection = connect(dsn)
+    except Exception as error:
+        return (
+            [
+                f"{DSN_ENV} cannot connect to PostgreSQL "
+                f"({_connection_failure_class(error)}); the dispatch role or the "
+                "database network is not ready"
             ],
             [],
         )

@@ -526,23 +526,36 @@ docker image inspect --format '{{.Id}}' "speechnexus/web-workbench:${sha}"
 
 Measured at `acf633ff` (macOS arm64, Docker 29.9.3, both base images already local: the
 two `FROM` steps resolve in 0.0 s and the documented command above finishes in 26.08 s):
-the image is 95.9 MB unpacked across 12 layers and the archive is 26.7 MB; `gzip -9` over
-that archive gives 26.6 MB, a 0.6 % saving, because each layer is already compressed
-inside it — transport the `.tar` as written. `docker load` restores the same image ID
-(`sha256:25dd2864…`); an ID that differs means the bytes changed in transit. What was
-loaded then has to say what it claims:
+`docker images` accounts the image as 95.9 MB across 12 layers, its uncompressed layer
+tars sum to 66.2 MB, and the archive is 26.7 MB; `gzip -9` over that archive gives
+26.6 MB, a 0.63 % saving, because each layer is already compressed inside it — transport
+the `.tar` as written. `docker load` restores the same image ID (`sha256:25dd2864…`); an
+ID that differs means the bytes changed in transit. That ID proves transport, not
+provenance: rebuilding the same commit on the same host yields a different ID, because
+BuildKit writes a Go pointer address into the `EXPOSE` history entry, while all 12 layer
+diffIDs stay equal (measured in the `#829` review). Compare
+`docker image inspect --format '{{json .RootFS.Layers}}'` before and after transport, and
+against the layer digests the building host recorded; never compare a rebuilt image's ID
+with the shipped one, and never use the ID as the "same version" anchor.
+
+What was loaded then has to say what it claims:
 
 ```bash
 uv run python scripts/dev-env/check-image-contract-digest.py "speechnexus/web-workbench:${sha}"
 ```
 
 [check-image-contract-digest.py](../scripts/dev-env/check-image-contract-digest.py) reads
-the contract digest baked into the loaded bundle and compares it with this checkout's
-`contracts/`; on a host with no checkout, pass the digest a deployment reports at
-`GET /v1/nexus/version` with `--expect`. A `docker load` that delivered a different
-commit, or an image that predates the same-version guard, therefore fails instead of
-merely carrying the tag. Record the image ID and that digest with the deployment: they
-are the two values that make "same version" reviewable without the building host.
+the contract digest baked into the loaded bundle and compares it with the digest under
+check. `--expect` takes exactly two sources: a value recomputed offline on the commit
+being checked, or the digest the building host recorded in its release record. It must
+not take the value the inspected deployment reports at `GET /v1/nexus/version` — that
+value comes from the deployment under check, so an altered bundle with an untouched label
+passes when compared with its own digest (`--expect <altered value>` exits 0 while
+`source commit` still names the built commit). Taking the wrong source makes the check
+prove nothing. With a right source, a `docker load` that delivered a different commit, or
+an image that predates the same-version guard, fails instead of merely carrying the tag.
+Record that digest with the deployment: together with the layer diffIDs it is what makes
+"same version" reviewable without the building host.
 
 ## Configuration authority
 

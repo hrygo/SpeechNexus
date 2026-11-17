@@ -18,13 +18,18 @@ Usage (from the repository root):
 
 Without `--expect` the expected value is recomputed from this checkout's `contracts/`
 by the same generator `GET /v1/nexus/version` and the bundle are built from, so a
-mismatch means the image and this tree disagree. With `--expect` the image is checked
-against a value copied from a deployment, for a host that has no checkout of its own.
+mismatch means the image and this tree disagree. `--expect` is for a host without a
+checkout and takes one of two sources only: a digest recomputed offline on the commit
+being checked, or the digest the building host recorded in its release record. It must
+not take the value the inspected deployment reports at `GET /v1/nexus/version` — that is
+the deployment vouching for itself (an altered bundle with an untouched label passes
+against its own value), and a check fed that way proves nothing about the commit.
 
 Two bundle contents are not the digest: a single repeated hex character is a committed
 test fixture (`contracts/**` carries `sha256:aaaa…`-shaped placeholders that the
 production program can render), and any other candidate is reported as ambiguous
-instead of being guessed at.
+instead of being guessed at. Only `*.js` under the bundle root is scanned; a digest
+carried by another file type is not seen and reads as an image that bakes in none.
 
 Exit codes: 0 when the bundle's digest equals the expected one; 1 when it does not,
 when the bundle carries no digest (an image built before the same-version guard
@@ -140,8 +145,10 @@ def main() -> int:
     parser.add_argument(
         "--expect",
         metavar="SHA256",
-        help="Expected digest, for example one reported by GET /v1/nexus/version. "
-        "Defaults to this checkout's contracts recomputed by the generator.",
+        help="Expected digest, from exactly two sources: recomputed offline on the "
+        "commit being checked, or recorded by the building host in its release record. "
+        "Never the value the inspected deployment reports for itself. Defaults to this "
+        "checkout's contracts recomputed by the generator.",
     )
     parser.add_argument(
         "--bundle-root",

@@ -74,7 +74,7 @@ grep -o 'sha256:[0-9a-f]\{64\}' web/workbench/dist/assets/*.js | sort -u
 
 判据：三个值必须一致——部署自报值、核对提交上的重算值、页面 bundle 里烘焙的值（bundle 里还会出现测试夹具的假摘要，形如重复字符，不是这一项）。这一项就是运行期判据的离线版本，因此也是四项里唯一能直接跨「构建期/运行期」对照的一项。
 
-第三条命令读的是本机 `dist`；要在**镜像**上做同一判断（例如 `docker load` 进来的跨机构建产物，或不在本机的构建机产物），用 `scripts/dev-env/check-image-contract-digest.py <镜像>` 代替：它从镜像发布的 bundle 里取出烘焙值，与本工作树重算值比对（无工作树时用 `--expect` 传入部署自报值），摘要缺失、多个候选或不相等都返回非 0，用法见 [deploy/README.md](../../deploy/README.md) 的「Moving a built image to another host」。
+第三条命令读的是本机 `dist`；要在**镜像**上做同一判断（例如 `docker load` 进来的跨机构建产物，或不在本机的构建机产物），用 `scripts/dev-env/check-image-contract-digest.py <镜像>` 代替：它从镜像发布的 bundle 里取出烘焙值，与本工作树重算值比对，摘要缺失、多个候选或不相等都返回非 0，用法见 [deploy/README.md](../../deploy/README.md) 的「Moving a built image to another host」。无工作树时用 `--expect`，它只能取两种来源之一：**在要核对的那个提交上离线重算的值**，或**构建机/发布记录里的摘要**；不能取被检查部署自己 `GET /v1/nexus/version` 报的值——那是这套部署给自己作证（把 bundle 改掉、label 不动，再拿改后的值当 `--expect`，`EXIT=0`），取错来源时这个检查等于没做。
 
 ### 4. 后端源码树（构建期）
 

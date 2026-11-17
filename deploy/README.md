@@ -509,6 +509,41 @@ services:
 The `web` profile still selects the service; adding `--no-deps` starts the frontend
 without pulling the base API topology in, which is how a frontend-only check runs.
 
+#### Moving a built image to another host
+
+A host the criteria above put in the throttled row does not have to build: build where
+the route is ordinary and move the bytes. `docker save` writes only the final image's
+layers, so the build stage (`node:26.12.1-bookworm-slim`, the `pnpm` store, the sources)
+is not in the archive — it carries the nginx base and the built page, nothing else.
+
+```bash
+sha="$(git rev-parse HEAD)"
+docker save "speechnexus/web-workbench:${sha}" -o "web-workbench-${sha}.tar"
+# on the target host, in the directory that received the archive
+docker load -i "web-workbench-${sha}.tar"
+docker image inspect --format '{{.Id}}' "speechnexus/web-workbench:${sha}"
+```
+
+Measured at `acf633ff` (macOS arm64, Docker 29.9.3, both base images already local: the
+two `FROM` steps resolve in 0.0 s and the documented command above finishes in 26.08 s):
+the image is 95.9 MB unpacked across 12 layers and the archive is 26.7 MB; `gzip -9` over
+that archive gives 26.6 MB, a 0.6 % saving, because each layer is already compressed
+inside it — transport the `.tar` as written. `docker load` restores the same image ID
+(`sha256:25dd2864…`); an ID that differs means the bytes changed in transit. What was
+loaded then has to say what it claims:
+
+```bash
+uv run python scripts/dev-env/check-image-contract-digest.py "speechnexus/web-workbench:${sha}"
+```
+
+[check-image-contract-digest.py](../scripts/dev-env/check-image-contract-digest.py) reads
+the contract digest baked into the loaded bundle and compares it with this checkout's
+`contracts/`; on a host with no checkout, pass the digest a deployment reports at
+`GET /v1/nexus/version` with `--expect`. A `docker load` that delivered a different
+commit, or an image that predates the same-version guard, therefore fails instead of
+merely carrying the tag. Record the image ID and that digest with the deployment: they
+are the two values that make "same version" reviewable without the building host.
+
 ## Configuration authority
 
 Every Python process validates its own `pydantic-settings` configuration and

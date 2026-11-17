@@ -74,6 +74,8 @@ grep -o 'sha256:[0-9a-f]\{64\}' web/workbench/dist/assets/*.js | sort -u
 
 判据：三个值必须一致——部署自报值、核对提交上的重算值、页面 bundle 里烘焙的值（bundle 里还会出现测试夹具的假摘要，形如重复字符，不是这一项）。这一项就是运行期判据的离线版本，因此也是四项里唯一能直接跨「构建期/运行期」对照的一项。
 
+第三条命令读的是本机 `dist`；要在**镜像**上做同一判断（例如 `docker load` 进来的跨机构建产物，或不在本机的构建机产物），用 `scripts/dev-env/check-image-contract-digest.py <镜像>` 代替：它从镜像发布的 bundle 里取出烘焙值，与本工作树重算值比对（无工作树时用 `--expect` 传入部署自报值），摘要缺失、多个候选或不相等都返回非 0，用法见 [deploy/README.md](../../deploy/README.md) 的「Moving a built image to another host」。
+
 ### 4. 后端源码树（构建期）
 
 判据：API 镜像构建记录里的提交等于 `<sha>`，且与两个前端镜像 label 相同。需要内容级证据时，对镜像内已安装的 `speechnexus_backend` 与同一提交的工作树用同一算法逐文件 `sha256` 后比较总数与逐项值（`#829` 的做法是 690 个 `.py` 逐文件相同）；两者相同才说明镜像里的后端就是这个提交的源码。

@@ -12,7 +12,9 @@ pinned here as executable assertions:
     `docs/operations/compose-minimal.md` must cite the terminal-state writer line,
     name the step this deployment does not verify, and never call it missing again;
   * the production planner is assembled in the dispatch runtime, so no current
-    document or the delivery matrix may claim it is not.
+    document or the delivery matrix may claim it is not;
+  * the catalogue's `nexus.readiness` block in the async-Job runbook is a static,
+    fail-closed projection, and the comment that keeps it static must stay.
 
 Each claim also pins its citation: a doc that cites `path:line` must cite a line
 that still contains the expected symbol. Reverting the doc or the code therefore
@@ -46,6 +48,8 @@ PRD = "docs/prd.md"
 SPEECH_API = "docs/architecture/speech-api.md"
 MANIFEST = "docs/plans/delivery-issues.json"
 MATRIX = "docs/plans/delivery-tracking.md"
+RUNBOOK = "docs/operations/async-job-runbook.md"
+CATALOG_RUNTIME = "backend/src/speechnexus_backend/model_catalog_runtime.py"
 
 DOCUMENTED_ROUTES_ANCHOR = "公开 Job 路由已装配"
 ROUTE_PATTERN = re.compile(r"`(GET|POST|PUT|PATCH|DELETE) (/v1/nexus/jobs[^`\s]*)`")
@@ -57,6 +61,31 @@ STALE_PLANNER_PHRASES = (
     "生产派发 planner 尚未装配",
     "planner 未装配",
     "planner 尚未装配",
+)
+# The wordings that made the catalogue's readiness block read as a live admission
+# answer (#876 D12): an instance that was `ready` and a Job that answered `202` then
+# looked like a broken engine or a pending wiring task. Each entry is the asserting
+# clause that must never come back, subject and punctuation included -- a bare
+# substring would also reject the negations a correct document needs ("this endpoint
+# is not the channel that reflects live state"), which is the false red the D12 review
+# measured (#939 P2 M4).
+STALE_LIVE_READINESS_PHRASES = (
+    "`nexus.readiness` 反映实时状态。",
+    "`admission_state` 反映实时状态。",
+    "在未注册实例时是 `unavailable`。",
+    "实例 `ready` 后本端点会上报 `available`",
+    "实例变成 `ready` 后该字段会跟着变",
+)
+# The comment above the catalogue construction is the only place that says *why* the
+# projection is static. Guarding the runbook alone left it deletable: dropping the
+# argument and keeping the first line stayed green (#939 P2 M6/M7).
+CATALOGUE_PROJECTION_COMMENT = (
+    "never a live admission answer",
+    "reader's grant admits published tables only (READABLE)",
+    "no workspace (models.py:42)",
+    "admission_state=unavailable",
+    "from None",
+    "#941",
 )
 
 
@@ -182,6 +211,34 @@ CLAIMS = (
         required=("生产 planner 均已装配",),
         forbidden=STALE_PLANNER_PHRASES,
         anchor=(DISPATCH_RUNTIME, "StoredCommandPlanner("),
+    ),
+    Claim(
+        name="catalogue-readiness-projection",
+        doc=RUNBOOK,
+        required=(
+            "是**静态投影**（fail-closed），不是实时状态",
+            "**不随实例注册、实例 `ready` 或 Job `202` 变化**",
+            "不表示引擎故障或不可准入",
+            # The contract's admission_state cannot be satisfied by wiring more live
+            # facts: it is per workspace, this endpoint has no workspace (#941). Kept to
+            # a short run of characters, so a later reflow cannot red this without the
+            # sentence changing.
+            "二者结构性不符",
+            "**契约缺陷**",
+            "`current admission facts`",
+            "#941",
+        ),
+        forbidden=STALE_LIVE_READINESS_PHRASES,
+        # The anchor is the READABLE definition, not the comment's first line: edits
+        # *after* it (the common case) must not red the guard for a stale citation.
+        anchor=(CATALOG_RUNTIME, "READABLE = frozenset("),
+    ),
+    Claim(
+        # This claim guards a source comment as its document: the argument for the
+        # projection living nowhere else is why deleting it used to stay green.
+        name="catalogue-readiness-projection-comment",
+        doc=CATALOG_RUNTIME,
+        required=CATALOGUE_PROJECTION_COMMENT,
     ),
 )
 

@@ -477,8 +477,27 @@ curl -sS http://127.0.0.1:8000/v1/models
 
 预期 `200`，`data` 里是该 binding 的目录项：`id` 为 `binding_id`、`nexus.binding` 为
 `{"id": …, "revision": "<十进制文本>"}`（`publication.reference`，`speech/domain/publications.py:61`；**没有
-`revision_id`**，`revision_id` 只在 `speech_publication_heads` 与私有输入里用），
-`nexus.readiness.admission_state` 在未注册实例时是 `unavailable`。
+`revision_id`**，`revision_id` 只在 `speech_publication_heads` 与私有输入里用）。
+`nexus.readiness` 是**静态投影**（fail-closed），不是实时状态。生产装配不传 readiness 事实
+（见 `backend/src/speechnexus_backend/model_catalog_runtime.py:92` 起的装配注释，构造点在 `:112-114`
+的 `PostgresModelCatalog(...)`，签名里没有 `readiness=`），缺少证据一律保守取 `false` / `unavailable`，
+四项恒为 `configured=true`、`engine_ready=false`、`quality_qualified=false`、
+`admission_state=unavailable`，**不随实例注册、实例 `ready` 或 Job `202` 变化**；`unavailable`
+只表示该目录没有建立这项事实，不表示引擎故障或不可准入。这套实现也没有可读的实时事实：该 reader
+的授权只准入已发布表（`READABLE`，`backend/src/speechnexus_backend/model_catalog_runtime.py:35`），
+准入依赖的 `engine_instances`、`workspace_quotas`、`speech_assets` 都在其外，放宽授权会在启动时被拒，
+而现场只见通用文案（具体原因被 `from None` 吞掉，见装配注释）。
+
+**不要把上面这段读成「等接入实时事实就对上了」**：契约把 `admission_state` 定义成实时准入判据
+（`contracts/speech-openapi.yaml:4063-4070` 的「currently admissible」/「cannot be admitted now」，
+另见 `:53-54` 的 `current admission facts`）。但准入按 workspace 计
+（`backend/src/speechnexus_backend/speech/infrastructure/public_job_admission.py:695`、`:514`），
+本端点没有 workspace 维度（`backend/src/speechnexus_backend/speech/interfaces/http/models.py:42`；
+契约 `:56-63` 只有 `X-Request-ID` 与 `If-None-Match`），所以
+**二者结构性不符，接入多少实时事实都满足不了该定义**。这是**契约缺陷**，按 `#941` 跟踪
+（改口径 / 加 `workspace_id` / 把消费者指向实时面），**不是待接入项**。实时准入不由该端点承载：
+判「现在能不能建 Job」看 `POST /v1/nexus/jobs` 的实际应答码（第 11 节），契约声明的实时报告是
+`GET /v1/nexus/jobs/admission-readiness`（带 `workspace_id`，当前仍是占位、跟踪 `#863`）。
 
 `DEL-535`（基线 `origin/main` `c0172a22`）当时在这里拿到的是 `503 model_catalogue_unavailable`，
 **不是角色没配**：catalog 要求定义里的 `binding_id` 等于发布的 `object_id`

@@ -408,12 +408,13 @@ Job 已是本错误码的 `failed` 时只补做隔离；他人写入的终态不
    `admission_leases.lease_id/operation_id/lease_state`、
    `submit_intents.submit_intent_id/lease_id/execution_state`、终止证据的
    `submit_intent_id/evidence_kind/execution_stopped/resources_released`；
-   不含规范请求正文、不含对账写权限）。账本那两列是调度状态，不是请求内容——三个账本标记
-   全部由它们算出，缺授权时两条查询都会整体降级为 `unavailable (permission)`。
+   不含规范请求正文、不含对账写权限）。账本的这两列（`last_outcome`/`next_check_at_us`）是
+   调度状态，不是请求内容——三个账本标记全部由它们算出，缺授权时两条查询都会整体降级为
+   `unavailable (permission)`。
    把这个角色的 DSN 配进 `SPEECHNEXUS_READINESS_CANCELLATION_DSN` 即可；不配就只有上面
    第二/第四种形态，逐条明细改用本节下面的只读钻取查询（由迁移/运维身份执行）。
 
-   **升级必做**：既有部署的该身份若还是旧的四列授权（账本只有 `job_id/settled_at_us`），
+   **升级必做**：既有部署的该身份若还是旧的两列授权（账本只有 `job_id/settled_at_us`），
    升级后必须以 owner 重跑 `cancellation_debt_reader_grants`，否则 `cancellation_debt`
    的两条查询（完整形态与 Job 级降级形态）都读不到新列，读面变成
    `cancellation_debt: unavailable (permission)`（不会让 `/readyz` 失败，但会失去 Job 级

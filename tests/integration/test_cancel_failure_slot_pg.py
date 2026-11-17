@@ -881,6 +881,9 @@ def test_a_future_check_is_not_due_now_and_not_claimable_yet(
 
         _install_client(monkeypatch, box.job_id, ACTIVE_DOCUMENT_STATE)
         reconciler = _reconciler(box)
+        # The row is scheduled one hour past the database clock the probe reads; this
+        # explicit claim clock stays far earlier than that instant, so both readers
+        # agree it is not due until the UPDATE below brings the schedule forward.
         now_us = ACCEPTED_AT_US + WINDOW_US + 1
         before = asyncio.run(reconciler.run_once(now_us=now_us))
         assert before.claimed == 0

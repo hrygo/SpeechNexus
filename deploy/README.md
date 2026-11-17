@@ -981,10 +981,10 @@ SELECT 且拒绝任何写权限，未配置时列表返回 `503 model_binding_se
 声明面因此新增三张关系的列级只读（`speech_jobs`、`speech_job_cancellation_fences`、
 `speech_job_cancellation_reconciliations`）；可选的取消债务探针身份同时新增
 `execution_stop_evidence` 与 `submit_intents.submit_intent_id`，其账本授权从两列
-（`job_id`、`settled_at_us`）扩到四列（再加 `last_outcome`、`next_check_at_us`）。任何配置了
-`SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL` 或 `SPEECHNEXUS_READINESS_CANCELLATION_DSN`
-的环境，升级时都必须以 owner 重跑 `quarantine_release_grants` 与
-`cancellation_debt_reader_grants` 两个函数。漏跑的可自查信号有四类，都**不会**让
+（`job_id`、`settled_at_us`）扩到四列（再加 `last_outcome`、`next_check_at_us`）。配置了
+`SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL` 的环境，升级时必须以 owner 重跑
+`quarantine_release_grants`；配置了 `SPEECHNEXUS_READINESS_CANCELLATION_DSN` 的环境还必须
+重跑 `cancellation_debt_reader_grants`。漏跑的可自查信号有四类，都**不会**让
 `/readyz` 失败（③ 与 ④ 互斥：④ 是账本授权已生效时正常的 Job 级降级）：
 
 1. 隔离释放角色：API 启动被拒并点名被拒的表/列
@@ -998,9 +998,9 @@ SELECT 且拒绝任何写权限，未配置时列表返回 `503 model_binding_se
    `cancellation_debt: unavailable (permission)`。Job 级降级查询与完整查询读同一批账本列，
    因此也不会退化成下面第 4 类的 Job 级明细；
 4. 账本四列已授权、但该身份仍读不到租约/执行/终止证据表：这是正常的 Job 级降级，detail
-   仍以 `(jobs: lease-unread=…; never claimed: …; never claimable (exhausted): …;
-   due now: …)` 报出三个账本标记；detail 里没有这三个标记、或整个退化为第 3 类，说明账本
-   列授权没生效。
+   按账本事实打印**命中的**标记（`never claimed` / `never claimable (exhausted)` /
+   `due now`），三者按行互斥、只打印非零项。能看到这些标记就说明账本列授权已生效；整个
+   detail 退化为第 3 类则说明还没生效。
 
 `GRANT` 对下一次查询即生效：同一 `SPEECHNEXUS_READINESS_CANCELLATION_DSN`/角色的探针在
 下一轮 `/readyz` 轮询就能读到新授权，**不需要**重启 API；只有把该 DSN 换成新角色才需要

@@ -1217,9 +1217,11 @@ Artifact 桶与 gateway staging 结果桶的存在和版本化，全部通过后
 `speech_job_cancellation_reconciliations` 三张关系的列级只读；可选的取消债务探针身份
 （`SPEECHNEXUS_READINESS_CANCELLATION_DSN`）同时新增 `execution_stop_evidence` 与
 `submit_intents.submit_intent_id`，账本授权从两列（`job_id`、`settled_at_us`）扩到四列
-（再加 `last_outcome`、`next_check_at_us`）。任何配置了这两个键的环境，升级时都必须以
-owner 重跑 `quarantine_release_grants` 与 `cancellation_debt_reader_grants`。漏跑的可自查
-信号有四类（③ 与 ④ 互斥：④ 是账本授权已生效时正常的 Job 级降级）：
+（再加 `last_outcome`、`next_check_at_us`）。配置了
+`SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL` 的环境，升级时必须以 owner 重跑
+`quarantine_release_grants`；配置了 `SPEECHNEXUS_READINESS_CANCELLATION_DSN` 的环境还必须
+重跑 `cancellation_debt_reader_grants`。漏跑的可自查信号有四类（③ 与 ④ 互斥：④ 是账本
+授权已生效时正常的 Job 级降级）：
 
 1. 隔离释放角色：API 启动被拒并点名被拒的表/列（`Quarantine release startup rejected
    (... declared surface at <table>.<column>)`）；
@@ -1228,9 +1230,10 @@ owner 重跑 `quarantine_release_grants` 与 `cancellation_debt_reader_grants`�
    的部署不适用这一条；
 3. 取消债务探针身份仍是旧的两列账本授权：探针整体是
    `cancellation_debt: unavailable (permission)`，而不是 Job 级降级形态；
-4. 账本四列已授权、仍读不到租约/执行/终止证据表：这是正常的 Job 级降级，detail 仍报
-   `never claimed` / `never claimable (exhausted)` / `due now` 三个标记；detail 里没有这几个
-   标记、或整个退化为第 3 类，说明账本列授权没生效。
+4. 账本四列已授权、仍读不到租约/执行/终止证据表：这是正常的 Job 级降级，detail 按账本
+   事实打印**命中的**标记（`never claimed` / `never claimable (exhausted)` / `due now`），
+   三者按行互斥、只打印非零项。能看到这些标记就说明账本列授权已生效；整个 detail 退化为
+   第 3 类则说明还没生效。
 
 这些信号都**不会**让 `/readyz` 失败。`GRANT` 对下一次查询即生效：同一 DSN/角色的探针在
 下一轮轮询就恢复，不需要重启 API；只有更换 DSN 指向新角色时才要重启重新装配。隔离释放

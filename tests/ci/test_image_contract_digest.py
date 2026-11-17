@@ -19,6 +19,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import ModuleType
+from typing import cast
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts/dev-env/check-image-contract-digest.py"
@@ -47,7 +48,7 @@ class ScanTests(unittest.TestCase):
                 path = bundle / "assets" / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(content)
-            return CHECK.scan(bundle)
+            return cast(tuple[dict[str, list[str]], list[str], bool], CHECK.scan(bundle))
 
     def test_the_baked_digest_is_found_and_the_fixture_is_not_taken_for_it(self) -> None:
         candidates, fixtures, guard = self.scan(

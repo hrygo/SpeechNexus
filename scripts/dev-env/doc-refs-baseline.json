@@ -4,9 +4,9 @@
   "terminal": [],
   "records": {
     "docs/reviews": {
-      "AMBIGUOUS": 88,
-      "MISSING": 23,
-      "OUT_OF_RANGE": 1
+      "AMBIGUOUS": 127,
+      "MISSING": 24,
+      "OUT_OF_RANGE": 3
     },
     "docs/validation": {
       "AMBIGUOUS": 1

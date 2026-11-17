@@ -1,6 +1,7 @@
 """Encoded audio staging uses one private, bounded PUT and fixed-version readback."""
 
 import asyncio
+import time
 from dataclasses import replace
 from typing import Any
 
@@ -12,6 +13,11 @@ from speechnexus_gateway.domain.tts import TtsDeliveryError, TtsDeliveryFormat, 
 from speechnexus_gateway.domain.tts_results import PreparedTtsResult, TtsResultError
 from speechnexus_gateway.infrastructure.local_tts_encoder import LocalTtsEncoder
 from speechnexus_gateway.infrastructure.tts_results_minio import MinioTtsResults
+from tests.support.deadline_budget import (
+    assert_cut_at_deadline,
+    calibrated_budget,
+    trickle_frame_count,
+)
 from tests.unit.gateway.test_asr_results_deadline import Server
 from tests.unit.gateway.test_asr_results_deadline import server as server
 from tests.unit.gateway.test_tts import AUDIO, DELIVERY, POLICY, FakeEncoder, FakeSynthesizer, build
@@ -36,6 +42,18 @@ def store() -> MinioTtsResults:
         access_key="synthetic",
         secret_key="synthetic",
         timeout_seconds=2,
+    )
+
+
+def bounded_store(server: Server, timeout_seconds: float) -> MinioTtsResults:
+    """A result store pointed at the shared loopback fake with one total deadline."""
+
+    return MinioTtsResults(
+        endpoint=f"http://127.0.0.1:{server.server_port}",
+        bucket="sn-audio-test",
+        access_key="synthetic",
+        secret_key="synthetic",
+        timeout_seconds=timeout_seconds,
     )
 
 
@@ -229,24 +247,40 @@ def test_invalid_delivery_bound_is_rejected_before_synthesis(max_payload: Any) -
 async def test_audio_trickle_headers_obey_one_total_deadline(server: Server, method: str) -> None:
     result = prepared()
     server.slow_key = "/" + "sn-audio-test/" + result.reference("sn-audio-test").object_key
+    # Calibrate with the slow stage disabled: the budget below has to outlive the
+    # fast upload path, and measuring that path on this machine is the only way to
+    # state that outliving as a bound instead of a guess. It used to be a flat
+    # 0.3 s, which a single stalled runner fast path could outlast (#944).
+    server.slow_method = ""
+    calibration = bounded_store(server, 5)
+    try:
+        budget = await calibrated_budget(lambda: calibration.stage(result, cancelled=lambda: False))
+    finally:
+        calibration.close()
     server.slow_method = method
-    value = MinioTtsResults(
-        endpoint=f"http://127.0.0.1:{server.server_port}",
-        bucket="sn-audio-test",
-        access_key="synthetic",
-        secret_key="synthetic",
-        # The budget only has to outlive the upload itself so the slow response is
-        # really reached. It stays a quarter of the 1.2 s trickle the peer keeps
-        # writing, so only a total deadline can end the call this early.
-        timeout_seconds=0.3,
+    # The peer keeps trickling long past the budget, so only a total deadline can
+    # end the upload this early, and it has to do so while the peer still writes.
+    server.trickle_frames = trickle_frame_count(budget)
+    server.calls.clear()
+    value = bounded_store(server, budget)
+    started = time.monotonic()
+    try:
+        with pytest.raises(TtsResultError, match="tts_result_deadline_exceeded"):
+            await value.stage(result, cancelled=lambda: False)
+    finally:
+        value.close()
+    elapsed = time.monotonic() - started
+    fast_path = None if server.started_at is None else server.started_at - started
+    assert_cut_at_deadline(
+        budget=budget,
+        elapsed=elapsed,
+        fast_path=fast_path,
+        started=server.started.is_set(),
+        trickled=server.trickled.is_set(),
+        calls=[verb for verb, _ in server.calls],
     )
-    with pytest.raises(TtsResultError, match="tts_result_deadline_exceeded"):
-        await value.stage(result, cancelled=lambda: False)
-    # The peer trickles a header every 30 ms for 1.2 s; a per-packet inactivity
-    # timeout would run that long. It never finished here, so the total deadline is
-    # what stopped the upload, and the accepted body was not rolled back.
-    assert not server.trickled.is_set()
-    assert server.started.is_set()
+    # The accepted body was not rolled back: a local deadline is not a retry or
+    # rollback signal.
     assert server.bodies[server.slow_key] == result.body
     assert sum(verb == "PUT" for verb, _ in server.calls) == 1
 

@@ -14,6 +14,12 @@ import pytest
 
 from speechnexus_gateway.domain.asr_results import AsrResultError
 from speechnexus_gateway.infrastructure.asr_results_minio import MinioAsrResults
+from tests.support.deadline_budget import (
+    TRICKLE_INTERVAL_SECONDS,
+    assert_cut_at_deadline,
+    calibrated_budget,
+    trickle_frame_count,
+)
 from tests.unit.gateway.test_asr_results_minio import RESULT
 
 
@@ -23,9 +29,11 @@ class Server(ThreadingHTTPServer):
     def __init__(self) -> None:
         super().__init__(("127.0.0.1", 0), Handler)
         self.slow_method = "PUT"
+        self.trickle_frames = 40
         self.started = threading.Event()
-        # Set only when the whole 1.2 s trickle was written; proving it stayed
-        # clear is how the test shows the client stopped the read itself.
+        self.started_at: float | None = None
+        # Set only when the whole trickle was written; proving it stayed clear
+        # is how the test shows the client stopped the read itself.
         self.trickled = threading.Event()
         self.calls: list[tuple[str, str]] = []
         self.bodies: dict[str, bytes] = {}
@@ -35,6 +43,10 @@ class Server(ThreadingHTTPServer):
             + "/"
             + (RESULT.reference("sn-output-test").object_key)
         )
+
+    def mark_started(self) -> None:
+        self.started_at = time.monotonic()
+        self.started.set()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -62,12 +74,12 @@ class Handler(BaseHTTPRequestHandler):
         try:
             self.wfile.write(b"HTTP/1.1 200 OK\r\n")
             if self.command == self.server.slow_method and path == self.server.slow_key:
-                self.server.started.set()
+                self.server.mark_started()
                 # Every packet arrives well within a socket inactivity timeout.
-                for index in range(40):
+                for index in range(self.server.trickle_frames):
                     self.wfile.write(f"X-Trickle-{index}: synthetic\r\n".encode())
                     self.wfile.flush()
-                    time.sleep(0.03)
+                    time.sleep(TRICKLE_INTERVAL_SECONDS)
                 self.server.trickled.set()
             length = len(body) if self.command != "PUT" else 0
             self.wfile.write(
@@ -113,28 +125,47 @@ def adapter(server: Server, tmp_path: Path, timeout: float) -> MinioAsrResults:
 async def test_trickle_headers_cannot_extend_total_deadline(
     server: Server, tmp_path: Path, method: str
 ) -> None:
+    # Calibrate with the slow stage disabled: the budget below has to outlive the
+    # fast PUT/HEAD/GET path, and measuring that path on this machine is the only
+    # way to state that outliving as a bound instead of a guess. It used to be a
+    # flat 0.3 s, which a single stalled runner fast path could outlast (#944).
+    server.slow_method = ""
+    calibration = adapter(server, tmp_path, 5)
+    try:
+        budget = await calibrated_budget(lambda: calibration.stage(RESULT, cancelled=lambda: False))
+    finally:
+        calibration.close()
     server.slow_method = method
-    # The budget only has to outlive the fast PUT/HEAD/GET setup so the slow stage
-    # is really exercised. It stays a quarter of the 1.2 s trickle the peer keeps
-    # writing, so only a total deadline can end the read this early.
-    value = adapter(server, tmp_path, 0.3)
+    # The peer keeps trickling long past the budget, so only a total deadline can
+    # end the read this early, and it has to do so while the peer still writes.
+    server.trickle_frames = trickle_frame_count(budget)
+    server.calls.clear()
+    value = adapter(server, tmp_path, budget)
+    started = time.monotonic()
     try:
         with pytest.raises(AsrResultError, match="asr_result_deadline_exceeded"):
             await value.stage(RESULT, cancelled=lambda: False)
-        # The peer never finished trickling: the read was cut, not drained.
-        assert not server.trickled.is_set()
-        assert server.started.is_set()
-        assert [verb for verb, _ in server.calls] == {
-            "PUT": ["PUT"],
-            "HEAD": ["PUT", "HEAD"],
-            "GET": ["PUT", "HEAD", "GET"],
-        }[method]
-        # The server accepted the bytes before its stalled response: a local
-        # deadline must never be interpreted as rollback or permission to retry.
-        assert server.bodies[server.slow_key] == RESULT.body
-        assert not any(method == "DELETE" for method, _ in server.calls)
     finally:
         value.close()
+    elapsed = time.monotonic() - started
+    fast_path = None if server.started_at is None else server.started_at - started
+    assert_cut_at_deadline(
+        budget=budget,
+        elapsed=elapsed,
+        fast_path=fast_path,
+        started=server.started.is_set(),
+        trickled=server.trickled.is_set(),
+        calls=[verb for verb, _ in server.calls],
+    )
+    assert [verb for verb, _ in server.calls] == {
+        "PUT": ["PUT"],
+        "HEAD": ["PUT", "HEAD"],
+        "GET": ["PUT", "HEAD", "GET"],
+    }[method]
+    # The server accepted the bytes before its stalled response: a local
+    # deadline must never be interpreted as rollback or permission to retry.
+    assert server.bodies[server.slow_key] == RESULT.body
+    assert not any(method == "DELETE" for method, _ in server.calls)
 
 
 @pytest.mark.parametrize("method", ["PUT", "HEAD", "GET"])

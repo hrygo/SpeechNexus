@@ -980,17 +980,37 @@ SELECT 且拒绝任何写权限，未配置时列表返回 `503 model_binding_se
 **升级必做**：该出口现在自己核验「围栏已受理、账本未 `settled`、Job 仍 `cancelling`」，
 声明面因此新增三张关系的列级只读（`speech_jobs`、`speech_job_cancellation_fences`、
 `speech_job_cancellation_reconciliations`）；可选的取消债务探针身份同时新增
-`execution_stop_evidence` 与 `submit_intents.submit_intent_id`。任何配置了
-`SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL` 或 `SPEECHNEXUS_READINESS_CANCELLATION_DSN`
-的环境，升级时都必须以 owner 重跑 `quarantine_release_grants` 与
-`cancellation_debt_reader_grants` 两个函数。漏跑只有四种可自查的信号：API 启动被拒并
-点名表列（`app.py` 的组合根拒绝装配，不会带错身份上线）；只跑操作员 CLI 时退出码 3、
-输出 `unavailable: quarantine_release_privilege_missing`；探针降级为
-`cancellation_debt: … (jobs: lease-unread=1) … [lease detail unavailable: permission]`；
-派发债务探针整体报 `stop_evidence_debt: unavailable (permission)`——它比
-`cancellation_debt` 多读四列（`speech_jobs.updated_at_us` 与
-`submit_intents.cleanup_state`/`dispatched_at_us`/`engine_request_id`），旧授权面下会整体降级，
-而 `cancellation_debt` 不受影响。四种都**不会**让 `/readyz` 失败。
+`execution_stop_evidence` 与 `submit_intents.submit_intent_id`，其账本授权从两列
+（`job_id`、`settled_at_us`）扩到四列（再加 `last_outcome`、`next_check_at_us`）。配置了
+`SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL` 的环境，升级时必须以 owner 重跑
+`quarantine_release_grants`；配置了 `SPEECHNEXUS_READINESS_CANCELLATION_DSN` 的环境还必须
+重跑 `cancellation_debt_reader_grants`。漏跑的可自查信号有四类，都**不会**让
+`/readyz` 失败（③ 与 ④ 互斥：④ 是账本授权已生效时正常的 Job 级降级）：
+
+1. 隔离释放角色：API 启动被拒并点名被拒的表/列
+   （`Quarantine release startup rejected (... declared surface at <table>.<column>)`，
+   `backend/src/speechnexus_backend/quarantine_release_runtime.py` 的启动校验在组合根拒绝
+   装配，不会带错身份上线）；
+2. 隔离释放角色：只跑操作员 CLI 时退出码 3、输出
+   `unavailable: quarantine_release_privilege_missing`。只配置了
+   `SPEECHNEXUS_READINESS_CANCELLATION_DSN`、没有隔离释放角色的部署不适用这一条；
+3. 取消债务探针身份仍是旧的两列账本授权：探针整体报
+   `cancellation_debt: unavailable (permission)`。Job 级降级查询与完整查询读同一批账本列，
+   因此也不会退化成下面第 4 类的 Job 级明细；
+4. 账本四列已授权、但该身份仍读不到租约/执行/终止证据表：这是正常的 Job 级降级，detail
+   按账本事实打印**命中的**标记（`never claimed` / `never claimable (exhausted)` /
+   `due now`），三者按行互斥、只打印非零项。能看到这些标记就说明账本列授权已生效；整个
+   detail 退化为第 3 类则说明还没生效。
+
+`GRANT` 对下一次查询即生效：同一 `SPEECHNEXUS_READINESS_CANCELLATION_DSN`/角色的探针在
+下一轮 `/readyz` 轮询就能读到新授权，**不需要**重启 API；只有把该 DSN 换成新角色才需要
+重启，让组合根重新装配探针。隔离释放角色的结论来自启动期逐列校验
+（`backend/src/speechnexus_backend/quarantine_release_runtime.py`），重跑授权后必须重新
+启动（或首次启动）API 才会通过，运行中的进程不会重新校验 ACL。同族的
+`stop_evidence_debt` 不读账本这两列，旧账本授权下仍可执行，不因这次扩列降级。降级形态与
+三个标记的语义见
+[production-jobs.md 的可见面](../docs/components/production-jobs.md#隔离不了的时候可见面与处置)，
+此处不重复定义。
 
 `compose.yaml` 的 api 环境以空默认透传本变量，未配置的既有部署仍可渲染并启动，此时
 `POST /v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases` 返回

@@ -847,6 +847,56 @@ def test_a_claimable_acceptance_is_reported_as_due_now(
         assert batch.claimed == 1
 
 
+def test_a_future_check_is_not_due_now_and_not_claimable_yet(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ledger row scheduled in the future is neither ``due now`` nor claimable.
+
+    ``next_check_at_us`` is a schedule, not a claim stamp: until it arrives the row
+    says nothing about who is advancing it, so the detail must not print ``due now``.
+    This is the negative half of ``due now`` -- without it, a CASE that treats any
+    non-NULL schedule as due would still pass every positive case, because those
+    rows are all in the past. The row is also not ``never claimed`` (a ledger row
+    exists) and not ``never claimable (exhausted)`` (the worker will select it).
+    """
+    with _sandbox((LEASE, ACTIVE_DOCUMENT_STATE)) as box:
+        # One hour past the database clock, which is the clock both the probe's
+        # ``due`` branch and its grace filter read.
+        box.execute(
+            f"INSERT INTO {RECONCILIATION_TABLE} (job_id, attempts, next_check_at_us, "
+            "last_outcome, settled_at_us, updated_at_us) VALUES (%s, 1, "
+            "CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) + 3600000000, "
+            "'pending', NULL, 1)",
+            (box.job_id,),
+        )
+
+        scheduled = asyncio.run(_debt_probe(box).check())
+        assert scheduled is not None
+        assert scheduled.startswith("cancellation_debt: 1 accepted cancellation(s)")
+        assert "due now" not in scheduled
+        assert "never claimed" not in scheduled
+        assert "never claimable" not in scheduled
+        # No schedule scope at all: the drill-down follows the lease scope directly.
+        assert "(held leases: execution-unknown=1): " in scheduled
+
+        _install_client(monkeypatch, box.job_id, ACTIVE_DOCUMENT_STATE)
+        reconciler = _reconciler(box)
+        # The row is scheduled one hour past the database clock the probe reads; this
+        # explicit claim clock stays far earlier than that instant, so both readers
+        # agree it is not due until the UPDATE below brings the schedule forward.
+        now_us = ACCEPTED_AT_US + WINDOW_US + 1
+        before = asyncio.run(reconciler.run_once(now_us=now_us))
+        assert before.claimed == 0
+
+        # The schedule arrives: the same worker and clock now select the row.
+        box.execute(
+            f"UPDATE {RECONCILIATION_TABLE} SET next_check_at_us = 0 WHERE job_id = %s",
+            (box.job_id,),
+        )
+        after = asyncio.run(reconciler.run_once(now_us=now_us))
+        assert after.claimed == 1
+
+
 def test_the_schedule_scopes_count_jobs_across_a_mixed_deployment() -> None:
     """Three ledger facts on one read: exact per-Job counts, independent of lease rows.
 

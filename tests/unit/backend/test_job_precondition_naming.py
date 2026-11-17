@@ -94,6 +94,40 @@ def test_an_unpublished_binding_without_an_instance_names_the_engine() -> None:
     assert "register" in message.lower()
 
 
+def test_registered_instances_without_a_publication_name_the_publication_step() -> None:
+    """The two repairs behind one 422 are distinguishable, so the answer picks one.
+
+    "No published binding and no instance" is one state; "instances exist but no
+    binding revision is published" is another, and only the first is repaired by
+    registering the engine. A single sentence for both sent the operator of the
+    second state back to engine registration, which changes nothing. This pins the
+    registration-fact arm: the answer names the states and the publication step,
+    and it must not claim that no instance is registered (#877 item 4).
+    """
+
+    class RegisteredButUnpublished(Facts):
+        def latest_binding(self, model_id: str) -> Any:
+            return None
+
+        def engine_instance_states(self, model_id: str) -> tuple[str, ...]:
+            return ("draining", "stopped")
+
+    service = PublicJobs(RegisteredButUnpublished(), Store(), now_us=lambda: NOW)
+
+    with pytest.raises(ModelNotPublishedError) as raised:
+        service.submit(
+            parse("JobCreateRequest", _body(model="model-asr-1")),
+            request_id="req-registered-unpublished",
+            idempotency_key=None,
+        )
+
+    message = str(raised.value)
+    assert "draining" in message and "stopped" in message
+    assert "publish the binding" in message
+    # Registration is not what is missing here, so the other arm's sentence is wrong.
+    assert "no engine instance is registered" not in message
+
+
 async def test_the_http_answer_carries_the_named_precondition() -> None:
     class Unpublished:
         def submit(self, *args: Any, **kwargs: Any) -> Any:

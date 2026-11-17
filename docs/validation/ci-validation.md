@@ -620,9 +620,9 @@ uv run pytest tests/ci tests/contract/test_ci_workflow.py tests/unit/test_integr
 - 文件名形如 `<YYYY-MM-DD>-*.md`；
 - 一级标题写明审查／复核／核对，且开头 400 字符引用 issue/PR 编号（`#<数字>`）。
 
-只查文件名不够：把终态文档另存成合规文件名，它的引用就全部降级成「记录」不计门禁。加内容判据后，当前 68 份审查报告全部通过，而 `docs/` 下 123 个终态文档的原文搬到合规文件名下全部被拒（`docs/architecture/speech-api.md` 也在其中——它的首个 `#<数字>` 是目录锚点 `(#1-…`，不是 issue 号）。布局不合约定时检查直接失败，且不能用基线接受——基线只登记引用问题，不登记目录布局。
+只查文件名不够：把终态文档另存成合规文件名，它的引用就全部降级成「记录」不计门禁。加内容判据后，2026-11-17 实测 79 份审查报告全部通过，而 `docs/` 下 130 个终态文档的原文搬到合规文件名下全部被拒（`docs/architecture/speech-api.md` 也在其中——它的首个 `#<数字>` 是目录锚点 `(#1-…`，不是 issue 号）。布局不合约定时检查直接失败，且不能用基线接受——基线只登记引用问题，不登记目录布局。
 
-这条守卫防的是误放，不是对抗伪装：刻意在开头补一句「审查 #859」仍能通过，那样的改动同时改了路径与内容、在 diff 里可见。`tests/ci/test_doc_refs_ratchet.py` 对当前语料逐份核对这两条判据仍然成立（68 份报告通过、123 个终态文档副本被拒），文档里这一句不靠人工记忆保鲜。
+这条守卫防的是误放，不是对抗伪装：刻意在开头补一句「审查 #859」仍能通过，那样的改动同时改了路径与内容、在 diff 里可见。`tests/ci/test_doc_refs_ratchet.py` 对当前语料逐份核对这两条判据仍然成立（2026-11-17 实测 79 份报告通过、130 个终态文档副本被拒），文档里这一句不靠人工记忆保鲜。
 
 ### 围栏代码块不算引用
 
@@ -631,9 +631,40 @@ uv run pytest tests/ci tests/contract/test_ci_workflow.py tests/unit/test_integr
 
 ### 棘轮与基线
 
-`--baseline <json>` 只对基线之外的新增终态问题变红；`terminal` 为空列表时等价全量门禁。[doc-refs-baseline.json](../../scripts/dev-env/doc-refs-baseline.json) 就是这样一份基线：`terminal: []`，`records` 记录过程记录的问题计数（`docs/reviews`：`AMBIGUOUS=88`、`MISSING=23`、`OUT_OF_RANGE=1`；`docs/validation`：`AMBIGUOUS=1`），只用于在报告里显示增量，不参与判定。要接受一条终态问题只能改 `terminal` 列表，那次改动在 PR diff 里可见，不是静默放行；`--write-baseline` 按当前结果重写基线，基线登记的问题消失时报告打印 `BASELINE stale=`，由同一条命令缩短。
+`--baseline <json>` 只对基线之外的新增终态问题变红；`terminal` 为空列表时等价全量门禁。[doc-refs-baseline.json](../../scripts/dev-env/doc-refs-baseline.json) 就是这样一份基线：`terminal: []`，`records` 记录过程记录的问题计数（2026-11-17 刷新后为 `docs/reviews`：`AMBIGUOUS=127`、`MISSING=24`、`OUT_OF_RANGE=3`；`docs/validation`：`AMBIGUOUS=1`），只用于在报告里显示增量，不参与判定。要接受一条终态问题只能改 `terminal` 列表，那次改动在 PR diff 里可见，不是静默放行；`--write-baseline` 按当前结果重写基线，基线登记的问题消失时报告打印 `BASELINE stale=`，由同一条命令缩短。过程记录有实质变化时按同一命令刷新 `records`——刷新只改变增量显示，不改变任何判定（2026-11-17 的那次刷新见下节的刷新区块）。
 
 输出固定四段：逐条问题（终态问题在前，新增标注 `[新增,基线外]`、基线已接受标注 `[基线已接受]`；过程记录默认只给计数，`--show-records` 逐条打印）、`SUMMARY`（`refs` 参与判定的引用数、`fenced` 围栏内跳过数、`fenced_terminal` 其中来自终态文档的条数、各判定计数）、`SCOPE`／`RECORDS`（终态与过程记录分目录计数，带基线时给出 `旧->新` 增量）、`RESULT PASS|FAIL`。退出码 0 表示没有新增终态问题（过程记录的增长不影响），1 表示有新增终态问题或目录布局不合约定，2 表示环境不可用（不在 git 仓库、扫描路径不存在、基线不可读）。
+
+### AMBIGUOUS 判据审计
+
+`AMBIGUOUS` 的含义是「写法不足以定位」，不是路径错误；判据是否过严要逐目标核对，不能用一张忽略表收场（#859 的验收要求）。2026-11-17 对当次 128 条 `AMBIGUOUS` 逐目标审计：
+
+- **全部落在过程记录**：`docs/reviews` 127 条、dated 记录 `docs/validation/2026-11-14-job-workspace-default.md` 1 条；**终态文档 0 条**——两侧终态问题数都是 0，所以接入 CI 时就是全量门禁。
+- **19 个不同目标，全部是裸文件名**，各自在仓库里的同名文件数为 2–7 个：`jobs.py`（3）、`readiness.py`（7）、`app.py`（5）、`settings.py`（4）、`main.py`（4）、`profile_publications.py`（4）、`admission.py`（3）、`runtime_intents.py`（3）、`assets.py`（3）、`builtin_voice_qualification.py`（3）、`public_jobs.py`（2）、`App.tsx`（2）、`runtime.py`（2）、`voice_drafts.py`（2）、`owners.py`（2）、`test_production_jobs.py`（2）、`test_runtime_delivery.py`（2）、`demo-transport.ts`（2），以及一条省略号截断路径 `backend/.../domain/leases.py`（同名 2 个）。
+- **0 条判据过严**：逐目标核对同名文件数，没有任何「仓库里只有一个同名文件却被判歧义」的情况；省略号那条属写法不足，归入同一类。
+- **处置：不放开判据、不加忽略表。** 过程记录按「保留原时点事实」只计数不门禁；终态文档出现同类写法立即红，基线 `terminal` 保持为空（没有接受任何例外）。
+
+基线 `records` 的刷新与这次审计同批完成。刷新只改变增量显示，不改变任何判定：
+
+```text
+$ # 刷新前：基线仍是接入时的计数，RECORDS 显示过程记录的累计增量
+SUMMARY refs=1856 fenced=129 fenced_terminal=4 AMBIGUOUS=128 EXTERNAL=1 MISSING=24 OK=1700 OUT_OF_RANGE=3
+SCOPE terminal problems=0 new=0 accepted=0
+SCOPE record problems=155 docs/reviews AMBIGUOUS=127 MISSING=24 OUT_OF_RANGE=3; docs/validation AMBIGUOUS=1
+RECORDS docs/reviews AMBIGUOUS 88->127 (+39) MISSING 23->24 (+1) OUT_OF_RANGE 1->3 (+2)
+RESULT PASS                                    # exit=0
+
+$ python3 scripts/dev-env/check-doc-refs.py --write-baseline scripts/dev-env/doc-refs-baseline.json
+WROTE scripts/dev-env/doc-refs-baseline.json terminal=0 records=155
+
+$ # 刷新后：计数与现状一致，RECORDS 不再打印增量，终态判定不变
+SUMMARY refs=1856 fenced=129 fenced_terminal=4 AMBIGUOUS=128 EXTERNAL=1 MISSING=24 OK=1700 OUT_OF_RANGE=3
+SCOPE terminal problems=0 new=0 accepted=0
+SCOPE record problems=155 docs/reviews AMBIGUOUS=127 MISSING=24 OUT_OF_RANGE=3; docs/validation AMBIGUOUS=1
+RESULT PASS                                    # exit=0，new=0
+```
+
+过程记录的计数不是门禁：`docs/reviews` 会继续增长，增长只改变这行报告里的数字，不阻塞合并；要让它重新可见，在 `docs/reviews/` 有实质变化的同一 PR 里再跑一次 `--write-baseline`。
 
 ### 作业与门禁
 
@@ -641,7 +672,7 @@ uv run pytest tests/ci tests/contract/test_ci_workflow.py tests/unit/test_integr
 
 ### 实测反例
 
-四段都在本机以 Python 3.12（CI runner 的系统 Python 版本）执行，命令与 CI 相同：第一段是基线树；第二、三段分别往终态文档与过程记录里注入坏引用；第四段把终态文档搬到 `docs/reviews/` 的合规文件名下。计数随 `docs/` 内容变化，包括本节自身的改动，以实际运行输出为准：
+四段是 2026-11-16 接入 CI 时的快照，都在本机以 Python 3.12（CI runner 的系统 Python 版本）执行，命令与 CI 相同：第一段是基线树；第二、三段分别往终态文档与过程记录里注入坏引用；第四段把终态文档搬到 `docs/reviews/` 的合规文件名下。计数随 `docs/` 内容变化，包括本节自身的改动，以实际运行输出为准；基线已于 2026-11-17 刷新（见上节刷新区块），第三段的 `RECORDS` 增量因此不再与当前基线逐字一致：
 
 ```text
 $ python3 scripts/dev-env/check-doc-refs.py --baseline scripts/dev-env/doc-refs-baseline.json
@@ -685,6 +716,7 @@ RESULT FAIL
 ### 覆盖边界
 
 - 只判「路径存在、行号不越界、裸名不歧义」，不证明目标行内容与文档描述相符；`--show` 打印被引用行原文供人工核对。
+- 只判文件与行号，不判断言：门禁不检查被引用文件里文档所说的符号、断言或行为是否还在。保留被引用文件、只删掉它里面的一条断言、使后续内容仍在原行号范围内，不会变红；这类漂移靠 `--show` 人工核对或语义门禁补位（`check-doc-statements.py` 只钉住少数已经漂移过的陈述）。来源：#935 的审查。
 - `AMBIGUOUS` 是写法不足以定位，不是错误路径；判据不解引用符号，也不看被引用文件是否还承担文档所说的职责（行号合法但指向错符号的漂移对它隐形）。
 - 围栏内的 `路径:行号` 完全不可见，包括把真实引用写进围栏的情况；终态文档这部分计入 `fenced_terminal=`（当前 4 条，全部来自本节证据块），把围栏排除收窄到只对过程记录生效是未做的后续项——证据块自身要在围栏里贴失败输出。
 - 只扫 `docs/` 下的 Markdown：根目录与各子目录的 `README`／`AGENTS.md`、`.agents/` 下文档、代码注释里的引用不在范围内（`--path` 可临时扩大）。

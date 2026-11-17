@@ -6,9 +6,13 @@ record is counted. #953 found rows that said 达标 while the tier column still 
 C. The table is hand-written prose, so this module parses it instead of trusting a
 reader to notice the contradiction:
 
-* a 达标 row must claim A-tier evidence in `A 档` (`A…` or `有…`, not `无`/`B`/`C`);
+* a 达标 row must claim A-tier evidence in `A 档`: exactly `A`/`有`, or one of them
+  plus a scope note in parentheses; prefix-only values such as `A 档为 0` and `A档为0`
+  are rejected, as is a note that is exactly `无`;
 * an `A 档` cell of 无 must not sit on a 达标 row;
 * the §2 table is the 12 MVP rows, numbered 1..12 in order, seven cells wide.
+
+It does not check §1's 9/2/1 arithmetic or the release notes.
 
 The first test runs on the real document. The remaining tests run the same checks on
 synthetic tables, so the red side is proven in CI and not only by a one-off mutation.
@@ -28,7 +32,7 @@ TIER_COLUMN = "A 档"
 VERDICT_COLUMN = "判定"
 ROW_NUMBER = re.compile(r"^\|\s*(\d{1,2})\s*\|")
 PIPE = re.compile(r"(?<!\\)\|")
-A_CLAIM = re.compile(r"^(?:\*\*)?(?:A|有)")
+CLAIM = re.compile(r"^(?P<kind>A|有)(?:（(?P<full>.*)）|\((?P<half>.*)\))?$")
 NO_A_CLAIM = re.compile(r"^(?:\*\*)?(?:无|B|C)(?![\w])")
 MVP_ROWS = tuple(range(1, 13))
 HEADER_WIDTH = 7
@@ -79,6 +83,20 @@ def is_done(verdict: str) -> bool:
     return "达标" in verdict and "未达标" not in verdict
 
 
+def claims_a(tier: str) -> bool:
+    """A tier cell is exactly `A`/`有` or one of them plus a scope note.
+
+    Prefix matching alone accepts `A 档为 0`/`A档为0`, the exact contradiction this
+    guard exists to catch. A note that is exactly `无` also counts as no claim; deeper
+    semantics of the note stay a human read.
+    """
+    match = CLAIM.match(tier)
+    if match is None:
+        return False
+    note = match.group("full") or match.group("half") or ""
+    return note.strip() != "无"
+
+
 def tier_claim_problems(header: list[str], rows: list[tuple[int, list[str]]]) -> list[str]:
     """A 达标 row must claim A-tier evidence in the `A 档` column."""
     index = header.index(TIER_COLUMN)
@@ -87,7 +105,7 @@ def tier_claim_problems(header: list[str], rows: list[tuple[int, list[str]]]) ->
     for number, row in rows:
         tier = row[index].replace("*", "").strip()
         verdict = row[verdict_index].replace("*", "").strip()
-        if is_done(verdict) and not A_CLAIM.match(tier):
+        if is_done(verdict) and not claims_a(tier):
             problems.append(f"row {number}: 判定 says 达标 but A 档 is {tier!r}")
     return problems
 
@@ -112,19 +130,25 @@ class MvpVerdictTableTests(unittest.TestCase):
         self.assertEqual(tier_claim_problems(header, rows), [])
         self.assertEqual(no_tier_done_problems(header, rows), [])
 
-    def test_a_done_row_without_a_tier_claim_is_rejected(self) -> None:
+    def test_a_done_row_without_a_real_tier_claim_is_rejected(self) -> None:
         header = ["#", TIER_COLUMN, VERDICT_COLUMN]
         rows = [
             (1, ["1", "**无**", "**达标**"]),
             (2, ["2", "**C**", "**达标**"]),
             (3, ["3", "**有（窄口径）**", "**达标**"]),
-            (4, ["4", "**B + C**", "未达标"]),
+            (4, ["4", "**A 档为 0**", "**达标**"]),
+            (5, ["5", "**A档为0**", "**达标**"]),
+            (6, ["6", "**A（无）**", "**达标**"]),
+            (7, ["7", "**B + C**", "未达标"]),
         ]
         self.assertEqual(
             tier_claim_problems(header, rows),
             [
                 "row 1: 判定 says 达标 but A 档 is '无'",
                 "row 2: 判定 says 达标 but A 档 is 'C'",
+                "row 4: 判定 says 达标 but A 档 is 'A 档为 0'",
+                "row 5: 判定 says 达标 but A 档 is 'A档为0'",
+                "row 6: 判定 says 达标 but A 档 is 'A（无）'",
             ],
         )
         self.assertEqual(

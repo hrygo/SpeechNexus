@@ -509,6 +509,54 @@ services:
 The `web` profile still selects the service; adding `--no-deps` starts the frontend
 without pulling the base API topology in, which is how a frontend-only check runs.
 
+#### Moving a built image to another host
+
+A host the criteria above put in the throttled row does not have to build: build where
+the route is ordinary and move the bytes. `docker save` writes only the final image's
+layers, so the build stage (`node:26.12.1-bookworm-slim`, the `pnpm` store, the sources)
+is not in the archive — it carries the nginx base and the built page, nothing else.
+
+```bash
+sha="$(git rev-parse HEAD)"
+docker save "speechnexus/web-workbench:${sha}" -o "web-workbench-${sha}.tar"
+# on the target host, in the directory that received the archive
+docker load -i "web-workbench-${sha}.tar"
+docker image inspect --format '{{.Id}}' "speechnexus/web-workbench:${sha}"
+```
+
+Measured at `acf633ff` (macOS arm64, Docker 29.9.3, both base images already local: the
+two `FROM` steps resolve in 0.0 s and the documented command above finishes in 26.08 s):
+`docker images` accounts the image as 95.9 MB across 12 layers, its uncompressed layer
+tars sum to 66.2 MB, and the archive is 26.7 MB; `gzip -9` over that archive gives
+26.6 MB, a 0.63 % saving, because each layer is already compressed inside it — transport
+the `.tar` as written. `docker load` restores the same image ID (`sha256:25dd2864…`); an
+ID that differs means the bytes changed in transit. That ID proves transport, not
+provenance: rebuilding the same commit on the same host yields a different ID, because
+BuildKit writes a Go pointer address into the `EXPOSE` history entry, while all 12 layer
+diffIDs stay equal (measured in the `#829` review). Compare
+`docker image inspect --format '{{json .RootFS.Layers}}'` before and after transport, and
+against the layer digests the building host recorded; never compare a rebuilt image's ID
+with the shipped one, and never use the ID as the "same version" anchor.
+
+What was loaded then has to say what it claims:
+
+```bash
+uv run python scripts/dev-env/check-image-contract-digest.py "speechnexus/web-workbench:${sha}"
+```
+
+[check-image-contract-digest.py](../scripts/dev-env/check-image-contract-digest.py) reads
+the contract digest baked into the loaded bundle and compares it with the digest under
+check. `--expect` takes exactly two sources: a value recomputed offline on the commit
+being checked, or the digest the building host recorded in its release record. It must
+not take the value the inspected deployment reports at `GET /v1/nexus/version` — that
+value comes from the deployment under check, so an altered bundle with an untouched label
+passes when compared with its own digest (`--expect <altered value>` exits 0 while
+`source commit` still names the built commit). Taking the wrong source makes the check
+prove nothing. With a right source, a `docker load` that delivered a different commit, or
+an image that predates the same-version guard, fails instead of merely carrying the tag.
+Record that digest with the deployment: together with the layer diffIDs it is what makes
+"same version" reviewable without the building host.
+
 ## Configuration authority
 
 Every Python process validates its own `pydantic-settings` configuration and

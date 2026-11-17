@@ -230,7 +230,9 @@ probe 采集了 `consoleErrors`（`tests/integration/workbench-artifact-probe.mj
 `tests/integration/test_workbench_artifact_browser.py:760`：
 
 ```python
-assert not any("unsafe-eval" in text for text in evidence["consoleErrors"]), evidence["consoleErrors"]
+assert not any("unsafe-eval" in text for text in evidence["consoleErrors"]), evidence[
+    "consoleErrors"
+]
 ```
 
 它只排除 `unsafe-eval` 一种 CSP 文案，其他 `console.error` 一律放行。实测在 probe 里注入一条
@@ -672,8 +674,8 @@ schema、角色、桶。
 代码顺序是：
 
 ```python
-objects.make_bucket(bucket)   # tests/integration/test_workbench_artifact_browser.py:516
-bucket_created = True         # :518
+objects.make_bucket(bucket)  # tests/integration/test_workbench_artifact_browser.py:516
+bucket_created = True  # :518
 ```
 
 如果服务端已创建桶、客户端因响应丢失/超时抛错，`:518` 不执行；`finally` 的条件

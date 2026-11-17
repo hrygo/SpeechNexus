@@ -7,7 +7,7 @@ date: 2026-11-16
 
 # SpeechNexus MVP 0.1.0 发布说明
 
-本说明陈述该版本实际具备的能力、部署与运维入口、升级与回滚边界，以及 12 条已知限制。每一
+本说明陈述该版本实际具备的能力、部署与运维入口、升级与回滚边界，以及 13 条已知限制。每一
 条都带证据档位与出处：**只有 A 档（真实部署或真实引擎上的端到端）计入「能做什么」**；B 档
 （真实进程、真实 PostgreSQL、真实对象存储，但未走真实引擎或未在参考部署上）与 C 档
 （组件级、fake、契约级）只说明「实现存在」，不是发布承诺。档位定义与逐行推导见
@@ -178,14 +178,14 @@ grep -o 'sha256:[0-9a-f]\{64\}' web/workbench/dist/assets/*.js | sort -u
 **结论：数据库不回退。迁移链是前向唯一的，没有可用的 down 路径；回滚靠镜像，不靠迁移降级。**
 
 核实方式：逐个打开 `backend/src/speechnexus_backend/speech/infrastructure/migrations/versions/`
-下的 54 个迁移文件（编号 `0001`–`0055`，缺 `0026`），读每个 `downgrade()` 的函数体，按行为
+下的 55 个迁移文件（编号 `0001`–`0056`，缺 `0026`），读每个 `downgrade()` 的函数体，按行为
 分类：
 
 | 类别 | 数量 | 代表文件与实测行为 |
 | --- | --- | --- |
 | 无条件拒绝降级（`downgrade()` 只有 `raise RuntimeError`，没有一句 DDL） | 16 | `0001_jobs.py`：「Destructive Job/outbox downgrade requires an explicit recovery plan」；`0029_builtin_voice_qualification.py`、`0031_tts_settlement.py`、`0033_profile_publications.py` 同类 |
 | 条件拒绝（表里有历史数据就 `raise`，只有空表才执行 DDL） | 26 | `0020_artifacts.py`：非空即「Committed Artifacts require preservation and recovery」；`0035_job_cancellation_fences.py`：三张表任一非空即拒绝；`0046_public_job_intents.py` 用 SQL `RAISE EXCEPTION` 实现同一语义；`0052_quarantine_releases.py`：有账本行即拒绝 |
-| 无条件执行 DDL | 12 | 其中 4 个**会丢数据**：`0041_voice_drafts.py`（删两张草稿表）、`0043_voice_draft_revisions.py`（删 revision 表）、`0049_workspace_commands.py`（删幂等命令账本）、`0054_artifact_deleted_ledger.py`（删 `deleted_at_us` 账本列）；其余 8 个是视图/索引/派生列（`0019`、`0028`、`0038`、`0040`、`0042`、`0045`、`0048`、`0053`） |
+| 无条件执行 DDL | 13 | 其中 4 个**会丢数据**：`0041_voice_drafts.py`（删两张草稿表）、`0043_voice_draft_revisions.py`（删 revision 表）、`0049_workspace_commands.py`（删幂等命令账本）、`0054_artifact_deleted_ledger.py`（删 `deleted_at_us` 账本列）；其余 9 个是视图/索引/派生列（`0019`、`0028`、`0038`、`0040`、`0042`、`0045`、`0048`、`0053`、`0056`） |
 
 另有两条与迁移无关但同样阻断「降级」的事实：
 
@@ -209,7 +209,7 @@ grep -o 'sha256:[0-9a-f]\{64\}' web/workbench/dist/assets/*.js | sort -u
 | 步骤 | 自查信号 | 判据 |
 | --- | --- | --- |
 | 镜像 | `docker compose --env-file deploy/compose.env -f deploy/compose.yaml build <逐个服务名>` | 退出码 `0`；Web 镜像再核 label：`docker image inspect --format '{{index .Config.Labels "org.speechnexus.source.commit"}} {{index .Config.Labels "org.speechnexus.source.dirty"}}' speechnexus/web-workbench:<sha>` 输出 `<sha> 0` |
-| 迁移 | `... --profile migration run --rm migrate`；再 `... exec -T postgres psql -U <user> -d <db> -Atc 'select version_num from speech.alembic_version'` | 退出码 `0`，且查询结果等于所用制品的 head（本版本 `0055_operator_attestation`）。不相等即「迁移没跑完/跑错身份」，不要手工改版本表 |
+| 迁移 | `... --profile migration run --rm migrate`；再 `... exec -T postgres psql -U <user> -d <db> -Atc 'select version_num from speech.alembic_version'` | 退出码 `0`，且查询结果等于所用制品的 head（本版本 `0056_debt_probe_live_state_index`）。不相等即「迁移没跑完/跑错身份」，不要手工改版本表 |
 | 授权（隔离释放） | 三条，任一命中即漏跑：① API 启动被拒并点名表列（`Quarantine release startup rejected (... declared surface at <table>.<column>)`，`backend/src/speechnexus_backend/quarantine_release_runtime.py:137`）；② 只跑操作员 CLI 时退出码 `3`、输出 `unavailable: quarantine_release_privilege_missing`；③ `/readyz` 的 detail 退化为 `cancellation_debt: … (jobs: lease-unread=1) … [lease detail unavailable: permission]` 且**不会**让 `/readyz` 失败 | 三条都是「已配置身份但授权不对」的信号，不是故障 |
 | 服务 | `curl -sS -w '\nhttp=%{http_code}\n' http://127.0.0.1:8000/healthz`、`…/readyz`、`http://127.0.0.1:8010/healthz`、`…/readyz` | 四条都是 `200`，体见 [compose-minimal.md §7](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:2124`）。`/readyz` 只证明 Postgres 与对象存储连通，不证明 Job、binding、recipe 或引擎可用 |
 | 同版 | `curl -sS http://127.0.0.1:8000/v1/nexus/version` 的 `contract_digest`，与该提交上 `print-contract-digest.py` 的重算值、页面 bundle 里烘焙的值 | 三者逐字相同 |
@@ -309,7 +309,7 @@ head，见下），但有三个地方会**硬拒绝启动**，以及四类数据
 
 ## 6. 已知限制
 
-以下 12 条与 [issue #912](https://github.com/hrygo/SpeechNexus/issues/912) 的清单一一对应，按
+以下 13 条与 [issue #912](https://github.com/hrygo/SpeechNexus/issues/912) 的清单一一对应，按
 「使用者会踩到什么 → 怎么处置」重写。「处置」列只有两种取值：**可操作**（有命令或步骤能消掉或
 绕过）与**无处置，只能避免**（技术上没有出口，唯一的做法是不进入该场景）。
 
@@ -327,8 +327,9 @@ head，见下），但有三个地方会**硬拒绝启动**，以及四类数据
 | 10 | 用 `/readyz` 200 判断「可以创建 Job 了」——它不反映 Job 准入可用性，也不反映有多少容量被未收口的取消占着 | **可操作**：`/readyz` 与 `GET /v1/nexus/admin/diagnostics` 里的 `cancellation_debt` detail 才是那部分事实的读面（它**永远报告 `ok`**，不进聚合状态，因为 `/readyz` 是 Compose 健康检查，一个 Job 占着槽位不该让整套部署起不来）。判断「能不能建 Job」用 `POST /v1/nexus/jobs` 的实际应答码，或 `check-async-job-prereqs.py`。**债务极大时探针会变盲而不是变红**：探针自身的超时先于服务预算到期，`check()` 捕获后只把 detail 降级成 `unavailable (timeout)`，`/readyz` 仍是 `200`——所以「绿」在积压很大时只代表「没查出」，不代表「没有债」。实测代价随**仍持有容量的租约数**增长（≈1.2–2.4 µs/条），`≥5 万`条时单次约 111 ms（占探针预算 4.6%）；`cancellation_debt` 另有一段随上线时长线性增长的历史扫描，`0056` 的索引把它从 37.4 ms 降到 0.90 ms | [隔离不了的时候：可见面与处置](../components/production-jobs.md#隔离不了的时候可见面与处置) |
 | 11 | 以为浏览器侧已被完整验证：浏览器覆盖只有 Chromium 无头；CI 不跑镜像内 nginx 的完整链路 | **无处置，只能避免**：三个 Playwright 配置都用 `chromium`（`playwright.a11y.config.mjs:19`、`playwright.behavior.config.mjs:27`、`playwright.deployed.config.mjs:29`）；CI 的 deployed-headers 门禁（`.github/workflows/ci.yml:1184`）是把**同一份构建产物**用从 `deploy/web/nginx.conf` 解析出的响应头起静态服务、跑 Chromium 首屏，不是跑镜像里的 nginx 容器。因此不要据 CI 绿宣称「浏览器已通过」；发布前在默认部署上人工跑一次同版核对第 3 项 | `.github/workflows/ci.yml` 的 Web job；`playwright.deployed.config.mjs` |
 | 12 | 以为「启动失败的输出里没有凭据」——**不成立**：`api` 的 lifespan 失败是 traceback，里面原样带着驱动的连接报文（真口令错时含 `connection to server at "<host>", port <port> failed: FATAL: password authentication failed for user "<role>"`，一次失败打印两次）；`gateway` 控制面、`job-dispatch-worker` 的两条路径同样是 traceback | **无处置，只能避免**：**一行结论类**的闸门（结算预检、asset-inspector、workbench-migrate、workbench-api、`speechnexus-job-dispatch-worker` 自身入口）确实不泄露，实测按 SQLSTATE 分类后只留「登录被拒 / 服务器不可达 / 异常类型名」；但 traceback 类单元打印的是驱动原文，**任何「启动失败不泄露凭据」的通稿都是假的**。处置只有一条：这四类单元的输出**不要整段贴进公开 issue 或聊天**，要贴就贴 `FAIL:` 行与异常类型名 | `docs/operations/startup-gate-output.md` 的 24 行表；`docs/operations/async-job-runbook.md` §1；`compose-minimal.md` §9.1 |
+| 13 | 以为 `GET /v1/models` 的 `nexus.readiness.admission_state` 是「现在能不能建 Job」的答案——**契约把它定义成实时准入判据**（`contracts/speech-openapi.yaml:4063-4070`：「available means currently admissible」「unavailable means the model cannot be admitted now」；另见 `:53-54` 的「current admission facts」），而本端点的取值恒为 `unavailable` | **无处置，只能避免**：这不是「还没接实时证据」——**接入多少实时事实都满足不了该定义**。`admission_state` 是**按 workspace** 计（`backend/src/speechnexus_backend/speech/infrastructure/public_job_admission.py:695` 用 `job.workspace_id`、`:514` 按 `speech_assets.workspace_id` 过滤），而 `GET /v1/models` 的签名里**没有 workspace**（`backend/src/speechnexus_backend/speech/interfaces/http/models.py:42`；契约 `:56-63` 只有 `X-Request-ID` 与 `If-None-Match`），两类事实压不进一个无 workspace 的字段。判「能不能建 Job」看 `POST /v1/nexus/jobs` 的实际应答码；契约声明的实时读面是 `GET /v1/nexus/jobs/admission-readiness`（带 `workspace_id`），**当前仍是占位**，答 `503 operation_not_implemented` | 结构性不符的实现在 `backend/src/speechnexus_backend/model_catalog_runtime.py:92` 起的装配注释；契约与 PRD 的冲突与三条出路跟踪 [#941](https://github.com/hrygo/SpeechNexus/issues/941)；运维侧措辞见 [异步 Job 运行手册](../operations/async-job-runbook.md) §4 |
 
-**一处已不再成立的历史观察**：`DEL-535` 当时见到的 `GET /v1/models` → `503 model_catalogue_unavailable` 在本版本已不复现——`DEL-537` 在同一路径上实测 `200`。要注意的是它的 `readiness` 仍是**保守投影**（`engine_ready=false`、`admission_state=unavailable`），因为默认目录不接实时 readiness 证据（`docs/prd.md:1011` 的既定行为）。**不要用这个响应判断能不能建Job**：同一套部署上 Job 实际创建并成功。判「能不能建 Job」看 `POST /v1/nexus/jobs` 的实际应答码（见已知限制 10 与 [缺什么 → 看到什么 → 做什么](../operations/compose-minimal.md) §9.1）。
+**一处已不再成立的历史观察**：`DEL-535` 当时见到的 `GET /v1/models` → `503 model_catalogue_unavailable` 在本版本已不复现——`DEL-537` 在同一路径上实测 `200`。要注意的是它的 `readiness` 仍是**静态投影**（`engine_ready=false`、`admission_state=unavailable`）：契约对这个字段的定义（实时准入）**在本端点结构性不可满足**，见已知限制 13 与 [#941](https://github.com/hrygo/SpeechNexus/issues/941)——**不是「等接入实时证据就对上了」**。**不要用这个响应判断能不能建Job**：同一套部署上 Job 实际创建并成功。判「能不能建 Job」看 `POST /v1/nexus/jobs` 的实际应答码（见已知限制 10 与 [缺什么 → 看到什么 → 做什么](../operations/compose-minimal.md) §9.1）。
 
 ## 7. 验证过什么、没验证什么
 

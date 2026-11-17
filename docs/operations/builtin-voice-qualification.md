@@ -6,6 +6,39 @@
 
 公开 `backend_unavailable` 不携带内部拒绝原因。隔离验收须同时保全有界私有应用日志：HTTP 记录服务端生成的 execution UUID 和固定失败类别；普通准入记录原 operation、失败阶段及受控拒绝码，未知码仅记 `unknown_code`；异常存储记录异常类型和五位 SQLSTATE，不记录异常正文、SQL、参数、请求内容、客户端头或连接串。仅有 503 或准入记录为空不能证明 readiness 过期；须结合原持久有效期和具体失败证据定位。诊断不重发未知请求，也不改变停止与结算要求。
 
+## 前置输入清单
+
+同步 TTS 返回 `200` 所需的输入不全在仓库里，也不全在应用进程的掌握中：测量原件、信任决定、
+受限身份与真实引擎地址都由部署方提供。参考部署（[最小同步 ASR/TTS Compose 部署面](compose-minimal.md)
+§0–§7）只装配异步主链与同步语音基座，它预置的资格相关身份只有 `sn_operator_attestation`
+（写声明）与 `sn_qualification_reader`（只读审计）。**这些输入缺席时，同步 TTS 的正确结果是
+`503 backend_unavailable`：那是尚未提供的部署输入，不是可以在这个栈上现场修好的缺陷。**
+
+| 输入 | 内容与来源 | 缺席时的结果 |
+| --- | --- | --- |
+| 四件测量原件 | `artifact-pin.json`（模型与运行时 pin）、`capacity-manifest.json`、`qualification-report.json`、`scenario-evidence.json`，只能由部署方在真实 GPU 窗口测得；manifest 的字段、产出与核对方式见 [capacity manifest](capacity-manifest.md)。仓库 `deploy/engines/file-tts-customvoice/` 只有 `README.md`、`artifact-pin.json`、`runtime-pin.json`、`binding-definition.json`、`template.example.json` 与 `warmup-request.json`，没有这三份测量原件 | `speechnexus-attest-builtin-voice` 在打开事务前退出：`error: invalid attestation input: attestation_request_invalid`（退出码 `2`）；`speechnexus-run-builtin-qualification` 以 `invalid private qualification input`（退出码 `2`）退出。两者都零写入 |
+| 信任声明 | `speechnexus-operator-attested-engine-v1`，仓库外、权限 `0600`，固定目标 installation、逐实例白名单、能力缺口与单次声明时长上限。格式见下文「外部托管引擎的 operator 声明资格」 | `error: trust_declaration_missing`（退出码 `4`），零写入 |
+| 声明请求 | `speechnexus-operator-attested-qualification-v1`，记录 voice/revision、binding 与 binding revision、instance 与 generation、fencing、模板身份、镜像摘要、模型与 stage 摘要 | `error: invalid attestation input: attestation_request_invalid`（退出码 `2`），零写入 |
+| 三个受限身份 | `sn_qualification_admission`（`public_job_admission_grants` + `qualification_admission_grants`）、`sn_builtin_source_approval`（`builtin_source_approval_writer_grants`）、内建声音发布身份 `sn_builtin_voice_publisher`（`publication_grants` + `builtin_publisher_grants`），由数据库 owner 按部署自己的评审结论创建，普通业务角色不得继承 | `source_approvals`、`approvals`、`qualifications`、`attestations`、`provenance` 与 voice 发布事实全为 `0`；`speechnexus-qualification-provenance` 输出的 `controller_observed` 与 `operator_attested` 全为 0 |
+| 真实引擎地址与 token | 执行网关私有 TTS 端点配置的 `address`/`port` 必须是 Compose 网络可达的真实引擎，`bearer_token` 必须是该引擎的 `VLLM_API_KEY` | 照抄 `deploy/private/gateway-file-tts-endpoint.example.json` 的 `10.0.0.11:18101` 与 64 个 0 直接请求，引擎回 `401`；换成真实地址与 `VLLM_API_KEY` 后 `/v1/models` 与 `/v1/audio/speech` 都 `200` |
+
+用 §6 的迁移 owner 连接核对缺席事实（`speech` 为 schema 名）：
+
+```sql
+select
+  (select count(*) from speech.speech_builtin_voice_source_approvals) as source_approvals,
+  (select count(*) from speech.speech_builtin_voice_approvals) as approvals,
+  (select count(*) from speech.speech_builtin_voice_qualifications) as qualifications,
+  (select count(*) from speech.speech_builtin_voice_operator_attestations) as attestations,
+  (select count(*) from speech.speech_builtin_voice_qualification_provenance) as provenance,
+  (select count(*) from speech.speech_publications where kind = 'voice') as voice_publications;
+```
+
+六列全为 `0` 就是「还没有任何资格事实」。这些输入齐备后仍只有一次真实请求能给出 `200`，见
+下文「正式公开 SDK 验收」；资格、发布与 SDK 三段证据分别取证，任一段通过都不能顶替另一段。
+
+## 身份、授权与撤销边界
+
 数据库 owner 负责部署角色，应用运行身份不是 owner。`qualification_writer_grants` 供独立可信资格生产者和获授权的撤销操作使用；它还包含来源批准插入以及来源、资格撤销权限，并非仅能写资格批准。普通业务角色不得继承该角色，也不得获得审批或发布写权限。`qualification_reader_grants` 为准入提供只读权限；`builtin_publisher_grants` 需与现有 publication writer grants 组合，并且不得授予来源或资格审批写权限。不能把调用方 JSON、CLI 参数或 `passed` 自述当作来源批准。现阶段这些是权限声明，尚须部署管理员实际配置并核验角色继承、PUBLIC 权限与真实拒绝行为。
 
 资格和来源撤销是追加事实，写入前必须在同一事务持有对应 voice 的 `speechnexus:catalog:<schema>:voice:<voice_id>` advisory lock，提交后新准入拒绝；已持有的原执行身份重放应先于资格检查。每个来源批准固定一个 voice_id，复合外键禁止其他 voice 关联；撤销者读取该不可变 voice_id 后持对应锁。该范围不提供跨声音的上游来源或密钥全局撤销。下述 producer 已有受控实现，固定配置的真实运行证据见文末；其他部署与模型组合仍须分别取证。本文件不授权人工 SQL 替代生产流程。
@@ -90,6 +123,12 @@ uv run uvicorn speechnexus_backend.transcription_runtime:create_app_from_env --f
 准入到期会拒绝，即使实例仍是 `ready`。将客户端截止设为 readiness、recipe、来源/资格
 及本轮运行窗口最早的截止，预留完成请求和可信停止/结算的时间；不足则不发新请求。
 不能延长旧证据 TTL 或重写 READY 时间来通过验收。
+
+SDK 验收只能打到真实引擎：执行网关私有 TTS 端点配置的 `address`/`port` 必须是 Compose 网络
+可达的真实引擎，`bearer_token` 必须是该引擎的 `VLLM_API_KEY`。
+`deploy/private/gateway-file-tts-endpoint.example.json` 里的 `10.0.0.11:18101` 与 64 个 `0`
+只是形状占位，照抄请求会先得到引擎的 `401`——那不是本仓库的状态码，也不表示装配失败；换成
+真实地址与该引擎的 `VLLM_API_KEY` 后，引擎的 `/v1/models` 与 `/v1/audio/speech` 都返回 `200`。
 
 资格 probe 已结算且其余准入写入静止后，保存标准 SDK 前的具名执行快照。以下关联工具
 只读正式数据库、网关回执和版本固定对象，不会提交合成或产生停止/释放事实；

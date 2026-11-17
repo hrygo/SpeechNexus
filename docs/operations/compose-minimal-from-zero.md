@@ -462,3 +462,35 @@ volumes_end
 - 宿主直连 `psql` 未验证（宿主无 `psql`），全部用容器内 `psql`。
 - MinIO 未从源码构建成功，复用了同 tag 既有镜像。
 - 应用镜像无 revision 标签，镜像→提交的绑定只到源码归档 SHA 一级。
+
+## 12. DEL-537：同一套参考部署上的同步 TTS 前置实测（2026-11-17）
+
+在按 §0–§7 从空卷起好的同一套参考部署上，把同步 TTS 从「已装配」推到「请求一次」，本轮记下
+的是**前置输入缺席时的实际形态**，不是产品缺陷，也不是这条链路已经可用：
+
+- `POST /v1/audio/speech` 稳定返回 `503 backend_unavailable`；API 日志为
+  `Synchronous speech unavailable; no current qualified voice`。
+- `pg_roles` 里只有 `sn_operator_attestation` 与 `sn_qualification_reader` 两个资格相关身份，
+  没有资格准入、来源批准与内建声音发布身份。
+- 资格事实全为 0：`source_approvals=0`、`approvals=0`、`qualifications=0`、`attestations=0`、
+  `provenance=0`、`voice_publications=0`；`speechnexus-qualification-provenance` 输出
+  `controller_observed=0`、`operator_attested=0`。
+- 带外文件在宿主上不存在：`capacity-manifest.json`、`qualification-report.json`、
+  `scenario-evidence.json`、artifact pin、信任声明与声明请求。仓库
+  `deploy/engines/file-tts-customvoice/` 只有 `README.md`、`artifact-pin.json`、
+  `binding-definition.json`、`runtime-pin.json`、`template.example.json` 与
+  `warmup-request.json`。
+- 两条 CLI 在任何写入前失败：`speechnexus-attest-builtin-voice` →
+  `invalid attestation input: attestation_request_invalid`（退出码 `2`）；
+  `speechnexus-run-builtin-qualification` → `invalid private qualification input`（退出码 `2`）。
+- gateway 私有端点直接照抄样例（`address=10.0.0.11`、`port=18101`、`bearer_token` 为 64 个 0）
+  时引擎回 `401`；换成真实地址与该引擎的 `VLLM_API_KEY` 后，引擎 `/v1/models` 与
+  `/v1/audio/speech` 都回 `200`。也就是说 `401` 来自样例占位值，不是网关或 API 的缺陷。
+
+结论：`503 backend_unavailable` 在这套栈上是**必然结果**——参考部署只覆盖异步主链与同步语音
+基座，四件测量原件、信任声明与三个受限身份都由部署方提供。补齐路径见
+[最小部署 §6「同步 TTS 资格的部署前置」](compose-minimal.md#同步-tts-资格的部署前置) 与
+[builtin voice qualification](builtin-voice-qualification.md#前置输入清单)。
+
+本轮未验证：没有在参考部署上取得同步 TTS 的 `200`（缺 GPU 窗口与原件），未运行资格探针、
+声明写入与发布命令，未测异步 Job 与工作台。

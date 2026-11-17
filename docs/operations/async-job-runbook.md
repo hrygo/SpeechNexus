@@ -523,6 +523,42 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 
 这两处只影响 **执行**：`202` 只需要数据库里的已发布 binding、配额行与 ready 实例。
 
+**重算 `recipe_digest` 的可执行步骤。** 把下面这段跑在配方上，一次改全绑定身份的三处
+（顶层 `binding_revision_id`、`binding_publication_id`、`runtime_plan.binding.binding_revision_id`）
+并按 RFC 8785 重算摘要、写回文件。同一段对同步 TTS 的 `speech-recipe.json` 同样适用：TTS
+配方没有 `binding_publication_id`，脚本按该字段是否存在处理。`--` 之后是配方路径与新的
+`revision_id`：
+
+```bash
+REVISION_ID=<已发布 binding 的 revision_id>
+uv run --all-packages python - deploy/.runtime/private/transcription-recipe.json "$REVISION_ID" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+import rfc8785
+
+path = Path(sys.argv[1])
+revision_id = sys.argv[2]
+document = json.loads(path.read_text(encoding="utf-8"))
+document["binding_revision_id"] = revision_id
+if "binding_publication_id" in document:
+    document["binding_publication_id"] = revision_id
+document["runtime_plan"]["binding"]["binding_revision_id"] = revision_id
+body = {key: value for key, value in document.items() if key != "recipe_digest"}
+document["recipe_digest"] = "sha256:" + hashlib.sha256(rfc8785.dumps(body)).hexdigest()
+path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+print(f"{path.name}: binding_revision_id={revision_id} recipe_digest={document['recipe_digest']}")
+PY
+```
+
+同一配方、同一 `revision_id` 重复执行是幂等的：三处身份与摘要都不再变化，文件字节也不变。
+配方重写后仍是 `0600` 私有文件（脚本保留原权限，但新建副本时自己 `chmod 600`），然后重启
+`api`；`recipe_digest` 与其余字段不自洽时 loader 拒绝启动（转写为
+`Invalid private transcription admission recipe`，TTS 为
+`Invalid private speech admission recipe <path> (ValueError)`）。
+
 **本节核对状态**：三条 HTTP 命令已在 `DEL-535` 的从空卷实跑中通过（`201`/`201`/`200`，
 MegaCube 真实引擎窗口，基线 `c0172a22`；记录见
 [从零实跑记录](compose-minimal-from-zero.md)第 11 节）。

@@ -379,6 +379,12 @@ ORDER BY f.accepted_at_us, f.job_id
 LIMIT %(limit)s
 """
 
+# Both debt reads below are polled every 5 s by the deployment healthcheck, so their cost
+# must follow the debt rather than the deployment's history. `speech_jobs_live_state_scan`
+# (migration 0056) is what keeps them off the Job table and off the perpetual cancellation
+# fence history: without it the planner has no access path for `state = 'cancelling'` here
+# and walks every fence the deployment ever wrote, which is a cost that grows with uptime.
+# The index only holds `running`/`cancelling` rows, so the write cost stays with the live set.
 _DEBT = f"""
 SELECT j.job_id, l.lease_id, l.lease_state, i.execution_state,
        e.evidence_kind, e.execution_stopped, e.resources_released
@@ -418,6 +424,10 @@ _SQL_VERIFIED_STOP_EVIDENCE = (
     "(" + ", ".join(f"'{kind}'" for kind in sorted(VERIFIED_STOP_EVIDENCE_KINDS)) + ")"
 )
 
+# Same access-path requirement as `_DEBT`: `speech_jobs_live_state_scan` (migration 0056)
+# is what keeps this read off the whole Job table once the held-lease backlog is large
+# enough that a table scan beats the lease-driven nested loop -- measured at 37.8 ms with
+# 20 000 held leases over 1 000 000 Jobs, against 0.6 ms with 64.
 _STOP_EVIDENCE_DEBT = f"""
 SELECT j.job_id, i.submit_intent_id, i.execution_state, i.cleanup_state, e.evidence_kind
 FROM {public_job_schema.JOBS} AS j

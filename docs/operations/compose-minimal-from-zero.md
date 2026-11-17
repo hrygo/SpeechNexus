@@ -494,3 +494,282 @@ volumes_end
 
 本轮未验证：没有在参考部署上取得同步 TTS 的 `200`（缺 GPU 窗口与原件），未运行资格探针、
 声明写入与发布命令，未测异步 Job 与工作台。
+
+## 13. 从空库到第一个 `202` 的步骤清单
+
+本节是这份记录里唯一按顺序可直接照做的部分：把从空库到 `POST /v1/nexus/jobs` 返回 `202`
+的顺序、每一步的前置检查、预期输出与缺失时的表现列在一起。命令正文仍在
+[最小 Compose 部署](compose-minimal.md) 与[异步 Job 六项前置](async-job-runbook.md)，
+本节不复述，只给顺序、判据和可复跑的检查入口
+[`scripts/dev-env/check-from-empty-first-job.sh`](../../scripts/dev-env/check-from-empty-first-job.sh)
+（覆盖下表第 9–14 步的应用层动作，拓扑层按手册执行）。
+
+创建请求的判定顺序是固定的，缺项可以直接从返回码定位（2026-11-17 实测，见 §14）：
+
+| 顺序 | 判定的事实 | 缺失时的返回 | 依据 |
+| --- | --- | --- | --- |
+| 1 | 该 `model` 有已发布 binding revision | `422 model_not_published` | `backend/src/speechnexus_backend/speech/application/public_jobs.py:912` |
+| 2 | 请求里的输入资产已检查且 `ready`、用途匹配 | `422 asset_not_ready` | `backend/src/speechnexus_backend/speech/application/public_jobs.py:1490`（在准入之前） |
+| 3 | 该工作空间有 `workspace_quotas` 行 | `422 workspace_not_configured` | `backend/src/speechnexus_backend/speech/infrastructure/public_job_admission.py:201` |
+| 4 | 与已发布 revision 身份一致的 `ready` 实例、active 池 owner 与容量 | `429 job_capacity_exhausted` | `backend/src/speechnexus_backend/speech/infrastructure/public_job_admission.py:253` |
+
+因此「没有实例时返回 `429`」只在第 1–3 项都成立时可见；从空库最先看到的是第 1 项。
+第 2 项排在准入之前，所以「配额还没建」的部署上，先撞到的是资产未就绪而不是配额。
+
+### 13.1 步骤表
+
+| # | 步骤 | 权威命令 | 前置检查 | 预期输出 | 缺失时 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 定项目名、子网、宿主端口 | [§1](compose-minimal.md#1-固定服务集合)、[§1.1](compose-minimal.md)、[§2](compose-minimal.md#2-准备环境文件) | `"${COMPOSE[@]}" … config \| grep -E 'ipv4_address:\|subnet:\|published:'` | 与 `deploy/compose.env` 里 `SPEECHNEXUS_COMPOSE_SUBNET` / `SPEECHNEXUS_MINIO_STATIC_IP` / 宿主端口一致 | 子网被占时网络创建 `Pool overlaps`；两项都由 env 承载，**不需要改仓库文件** |
+| 2 | 应用镜像 | [§0](compose-minimal.md#0-构建前提) | `docker images` 里有 `<项目>-api` 等 6 个 | `BUILD_EXIT=0`；`minio` 复用同 tag 既有镜像 | 缺 `speechnexus-minio:<tag>` 时 `up` 会现场构建并在取 LICENSE 处失败 |
+| 3 | 私有文件 + VAD 摘要 | [§3](compose-minimal.md#3-准备私有文件) | `python3 -m json.tool` 六份 + `chmod 600` 检查 | `vad_model_sha256` 等于仓库钉的摘要 | 全零摘要拒绝启动；摘要与文件不符只在首个 Job 的执行段暴露（§4 记录） |
+| 4 | postgres / minio / 桶 | [§4](compose-minimal.md#4-启动数据库与对象存储) | `curl -fsS http://127.0.0.1:<S3端口>/minio/health/live` | `bucket ready: speechnexus-inputs (versioning enabled)` 与 `…-results…` | 桶缺失 → 派发启动闸门点名桶名与键名 |
+| 5 | 迁移到唯一 head | [§5](compose-minimal.md#5-迁移到唯一-head) | `select version_num from speech.alembic_version` | 唯一 head | 未迁移：API 起不来（traceback）、闸门先抛 `InvalidSchemaName` |
+| 6 | 非 owner 角色 + 三个 Job 角色 | [§6](compose-minimal.md#6-创建非-owner-运行角色与最小授权) | `provision-job-roles.py --print-statements` | `roles ready: …`、`job roles ready: …`（语句数以 `--print-statements` 为准） | 缺角色：可选能力稳定 `503`，Job 侧闸门点名五组 grant |
+| 7 | api / gateway | [§7](compose-minimal.md#7-启动-api-与-gateway) | 四个公开探针 | `/healthz`、`/readyz` 全 `200` | 起不来说明 §2–§6 有缺项，按探针 `detail` 定位 |
+| 8 | `asset-inspector`（音频检查器） | [runbook §10](async-job-runbook.md) | 从 `api` 容器内请求检查器 `/readyz` | `{"contract_version":1,"recipe_version":"pcm-decode-1",…}` | 未装配：音频上传 `503 asset_inspection_unavailable`，Job 永远到不了第 2 项判定 |
+| 9 | 发布 binding | [runbook §7.1](async-job-runbook.md#71-发布-binding注册与创建-job-的前置) | 三条 admin 路由：草稿、发布、激活 | `201` / `201`（`publication.status: published`）/ `200` | `422 model_not_published`（第 1 项判定） |
+| 10 | 回写私有输入 | [runbook §7.1 第 5 步](async-job-runbook.md#71-发布-binding注册与创建-job-的前置) | 配方 `recipe_digest` 自洽、`binding_revision_id` 等于已发布 `revision_id` | 重启后 API 启动无 `invalid transcription recipe` | 按 runbook 只影响执行段（本轮未跑到执行，未验证）：`202` 仍可创建 |
+| 11 | 上传输入资产 | [runbook §11](async-job-runbook.md#11-第-7-步提交并观察一次-job) | `POST /v1/nexus/assets`（`purpose=asr_input`） | `201`、`status: ready`、检查器回执的时长/采样率/字节数 | 资产未就绪：`422 asset_not_ready`（第 2 项判定） |
+| 12 | 注册引擎 | [runbook §7.2](async-job-runbook.md) | 从注册容器内探一次 `/health` | `"outcome": "registered"`（重跑 `already_ready`） | `engine_unreachable`、`quota_policy_conflict`、`instance_config_conflict` 等，见 §13.2 |
+| 13 | 核对三类事实 | [runbook §7.3](async-job-runbook.md#73-核对配额与容量登记) | 三条只读 SQL | 每类各一行 | 缺哪行对应第 3 / 4 项判定 |
+| 14 | 创建 Job | [runbook §11](async-job-runbook.md#11-第-7-步提交并观察一次-job) | `POST /v1/nexus/jobs` | `202`、`status: queued` | §13 开头的四类码 |
+
+顺序约束是硬的：第 12 步写入实例的 `binding_revision_id` 必须等于第 9 步发布出来的
+`revision_id`。反过来说明「注册成功」不能当作「binding 已发布」的证据——注册路径不查
+`speech_publication_heads`，两边要分别核对第 13 步的三行。
+
+### 13.2 补上的三处步骤：入口、产物与失败面
+
+三处过去只在别的手册里被当作既有事实，现在都有明确的产生入口，且都不需要手写 SQL。
+
+**（1）发布 binding。** 入口是三条已装配的写路由，不是 CLI：`POST
+/v1/nexus/admin/model-bindings`（草稿）→ `POST …/{binding_id}/publications` → `POST
+…/{binding_id}/revisions/{revision}/activations`。产物是一个事务里的 `speech_publications`、
+`speech_binding_publication_evidence`、`speech_publication_heads` 与推进后的
+`speech_catalog_state`。前置是 `sn_binding_writer` 与 `sn_binding_lifecycle` 两个身份
+（第 6 步创建）；缺身份时草稿 `503 binding_unavailable`、发布 `503 binding_result_unknown`。
+发布不是幂等重发：目标已发布时 `409 binding_not_draft`，head 变化时 `409 configuration_changed`。
+请求体的字段取值来源逐项见[runbook §7.1](async-job-runbook.md#71-发布-binding注册与创建-job-的前置)。
+`execution_defaults` 在草稿请求里是可选的，但少了 ASR 段或缺所需的 13 个字段之一，创建时是
+`422 job_binding_incomplete`（`backend/src/speechnexus_backend/speech/infrastructure/public_job_admission.py:138`）；
+给出但不合法的取值则在草稿期就是 `400 invalid_binding_request`。
+
+**（2）工作空间配额。** `workspace_quotas` 没有独立管理入口：`POST /v1/nexus/workspaces`
+只写 `speech_workspaces`，配额行只由注册写入（`backend/src/speechnexus_backend/engine_registration.py:477`
+的 `_ensure_quota`，INSERT 在 `:479`）。同一工作空间重复注册时 `policy_revision` 必须与已有行一致，
+否则注册以 `quota_policy_conflict` 退出
+（`backend/src/speechnexus_backend/engine_registration.py:491`）。约束对照的是**配方**的
+`policy_revision_id`，不是 binding 的字段：`workspace_quotas.policy_revision` 取注册输入，
+gateway 在执行期再按私有端点配置的 `vad_tuning.config_revision` 逐字段比对。
+
+**（3）宿主机容量。** `host_nodes` 同样只有一个写入口：`_ensure_host`
+（`backend/src/speechnexus_backend/engine_registration.py:353`，INSERT 在 `:359`）。容量向量
+来自注册输入的计划（`steady + per_slot × max_slots` 与 `peak` 取大），准入侧不再重读
+`host_nodes` 做算术，只要求存在 ready 实例与 active 池 owner。因此「容量登记」不是单独的管理
+端点，就是第 12 步本身。
+
+注册侧与本轮实测到的点名失败（每条都是产品侧出口，不是包装）：
+
+| 出口 | 触发方式（实测） | 实际输出 |
+| --- | --- | --- |
+| `quota_policy_conflict` | 配方 `policy_revision_id` 与已有 `workspace_quotas.policy_revision` 不同 | `error: quota_policy_conflict: existing workspace quota policy revision does not match the recipe`，退出码 `4` |
+| `instance_config_conflict` | 发布新 revision 后直接重跑注册（实例仍钉在旧 revision） | `error: instance_config_conflict: the ready instance has different binding, model plan or capacity facts`，退出码 `4` |
+| `engine_unreachable` | `/health` 只在操作主机可达 | `error: engine_unreachable: health endpoint is unreachable from this operator host`，退出码 `5` |
+
+### 13.3 「产品侧没有入口、只能手写 SQL」的清单
+
+**0 条。** 本轮从空库到 `202` 的每一步都能走产品入口：binding 走三条 admin 路由，资产走
+`POST /v1/nexus/assets`，配额与容量登记走 `speechnexus-register-engine`。全仓库 `INSERT INTO
+workspace_quotas` / `INSERT INTO host_nodes` 只出现在 `engine_registration.py`（其余命中都是
+测试夹具），也没有对应的 HTTP 管理面，所以这两份事实既**没有第二个入口**，也**不需要手工补**。
+
+下面两类是本轮仍要手工处理的，它们都不是 SQL 写库，但不能算产品入口：
+
+| 事项 | 状态 | 说明 |
+| --- | --- | --- |
+| 把已发布 `revision_id` 回写私有配方与 gateway 端点配置，并按 RFC 8785 重算 `recipe_digest` | 手工 + 仓库外脚本 | 没有 CLI 接受「binding 已发布，改这两份私有文件」；runbook §7.1 给的是可复制的 Python 片段，本轮按该片段执行 |
+| 读回发布 head（发布请求的 `expected_current_revision`） | HTTP 可读 | `GET /v1/nexus/admin/model-bindings` 的 `current_revision` 即可，不必查库；本轮脚本已改用它 |
+| 核对三类事实（配额 / 容量 / 实例） | 只读 SQL | 没有只读 HTTP 面暴露 `workspace_quotas` 与 `host_nodes`；这是观测缺口，不是写入口缺口 |
+
+### 13.4 可复跑脚本与两条反例
+
+`scripts/dev-env/check-from-empty-first-job.sh`（阶段分派在
+[`scripts/dev-env/check-from-empty-first-job.sh:642`](../../scripts/dev-env/check-from-empty-first-job.sh)）
+把第 9–14 步做成可按阶段重跑、每步自带断言的脚本：
+
+```bash
+scripts/dev-env/check-from-empty-first-job.sh --phase all \
+  --url http://127.0.0.1:8137 --gateway-url http://127.0.0.1:8138 --project <Compose 项目名>
+```
+
+它不构建镜像、不跑迁移、不改 `deploy/compose.yaml`；阶段为 `probe`、`counterexample-unpublished`、
+`publish`、`asset`、`register`、`create`、`counterexample-policy`，任一断言不成立即以非零退出。
+两条反例是脚本里的常驻检查，不是一次性手工记录：
+
+1. **去掉「发布 binding」这步** → 对同一 binding 只建草稿、不发布，创建必须
+   `422 model_not_published`（`--phase counterexample-unpublished`）。
+2. **让 `policy_revision` 与已有配额不一致** → 改配方 `policy_revision_id` 后重跑注册，必须
+   非零退出并点名 `quota_policy_conflict`（`--phase counterexample-policy`）；阶段结束自动恢复配方。
+
+脚本自身被文档按 `path:line` 引用，删掉文件会让 `scripts/dev-env/check-doc-refs.py` 变红——
+"删掉断言就必须有检查变红"这条在这里由文档引用门禁承担，不需要新的测试文件。
+
+## 14. 本轮实跑：从空库到 `202`（2026-11-17，macOS）
+
+这一节记录 2026-11-17 在一台 macOS 开发机上、以独立 Compose 项目 `sn935` 从**空
+PostgreSQL 卷与空 MinIO 卷**出发，按 §13 走到 `POST /v1/nexus/jobs` 返回 `202` 的实跑。
+与 §4–§10 那次（止步于引擎注册）的区别是这次创建请求返回了 `202`；与 §11（MegaCube、真实
+GPU 引擎）的区别是**这次没有真实引擎**，注册针对的是一个只回答 `/health` 的本地替身。
+
+### 14.1 环境与基线
+
+| 项 | 值 |
+| --- | --- |
+| 日期 | 2026-11-17 |
+| 主机 | macOS，arm64，无 GPU、无本地 ASR 引擎；Docker Engine 29.9.3、Compose v5.7.0 |
+| 仓库基线 | `origin/main` `1721ddb2`（worktree `/private/tmp/sn935`，分支 `docs/from-empty-to-first-job`） |
+| 起点 | 新建的 PostgreSQL 16.15 卷、新建的 MinIO 卷，无残留容器/网络/卷 |
+| 隔离 | 项目名 `sn935`，子网 `172.31.0.0/24`（`SPEECHNEXUS_COMPOSE_SUBNET`），宿主端口 `8137`/`8138`/`55443`/`59010`/`59011`（全部走 `deploy/compose.env`，**没有改任何仓库文件**） |
+| 应用镜像 | 本轮从该 SHA 的源码构建 7 个：`sn935-api f6fb167e6021`、`sn935-gateway 96ae65bf1de3`、`sn935-migrate d421c1336e4f`、`sn935-engine-register 8fb142486a31`、`sn935-job-dispatch-worker 51c4034a9365`、`sn935-minio-init ffbe17302a9e`、`sn935-asset-inspector 38e3cfaf5d66`；`BUILD_EXIT=0` |
+| `minio` 镜像 | 复用同 tag 既有镜像 `speechnexus-minio:RELEASE.2025-09-07T16-13-09Z`，未从源码构建 |
+| VAD 模型 | `/Users/hrygo/Library/Application Support/SpeechRail/models/vad/silero_vad.onnx`，2327524 字节，`sha256:1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3`，与 `deploy/engines/file-asr-audio/artifact-pin.json:139` 钉的摘要**逐字相同**（§4 那次本机只有另一份 `597d30b3…`，因此这里 D3 的摘要核对这次是过的） |
+| 未起 | `job-dispatch-worker`、`web`、`workbench-api`；没有真实引擎 |
+
+### 14.2 拓扑层实跑输出
+
+```text
+$ docker compose … exec -T postgres psql -U speechnexus -d speechnexus -Atc \
+    'select version_num from speech.alembic_version'
+0056_debt_probe_live_state_index
+
+$ roles ready: sn_api sn_gateway sn_gateway_query sn_workspace_writer sn_audit_reader \
+    sn_model_instance_reader sn_quarantine_release sn_catalog_reader sn_artifact_reader \
+    sn_resource_pool_reader sn_binding_list_reader sn_binding_writer sn_binding_admin_reader \
+    sn_binding_lifecycle sn_artifact_retention sn_operator_attestation sn_speech_settlement \
+    sn_workbench_runtime sn_workbench_cleanup
+$ job roles ready: sn_job_writer sn_job_admission sn_job_dispatch; grants: 223 statements
+
+$ curl -sS -w '\nhttp=%{http_code}\n' http://127.0.0.1:8137/readyz
+{"status":"ready","checks":[{"name":"postgresql","status":"ok","detail":null},
+ {"name":"object_storage","status":"ok","detail":null},
+ {"name":"cancellation_debt","status":"ok","detail":"cancellation_debt: unavailable (not configured)"},
+ {"name":"stop_evidence_debt","status":"ok","detail":"stop_evidence_debt: unavailable (not configured)"}]}
+http=200
+
+$ docker compose … exec -T api python -c "import urllib.request; print(urllib.request.urlopen('http://asset-inspector:8080/readyz', timeout=3).read().decode())"
+{"contract_version":1,"recipe_version":"pcm-decode-1","max_encoded_bytes":4194304,"max_wall_seconds":20.0,"in_flight":0}
+```
+
+`/readyz` 现在是四项检查，`compose-minimal.md:2218` 起写的是两项：新增的
+`cancellation_debt` / `stop_evidence_debt` 在未配置时按 `ok` 报告，属文档未跟上的漂移（§14.5）。
+
+### 14.3 空库 → `202`：五个关键状态
+
+起始事实（空库，只有迁移与角色）：
+
+```text
+publications=0 binding_revisions=0 quotas=0 host_nodes=0 instances=0
+catalogue_state=1 workspaces=1
+```
+
+**① 未发布 binding：`422`。**
+
+```text
+$ curl -sS -X POST http://127.0.0.1:8137/v1/nexus/jobs \
+    -H 'content-type: application/json' -H "Idempotency-Key: …" \
+    -d '{"kind":"asr","model":"model-compose-example","input":{"audio_asset_id":"asset-000000000000"}}'
+http=422
+{"error":{"code":"model_not_published","type":"invalid_request_error",
+ "message":"The model 'model-compose-example' has no published binding revision and no engine
+ instance is registered for it: publish the binding and register the engine
+ (engine-registration profile), so admission has a ready instance to select. Retrying the same
+ request cannot create either.","param":null,"request_id":"…","retryable":false}}
+```
+
+**② 发布 binding：`201` → `201` → `200`。**
+
+```text
+draft       http=201  revision=1  revision_id=mbrev-1901846251a84ccabd84a31674a1bdcd
+publication http=201  publication.status=published  published_at=2026-11-17T05:40:49.180455Z
+activation  http=200  publication.status=published（同一 revision，成功 no-op）
+DB         publications=1 heads=1 catalogue_revision=2 quotas=0
+```
+
+**③ 已发布、资产未就绪、无配额：`422` 逐项点名。** 先撞到资产（判定第 2 项），修好资产后撞到配额
+（第 3 项）：
+
+```text
+$ POST /v1/nexus/jobs   model=model-compose-example  audio_asset_id=asset-000000000000（不存在）
+http=422 {"error":{"code":"asset_not_ready",…,"message":"The input asset is not ready."}}
+
+$ POST /v1/nexus/assets  purpose=asr_input  file=1 s 16 kHz 单声道合成 WAV
+http=201 {"id":"asset-56e3ce4f75b84a32b988d3a2231f4e98","status":"ready","media_type":"audio/wav",
+ "bytes":32044,"duration_ms":1000,"sample_rate_hz":16000,"channels":1}
+
+$ POST /v1/nexus/jobs   model=model-compose-example  audio_asset_id=asset-56e3ce4f…
+http=422 {"error":{"code":"workspace_not_configured",…,
+ "message":"The workspace has no provisioned Job quota.","retryable":false}}
+```
+
+**④ 注册引擎：三类事实一次写入。**
+
+```text
+$ docker compose … --profile engine-registration run --rm engine-register
+"outcome": "registered"
+
+workspace-default|8|0|policy-revision-compose-example
+node-local-1|active|allocatable_device_memory=4500000000|allocatable_cpu_decode_millicores=1100
+instance-asr-1|1|ready|mbrev-1901846251a84ccabd84a31674a1bdcd|capacity-manifest-compose-example
+```
+
+**⑤ 创建 Job：`202`。**
+
+```text
+$ curl -sS -w '\nhttp=%{http_code}\n' -X POST http://127.0.0.1:8137/v1/nexus/jobs \
+    -H 'content-type: application/json' -H "Idempotency-Key: …" \
+    -d '{"kind":"asr","model":"model-compose-example","input":{"audio_asset_id":"asset-56e3ce4f…"}}'
+http=202
+{"id":"job-34ff980f7d8249d3988b6703c7bf11e4","object":"nexus.job","kind":"asr","status":"queued",
+ "cleanup_state":"not_required","workspace_id":"workspace-default","execution_revision":"1",
+ "effective_configuration":{"catalog_revision":"2","degradation":"none",
+ "models":{"asr":{"id":"model-compose-example","revision":"1"}},"policy_revision":"1"}, …}
+```
+
+### 14.4 三条反例的红绿
+
+| 反例 | 做法 | 实际结果 |
+| --- | --- | --- |
+| 去掉「发布 binding」 | 对 `model-unpublished-example` 只建草稿，不发布，直接创建 | `422 model_not_published`，message 点名 publish + register；脚本 `--phase counterexample-unpublished` 每次运行都验一次 |
+| `policy_revision` 与 binding/配额不一致 | 改配方 `policy_revision_id` 为 `policy-revision-mismatch`、重算摘要后重跑注册 | `error: quota_policy_conflict: existing workspace quota policy revision does not match the recipe`，退出码 `4`；脚本 `--phase counterexample-policy`，阶段结束恢复配方 |
+| 删掉断言/脚本 | 脚本被本文档按 `path:line` 引用 | 删除 `scripts/dev-env/check-from-empty-first-job.sh` 后 `scripts/dev-env/check-doc-refs.py` 报 `MISSING`，门禁变红 |
+
+第二条的名称来自注册而不是创建：准入侧不比对 `policy_revision`（它把配方里的值透传成执行参数），
+所以「配方与配额不一致」在从零路径上表现为**注册拒绝**，而不是创建失败。
+
+### 14.5 实跑暴露的偏差（本次记录，未改产品代码）
+
+| # | 现象 | 位置 | 处置 |
+| --- | --- | --- | --- |
+| D12 | 实例已 `ready` 后 `GET /v1/models` 仍报 `"engine_ready":false,"admission_state":"unavailable"`：目录的 readiness 是静态投影，从未接入实例事实 | `backend/src/speechnexus_backend/speech/infrastructure/model_catalog_postgres.py:35`（`readiness or ReadinessFacts()` 恒为空），`public_job_admission` 才是真判据 | 本轮只记录：不要用 `/v1/models` 的 readiness 判断能否创建 Job；runbook §7.1 第 4 步「未注册实例时是 unavailable」暗示它会变，需要订正措辞 |
+| D13 | `api` 的 `/readyz` 现在有四项检查（多 `cancellation_debt`、`stop_evidence_debt`） | `compose-minimal.md:2218` 起写两项 | 文档漂移，记录于此 |
+| D14 | 发布新 revision 后实例身份失效：直接重跑注册被 `instance_config_conflict` 拒绝；创建变成 `429 job_capacity_exhausted`，message 是「no engine instance is registered for model …」 | `engine_registration.py:604`、`public_job_admission.py:211`–`:253` | 记录：换 revision 需要新的 generation/实例轮换路径，本轮**未验证**该路径 |
+| D15 | 单个注册实例的 `max_slots=1`，一个 queued Job 就占满：同一栈上第二次创建是 `429`，message 为「Job capacity is exhausted; retry after the indicated delay.」 | 配方 `runtime_plan.max_slots`、`public_job_admission.py:253` | 不是缺陷，是容量语义；写进 §13 判定表第 4 项 |
+
+### 14.6 未验证项
+
+| 项 | 状态 | 原因 |
+| --- | --- | --- |
+| 真实引擎上的 Job 执行（claim → submit → 制品） | 未验证（本轮） | 注册针对的是只回答 `/health` 的本地替身；同一仓库在 MegaCube 上有真实引擎证据（§11），本轮不复现 |
+| 替身 `/health` 之外的行为 | 不存在 | 替身只有 `/health`；`202` 只需要准入事实，不需要引擎能力 |
+| `artifact_set` 的制品完整性 | 未核 | 本机没有 ASR 权重，草稿的 `artifact_set`/`engine` 取自仓库钉住的 `artifact-pin.json` 与 `runtime-pin.json`，**未**运行 `verify-file-asr-artifacts.py` 的逐文件校验 |
+| 发布新 revision 后的实例/ generation 轮换 | 未验证 | 见 D14 |
+| `GET /v1/models` 的 readiness 变为 ready | 未取得 | 见 D12，产品侧未接入 |
+| `job-dispatch-worker` 启动闸门与派发 | 未验证（本轮） | 不需要真实引擎也能起闸门，但本轮目标止于 `202`；§4.9 与 §11 各有记录 |
+| 同步 ASR/TTS | 未验证 | 不在本卡范围；§12 记录同步 TTS 的前置形态 |
+
+### 14.7 收尾
+
+测后按 `compose-minimal.md` §10.1 的三项 label filter 复核并 `down -v`；`deploy/compose.env`
+与 `deploy/.runtime/private/**` 是本机运行态（git 忽略），不入库。本轮没有修改任何仓库文件里的
+端口、子网、镜像或产品代码；隔离全部经 `deploy/compose.env` 的既有变量完成。

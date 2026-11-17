@@ -355,6 +355,8 @@ head 与实例对不上的 `ready` 实例，创建 Job 仍然失败。
 （找不到 → `429 job_capacity_exhausted`，`public_job_admission.py:248`）。因此「没有实例时
 返回 429」只在 binding 与配额都已存在时成立；空库上最先看到的是 422。
 
+从空库到第一个 `202` 的完整顺序（含输入资产与 `asset-inspector` 这一步）、每步的预期输出与两条反例的实跑记录见[从零实跑 §13](compose-minimal-from-zero.md#13-从空库到第一个-202-的步骤清单)。
+
 ### 7.1 发布 binding：注册与创建 Job 的前置
 
 入口是公共 HTTP 契约的三条已装配写路径（[binding 生命周期](binding-lifecycle.md)），不是

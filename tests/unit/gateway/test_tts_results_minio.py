@@ -261,7 +261,12 @@ async def test_audio_trickle_headers_obey_one_total_deadline(server: Server, met
     # The peer keeps trickling long past the budget, so only a total deadline can
     # end the upload this early, and it has to do so while the peer still writes.
     server.trickle_frames = trickle_frame_count(budget)
+    # Clear both request logs: the calibration reads above used this same server
+    # and their `PUT` already filled `bodies[slow_key]`, so without this the body
+    # assertion below could be satisfied by a calibration PUT instead of proving
+    # this request's bytes were accepted (#948).
     server.calls.clear()
+    server.bodies.clear()
     value = bounded_store(server, budget)
     started = time.monotonic()
     try:

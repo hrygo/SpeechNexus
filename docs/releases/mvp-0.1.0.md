@@ -144,7 +144,7 @@ grep -o 'sha256:[0-9a-f]\{64\}' web/workbench/dist/assets/*.js | sort -u
 1. **构建镜像**（`deploy/compose.yaml` 构建，或按 `deploy/README.md` 单独构建 Web 镜像并 pin 到
    部署侧 override）。记录构建提交与镜像 ID。
 2. **迁移到唯一 head**：`--profile migration run --rm migrate`。当前 head 是
-   `0055_operator_attestation`（[compose-minimal.md §5](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:467`））。
+   `0056_debt_probe_live_state_index`（[compose-minimal.md §5](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:467`））。
    升级前须停止或隔离旧版本的 publication 与 lifecycle 写者，直到迁移、授权与新版本切换完成。
 3. **重放授权**：新建部署跑 §6 的建角色脚本；**已有部署只重放授权函数**，不重跑撤权与建角色
    部分（[§6 已有部署的授权升级](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:1690`））。这一轮至少包括
@@ -152,6 +152,19 @@ grep -o 'sha256:[0-9a-f]\{64\}' web/workbench/dist/assets/*.js | sort -u
    `gateway_query_grants`/`gateway_abort_grants` 两份一起、`artifact_retention_grants`。
    旧部署还要补 `GRANT SELECT ON speech.alembic_version TO sn_job_dispatch`（派发启动门要读
    head；角色早于该授权的部署必须补，见 `deploy/compose.env.example`）。
+
+   漏跑的可自查信号（四条，都被实现与用例钉住）：
+
+   - `quarantine_release` 面缺授权 → API 启动**点名表列**被拒，或操作员 CLI 退出码 3、
+     `unavailable: quarantine_release_privilege_missing`；
+   - `cancellation_debt_reader_grants` 缺新列 → 该探针整体 `unavailable (permission)`
+     （`cancellation_debt` 不受影响），`/readyz` 仍为 `200`；
+   - `stop_evidence_debt` 需要同一身份的列级授权 → 同样降级为 `(permission)`；
+   - Job 派发启动门缺 `GRANT SELECT ON speech.alembic_version` → 容器退出并点名该表。
+
+   `0056` 建的索引本身不需要任何授权（索引不是可授权对象），只读诊断身份**不加新授权**
+   就能用上它；实测只施加既有 7 条列级授权的临时角色，两条债务查询都走
+   `speech_jobs_live_state_scan`（0.216 ms / 3.228 ms）。
 4. **起 gateway，再起 api 与 worker**。原因是 TTS 内部命令新增的可选字段是**单向兼容**：新
    gateway 能处理旧 backend 的 builtin 命令，旧 gateway 处理新 backend 的 custom 命令会走未知
    路径（`ENGINE_TRANSPORT_UNKNOWN`），不会静默回退。因此不允许「新 backend + 旧 gateway」
@@ -215,6 +228,12 @@ grep -o 'sha256:[0-9a-f]\{64\}' web/workbench/dist/assets/*.js | sort -u
   镜像没有这个版本的操作员出口，切回去之后就没有工具能收口它们。
 - **私有配置与 ACL 备份**：回滚要用。至少保存 `deploy/compose.env`、`deploy/private/` 下三份
   文件、以及 `pg_dump` 的角色授权视图（或 §6 脚本重放前的 `\dp` 输出）。
+- **迁移只会新建索引，但会阻塞写入一个事务窗口**：`0056` 用 `CREATE INDEX`（不是
+  `CONCURRENTLY`：迁移运行器整链在一个事务内，`CONCURRENTLY` 非法）。实测 1M 行 `speech_jobs`
+  上建索引 `47.5 ms`、持 `ShareLock`，期间**阻塞写入、不阻塞读取**，窗口等于整条迁移事务。
+  表越大窗口越长且线性增长。手工预建过同名索引会让迁移失败（无 `IF NOT EXISTS`）；失败即整链
+  回滚，安全，但排查时要先看 `pg_indexes` 里有没有 `speech_jobs_live_state_scan`。
+
 
 ## 5. 回滚
 
@@ -226,7 +245,7 @@ head，见下），但有三个地方会**硬拒绝启动**，以及四类数据
 
 ### 5.2 旧镜像面对新 schema 会发生什么
 
-**会硬拒绝启动的三处（都在启动期，点名具体缺项，不会带病运行）：**
+**会硬拒绝启动的三处（都在启动期，点名具体缺项，不会带病运行）。`0056` 只新增一个索引、不改任何列与约束，因此它不新增拒绝面——但 head 变了，回滚到 0055 之前的镜像时下面第一行照旧生效：**
 
 | 单元 | 机制 | 回滚后果 |
 | --- | --- | --- |
@@ -305,13 +324,10 @@ head，见下），但有三个地方会**硬拒绝启动**，以及四类数据
 | 7 | 想用镜像反向定位源码、想从 wheel 里拿到 `LICENSE`、想在受限网络上从源码构建 `minio` | **可操作（各自一半）**：① 应用镜像**没有** `org.opencontainers.image.revision` label（这些 Dockerfile 都不写 `LABEL`；仓库里唯一写 `LABEL` 的是 `deploy/images/minio.Dockerfile`，声明的是上游 minio 的来源，不是本仓库提交），只能用构建记录 + 源码归档 SHA 绑定，或用同版核对第 4 项的逐文件 `sha256` 做法；② wheel 不内嵌 `LICENSE`：子包 `pyproject.toml` 只写 `license = "MIT"`，没有 `license-files`（根 `pyproject.toml` 才写了 `license-files = ["LICENSE"]`），所以许可文本以仓库根的 `LICENSE` 为准，不要从制品里找；③ `deploy/images/minio.Dockerfile` 构建期要访问外网取 LICENSE 校验，受限网络下**无可行构建路径**，复用同 tag 的既有镜像并记为「该路径未验证」 | [从零实跑 §11.1](../operations/compose-minimal-from-zero.md)（`docs/operations/compose-minimal-from-zero.md:356`）、[§11.5](../operations/compose-minimal-from-zero.md)（`docs/operations/compose-minimal-from-zero.md:393`）；[compose-minimal.md §0](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:28`） |
 | 8 | 期望「混搭一定可见」——实际上旧消费者静默读新制品的问题**没有被解决**，只是被收窄了 | **无处置，只能避免**：运行期判据只覆盖「两侧都带 `GET /v1/nexus/version` 且契约修订不同」这一类；由 #853 引入的运行期守卫让这一类从静默变成告警（`role="alert"`，带 `data-nexus-contract-check="mismatch"`），但它**不拒签请求、不做版本协商**，页面开着期间也不重查。旧消费者那一类只能靠构建事实清单在部署前判定 | [同版核对](../operations/same-version-check.md)「这套判据为什么够用」与「明示限制」 |
 | 9 | 调语音侧删除：`POST /v1/nexus/deletion-plans`、`POST /v1/nexus/deletions`、`GET /v1/nexus/deletions/{id}` 恒返回 `503 operation_not_implemented` | **无处置，只能避免**：语音侧删除不在首发范围（实施卡 #819 仍 open），要删语音侧内容只能按资产 TTL 与对象版本策略处理，不能用这两个入口。工作台侧删除可用（见 §2），但含已保存资产的项目删除在未配对象区时会停在 `cleanup_state=pending`（行已擦除、对象字节待结清） | `backend/src/speechnexus_backend/speech/interfaces/http/unimplemented.py:82`（三行占位）；[判定表第 9 行](../plans/mvp-release-readiness.md) |
-| 10 | 用 `/readyz` 200 判断「可以创建 Job 了」——它不反映 Job 准入可用性，也不反映有多少容量被未收口的取消占着 | **可操作**：`/readyz` 与 `GET /v1/nexus/admin/diagnostics` 里的 `cancellation_debt` detail 才是那部分事实的读面（它**永远报告 `ok`**，不进聚合状态，因为 `/readyz` 是 Compose 健康检查，一个 Job 占着槽位不该让整套部署起不来）。判断「能不能建 Job」用 `POST /v1/nexus/jobs` 的实际应答码，或 `check-async-job-prereqs.py` | [隔离不了的时候：可见面与处置](../components/production-jobs.md#隔离不了的时候可见面与处置) |
+| 10 | 用 `/readyz` 200 判断「可以创建 Job 了」——它不反映 Job 准入可用性，也不反映有多少容量被未收口的取消占着 | **可操作**：`/readyz` 与 `GET /v1/nexus/admin/diagnostics` 里的 `cancellation_debt` detail 才是那部分事实的读面（它**永远报告 `ok`**，不进聚合状态，因为 `/readyz` 是 Compose 健康检查，一个 Job 占着槽位不该让整套部署起不来）。判断「能不能建 Job」用 `POST /v1/nexus/jobs` 的实际应答码，或 `check-async-job-prereqs.py`。**债务极大时探针会变盲而不是变红**：探针自身的超时先于服务预算到期，`check()` 捕获后只把 detail 降级成 `unavailable (timeout)`，`/readyz` 仍是 `200`——所以「绿」在积压很大时只代表「没查出」，不代表「没有债」。实测代价随**仍持有容量的租约数**增长（≈1.2–2.4 µs/条），`≥5 万`条时单次约 111 ms（占探针预算 4.6%）；`cancellation_debt` 另有一段随上线时长线性增长的历史扫描，`0056` 的索引把它从 37.4 ms 降到 0.90 ms | [隔离不了的时候：可见面与处置](../components/production-jobs.md#隔离不了的时候可见面与处置) |
 | 11 | 以为浏览器侧已被完整验证：浏览器覆盖只有 Chromium 无头；CI 不跑镜像内 nginx 的完整链路 | **无处置，只能避免**：三个 Playwright 配置都用 `chromium`（`playwright.a11y.config.mjs:19`、`playwright.behavior.config.mjs:27`、`playwright.deployed.config.mjs:29`）；CI 的 deployed-headers 门禁（`.github/workflows/ci.yml:1184`）是把**同一份构建产物**用从 `deploy/web/nginx.conf` 解析出的响应头起静态服务、跑 Chromium 首屏，不是跑镜像里的 nginx 容器。因此不要据 CI 绿宣称「浏览器已通过」；发布前在默认部署上人工跑一次同版核对第 3 项 | `.github/workflows/ci.yml` 的 Web job；`playwright.deployed.config.mjs` |
 
-**清单之外的一处现场观察**（不属上面 11 条，但会挡住「照文档跑通」的验收）：参考部署即使配好
-`sn_catalog_reader`，`GET /v1/models` 仍返回 `503 model_catalogue_unavailable`（产品缺陷 #891，
-DEL-535 实跑所见）。处置：把它当作已知缺陷读，不要改 catalog 校验绕过；该端点不参与本说明
-§2 的任何一条能力。
+**一处已不再成立的历史观察**：`DEL-535` 当时见到的 `GET /v1/models` → `503 model_catalogue_unavailable` 在本版本已不复现——`DEL-537` 在同一路径上实测 `200`。要注意的是它的 `readiness` 仍是**保守投影**（`engine_ready=false`、`admission_state=unavailable`），因为默认目录不接实时 readiness 证据（`docs/prd.md:1011` 的既定行为）。**不要用这个响应判断能不能建Job**：同一套部署上 Job 实际创建并成功。判「能不能建 Job」看 `POST /v1/nexus/jobs` 的实际应答码（见已知限制 10 与 [缺什么 → 看到什么 → 做什么](../operations/compose-minimal.md) §9.1）。
 
 ## 7. 验证过什么、没验证什么
 

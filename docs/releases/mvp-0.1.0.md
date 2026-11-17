@@ -2,7 +2,7 @@
 title: "SpeechNexus MVP 0.1.0 发布说明"
 status: active
 version: "0.1.0"
-date: 2026-11-16
+date: 2026-11-17
 ---
 
 # SpeechNexus MVP 0.1.0 发布说明
@@ -13,8 +13,8 @@ date: 2026-11-16
 （组件级、fake、契约级）只说明「实现存在」，不是发布承诺。档位定义与逐行推导见
 [MVP 发布就绪判定表](../plans/mvp-release-readiness.md)，本说明不重复它的论证。
 
-**核验基线**：`origin/main` @ `b63fe004a6e47073e2cdd873995d42b62c9c3b46`
-（2026-11-16T20:52:01+08:00），核验日期 2026-11-16。仓库没有任何发布 tag（`git tag` 为空），
+**核验基线**：`origin/main` @ `767d36e4b18c18119db9ada67e3786ab0e4d8c16`
+（2026-11-17T20:48:37+08:00），核验日期 2026-11-17。仓库没有任何发布 tag（`git tag` 为空），
 所以本文描述的「0.1.0」是一个基线及其构建产物，不是一个已打标的制品；每次部署实际运行的镜像
 由它自己的构建提交决定，见 §1。
 
@@ -29,6 +29,13 @@ date: 2026-11-16
 | TypeScript 包版本 | `0.1.0` | 5 个 `package.json` 的 `version` 字段（根、`packages/contracts`、`web/admin`、`web/shared`、`web/workbench`） | 人手声明；不随契约修订变化 |
 | 契约 `info.version` | 按文件各自计数，**不存在一个「契约总版本」**。8 个 OpenAPI 文件各有自己的值：`contracts/speech-openapi.yaml:4` = `0.1.0.dev18`、`contracts/admin-openapi.yaml:4` = `0.1.0.dev11`、`contracts/workbench-openapi.yaml:4` = `0.1.0.dev2`、`contracts/internal/execution-control.openapi.yaml:4` = `0.4.0.dev1`、`contracts/internal/asset-inspection.openapi.yaml:4` 与 `contracts/internal/runtime-control.openapi.yaml:4` = `0.1.0.dev1`、`contracts/operations.openapi.yaml:4` 与 `contracts/binding-defaults-producer.openapi.yaml:4` = `0.1.0.dev0` | 每个 OpenAPI 文件自己的 `info.version` 字符串。它被人手维护，`scripts/dev-env/check-http-contract-changes.py` 只把它当作「破坏性变更允许清单」的版本对键，没有「必须递增」的守卫 | 人手维护；运行期不读它 |
 | `contract_digest` | `sha256:ad581b4691e104fea9fad79d28fe3b0a5b08faace31156bdb7b2fe7d5c9c7863` | `contracts/` 下每个 `*.yaml`/`*.json` 文件按相对路径字节序，对「`<相对路径> SPACE <该文件 sha256> NEWLINE`」求总 `sha256`（算法在 `scripts/dev-env/generate-contract-bindings.py:823`）。生成期同时写进 Python 包（`packages/contracts/src/speechnexus_contracts/contract_digest.py`）与 TypeScript 包（`packages/contracts/src/contract_digest.generated.ts`） | 生成器产出一个值，两侧消费者各自持有；API 在运行期自报（`backend/src/speechnexus_backend/speech/interfaces/http/version_identity.py:30`），两个 Web 入口把同一个值烘焙进 bundle 并在页面启动时比对（`web/shared/src/ui/contract-identity.tsx:1`） |
+
+**复核时点（2026-11-17）未变**：上表取值逐项重取后与 2026-11-16 的基线相同——
+`contract_digest` 离线重算仍是 `sha256:ad581b46…7863`；`/healthz` 与 `GET /v1/nexus/version`
+的 `version` 仍取自 `backend/src/speechnexus_backend/__init__.py:3` 的 `__version__`，摘要仍取自
+生成的 `CONTRACT_DIGEST`；8 个 `pyproject.toml` 仍是 `0.1.0.dev0`，5 个 `package.json` 仍是
+`0.1.0`；8 个 OpenAPI 文件的 `info.version` 仍是 `0.1.0.dev18` / `0.1.0.dev11` / `0.1.0.dev2` /
+`0.4.0.dev1` / `0.1.0.dev1` ×2 / `0.1.0.dev0` ×2。基线之后合并的提交没有改 `contracts/` 的字节。
 
 契约摘要与 `GET /v1/nexus/version` 的应答形状在 `packages/contracts/src/speechnexus_contracts/version.openapi.json:81`
 （`required: ["version", "contract_digest"]`）；该路由由健康检查路由无条件挂载
@@ -79,21 +86,25 @@ grep -o 'sha256:[0-9a-f]\{64\}' web/workbench/dist/assets/*.js | sort -u
 | 持久 Job：`POST /v1/nexus/jobs` → `202` → `queued → running → succeeded`，创建/读取/派发/终态四个动作在参考部署上跑通；缺前置时在写入前点名失败（空 Job DSN → `503 job_unavailable`、缺迁移 → 启动门退出码 1、无 ready 实例 → `429 job_capacity_exhausted` 且不写行） | [F-JOB](../prd.md#f-job) | A（窄口径：创建/读取/派发/终态） | [从零实跑 §11.2](../operations/compose-minimal-from-zero.md)（`docs/operations/compose-minimal-from-zero.md:403`；`job-6d2c1d0f…`）与[时间线](../operations/compose-minimal-from-zero.md)（`docs/operations/compose-minimal-from-zero.md:404`）。**取消围栏、重试、SSE 事件序号续读只有隔离 PG 证据，未在参考部署上实际调用**（[判定表第 2 行](../plans/mvp-release-readiness.md)） |
 | 异步执行闭环：真实派发 worker 领取持久 Job，经真实网关调用真实引擎并写回终态 | [F-ASYNC](../prd.md#f-async) | A | 同一部署：worker 批次 `claimed=1 succeeded=1 failed=0 unknown=0 lease_lost=0`，网关 `submit`/`staging-result` 均 `200`，引擎侧（vLLM 0.28.0）日志出现一次 `POST /v1/audio/transcriptions 200 OK`（[§11.2](../operations/compose-minimal-from-zero.md)（`docs/operations/compose-minimal-from-zero.md:411`）、[引擎侧](../operations/compose-minimal-from-zero.md)（`docs/operations/compose-minimal-from-zero.md:413`）） |
 | 制品发布与下载：staging 不可公开读取、发布固定对象版本、`GET …/content` 返回字节且 `ETag` 与 `sha256` 逐字一致、落盘字节独立重算相符 | [F-ARTIFACT](../prd.md#f-artifact) | A（窄口径：发布与下载） | [§11.2](../operations/compose-minimal-from-zero.md)（`docs/operations/compose-minimal-from-zero.md:406`；`artifact-5b93ea73…`，92 字节，`sha256:3002c23c…`）。**保留期与过期链路未在参考部署上观测**：`artifact-retention` profile 存在但从未在该部署上启动留证 |
-| 同版浏览器消费：默认部署上由真实 Chromium 打开同版工作台，读到真实 GPU ASR Job 产出的同一份制品并落盘，`pageErrors=[]`，CSP 未放宽 | [F-CLIENT](../prd.md#f-client) | A（`DEL-534` 窗口） | 该次窗口的证据体不在仓库内，仓库内的结论与逐项数值在[判定表第 5 行](../plans/mvp-release-readiness.md)；可执行的离线/在线核对入口是[前后端同版核对](../operations/same-version-check.md) |
-| 同步语音入口：`POST /v1/audio/transcriptions` 与 `POST /v1/audio/speech` 在标准 SDK 下各取得过一次真实 `200` | [F-ASR](../prd.md#f-asr)、[F-TTS](../prd.md#f-tts) | A（窄口径、单次受控窗口、早于当前 head） | ASR：2026-11-02 MegaCube 窗口，`200`/1.237 s/文本与 5.36 s 合成句一致（记录在 PR #317 正文与 issue #243，仓库外材料）；TTS：2026-11-03 第六窗口，`200`/96044 bytes/2 s PCM16 24 kHz（[受控验收记录](../archive/audits/2026-11-03-controlled-tts-prepare.md)，脱敏 JSON 已入库）。**参考部署未复跑这两个 `200`**：ASR 缺最后一步公开调用（[compose-minimal.md](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:20`）），TTS 缺已合格内建声音（见已知限制 1 与 §4 的声音资格前置） |
+| `workspace` 作为分组语义：默认 workspace 承载 Job 与配额，Job 的 `workspace_id` 与准入读取的配额行是同一个 `workspace-default` | [F-SHARED](../prd.md#f-shared) | A（默认 workspace + 注册/配额/准入引用一致；窄口径） | 2026-11-17 从**空 PostgreSQL/MinIO 卷**起参考部署（项目 `sn935`）：`workspace-default` 由迁移种下，配额行由 `engine-register` 经产品入口写入（脚本该行以 `PASS workspace_quotas:` 给出 `workspace-default`、配额 `8`、`policy-revision-compose-example`），`POST /v1/nexus/jobs` `202` 且 Job 回报 `workspace_id=workspace-default`、准入读取的正是该配额行；起点由 `--phase all` 的 `require-empty` 断言钉住（[从零实跑 §14](../operations/compose-minimal-from-zero.md)（`docs/operations/compose-minimal-from-zero.md:628`））。**边界**：单主机、单 workspace，该栈无真实引擎（Job 止于 `202`）；第二个 workspace 的分组行为与身份边界、工作台模块的 workspace 语义未验（判定表第 8 行） |
+| 同版浏览器消费：默认部署上由真实 Chromium 打开同版工作台，读到真实 GPU ASR Job 产出的同一份制品并落盘，`pageErrors=[]`，CSP 未放宽；同版读取另有一条同 Job 同 Artifact 的浏览器用例 | [F-CLIENT](../prd.md#f-client) | A（`DEL-534` 窗口 + `#952` 同版读取） | `DEL-534` 的证据体不在仓库内，结论与逐项数值在[判定表第 5 行](../plans/mvp-release-readiness.md)；PR `#952`（源 head `5fbea085`，合入 `b6ec7871`；审查 `#956` 三轮）在真实 Chromium + 真实 PostgreSQL/版本化 MinIO + `create_app` 组合根 + 部署镜像层下让页面读取同一 Job 的同一 Artifact，页面/`/content`/提交行五项一致，bundle 烘焙摘要与 `/v1/nexus/version` 逐字相同，三条反例均红（边界：不启动 compose 栈，Job 与制品行是夹具状态；A 档只限「同版读取」，引擎产出那一半仍不可得）。可执行的离线/在线核对入口是[前后端同版核对](../operations/same-version-check.md) |
+| 同步语音入口：`POST /v1/audio/transcriptions` 与 `POST /v1/audio/speech` 在标准 SDK 下各取得过一次真实 `200` | [F-ASR](../prd.md#f-asr)、[F-TTS](../prd.md#f-tts) | A（窄口径、单次受控窗口、早于当前 head；**当前 head 未取到**） | ASR：2026-11-02 MegaCube 窗口，`200`/1.237 s/文本与 5.36 s 合成句一致（记录在 PR #317 正文与 issue #243，仓库外材料）；TTS：2026-11-03 第六窗口，`200`/96044 bytes/2 s PCM16 24 kHz（[受控验收记录](../archive/audits/2026-11-03-controlled-tts-prepare.md)，脱敏 JSON 已入库）。**这两条只证明入口在受控窗口里可用，不构成本版本的当前时点证据**：参考部署未复跑这两个 `200`，ASR 缺最后一步公开调用（[compose-minimal.md](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:20`），收口卡 [#957](https://github.com/hrygo/SpeechNexus/issues/957)），TTS 缺已合格内建声音（见已知限制 1 与 §4 的声音资格前置，收口卡 [#885](https://github.com/hrygo/SpeechNexus/issues/885)） |
 | 工作台侧删除：`POST /v1/workbench/deletion-plans` → `200`、以 `plan_id`/`plan_revision`/`plan_digest` 固定的 `POST /v1/workbench/deletions` → `202` → `succeeded`/`complete`，账本落行、`cascade` 模式擦除正文而不只删元数据行，错 revision/错 digest `409 deletion_plan_changed` | [F-DELETE](../prd.md#f-delete)（仅工作台单元） | A（工作台单元窄口径） | Compose 项目 `sn832` 真实栈实测，逐项见[判定表第 9 行](../plans/mvp-release-readiness.md)；实现为 `backend/src/speechnexus_backend/workbench/application/deletions.py`。**语音侧删除不在本版本**（`/v1/nexus/deletion-plans`、`/v1/nexus/deletions` 恒 `503 operation_not_implemented`，见已知限制 9） |
-| 运维可见面：`/healthz`、`/readyz`、`GET /v1/nexus/version`、`GET /v1/nexus/admin/diagnostics`（含 `cancellation_debt` 明细）、启动闸门（Job/workbench/隔离释放/保留期各自在领取前点名缺项） | [O-OBSERVE](../prd.md#o-observe) | A（探活与闸门本身）+ 明确缺口 | 探活期望值见 [compose-minimal.md §7](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:2124`）；闸门缺项命名见 [deploy/README.md](../../deploy/README.md) 与 [production-jobs.md](../components/production-jobs.md)。**`/readyz` 不反映 Job 准入可用性**，见已知限制 10 |
+| 运维可见面：`/healthz`、`/readyz`、`GET /v1/nexus/version`、`GET /v1/nexus/admin/diagnostics`（含 `cancellation_debt` 明细与 `never claimed` / `never claimable (exhausted)` / `due now` 三类账本状态）、启动闸门（Job/workbench/隔离释放/保留期各自在领取前点名缺项） | [O-OBSERVE](../prd.md#o-observe) | A（探活与闸门本身）+ 明确缺口 | 探活期望值见 [compose-minimal.md §7](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:2184`）；闸门缺项命名见 [deploy/README.md](../../deploy/README.md) 与 [production-jobs.md](../components/production-jobs.md)。**`/readyz` 不反映 Job 准入可用性**，见已知限制 10 |
 
 **不在本版本可达范围内的能力**（不是「以后会做」的承诺，只是当前边界）：实时语音会话
 （`/v1/realtime` 等仍是占位）、语音侧删除、声音设计/克隆的 Job 级端到端、物理多机拓扑与故障
-演练、浏览器全矩阵资格。范围定义见[判定表 §7](../plans/mvp-release-readiness.md)；`workspace`
-作为分组语义（F-SHARED）没有 A 档证据，因此不在上表。
+演练、浏览器全矩阵资格。范围定义见[判定表 §7](../plans/mvp-release-readiness.md)。声音设计/克隆
+的 Job 级泳道（`#529`）已被用户后置，引擎接受面另有 A 档，不计入首发阻塞。
 
 ## 3. 部署
 
-**唯一真相是[最小同步 ASR/TTS Compose 部署面](../operations/compose-minimal.md) §0–§7 与
-[deploy/README.md](../../deploy/README.md)。本节不复制它们的步骤**，只列这个首发版本独有的
-前置与顺序陷阱；照文档做完仍起不来的情形，先在 §4.3 的自查信号里找对应的失败类别。
+**唯一真相是[最小同步 ASR/TTS Compose 部署面](../operations/compose-minimal.md) §0–§8 与
+[deploy/README.md](../../deploy/README.md)；「从空卷到第一个 `202`」的顺序、判据与可复跑脚本在
+[从空库实跑 §13](../operations/compose-minimal-from-zero.md)（`docs/operations/compose-minimal-from-zero.md:498`），
+binding 发布与配额/容量核对的命令在[异步 Job 手册 §7.1–§7.3](../operations/async-job-runbook.md)。
+本节不复制这些步骤**，只列这个首发版本独有的前置与顺序陷阱；照文档做完仍起不来的情形，先在
+§4.3 的自查信号里找对应的失败类别。
 
 首发特有的前置共五类：
 
@@ -103,19 +114,28 @@ grep -o 'sha256:[0-9a-f]\{64\}' web/workbench/dist/assets/*.js | sort -u
    `speech_job_cancellation_fences`、`speech_job_cancellation_reconciliations`
    （`backend/src/speechnexus_backend/speech/infrastructure/quarantine_release_schema.py` 的
    `READ_COLUMNS`）。以 owner 重跑 `quarantine_release_grants` 与
-   `cancellation_debt_reader_grants`。漏跑的三条自查信号与升级路径见
-   [§6 已有部署的授权升级](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:1690`）。
+   `cancellation_debt_reader_grants`。漏跑的四条自查信号见 §4.3，升级路径见
+   [§6 已有部署的授权升级](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:1750`）。
 2. **异步 Job 的三个角色与九组授权**：`sn_job_writer` / `sn_job_admission` /
    `sn_job_dispatch` 由 `scripts/dev-env/provision-job-roles.py` 预置；admission 角色必须与
    Job writer 指向同一数据库和服务器，否则启动拒绝。旧版本升级上来、Job writer 仍持有**表级**
    `INSERT` 时，必须先 `REVOKE` 再重授列级权限（[deploy/README.md](../../deploy/README.md)
    的「Optional writers and background units」给出逐条函数清单）。
-3. **binding、`execution_defaults`、配额与实例注册**：注册是一次性命令而不是起容器，它是
-   `host_nodes`、`workspace_quotas`、`resource_pools`、`engine_instances` 的唯一产生入口
-   （[compose-minimal.md §8](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:2180`））。已发布的 binding 必须带
-   `execution_defaults`，否则 asr/tts 创建返回 `422 job_binding_incomplete`；升级前用只读预检
+3. **binding 发布、`execution_defaults`、配额与实例注册**：从空库创建 Job 前，判定顺序是固定
+   的四步——该 `model` 有已发布 binding revision（否则 `422 model_not_published`）、输入资产已
+   `ready`（`422 asset_not_ready`）、该 workspace 有配额行（`422 workspace_not_configured`）、
+   有与已发布 revision 一致的 `ready` 实例与容量（`429 job_capacity_exhausted`）。所以「无实例
+   时返回 `429`」只在前三项成立后才可见；从空库最先撞到的是第一步（见
+   [从零到第一个 202 的判定顺序](../operations/compose-minimal-from-zero.md)（`docs/operations/compose-minimal-from-zero.md:498`））。
+   binding 由三条 admin 路由产生（`POST /v1/nexus/admin/model-bindings` → `…/publications` →
+   `…/revisions/{revision}/activations`，命令见 `docs/operations/async-job-runbook.md` 的 §7.1）；
+   配额与 `host_nodes` 行只由一次性注册写入（[compose-minimal.md §8](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:2240`）），
+   注册写入的 `binding_revision_id` 必须等于已发布 revision，两边要分别核对。配额与 `host_nodes`
+   这两份事实都没有第二个入口，也不必手写 SQL（[§13.3](../operations/compose-minimal-from-zero.md)）。
+   已发布的 binding 必须带 `execution_defaults`，否则 asr/tts 创建返回 `422 job_binding_incomplete`；
+   升级前用只读预检
    `psql "$SPEECHNEXUS_DATABASE_URL" -f scripts/dev-env/check-public-job-execution-defaults.sql`
-   列出缺项，对列出的 binding 重新发布，**不要自动回填**（口径与命令来源：`deploy/README.md:1073`）。
+   列出缺项，对列出的 binding 重新发布，**不要自动回填**（口径与命令来源：`deploy/README.md:1125`）。
 4. **声音资格**：参考部署的 bootstrap 明确「engine lifecycle is operator/external」
    （`deploy/compose.yaml:9`），因此没有 node-controller 也就没有 native runtime 证据。外部托管
    引擎只能走运维自证路径：先声明信任（默认关闭，未声明即 `exit 2` 点名变量），再
@@ -147,7 +167,7 @@ grep -o 'sha256:[0-9a-f]\{64\}' web/workbench/dist/assets/*.js | sort -u
    `0056_debt_probe_live_state_index`（[compose-minimal.md §5](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:467`））。
    升级前须停止或隔离旧版本的 publication 与 lifecycle 写者，直到迁移、授权与新版本切换完成。
 3. **重放授权**：新建部署跑 §6 的建角色脚本；**已有部署只重放授权函数**，不重跑撤权与建角色
-   部分（[§6 已有部署的授权升级](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:1690`））。这一轮至少包括
+   部分（[§6 已有部署的授权升级](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:1750`））。这一轮至少包括
    `quarantine_release_grants`、`cancellation_debt_reader_grants`、Job writer 的九组函数、
    `gateway_query_grants`/`gateway_abort_grants` 两份一起、`artifact_retention_grants`。
    旧部署还要补 `GRANT SELECT ON speech.alembic_version TO sn_job_dispatch`（派发启动门要读
@@ -157,18 +177,20 @@ grep -o 'sha256:[0-9a-f]\{64\}' web/workbench/dist/assets/*.js | sort -u
 
    - `quarantine_release` 面缺授权 → API 启动**点名表列**被拒，或操作员 CLI 退出码 3、
      `unavailable: quarantine_release_privilege_missing`；
-   - `cancellation_debt_reader_grants` 缺新列 → 该探针整体 `unavailable (permission)`
-     （`cancellation_debt` 不受影响），`/readyz` 仍为 `200`；
-   - `stop_evidence_debt` 需要同一身份的列级授权 → 同样降级为 `(permission)`；
+   - `cancellation_debt_reader_grants` 缺账本新列（`last_outcome`/`next_check_at_us`）→ 该探针
+     整体 `cancellation_debt: unavailable (permission)`（同族 `stop_evidence_debt` 不读这两列，
+     不受影响），`/readyz` 仍为 `200`；
+   - `stop_evidence_debt` 需要同一身份的列级授权 → 缺授权时同样读不到，读面只剩
+     `stop_evidence_debt: unavailable (permission)`；
    - Job 派发启动门缺 `GRANT SELECT ON speech.alembic_version` → 容器退出并点名该表。
 
    `0056` 建的索引本身不需要任何授权（索引不是可授权对象），只读诊断身份**不加新授权**
-   就能用上它；实测只施加既有 7 条列级授权的临时角色，两条债务查询都走
+   就能用上它；实测只施加 `cancellation_debt_reader_grants` 的 7 条语句，两条债务查询都走
    `speech_jobs_live_state_scan`（0.216 ms / 3.228 ms）。
 4. **起 gateway，再起 api 与 worker**。原因是 TTS 内部命令新增的可选字段是**单向兼容**：新
    gateway 能处理旧 backend 的 builtin 命令，旧 gateway 处理新 backend 的 custom 命令会走未知
    路径（`ENGINE_TRANSPORT_UNKNOWN`），不会静默回退。因此不允许「新 backend + 旧 gateway」
-   （`deploy/README.md:1082`）。
+   （`deploy/README.md:1135`）。
 5. **按需启用 profile**：`job-dispatch`、`artifact-retention`、`workbench-api`、`web`、
    `asset-inspection`。每个 profile 都有自己的启动闸门，闸门失败是**容器退出/重启循环**，不是
    `up -d` 失败——`up -d` 返回 0 不代表该单元可用。
@@ -210,12 +232,12 @@ grep -o 'sha256:[0-9a-f]\{64\}' web/workbench/dist/assets/*.js | sort -u
 | --- | --- | --- |
 | 镜像 | `docker compose --env-file deploy/compose.env -f deploy/compose.yaml build <逐个服务名>` | 退出码 `0`；Web 镜像再核 label：`docker image inspect --format '{{index .Config.Labels "org.speechnexus.source.commit"}} {{index .Config.Labels "org.speechnexus.source.dirty"}}' speechnexus/web-workbench:<sha>` 输出 `<sha> 0` |
 | 迁移 | `... --profile migration run --rm migrate`；再 `... exec -T postgres psql -U <user> -d <db> -Atc 'select version_num from speech.alembic_version'` | 退出码 `0`，且查询结果等于所用制品的 head（本版本 `0056_debt_probe_live_state_index`）。不相等即「迁移没跑完/跑错身份」，不要手工改版本表 |
-| 授权（隔离释放） | 三条，任一命中即漏跑：① API 启动被拒并点名表列（`Quarantine release startup rejected (... declared surface at <table>.<column>)`，`backend/src/speechnexus_backend/quarantine_release_runtime.py:137`）；② 只跑操作员 CLI 时退出码 `3`、输出 `unavailable: quarantine_release_privilege_missing`；③ `/readyz` 的 detail 退化为 `cancellation_debt: … (jobs: lease-unread=1) … [lease detail unavailable: permission]` 且**不会**让 `/readyz` 失败 | 三条都是「已配置身份但授权不对」的信号，不是故障 |
-| 服务 | `curl -sS -w '\nhttp=%{http_code}\n' http://127.0.0.1:8000/healthz`、`…/readyz`、`http://127.0.0.1:8010/healthz`、`…/readyz` | 四条都是 `200`，体见 [compose-minimal.md §7](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:2124`）。`/readyz` 只证明 Postgres 与对象存储连通，不证明 Job、binding、recipe 或引擎可用 |
+| 授权（隔离释放） | 四条，任一命中即漏跑或授权面不全：① API 启动被拒并点名表列（`Quarantine release startup rejected (... declared surface at <table>.<column>)`，`backend/src/speechnexus_backend/quarantine_release_runtime.py:137`）；② 只跑操作员 CLI 时退出码 `3`、输出 `unavailable: quarantine_release_privilege_missing`；③ `/readyz` 的 `cancellation_debt` **整体**变为 `cancellation_debt: unavailable (permission)`（旧账本授权缺 `last_outcome`/`next_check_at_us` 两列；同族 `stop_evidence_debt` 不读这两列，不受影响）；④ 身份能读 Job/围栏/账本但读不到租约/执行表时，detail 退化为 `cancellation_debt: … (jobs: lease-unread=1; never claimed: …; never claimable (exhausted): …; due now: …) … [lease detail unavailable: permission]` | 四条都是「已配置身份但授权不对」的信号，不是故障；③④ 都**不会**让 `/readyz` 失败。③ 是 `#951` 给账本新列加授权之后新增的一条 |
+| 服务 | `curl -sS -w '\nhttp=%{http_code}\n' http://127.0.0.1:8000/healthz`、`…/readyz`、`http://127.0.0.1:8010/healthz`、`…/readyz` | 四条都是 `200`，体见 [compose-minimal.md §7](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:2184`）。`/readyz` 只证明 Postgres 与对象存储连通，不证明 Job、binding、recipe 或引擎可用 |
 | 同版 | `curl -sS http://127.0.0.1:8000/v1/nexus/version` 的 `contract_digest`，与该提交上 `print-contract-digest.py` 的重算值、页面 bundle 里烘焙的值 | 三者逐字相同 |
 | 异步 Job 前置 | `python3 scripts/dev-env/check-async-job-prereqs.py --env-file deploy/compose.env` | 退出码 `0`（允许 `PENDING`/`SKIP`）；`1` 表示至少一项 `FAIL`，`2` 是参数或路径错。它只读，**只判「缺少权限」，不判「多授予了权限」** |
 | 派发 worker | 启动日志里 `deploy/job-startup-gate.py` 的 `OK:` 行；`docker compose ps` 显示该容器在运行且未重启；`logs job-dispatch-worker` 有批次计数 | 无 `OK:` 行或循环重启即前置缺失。迁移 head 不等于镜像内 head 时闸门直接拒绝并点名两侧
-（`deploy/job-startup-gate.py:353`） |
+（`deploy/job-startup-gate.py:353`）。本机以空环境启动该闸门复现为 5 行 `FAIL:` 加末行汇总、退出码 `1`，不回显 DSN |
 | 一条 Job 端到端 | `POST /v1/nexus/assets` → `201 ready`；`POST /v1/nexus/jobs` → `202`；轮询到 `succeeded`；`GET …/content` → `200` 且 `ETag` 等于 `sha256` | 创建若 `503 engine_not_ready`，先跑 `engine-readiness` 的续期（它不被 Compose 调度） |
 
 ### 4.4 升级前必须核对的既有数据
@@ -250,8 +272,12 @@ head，见下），但有三个地方会**硬拒绝启动**，以及四类数据
 | 单元 | 机制 | 回滚后果 |
 | --- | --- | --- |
 | `job-dispatch-worker` | `deploy/job-startup-gate.py` 要求库内 `speech.alembic_version` 等于**镜像内**的 head（`deploy/job-startup-gate.py:353`） | 旧镜像的 head 更小 → 拒绝启动并点名两侧 head。要么不把这个 profile 回滚（让新 worker 继续跑，它按声明面读列，不回改数据），要么先接受该单元不可用 |
-| 所有在启动期比对「声明授权面」的单元 | 隔离释放角色按列全等比对（多一列、少一列都拒绝，`backend/src/speechnexus_backend/quarantine_release_runtime.py:137`）；Artifact 保留身份只允许改声明列，多出列即拒绝（`backend/src/speechnexus_backend/artifact_retention_runtime.py:140`）；Job writer 的表级 `INSERT` 亦同理 | 升级时按新声明重放过授权，ACL 因此是「新面」。旧镜像声明面更窄 → 上述单元拒绝启动。**所以回滚必须同时把 ACL 退回旧声明面**（`REVOKE` 新增列/关系后重跑旧版本的 grant 函数），这正是 [compose-minimal.md §6](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:1690`） 写的「回退时…按保存的 ACL 恢复受影响的其他角色」 |
+| 所有在启动期比对「声明授权面」的单元 | 隔离释放角色按列全等比对（多一列、少一列都拒绝，`backend/src/speechnexus_backend/quarantine_release_runtime.py:137`）；Artifact 保留身份只允许改声明列，多出列即拒绝（`backend/src/speechnexus_backend/artifact_retention_runtime.py:158`）；Job writer 的表级 `INSERT` 亦同理 | 升级时按新声明重放过授权，ACL 因此是「新面」。旧镜像声明面更窄 → 上述单元拒绝启动。**所以回滚必须同时把 ACL 退回旧声明面**（`REVOKE` 新增列/关系后重跑旧版本的 grant 函数），这正是 [compose-minimal.md §6](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:1750`） 写的「回退时…按保存的 ACL 恢复受影响的其他角色」 |
 | `workbench-migrate` | 已存在的命名空间只核对记录 revision 等于本构建的（`SCHEMA_REVISION = 11`） | 回滚工作台镜像时，旧 `workbench-migrate` 对不同 revision 会失败；该单元只能前向 |
+
+`#951` 给只读债务身份新增的账本两列（`last_outcome`/`next_check_at_us`）不在上述三处里：这个
+身份没有启动期比对，回退授权只会让 `cancellation_debt` 明细整体降级为
+`cancellation_debt: unavailable (permission)`（`/readyz` 仍 `200`），不会拒绝启动。
 
 **不会让旧镜像起不来、但会让行为出错的四类新数据：**
 
@@ -282,11 +308,13 @@ head，见下），但有三个地方会**硬拒绝启动**，以及四类数据
 
 1. **停新版本服务**：先停 worker/profile 单元（`job-dispatch`、`artifact-retention`、
    `binding-disable`），再停 `api` 与 `gateway`。自查：`docker compose ps` 里目标容器不再
-   `Up`；按 [§10.1 的 label filter](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:2285`） 确认没有遗留的一次性
+   `Up`；按 [§10.1 的 label filter](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:2385`） 确认没有遗留的一次性
    容器。
 2. **把 ACL 退回旧声明面**：对升级时被扩权的角色 `REVOKE` 新增的列/关系，再用旧版本的 grant
-   函数重放。自查：旧镜像启动不再出现 `... startup rejected`；`/readyz` 的
-   `cancellation_debt` detail 不退化为 `[lease detail unavailable: permission]`。
+   函数重放。自查：旧镜像启动不再出现 `... startup rejected`；旧镜像与旧授权面不读
+   `last_outcome`/`next_check_at_us`，`/readyz` 的 `cancellation_debt` 不应变成
+   `cancellation_debt: unavailable (permission)`。**若保留新镜像**，则必须保留这两列的授权，
+   否则该探针整体降级（`stop_evidence_debt` 不受影响）。
 3. **切回旧镜像与旧私有配置**：`deploy/compose.env`、`deploy/private/` 三份文件、两份 gateway
    配置。自查：gateway 与 api 容器 `healthy`；四条约 `curl` 返回 `200`。
 4. **确认数据边界**：不要执行 `alembic downgrade`；不要删 `speech_artifacts.deleted_at_us`；
@@ -316,17 +344,17 @@ head，见下），但有三个地方会**硬拒绝启动**，以及四类数据
 | # | 使用者会踩到什么 | 处置 | 来源与判据 |
 | --- | --- | --- | --- |
 | 1 | 升级或迁移后，**0055 之前产生、没有 provenance 行的内建声音资格不再被准入接受**：同步 TTS 答 `404 voice_not_found`（与已撤销资格同码），公开 Job 答 `422 voice_not_published`。两者都不是 `backend_unavailable`，日志里另有 `code=qualification_source_unverified state=…`。审计读面把这类行标为 `legacy_pre_0055` | **可操作**：为**新的** voice revision 重新取得资格（控制器探测或运维自证两条路径之一），再发布。同一 revision 不能补发，重复发布报 `publication_conflict`（`backend/src/speechnexus_backend/builtin_voice_publication.py:249`）。`unverified`、声明已过窗口、缺探针授权的行同样被拒 | [Builtin Voice 资格边界](../operations/builtin-voice-qualification.md)、[运维声明资格的读面与拒绝码](../design/operator-attested-voice-qualification.md)（拒绝码与两条对外表现的对照表）；迁移 `0055_operator_attestation` |
-| 2 | 对一个**已经 `succeeded`** 的执行发取消：Job 会停在 `cancelling`、租约停在 `reserved`、`held_slots` 不归零、对账账本 `attempts` 涨到 64 后饱和并继续以最大退避领取。数据库触发器拒绝 `cancelling → succeeded`，所以它不会自己变成成功，也不会自己变成失败 | **可操作（有界）**：只有带网关 `engine_terminal_response` 证据（`execution_stopped=1`、`resources_released=1`）的那一类能走「有界操作员出口」五步（识别 → 跨结算周期复读 → 现场 `drain` → `completed_release_cli` 写证词并释放 → 核对 `held_slots` 归零）。`/readyz` 与 `admin/diagnostics` 的 `cancellation_debt` 明细按子类给出处置路：`completed-without-release` 走该出口，`execution-unknown` 走隔离/已验证停止路径。**缺终止证据的那一类无出口**，只能等 #338 的停止确认协议 | [取消失败的终态判定](../components/production-jobs.md#取消失败的终态判定)、[有界操作员出口](../components/production-jobs.md#执行已完成取消后到有界操作员出口) |
-| 3 | 配了 `SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL` 或 `SPEECHNEXUS_READINESS_CANCELLATION_DSN` 的部署升级后，隔离释放角色启动被拒，消息点名某张表某一列 | **可操作**：迁移后以 owner 重跑 `quarantine_release_grants` 与 `cancellation_debt_reader_grants`（授权面 9 → 12 张关系）。漏跑只有三条可自查信号，见 §4.3；三条都不是故障而是「授权没跟上」 | `deploy/compose.env.example` 的 `SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL` 段；[§6 已有部署的授权升级](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:1690`） |
+| 2 | 对一个**已经 `succeeded`** 的执行发取消：Job 会停在 `cancelling`、租约停在 `reserved`、`held_slots` 不归零；对账账本的重试预算（`SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_MAX_ATTEMPTS`，默认 8、上限 32）用尽后写 `last_outcome='exhausted'`，领取谓词（`last_outcome IS DISTINCT FROM 'exhausted'`）从此排除该行，所以它不会被再领取。数据库触发器拒绝 `cancelling → succeeded`，因此它不会自己变成成功，也不会自己变成失败 | **可操作（有界）**：只有带网关 `engine_terminal_response` 证据（`execution_stopped=1`、`resources_released=1`）的那一类能走「有界操作员出口」五步（识别 → 跨结算周期复读 → 现场 `drain` → `completed_release_cli` 写证词并释放 → 核对 `held_slots` 归零）。`/readyz` 与 `admin/diagnostics` 的 `cancellation_debt` 明细按子类给出处置路：`completed-without-release` 走该出口，`execution-unknown` 走隔离/已验证停止路径，并按账本时刻标出 `never claimed` / `never claimable (exhausted)` / `due now`（`#951`）。**`exhausted` 只能靠操作员出口**：再跑多少轮 worker 都不会领取它；**缺终止证据的那一类无出口**，只能等 #338 的停止确认协议 | [取消失败的终态判定](../components/production-jobs.md#取消失败的终态判定)、[有界操作员出口](../components/production-jobs.md#执行已完成取消后到有界操作员出口) |
+| 3 | 配了 `SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL` 或 `SPEECHNEXUS_READINESS_CANCELLATION_DSN` 的部署升级后，隔离释放角色启动被拒，消息点名某张表某一列；或者 `cancellation_debt` 整体变成 `unavailable (permission)` | **可操作**：迁移后以 owner 重跑 `quarantine_release_grants` 与 `cancellation_debt_reader_grants`。隔离释放的声明授权面从 9 张关系扩到 12 张（新增 `speech_jobs`、`speech_job_cancellation_fences`、`speech_job_cancellation_reconciliations`）；`#951` 之后只读债务身份的账本授权还多出 `last_outcome`/`next_check_at_us` 两列，旧的账本两列授权会让该探针整体降级。漏跑或授权面不全有四条可自查信号，见 §4.3；都不是故障而是「授权没跟上」 | `deploy/compose.env.example` 的 `SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL` 段；`backend/src/speechnexus_backend/speech/infrastructure/job_cancellation_fence_schema.py:107` 的 `cancellation_debt_reader_grants`；升级路径见 [§6 已有部署的授权升级](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:1750`） |
 | 4 | 操作员为了「干净」重取一份 drain 应答，或者拿一份几天前的旧应答去释放租约——工具会接受 | **无处置，只能避免**：时间窗只证明「这份 drain 发生在该执行结束之后、记录之前」，**不证明它是刚取的**。上界是操作员自己填的 `observed_at`，因此执行结束后任意久取到的真 drain 仍会通过（实测 24 小时前的应答照样释放成功）。唯一做法是**现场取 drain**，这也是它被写成操作步骤而不是校验项的原因 | [有界操作员出口](../components/production-jobs.md#执行已完成取消后到有界操作员出口)「时间窗强制的是先后，不是新鲜度」 |
-| 5 | 换了一半的部署被当成同版：旧消费者静默读到新制品；新页面配旧接口（`404`）页面不告警；只升/降级 workbench API 时语音底座摘要仍然相等；长开页面期间后端换版不重查 | **可操作（部分）**：用[前后端同版核对](../operations/same-version-check.md)的人工四项（镜像 label、`web-dist` 摘要、契约摘要 curl 对照 bundle 烘焙值、后端源码树）。**其中 `404` 这一类运行期判据无能为力**：`404` 被当成「未知」而不是「不一致」，所以必须靠第 3 项 curl 对照；工作台 API 单独升降级不在该判据范围内，只能靠发布流程 | [前后端同版核对](../operations/same-version-check.md)「明示限制」；[判定表第 5 行](../plans/mvp-release-readiness.md) |
-| 6 | 以为「取消会自动收敛」、以为「保留期已有历史账本」 | **可操作（一半）+ 无处置（一半）**：① 参考部署**不启动**取消对账 worker，`SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_ENABLED` 默认 `false`，所以默认部署里没有任何推进者——要自动收敛必须显式启用该 worker 并接受它的轮询间隔。② 迁移 `0054` 之前被标为 `deleted` 的行没有 `deleted_at_us`，那段历史不可追溯，**没有处置**：不要回填计算值，用 `select count(*) … deleted_at_us is null` 把它读成「0054 之前的删除」 | `deploy/compose.yaml` 的服务清单（无取消对账服务）；`0054_artifact_deleted_ledger` 的 docstring 与 `deploy/README.md` 的 artifact-retention 段 |
+| 5 | 换了一半的部署被当成同版：旧消费者静默读到新制品；新页面配旧接口（`404`）页面不告警；只升/降级 workbench API 时语音底座摘要仍然相等；长开页面期间后端换版不重查 | **可操作（部分）**：用[前后端同版核对](../operations/same-version-check.md)的人工四项（镜像 label、`web-dist` 摘要、契约摘要 curl 对照 bundle 烘焙值、后端源码树）。运行期判据只覆盖「两侧都带 `GET /v1/nexus/version` 且契约摘要不同」这一类，`404` 被当成「未知」而不是「不一致」，工作台 API 单独升降级不在该判据内，页面只在加载时比对一次——这四类缺口不变。判定表第 5 行已达标（**A：仅同版读取**），指的是「页面能读到同一 Job 的同一 Artifact」有证据（`DEL-534` 默认部署窗口 + `#952` 组合根用例，源 head `5fbea085`、合入 `b6ec7871`、审查 `#956` 三轮），不是「任何混搭都能被发现」；`#952` 不启动 compose 栈、Job 与制品行是夹具状态，**引擎产出那一半未验** | [前后端同版核对](../operations/same-version-check.md)「明示限制」；[判定表第 5 行](../plans/mvp-release-readiness.md) |
+| 6 | 以为「取消会自动收敛」、以为「保留期已有历史账本」 | **可操作（一半）+ 无处置（一半）**：① 参考部署**不启动**取消对账 worker，`SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_ENABLED` 默认 `false`，所以默认部署里没有任何推进者——要自动收敛必须显式启用该 worker 并接受它的轮询间隔。`#951` 只让读面能区分「没有推进者」与「被阻塞」（`never claimed` / `never claimable (exhausted)` / `due now`），没有增加推进者；未配 `SPEECHNEXUS_READINESS_CANCELLATION_DSN` 时读面仍是 `unavailable (not configured)`。② 迁移 `0054` 之前被标为 `deleted` 的行没有 `deleted_at_us`，那段历史不可追溯，**没有处置**：不要回填计算值，用 `select count(*) … deleted_at_us is null` 把它读成「0054 之前的删除」 | `deploy/compose.yaml` 的服务清单（无取消对账服务）；`backend/src/speechnexus_backend/job_cancellation_runtime.py:99` 的 `enabled` 默认值；`0054_artifact_deleted_ledger` 的 docstring 与 `deploy/README.md` 的 artifact-retention 段 |
 | 7 | 想用镜像反向定位源码、想从 wheel 里拿到 `LICENSE`、想在受限网络上从源码构建 `minio` | **可操作（各自一半）**：① 应用镜像**没有** `org.opencontainers.image.revision` label（这些 Dockerfile 都不写 `LABEL`；仓库里唯一写 `LABEL` 的是 `deploy/images/minio.Dockerfile`，声明的是上游 minio 的来源，不是本仓库提交），只能用构建记录 + 源码归档 SHA 绑定，或用同版核对第 4 项的逐文件 `sha256` 做法；② wheel 不内嵌 `LICENSE`：子包 `pyproject.toml` 只写 `license = "MIT"`，没有 `license-files`（根 `pyproject.toml` 才写了 `license-files = ["LICENSE"]`），所以许可文本以仓库根的 `LICENSE` 为准，不要从制品里找；③ `deploy/images/minio.Dockerfile` 构建期要访问外网取 LICENSE 校验，受限网络下**无可行构建路径**，复用同 tag 的既有镜像并记为「该路径未验证」 | [从零实跑 §11.1](../operations/compose-minimal-from-zero.md)（`docs/operations/compose-minimal-from-zero.md:356`）、[§11.5](../operations/compose-minimal-from-zero.md)（`docs/operations/compose-minimal-from-zero.md:393`）；[compose-minimal.md §0](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:28`） |
 | 8 | 期望「混搭一定可见」——实际上旧消费者静默读新制品的问题**没有被解决**，只是被收窄了 | **无处置，只能避免**：运行期判据只覆盖「两侧都带 `GET /v1/nexus/version` 且契约修订不同」这一类；由 #853 引入的运行期守卫让这一类从静默变成告警（`role="alert"`，带 `data-nexus-contract-check="mismatch"`），但它**不拒签请求、不做版本协商**，页面开着期间也不重查。旧消费者那一类只能靠构建事实清单在部署前判定 | [同版核对](../operations/same-version-check.md)「这套判据为什么够用」与「明示限制」 |
 | 9 | 调语音侧删除：`POST /v1/nexus/deletion-plans`、`POST /v1/nexus/deletions`、`GET /v1/nexus/deletions/{id}` 恒返回 `503 operation_not_implemented` | **无处置，只能避免**：语音侧删除不在首发范围（实施卡 #819 仍 open），要删语音侧内容只能按资产 TTL 与对象版本策略处理，不能用这两个入口。工作台侧删除可用（见 §2），但含已保存资产的项目删除在未配对象区时会停在 `cleanup_state=pending`（行已擦除、对象字节待结清） | `backend/src/speechnexus_backend/speech/interfaces/http/unimplemented.py:82`（三行占位）；[判定表第 9 行](../plans/mvp-release-readiness.md) |
-| 10 | 用 `/readyz` 200 判断「可以创建 Job 了」——它不反映 Job 准入可用性，也不反映有多少容量被未收口的取消占着 | **可操作**：`/readyz` 与 `GET /v1/nexus/admin/diagnostics` 里的 `cancellation_debt` detail 才是那部分事实的读面（它**永远报告 `ok`**，不进聚合状态，因为 `/readyz` 是 Compose 健康检查，一个 Job 占着槽位不该让整套部署起不来）。判断「能不能建 Job」用 `POST /v1/nexus/jobs` 的实际应答码，或 `check-async-job-prereqs.py`。**债务极大时探针会变盲而不是变红**：探针自身的超时先于服务预算到期，`check()` 捕获后只把 detail 降级成 `unavailable (timeout)`，`/readyz` 仍是 `200`——所以「绿」在积压很大时只代表「没查出」，不代表「没有债」。实测代价随**仍持有容量的租约数**增长（≈1.2–2.4 µs/条），`≥5 万`条时单次约 111 ms（占探针预算 4.6%）；`cancellation_debt` 另有一段随上线时长线性增长的历史扫描，`0056` 的索引把它从 37.4 ms 降到 0.90 ms | [隔离不了的时候：可见面与处置](../components/production-jobs.md#隔离不了的时候可见面与处置) |
+| 10 | 用 `/readyz` 200 判断「可以创建 Job 了」——它不反映 Job 准入可用性，也不反映有多少容量被未收口的取消占着 | **可操作**：`/readyz` 与 `GET /v1/nexus/admin/diagnostics` 里的 `cancellation_debt` detail 才是那部分事实的读面（它**永远报告 `ok`**，不进聚合状态，因为 `/readyz` 是 Compose 健康检查，一个 Job 占着槽位不该让整套部署起不来）。detail 还按账本时刻把每个受理标成 `never claimed` / `never claimable (exhausted)` / `due now` 三类（`#951`）：前两类分别表示「自围栏写入以来无人领取」与「不会再被自动领取」，持续出现 `due now` 才说明没人推进。判断「能不能建 Job」用 `POST /v1/nexus/jobs` 的实际应答码，或 `check-async-job-prereqs.py`。**债务极大时探针会变盲而不是变红**：探针自身的超时先于服务预算到期，`check()` 捕获后只把 detail 降级成 `unavailable (timeout)`，`/readyz` 仍是 `200`——所以「绿」在积压很大时只代表「没查出」，不代表「没有债」。实测代价随**仍持有容量的租约数**增长（≈1.2–2.4 µs/条），`≥5 万`条时单次约 111 ms（占探针预算 4.6%）；`cancellation_debt` 另有一段随上线时长线性增长的历史扫描，`0056` 的索引把它从 37.4 ms 降到 0.90 ms | [隔离不了的时候：可见面与处置](../components/production-jobs.md#隔离不了的时候可见面与处置) |
 | 11 | 以为浏览器侧已被完整验证：浏览器覆盖只有 Chromium 无头；CI 不跑镜像内 nginx 的完整链路 | **无处置，只能避免**：三个 Playwright 配置都用 `chromium`（`playwright.a11y.config.mjs:19`、`playwright.behavior.config.mjs:27`、`playwright.deployed.config.mjs:29`）；CI 的 deployed-headers 门禁（`.github/workflows/ci.yml:1184`）是把**同一份构建产物**用从 `deploy/web/nginx.conf` 解析出的响应头起静态服务、跑 Chromium 首屏，不是跑镜像里的 nginx 容器。因此不要据 CI 绿宣称「浏览器已通过」；发布前在默认部署上人工跑一次同版核对第 3 项 | `.github/workflows/ci.yml` 的 Web job；`playwright.deployed.config.mjs` |
-| 12 | 以为「启动失败的输出里没有凭据」——**不成立**：`api` 的 lifespan 失败是 traceback，里面原样带着驱动的连接报文（真口令错时含 `connection to server at "<host>", port <port> failed: FATAL: password authentication failed for user "<role>"`，一次失败打印两次）；`gateway` 控制面、`job-dispatch-worker` 的两条路径同样是 traceback | **无处置，只能避免**：**一行结论类**的闸门（结算预检、asset-inspector、workbench-migrate、workbench-api、`speechnexus-job-dispatch-worker` 自身入口）确实不泄露，实测按 SQLSTATE 分类后只留「登录被拒 / 服务器不可达 / 异常类型名」；但 traceback 类单元打印的是驱动原文，**任何「启动失败不泄露凭据」的通稿都是假的**。处置只有一条：这四类单元的输出**不要整段贴进公开 issue 或聊天**，要贴就贴 `FAIL:` 行与异常类型名 | `docs/operations/startup-gate-output.md` 的 24 行表；`docs/operations/async-job-runbook.md` §1；`compose-minimal.md` §9.1 |
+| 12 | 以为「启动失败的输出里没有凭据」——**不成立**：`api` 的 lifespan 失败是 traceback，里面原样带着驱动的连接报文（真口令错时含 `connection to server at "<host>", port <port> failed: FATAL: password authentication failed for user "<role>"`，一次失败打印两次）；`gateway` 控制面、`job-dispatch-worker` 的两条路径同样是 traceback | **无处置，只能避免**：**一行结论类**的闸门（结算预检、asset-inspector、workbench-migrate、workbench-api、`speechnexus-job-dispatch-worker` 自身入口）确实不泄露，实测按 SQLSTATE 分类后只留「登录被拒 / 服务器不可达 / 异常类型名」；但 traceback 类单元打印的是驱动原文，**任何「启动失败不泄露凭据」的通稿都是假的**。处置只有一条：这些单元的输出**不要整段贴进公开 issue 或聊天**，要贴就贴 `FAIL:` 行与异常类型名 | `docs/operations/startup-gate-output.md` 的 24 行表；`docs/operations/async-job-runbook.md` §1；`compose-minimal.md` §9.1 |
 | 13 | 以为 `GET /v1/models` 的 `nexus.readiness.admission_state` 是「现在能不能建 Job」的答案——**契约把它定义成实时准入判据**（`contracts/speech-openapi.yaml:4063-4070`：「available means currently admissible」「unavailable means the model cannot be admitted now」；另见 `:53-54` 的「current admission facts」），而本端点的取值恒为 `unavailable` | **无处置，只能避免**：这不是「还没接实时证据」——**接入多少实时事实都满足不了该定义**。`admission_state` 是**按 workspace** 计（`backend/src/speechnexus_backend/speech/infrastructure/public_job_admission.py:695` 用 `job.workspace_id`、`:514` 按 `speech_assets.workspace_id` 过滤），而 `GET /v1/models` 的签名里**没有 workspace**（`backend/src/speechnexus_backend/speech/interfaces/http/models.py:42`；契约 `:56-63` 只有 `X-Request-ID` 与 `If-None-Match`），两类事实压不进一个无 workspace 的字段。判「能不能建 Job」看 `POST /v1/nexus/jobs` 的实际应答码；契约声明的实时读面是 `GET /v1/nexus/jobs/admission-readiness`（带 `workspace_id`），**当前仍是占位**，答 `503 operation_not_implemented` | 结构性不符的实现在 `backend/src/speechnexus_backend/model_catalog_runtime.py:92` 起的装配注释；契约与 PRD 的冲突与三条出路跟踪 [#941](https://github.com/hrygo/SpeechNexus/issues/941)；运维侧措辞见 [异步 Job 运行手册](../operations/async-job-runbook.md) §4 |
 
 **一处已不再成立的历史观察**：`DEL-535` 当时见到的 `GET /v1/models` → `503 model_catalogue_unavailable` 在本版本已不复现——`DEL-537` 在同一路径上实测 `200`。要注意的是它的 `readiness` 仍是**静态投影**（`engine_ready=false`、`admission_state=unavailable`）：契约对这个字段的定义（实时准入）**在本端点结构性不可满足**，见已知限制 13 与 [#941](https://github.com/hrygo/SpeechNexus/issues/941)——**不是「等接入实时证据就对上了」**。**不要用这个响应判断能不能建Job**：同一套部署上 Job 实际创建并成功。判「能不能建 Job」看 `POST /v1/nexus/jobs` 的实际应答码（见已知限制 10 与 [缺什么 → 看到什么 → 做什么](../operations/compose-minimal.md) §9.1）。
@@ -335,17 +363,49 @@ head，见下），但有三个地方会**硬拒绝启动**，以及四类数据
 
 ### 7.1 A 档：真实部署 / 真实引擎上的端到端
 
-- 参考部署（MegaCube Linux aarch64 + NVIDIA GB10，`origin/main` `c0172a22`，独立 Compose 项目
-  `del535`，从**空** PostgreSQL 卷与空 MinIO 卷起栈）：`POST /v1/nexus/assets` `201 ready` →
-  `POST /v1/nexus/jobs` `202` → `queued → running → succeeded` → 制品 `GET` `200` 且落盘字节
-  `sha256` 一致；租约 `released`、`held_slots=0`、配额 `held_attempts=0`。原始时间线与标识见
+- **异步主链，零修正照文档（`DEL-537`，2026-11-16，MegaCube Linux aarch64 + NVIDIA GB10，
+  第二轮先 `down -v` 清卷）**：先 `down -v` 清卷，再按 `compose-minimal.md` §0–§7 原样执行（只改
+  gitignored `deploy/compose.env` 的宿主端口），7 个应用镜像由基线 `b63fe004` 本地构建。
+  **同一轮内** `compose-minimal.md` §7.1 创建并发布 binding（`published_at 14:03:37.507518Z`）、
+  §7.3 注册实例，随后全链
+  `POST /v1/nexus/assets` `201` → `POST /v1/nexus/jobs` `202` → `pending → running → succeeded`
+  （`job-d9feb971cb4d4ad3a784904d4af19710`，14:05:55.047 → 14:05:57.442），制品 92 B 且
+  `sha256`/`etag` 与下载字节一致，租约 `released`、`held_slots=0`、`held_attempts=0`、
+  `nonreleased_leases=0`，引擎侧一次真实 `200`（`14:05:56.474287514Z`）。因此「空卷 → 发布
+  binding → Job `succeeded`」是**同一次连续运行**。这一层覆盖 F-JOB（窄口径：创建/读取/派发/
+  终态）、F-ASYNC、F-ARTIFACT（窄口径：发布/下载）、Gate `#572` 与部署入口。
+- **从空卷起栈（`DEL-535`，同日更早，`origin/main` `c0172a22`，独立 Compose 项目 `del535`）**：
+  从**空** PostgreSQL 卷与空 MinIO 卷起栈，`assets 201 ready` → `jobs 202` →
+  `queued → running → succeeded` → 制品 `GET 200` 且落盘字节 `sha256` 一致；租约 `released`、
+  `held_slots=0`、配额 `held_attempts=0`。原始时间线与标识见
   [从零实跑 §11.2](../operations/compose-minimal-from-zero.md)（`docs/operations/compose-minimal-from-zero.md:396`）。
-- 同一次窗口的资产侧：三类用途与全部反例（见 §2 第一行）。
-- 2026-11-02 与 2026-11-03 两个受控窗口的同步 ASR / 同步 TTS 各一次真实 `200`（范围限固定
-  声音、单节点、单实例、短英文；早于当前 head）。
-- `DEL-534` 窗口：默认部署上真实 Chromium 以同版工作台读到真实 GPU ASR Job 的同一份制品，
-  `pageErrors=[]`、CSP 未放宽。
-- 工作台侧删除的预检 → 确认 → 账本端到端（Compose 项目 `sn832`）。
+- **从真正空卷到第一个 `202`（`#935`/`#876`，2026-11-17，macOS arm64）**：项目 `sn935` 从空
+  PostgreSQL/MinIO 卷起同一套，`check-from-empty-first-job.sh --phase all` 的 `require-empty`
+  先断言五行计数与 `held_slots` 全为 0（`PASS empty start: publications=0 binding_revisions=0
+  workspace_quotas=0 host_nodes=0 engine_instances=0 held_slots=0`），随后发布 binding、上传
+  资产、注册引擎、创建 Job 全走产品入口（零手写 SQL），`POST /v1/nexus/jobs` `202` 且
+  `workspace_id=workspace-default`。这一层覆盖 F-SHARED（默认 workspace 与注册/配额/准入引用
+  一致）与部署入口的第二层证据；边界是单主机、单 workspace、无真实引擎（Job 止于 `202`），
+  第二个 workspace 的分组行为/身份边界与工作台模块的 workspace 语义未验。原始输出见
+  [从零实跑 §14](../operations/compose-minimal-from-zero.md)（`docs/operations/compose-minimal-from-zero.md:628`）。
+- **资产侧（`#867`/`#851`）**：参考部署上三类用途与全部反例（见 §2 第一行）。
+- **同版浏览器消费（`DEL-534` + `#952`）**：`DEL-534` 在默认部署上用真实 Chromium 的同版工作台
+  读到真实 GPU ASR Job 的同一份制品，`pageErrors=[]`、CSP 未放宽；`#952`（源 head
+  `5fbea085`，合入 `b6ec7871`，审查 `#956` 三轮）另在真实 Chromium + 真实 PostgreSQL/版本化
+  MinIO + `create_app` 组合根 + 部署镜像层下让页面读取同一 Job 的同一 Artifact，页面身份、
+  字节数、`/content` 的 `etag`/`content-length` 与提交行 `sha256` 五项一致，bundle 烘焙摘要与
+  `/v1/nexus/version` 逐字相同。边界：它不启动 compose 栈，Job 与制品行是夹具状态（本机无
+  GPU）；**A 档只限「同版读取」这一半，引擎产出那一半仍不可得**，`DEL-534` 是参考部署上的
+  另一段证据。
+- **工作台侧删除（Compose 项目 `sn832`）**：预检 → 确认 → 账本端到端，含级联擦除正文。
+- **两条同步入口的受控窗口（A 档，但不是当前时点证据）**：2026-11-02 的同步 ASR 与 2026-11-03
+  的同步 TTS 各一次真实 `200`（固定声音、单节点、单实例、短英文，早于当前 head）。参考部署
+  至今没有复跑出这两个 `200`，ASR 与 TTS 分别由 `#957`、`#885` 收口，见 §7.4。
+
+这些证据合起来，判定表计为 **9 行达标**（F-ASSET、F-JOB、F-ASYNC、F-ARTIFACT、F-CLIENT、
+F-SHARED、F-DELETE、Gate `#572`、部署入口）；另有 **2 行**（F-TTS `#885`、F-ASR `#957`）有 A 档但
+缺当前时点的公开 `200`；声音设计/克隆的 Job 级泳道（`#529`）无 A 档但已被用户后置，不计入首发
+阻塞。逐行推导见[判定表](../plans/mvp-release-readiness.md)。
 
 ### 7.2 B 档：真实进程 / 真实 PostgreSQL / 真实对象存储，但未走真实引擎或未在参考部署上
 
@@ -363,10 +423,11 @@ head，见下），但有三个地方会**硬拒绝启动**，以及四类数据
 
 | 项 | 为什么没有 |
 | --- | --- |
-| 参考部署上「零修正照文档」的完整复现 | 两次 GPU 窗口实跑（`DEL-535`、`DEL-536`）都不是零修正：前者要改样例桶名，后者要自行拆出「只构建非 minio 镜像」的序列。这两类偏差都已经修进主干（`#893` 样例桶名；`#903` 子网与 MinIO 地址改为 env 推导，不再需要改仓库文件；`#908` runbook 与验收脚本的构建序列），但「修好之后照文档零变更重跑一次」仍未做，因此判定表第 10 行（Gate `#572`）按「照文档」口径仍未达标 |
-| 参考部署上的同步 ASR / 同步 TTS 真实 `200` | ASR 缺最后一步公开调用；TTS 缺已合格内建声音（运维自证路径已实现，真实 `200` 未取得） |
+| 第二位操作者 / 第三台主机的独立复验 | 部署入口的两层证据是同一操作者换两台主机（`DEL-537` 在 MegaCube GB10，`#935`/`#876` 在 macOS arm64）；判定表第 12 行的「他人」只到这个范围，没有第二位操作者或第三台主机。MegaCube 宿主还须按 §0 预存同 tag 的 MinIO 镜像 |
+| 参考部署上的同步 ASR 真实 `200` | 装配齐、缺最后一步公开调用（[#957](https://github.com/hrygo/SpeechNexus/issues/957)）；历史 `200` 来自 2026-11-02 受控窗口，早于当前 head |
+| 参考部署上的同步 TTS 真实 `200` | 缺已合格内建声音，运维自证路径已实现但真实 `200` 未取得（[#885](https://github.com/hrygo/SpeechNexus/issues/885)）；`DEL-537` 在同一簇拿到的 `503 backend_unavailable` 是正确拒绝（缺三个身份与四份原件），不是装配缺陷 |
 | 制品保留期在参考部署上运行 | `artifact-retention` profile 从未在该部署上启动留证 |
-| 取消在默认部署里的自愈 | 默认部署不运行取消对账 worker |
+| 取消在默认部署里的自愈 | 默认部署不运行取消对账 worker；`#951` 只让读面可观察（`never claimed` / `never claimable (exhausted)` / `due now`），没有增加推进者 |
 | 真实引擎故障、引擎/控制器重启、物理多机与故障演练 | 无目标环境；`O-PHYSICAL` 不在 MVP 范围 |
 | 受限网络下的真实 Web 构建 | 只在非受限路由的主机上验过参数化与产物摘要等价 |
 | 浏览器矩阵（非 Chromium）、可访问性全矩阵 | CI 只有 Chromium 无头 |

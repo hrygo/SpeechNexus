@@ -89,18 +89,26 @@ class ModelCatalogRuntime:
                 with pool.connection(timeout=3) as connection:
                     connection.execute("SET LOCAL statement_timeout='3s'")
                     self._verify_read_only(connection)
-                # Static, fail-closed projection, never a live admission answer. No
-                # readiness fact can reach this reader: its grant admits published
-                # tables only (READABLE), while every fact admission turns on --
-                # engine_instances, runtime_instance_heads, resource_pools,
-                # workspace_quotas, speech_assets -- sits outside it, so a grant wide
-                # enough to answer "can a create be admitted now" is rejected at
-                # startup. Admission is per workspace as well, and /v1/models carries
-                # no workspace. The catalogue therefore reports the ReadinessFacts
-                # defaults (engine_ready=false, quality_qualified=false,
-                # admission_state=unavailable) and answers no admission question; live
-                # answers are the create response and the contract's
-                # admission-readiness route (#863).
+                # Static, fail-closed projection, never a live admission answer. This
+                # reader's grant admits published tables only (READABLE), while every
+                # fact admission turns on -- engine_instances, runtime_instance_heads,
+                # resource_pools, workspace_quotas, speech_assets -- sits outside it, so
+                # a grant wide enough to read them is rejected at startup by
+                # _verify_role, and that refusal reaches an operator only as the generic
+                # text raised below: `from None` suppresses the traceback context and
+                # keeps the real reason in __context__ alone. The catalogue therefore
+                # reports the ReadinessFacts defaults -- engine_ready=false,
+                # quality_qualified=false, admission_state=unavailable -- and answers no
+                # admission question; live answers are the create response and the
+                # contract's admission-readiness route (#863).
+                #
+                # Wiring live facts would not satisfy the contract either (#941).
+                # contracts/speech-openapi.yaml:4063-4070 defines admission_state as a
+                # live verdict ("currently admissible" / "cannot be admitted now") and
+                # :53-54 promises "current admission facts", but admission is computed
+                # per workspace (public_job_admission.py:695, :514) while /v1/models
+                # carries no workspace (models.py:42). Structurally unsatisfiable, not
+                # pending wiring; tracked as the contract defect #941.
                 self.catalogue = PostgresModelCatalog(
                     pool, timeout_seconds=self._settings.model_catalog_read_timeout_seconds
                 )

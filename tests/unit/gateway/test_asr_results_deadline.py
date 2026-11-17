@@ -1,6 +1,7 @@
 """Real loopback slow-header counterexamples; no models, credentials or external network."""
 
 import asyncio
+import re
 import threading
 import time
 from collections.abc import Iterator
@@ -14,6 +15,7 @@ import pytest
 
 from speechnexus_gateway.domain.asr_results import AsrResultError
 from speechnexus_gateway.infrastructure.asr_results_minio import MinioAsrResults
+from tests.support import deadline_budget
 from tests.support.deadline_budget import (
     TRICKLE_INTERVAL_SECONDS,
     assert_cut_at_deadline,
@@ -139,7 +141,12 @@ async def test_trickle_headers_cannot_extend_total_deadline(
     # The peer keeps trickling long past the budget, so only a total deadline can
     # end the read this early, and it has to do so while the peer still writes.
     server.trickle_frames = trickle_frame_count(budget)
+    # Clear both request logs. The calibration reads above used this same server,
+    # so its `PUT` already filled `bodies[slow_key]`; without clearing it the
+    # body assertion below could be satisfied by the calibration PUT instead of
+    # proving this request's bytes were accepted (#948).
     server.calls.clear()
+    server.bodies.clear()
     value = adapter(server, tmp_path, budget)
     started = time.monotonic()
     try:
@@ -166,6 +173,45 @@ async def test_trickle_headers_cannot_extend_total_deadline(
     # deadline must never be interpreted as rollback or permission to retry.
     assert server.bodies[server.slow_key] == RESULT.body
     assert not any(method == "DELETE" for method, _ in server.calls)
+
+
+async def test_a_binding_budget_ceiling_is_announced_as_runner_slowness(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A clamping ceiling must say so, flagging the runner instead of the behaviour.
+
+    Replay of the measured shape (report #947 section 3): one slow calibration
+    read of 1.0 s, ten times that is 10 s, `MAXIMUM_BUDGET_SECONDS` cuts the
+    budget to 2.0 s and the tenfold margin is gone. The replay scales it down -- a
+    0.06 s fast path under a 0.2 s ceiling -- so it costs a fraction of a second
+    instead of eleven. Both bounds move so the floor cannot mask the clamp.
+    """
+
+    monkeypatch.setattr(deadline_budget, "MINIMUM_BUDGET_SECONDS", 0.1)
+    monkeypatch.setattr(deadline_budget, "MAXIMUM_BUDGET_SECONDS", 0.2)
+
+    async def slow_calibration_read() -> None:
+        await asyncio.sleep(0.06)
+
+    budget = await deadline_budget.calibrated_budget(slow_calibration_read)
+    captured = capsys.readouterr()
+    assert budget == pytest.approx(0.2)
+    # pytest prints a failing test's captured stderr, which is what puts this
+    # line in the same report as the assertion it explains.
+    assert re.search(
+        r"^BUDGET CEILING HIT: fast_path=[0-9]+\.[0-9]{4}s budget=0\.200s "
+        r"— a stalled runner, not the behaviour under test$",
+        captured.err,
+        re.MULTILINE,
+    ), captured.err
+
+    async def fast_calibration_read() -> None:
+        await asyncio.sleep(0)
+
+    # A budget the ceiling does not bind stays silent: the line is a signal, not
+    # something every run prints.
+    await deadline_budget.calibrated_budget(fast_calibration_read)
+    assert capsys.readouterr().err == ""
 
 
 @pytest.mark.parametrize("method", ["PUT", "HEAD", "GET"])

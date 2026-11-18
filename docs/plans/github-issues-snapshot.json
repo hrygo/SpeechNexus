@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-18T15:47:57+08:00",
+  "fetched_at": "2026-11-18T22:50:13+08:00",
   "issues": [
     {
       "number": 336,
@@ -1302,26 +1302,12 @@
       "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
     },
     {
-      "number": 973,
-      "html_url": "https://github.com/hrygo/SpeechNexus/issues/973",
-      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "同步转写结果读回桶与网关 lane result_bucket 的不一致没有守卫",
-      "state": "open",
-      "state_reason": null,
-      "labels": [
-        {
-          "name": "bug"
-        }
-      ],
-      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
-    },
-    {
       "number": 974,
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/974",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "同步转写成功后不结算租约，单槽实例被一次成功请求占满",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [
         {
           "name": "bug"

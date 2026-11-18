@@ -10,7 +10,7 @@ date: 2026-11-18
 同步转写（`POST /v1/audio/transcriptions`）的容量由 API 进程内的**独立 ASR 结算运行时**归还。该运行时只做一件事：把网关已经持久化的执行终态交给唯一的 `LeaseService.release`
 规则，由那条规则在加锁事务里判定并归还本租约的增量。它自己不判定终态、不隔离、不发 abort/drain、不写执行事实。每次同步转写准入在**同一个事务**里写一条持久结算根（`speech_asr_settlement`），因此进程崩溃、网关应答丢失或客户端断连之后，结算仍可重放。
 
-本文定义目标行为与判据。当前 `backend/src` 没有同步转写的结算运行时，`docs/operations/compose-minimal.md` 仍把「成功后不自动释放」写成已知限制（[#974](https://github.com/hrygo/SpeechNexus/issues/974)）；落地顺序与提交单元见[实施计划](../plans/2026-11-18-sync-transcription-settlement.md)。
+本文定义目标行为与判据。`backend/src` 的 `backend/src/speechnexus_backend/transcription_runtime.py` 已装配 `AsrSettlementRuntime`，`backend/src/speechnexus_backend/asr_settlement_worker.py` 提供 `--check` 与 `--once` 两个运维入口；`docs/operations/compose-minimal.md` 的同步 ASR 行按 `DEL-543`（2026-11-18）的真机读数陈述为成功后自动释放。落地顺序与提交单元见[实施计划](../plans/2026-11-18-sync-transcription-settlement.md)。
 
 ## 1. 问题与既有事实
 
@@ -31,7 +31,7 @@ date: 2026-11-18
 | 执行以成功终态收尾，并写入 `engine_terminal_response` 停止与释放双证据 | 执行网关的 file worker | `execution-gateway/src/speechnexus_gateway/infrastructure/file_execution_worker.py:380` → `execution-gateway/src/speechnexus_gateway/application/execution_completion.py:55` → `execution-gateway/src/speechnexus_gateway/infrastructure/stop_sql.py:62` |
 | 释放只扣本租约增量、CAS 更新 host/instance/attempt/quota/lease | 仓库已有的释放事务 | `backend/src/speechnexus_backend/speech/infrastructure/lease_release_sql.py:30` |
 | 释放的授权判据 | 仓库已有的领域规则 | `backend/src/speechnexus_backend/speech/domain/lease_release.py:121` |
-| 同步转写的准入装配 | `build_transcription`，没有任何结算运行时 | `backend/src/speechnexus_backend/transcription_runtime.py:56` |
+| 同步转写的准入装配 | 准入事务在提交内写 root；`build_transcription` 只装配依赖与 `AsrSettlementRuntime` | `backend/src/speechnexus_backend/transcription_runtime.py:56` |
 
 同步转写的操作 id 在 `speech_jobs` 里没有对应行：准入事务写的是 `coordination_jobs` / `coordination_outbox`
 （`backend/src/speechnexus_backend/speech/infrastructure/admission_sql.py:337`、`backend/src/speechnexus_backend/speech/infrastructure/jobs_sql.py:70`），
@@ -173,7 +173,7 @@ worker 在调用释放前查询一次网关执行状态（`GatewayExecutionClien
 - **A-REL-4**：`settled_at_us` 只在对应租约已经是 `released` 时写入；反向不成立（已释放不等于已标记）。
 - **A-REL-5**：网关的未知、缺失、拒答不改变任何账目。
 
-## 5. 未知与失败形状
+## 5. 未知与缺证据形状
 
 | 形状 | 归谁管 | 本机制的动作 | 可见面 |
 | --- | --- | --- | --- |
@@ -377,7 +377,7 @@ root、租约或证据；恢复 DSN 后按未结算 root 继续。
 
 `deadline_at_us` 只用于 detail 里的 `overdue_us` 读数，不是任何类别的前置条件，也不参与释放授权。
 
-该 detail 始终 `ok`，不进入 `/readyz` 的失败判据：`/readyz` 只反映依赖（数据库、对象存储等）是否可用，
+该探针的 `status` 始终 `ok`；detail 就是上面的五类计数与样本，探针自身降级时写 `unavailable (…)`；不进入 `/readyz` 的失败判据：`/readyz` 只反映依赖（数据库、对象存储等）是否可用，
 债是「依赖可用但没有推进者」的运维事实，应由诊断暴露并告警，而不是把 API 判成不健康。
 
 ### 9.4 不在本机制内

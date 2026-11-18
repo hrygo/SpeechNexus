@@ -683,7 +683,7 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 | `invalid_recipe` | 配方摘要、`stage.instance_id` 或 binding plan 与实际不一致 |
 | `pool_owner_conflict` / `previous_generation_active` | 旧 owner 或旧 generation 仍 ready；先核对/停止旧实例，不要改 token 假装接管 |
 | `quota_policy_conflict` / `quota_capacity_conflict` | 该工作空间已有配额行：`policy_revision` 与本次不同，或已有 `max_attempts` 更小（`engine_registration.py:477`） |
-| `host_capacity_insufficient` | `--host-capacity`（缺省 `steady + per_slot × max_slots`，且至少覆盖 `peak`，`engine_registration.py:176`）容不下计划，或该节点已有 held/quarantined 占用 |
+| `host_capacity_insufficient` | `--host-capacity`（缺省 `steady + per_slot × max_slots`，且至少覆盖 `peak`，`engine_registration.py:176`）容不下计划，或该节点已有 held/quarantined 占用。缺省值等于本次 plan 的需求，所以同一节点注册第二个实例时这条几乎是必然——`host_nodes` 只在首次插入时写，第一次注册就要传够，见[参考部署的宿主机容量规则](../operations/compose-minimal.md#宿主机的容量向量只在首次注册时写入且必须一次声明够) |
 | `host_architecture_mismatch` / `host_topology_mismatch` | 该 `host_node_id` 已登记过不同的 architecture 或 topology digest（`engine_registration.py:377`、`:382`） |
 | 创建返回 `429 job_capacity_exhausted` | 没有 `ready` 实例，或其实例的 binding revision 与请求的发布不一致 |
 | 创建返回 `503 engine_not_ready` | 实例仍 `ready`，但 readiness 收据已过期；跑续期（§7.4），不要重新注册新 generation |

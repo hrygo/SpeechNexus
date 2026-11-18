@@ -62,6 +62,15 @@ class IntentSandbox:
         return list(cursor.fetchall()) if cursor.description else []
 
 
+def _step_below_asr_settlement(intent_db: IntentSandbox) -> None:
+    """0057 refuses every downgrade; start the 0046 guard test below it."""
+    intent_db.admin.execute(f'DROP TABLE IF EXISTS "{intent_db.schema}".speech_asr_settlement')
+    intent_db.admin.execute(
+        f'UPDATE "{intent_db.schema}".alembic_version SET version_num = %s',
+        ("0056_debt_probe_live_state_index",),
+    )
+
+
 def _job(admin: psycopg.Connection[dict[str, Any]], job_id: str, digest: str) -> None:
     admin.execute(
         "INSERT INTO speech_jobs "
@@ -182,6 +191,7 @@ def test_backfill_only_accepts_matching_legacy_rows_and_reads_back(
 
     # Every intent row still has its matching legacy copy, so the in-place
     # rollback only removes the new table.
+    _step_below_asr_settlement(intent_db)
     command.downgrade(intent_db.config, BASE)
     assert (
         intent_db.query(
@@ -204,6 +214,7 @@ def test_downgrade_refuses_when_a_legacy_copy_is_missing(intent_db: IntentSandbo
         "VALUES ('job-orphan', %s, %s, 3)",
         (DIGEST_A, DOCUMENT_A),
     )
+    _step_below_asr_settlement(intent_db)
     with pytest.raises(DBAPIError, match="no matching legacy copy"):
         command.downgrade(intent_db.config, BASE)
     assert intent_db.count("speech_job_intents") == 2, "a refused downgrade keeps the table"
@@ -217,6 +228,7 @@ def test_downgrade_refuses_when_the_digest_disagrees(intent_db: IntentSandbox) -
         "UPDATE speech_job_intents SET request_digest = %s WHERE job_id = 'job-match'",
         (DIGEST_B,),
     )
+    _step_below_asr_settlement(intent_db)
     with pytest.raises(DBAPIError, match="no matching legacy copy"):
         command.downgrade(intent_db.config, BASE)
     assert intent_db.count("speech_job_intents") == 1, "a refused downgrade keeps the table"
@@ -243,6 +255,7 @@ def test_downgrade_refuses_when_the_legacy_document_disagrees(intent_db: IntentS
         "UPDATE admission_operations SET request_document = %s WHERE operation_id = 'job-match'",
         ('{"input":{"text":"replaced"},"kind":"tts","model":"tts-quality"}',),
     )
+    _step_below_asr_settlement(intent_db)
     with pytest.raises(DBAPIError, match="no matching legacy copy"):
         command.downgrade(intent_db.config, BASE)
     assert intent_db.count("speech_job_intents") == 1, "a refused downgrade keeps the table"

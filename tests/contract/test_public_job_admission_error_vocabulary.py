@@ -49,7 +49,7 @@ ROOT = Path(__file__).resolve().parents[2]
 # Every module that raises a rejection error class, frozen. The guard asserts this
 # set equals what the scan finds in both directions, so a module that starts raising
 # (or stops and hides the literals behind a helper) fails until the list and the
-# vocabulary are decided together. The earlier list held six of these thirteen, and
+# vocabulary are decided together. The earlier list held six of these fourteen, and
 # seven modules could raise an unmapped code while the guard stayed green
 # (#828 review M2).
 ADMISSION_MODULES = (
@@ -60,6 +60,7 @@ ADMISSION_MODULES = (
     "backend/src/speechnexus_backend/speech/infrastructure/admission_postgres.py",
     "backend/src/speechnexus_backend/speech/infrastructure/admission_recovery_sql.py",
     "backend/src/speechnexus_backend/speech/infrastructure/admission_sql.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/asr_settlement_sql.py",
     "backend/src/speechnexus_backend/speech/infrastructure/builtin_voice_qualification.py",
     "backend/src/speechnexus_backend/speech/infrastructure/owners_sql.py",
     "backend/src/speechnexus_backend/speech/infrastructure/qualification_admission_postgres.py",

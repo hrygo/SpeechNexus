@@ -26,7 +26,7 @@ from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
 from pydantic import SecretStr
 from speechnexus_contracts.admin_http import validate_response
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 
 from speechnexus_backend.app import create_app
@@ -125,6 +125,14 @@ def upgrade(url: str, schema: str, revision: str) -> None:
             if revision == "head":
                 command.upgrade(config, revision)
             else:
+                connection.execute(text(f'DROP TABLE IF EXISTS "{schema}".speech_asr_settlement'))
+                connection.execute(
+                    text(
+                        f'UPDATE "{schema}".alembic_version '
+                        "SET version_num = '0056_debt_probe_live_state_index'"
+                    )
+                )
+                connection.commit()
                 command.downgrade(config, revision)
     finally:
         engine.dispose()

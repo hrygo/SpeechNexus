@@ -26,7 +26,7 @@ from alembic import command
 from alembic.config import Config
 from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 from tests.unit.backend.test_binding_release_evidence import packet
 
@@ -1388,6 +1388,14 @@ def test_downgrade_refuses_to_discard_attestation_history(
     try:
         with engine.connect() as connection:
             config.attributes["connection"] = connection
+            connection.execute(text(f'DROP TABLE IF EXISTS "{schema}".speech_asr_settlement'))
+            connection.execute(
+                text(
+                    f'UPDATE "{schema}".alembic_version '
+                    "SET version_num = '0056_debt_probe_live_state_index'"
+                )
+            )
+            connection.commit()
             with pytest.raises(RuntimeError, match="Operator attestation history"):
                 command.downgrade(config, "0054_artifact_deleted_ledger")
         assert ledger.count("speech_builtin_voice_operator_attestations") == 1

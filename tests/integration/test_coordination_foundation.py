@@ -380,6 +380,7 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
             "speech_builtin_voice_probe_admissions",
             "speech_tts_cancellation",
             "speech_tts_settlement",
+            "speech_asr_settlement",
         }
         if db.dialect == "postgresql"
         else set()

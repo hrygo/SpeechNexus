@@ -14,6 +14,7 @@ from speechnexus_contracts import parse
 from tests.integration.test_public_job_progress_migration_pg import _isolated_schema, _url
 from tests.integration.test_public_jobs_http import DIGEST, PREFIX, JobSandbox, _app, _body
 from tests.integration.test_public_jobs_http import jobs_db as jobs_db
+from tests.support.migrations import step_below_asr_settlement
 
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
 from speechnexus_backend.speech.infrastructure.public_jobs_postgres import PostgresPublicJobs
@@ -322,6 +323,7 @@ def test_0042_drops_only_the_superseded_job_index() -> None:
         )
         assert query.execute("SELECT * FROM speech_jobs").fetchall() == before
 
+        step_below_asr_settlement(query)
         command.downgrade(config, "0041_voice_drafts")
         restored = _created_indexes(query)
         assert set(restored) == {

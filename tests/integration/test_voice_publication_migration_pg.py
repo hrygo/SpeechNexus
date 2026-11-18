@@ -12,7 +12,11 @@ from tests.integration.test_public_job_progress_migration_pg import (
     _isolated_schema,
     _url,
 )
-from tests.support.migrations import head_revision
+from tests.support.migrations import (
+    PRE_ASR_SETTLEMENT_REVISION,
+    head_revision,
+    step_below_asr_settlement,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -88,10 +92,12 @@ def test_downgrade_refuses_a_custom_publication() -> None:
     with _isolated_schema(_url()) as (config, query):
         command.upgrade(config, "head")
         _seed_custom_publication(query)
+        step_below_asr_settlement(query)
         with pytest.raises(RuntimeError, match="require preservation"):
             command.downgrade(config, "0046_public_job_intents")
         assert (
-            _one(query, "SELECT version_num FROM alembic_version")["version_num"] == head_revision()
+            _one(query, "SELECT version_num FROM alembic_version")["version_num"]
+            == PRE_ASR_SETTLEMENT_REVISION
         )
 
 
@@ -120,10 +126,12 @@ def test_downgrade_refuses_to_discard_evidence_then_restores_legacy_view() -> No
     with _isolated_schema(_url()) as (config, query):
         command.upgrade(config, "head")
         _seed_measured_evidence(query)
+        step_below_asr_settlement(query)
         with pytest.raises(RuntimeError, match="require preservation"):
             command.downgrade(config, "0046_public_job_intents")
         assert (
-            _one(query, "SELECT version_num FROM alembic_version")["version_num"] == head_revision()
+            _one(query, "SELECT version_num FROM alembic_version")["version_num"]
+            == PRE_ASR_SETTLEMENT_REVISION
         )
         # A schema with no custom publication or measurement may still roll back.
         query.execute(f"DELETE FROM {_EVIDENCE}")
@@ -191,6 +199,7 @@ def test_published_draft_projection_view_upgrades_and_drops_cleanly() -> None:
             "voice_revision": "1",
             "validation_job_id": "job-evidence-validation",
         }
+        step_below_asr_settlement(query)
         command.downgrade(config, "0052_quarantine_releases")
         assert _one(query, f"SELECT to_regclass('{_DRAFT_VIEW}') AS t")["t"] is None
         assert _one(query, f"SELECT count(*) AS n FROM {_REVISIONS}")["n"] == 1

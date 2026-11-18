@@ -125,8 +125,8 @@
       ],
       "implementation": "网关命令边界读取固定输入；结果收集核验 binding、策略、序列和源时钟，现有逻辑不猜测重叠去重。",
       "integration": "同步转写构造需显式配方与网关配置；文件媒体组件存在不代表异步链已在真实部署验收。",
-      "verification": "已验 JSON 最小链不代表所有格式、时间戳或长音频资格。",
-      "gap": "同步转写构造需显式配方与网关配置；文件媒体组件存在不代表异步链已在真实部署验收。 已验 JSON 最小链不代表所有格式、时间戳或长音频资格。",
+      "verification": "已验 JSON 最小链不代表所有格式、时间戳或长音频资格。 2026-11-18 增量核验（`DEL-540`，MegaCube GB10，按 `compose-minimal.md` §0–§7 精确构建并起栈的参考部署形态：七个镜像均由候选 `19c7f09a279075aea609303bb73dca57b9d4bf23` 本地构建（api `sha256:3125ce91…b913`、gateway `sha256:e09d23dc…46e6`），引擎为同主机外部托管的 `del109-asr`，不是 compose 里的 engine 服务）：公开 `POST /v1/audio/transcriptions` 返回 `200 OK`（`content-length: 167`、`content-type: application/json`、`time_total=0.956069 s`、`x-request-id=b2a34de2…`），请求 `model=file-asr-qwen3-1p7b-del540`、`language=en`、`response_format=json`，音频 `asr-input.wav`（299564 B、24 kHz mono 16-bit、6.24 s）；引擎侧同窗口一次 `POST /v1/audio/transcriptions` `200 OK`；执行 `succeeded`、`cleanup_state=complete`，停止证据 `evidence_kind=engine_terminal_response`、`execution_stopped=1`、`resources_released=1`。该次只覆盖一个 6.24 s 英文样本与 `response_format=json`，不覆盖其它格式、时间戳粒度或长音频。",
+      "gap": "同步转写成功后不结算租约：`lease_state=reserved`、`cleanup_state=pending`、`budget_released_at_us=NULL`、实例 `held_slots=1`/`max_slots=1`，`/v1/models` 同时把该 binding 显示为 `admission_state=unavailable`；一次成功即占满单槽，第二次同步转写会容量失败，当前唯一出口是运维工具 `python -m speechnexus_backend.completed_release_cli`。根因是 `backend/src/speechnexus_backend/transcription_runtime.py` 没有结算运行时（TTS 侧有 `TtsSettlementRuntime`），由 #974 跟踪，用户已裁决 MVP 先发、结算留 0.1.x 第一修。未验项：转写文本与源文本的逐字比对（源文本未归档；`SpeechNexus`→`SpeedGenexus` 是同音误识）、成功后第二次请求的表现（未再发请求）、GPU 显存（`nvidia-smi` 不可用）。已验 JSON 最小链不代表所有格式、时间戳或长音频资格。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/pull/317",
@@ -145,7 +145,8 @@
         }
       ],
       "issues": [
-        957
+        957,
+        974
       ]
     },
     {

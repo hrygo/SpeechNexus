@@ -10,7 +10,7 @@ pinned here as executable assertions:
     router really registers in `jobs.py`, and the router must be mounted by `app.py`;
   * the synchronous-ASR statement in `deploy/README.md` and
     `docs/operations/compose-minimal.md` must cite the terminal-state writer line,
-    name the step this deployment does not verify, and never call it missing again;
+    state the evidence that step currently has, and never call the writer missing again;
   * the production planner is assembled in the dispatch runtime, so no current
     document or the delivery matrix may claim it is not;
   * the catalogue's `nexus.readiness` block in the async-Job runbook is a static,
@@ -151,11 +151,11 @@ CLAIMS = (
         name="sync-asr-compose",
         doc="docs/operations/compose-minimal.md",
         required=(
-            "已装配、已实现；本部署无公开 `200` 证据",
-            "本部署未验证的只有最后一步",
+            "已在该部署形态上取得真实 `200`（`DEL-540`",
+            "成功后租约不自动释放",
             "POST /v1/audio/transcriptions",
         ),
-        forbidden=("**本部署未验证**", "本部署已验证"),
+        forbidden=("**本部署未验证**", "本部署已验证", "本部署无公开 `200` 证据"),
         anchor=(FILE_WORKER, "_completion.complete("),
     ),
     Claim(

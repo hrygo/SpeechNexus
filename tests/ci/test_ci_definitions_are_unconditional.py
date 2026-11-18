@@ -38,6 +38,11 @@ and dynamic construction gated by a condition. Unconditional dynamic
 construction stays green because it is collected and counted. Rebinding the
 name away (`SomeTest = None`) hides the class the same way and is not caught:
 the guard follows deletion and condition-gated construction, not every write.
+
+Deletion through the module namespace is red even when the key is computed
+(`for key in list(globals()): del globals()[key]`). A static read cannot prove
+which names such a key removes, so the deliberate choice is to be loud there
+rather than miss the one case where the key is a class.
 """
 
 from __future__ import annotations
@@ -488,6 +493,9 @@ class SuiteDefinitionsAreUnconditionalTest(unittest.TestCase):
         )
         problems = dynamic_definitions(source, "sample.py")
         self.assertEqual(len(problems), 1, problems)
+        self.assertIn(
+            "deletes 'ViaNamespaceTest' through the module namespace at line 5", problems[0]
+        )
 
     def test_popping_a_class_out_of_the_module_namespace_is_red(self) -> None:
         source = (
@@ -499,6 +507,7 @@ class SuiteDefinitionsAreUnconditionalTest(unittest.TestCase):
         )
         problems = dynamic_definitions(source, "sample.py")
         self.assertEqual(len(problems), 1, problems)
+        self.assertIn("pops 'PoppedTest' out of the module namespace at line 5", problems[0])
 
     def test_a_class_injected_then_deleted_is_red(self) -> None:
         # 绑定不是 ClassDef, 但删掉之后同样从收集里消失。
@@ -509,6 +518,7 @@ class SuiteDefinitionsAreUnconditionalTest(unittest.TestCase):
         )
         problems = dynamic_definitions(source, "sample.py")
         self.assertEqual(len(problems), 1, problems)
+        self.assertIn("deletes 'GoneTest' through the module namespace at line 3", problems[0])
 
     def test_a_class_built_by_type_under_a_condition_is_red(self) -> None:
         # 无条件时两个收集器都收得到; 有条件时整个类不会存在。
@@ -531,6 +541,26 @@ class SuiteDefinitionsAreUnconditionalTest(unittest.TestCase):
         )
         problems = dynamic_definitions(source, "sample.py")
         self.assertEqual(len(problems), 1, problems)
+        self.assertIn(
+            "builds class InjectedTest with type() only when a runtime condition holds at line 3",
+            problems[0],
+        )
+
+    def test_an_annotated_class_built_by_type_under_a_condition_is_red(self) -> None:
+        # `AnnAssign` 的 value 同样可以是 type(...): 注解不是障碍, 条件才是。
+        source = (
+            "import unittest\n"
+            "if host_can_plan():\n"
+            "    AnnotatedTest: type = type('AnnotatedTest', (unittest.TestCase,), {})\n"
+        )
+        problems = dynamic_definitions(source, "sample.py")
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("AnnotatedTest", problems[0])
+
+    def test_an_annotation_without_type_building_is_green(self) -> None:
+        # 同一个 AnnAssign 形状, value 不是 type(...) 时不建类, 保持绿。
+        source = "import unittest\nif host_can_plan():\n    LIMIT: type = int\n"
+        self.assertEqual(dynamic_definitions(source, "sample.py"), [])
 
     def test_an_unconditional_type_built_class_is_collected_so_it_is_green(self) -> None:
         # 实测: 模块属性一赋值, unittest 与 pytest 都收得到, 不是隐藏。
@@ -552,15 +582,43 @@ class SuiteDefinitionsAreUnconditionalTest(unittest.TestCase):
         self.assertEqual(dynamic_definitions(source, "sample.py"), [])
 
     def test_deleting_a_local_inside_a_function_is_green(self) -> None:
-        source = (
+        # 局部名与模块级类同名时, 函数体里的 del 仍只删局部名。
+        sources = [
             "import unittest\n"
             "class RealTest(unittest.TestCase):\n"
             "    def test_x(self) -> None:\n"
-            "        scratch = 1\n"
-            "        del scratch\n"
+            "        RealTest = 1\n"
+            "        del RealTest\n"
+            "        self.assertTrue(True)\n",
+            "import unittest\n"
+            "class RealTest(unittest.TestCase):\n"
+            "    def test_x(self) -> None:\n"
             "        self.assertTrue(True)\n"
+            "def cleanup() -> None:\n"
+            "    RealTest = 1\n"
+            "    del RealTest\n",
+        ]
+        for source in sources:
+            self.assertEqual(dynamic_definitions(source, "sample.py"), [], source)
+
+    def test_deleting_a_class_through_locals_is_red_too(self) -> None:
+        source = (
+            "import unittest\n"
+            "class ViaLocalsTest(unittest.TestCase):\n"
+            "    def test_x(self) -> None:\n"
+            "        pass\n"
+            "del locals()['ViaLocalsTest']\n"
         )
-        self.assertEqual(dynamic_definitions(source, "sample.py"), [])
+        problems = dynamic_definitions(source, "sample.py")
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("deletes 'ViaLocalsTest' through the module namespace at line 5", problems[0])
+
+    def test_deleting_through_a_computed_namespace_key_is_red(self) -> None:
+        # 计算键无法静态确认指向谁, 一律判红 (见模块 docstring 的取舍说明)。
+        source = "for key in list(globals()):\n    del globals()[key]\n"
+        problems = dynamic_definitions(source, "sample.py")
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("a computed name", problems[0])
 
     def test_a_plain_globals_assignment_is_green(self) -> None:
         source = "globals()['x'] = 1\n"

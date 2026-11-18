@@ -10,6 +10,6 @@
   },
   "address": "10.0.0.11",
   "port": 18101,
-  "served_model": "tts-compose-example",
+  "served_model": "served-model-tts-compose-example",
   "bearer_token": "0000000000000000000000000000000000000000000000000000000000000000"
 }

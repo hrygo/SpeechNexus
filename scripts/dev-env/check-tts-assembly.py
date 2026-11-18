@@ -16,6 +16,16 @@ value without one (plan budgets, the real engine address, the registration
 generation) is reported as undecidable; and the leaves only their loader checks are
 listed by name instead of being silently skipped.
 
+Agreement is read from the runtime, not from pairing fields that look alike.
+`recipe.model_id` is the public `model` (binding id) the caller sends, while the
+endpoint's `served_model` is the engine's own model name. Admission never compares
+the two, so they must stay in their own namespaces and equality is red. The two
+directions fail differently: the engine name in `model_id` is refused by admission
+on the first request (`stage=recipe_mismatch`, DEL-538), while the public name in
+`served_model` passes admission and is only rejected later by the engine as an
+unknown model. The recipe's public model is not paired with a plan here because no
+plan document is an input; this namespace rule is the offline-decidable part.
+
 Exit codes: 0 = nothing is still the example's value and the files agree. That is
 **not** "ready to accept a request"; 1 = placeholder or inconsistency found;
 2 = the private directory is missing.
@@ -565,11 +575,6 @@ def check(
         ),
         ("plan.pool == endpoint.target.pool_id", binding.pool_id, _dig(target, "pool_id")),
         (
-            "recipe.model_id == endpoint.served_model",
-            _dig(recipe_doc, "model_id"),
-            endpoint.served_model,
-        ),
-        (
             "recipe.service_class == plan.service_class",
             recipe.approved.service_class,
             recipe.approved.stages[0].runtime_plan.service_class,
@@ -585,6 +590,46 @@ def check(
                 Item(f"agreement: {label}", "inconsistent", f"{left!r} != {right!r}"),
                 bare=f"agreement: {label}",
             )
+
+    # Runtime admission compares `plan.model_id` -- the public `model` the caller
+    # sends, i.e. the binding id -- with `recipe.model_id`, and the plan's binding
+    # revision with the recipe's (`tts_admission.py`). The engine's `served_model`
+    # takes part in neither: the gateway sends it verbatim as the request's `model`
+    # to the engine (`vllm_tts.py`), and the reference CustomVoice engine serves an
+    # alias such as `qwen3-tts-1p7b-custom`, a different string from the public
+    # binding name.
+    #
+    # The plan is not one of the three private inputs, and the caller's `model` is
+    # only knowable per request, so the pair admission compares cannot be replayed
+    # offline. What is decidable is the direction that actually failed in DEL-538:
+    # the old rule here required the two names to be equal, so an operator who
+    # obeyed it wrote the engine alias into the public `model_id`, and the first
+    # request failed `stage=recipe_mismatch` with a 503. The names therefore must
+    # stay in their own namespaces, and equality is red -- deliberately even for a
+    # deployment that could set the engine's `--served-model-name` to the public
+    # name: the two namespaces stay separate.
+    #
+    # This is also the constraint the old equality implied for `served_model`, on
+    # top of the identity check above (no blank, not the example's value) and the
+    # descriptor loader (identifier shape): the two names are distinct. It does not
+    # prove that `served_model` equals the engine's real `--served-model-name`; no
+    # file here records that alias (the engine template launches vLLM without the
+    # flag, and the artifact pin holds the checkpoint repository, not the served
+    # name), so only a real request proves it.
+    served_model = endpoint.served_model
+    public_model = _dig(recipe_doc, "model_id")
+    if served_model and served_model == public_model:
+        report.add(
+            Item(
+                "agreement: recipe.model_id (public model/binding id) != endpoint.served_model",
+                "inconsistent",
+                f"两个字段都是 {public_model!r}；公开 model/binding id 与引擎模型名属于"
+                "不同命名空间。引擎名写进 model_id 会让首次请求得到 stage=recipe_mismatch "
+                "503（DEL-538）；公开 model 名写进 served_model 则会在引擎侧被当作未知 "
+                "model 拒绝。",
+            ),
+            bare="agreement: recipe.model_id != endpoint.served_model",
+        )
 
     for document, label in (
         (recipe_doc, "recipe"),

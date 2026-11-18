@@ -36,12 +36,21 @@ invalid for a real execution.
 transaction, so the recipe carries only the binding revision, manifest, policy
 revision and runtime plan. `recipe_digest` is the same RFC 8785 canonical JSON
 SHA-256 with `recipe_digest` removed. The replacement list is the same as for the
-transcription recipe, plus these TTS-specific ones: `model_id` must match the
-gateway's `served_model`, `runtime_plan.binding` must match the controlled
-endpoint's `target` (node/gateway/pool/instance/binding revision), and
-`admission_expires_at_us` must still be in the future — an expired recipe leaves
-synchronous TTS switched off rather than starting it. The committed example holds
-no credential at all: the engine token lives in
+transcription recipe, plus these TTS-specific ones: `model_id` is the public
+model — the binding id a caller sends as `model`, which admission compares with
+the plan's `model_id` — so it must be the published binding's public name and
+never the gateway's `served_model`; `served_model` is the engine's own model
+name, sent to the engine as the request's `model`, and
+`check-tts-assembly.py` requires it to be a non-empty identifier that differs
+from the public model name (the engine name in `model_id` is DEL-538's
+first-request `503` `stage=recipe_mismatch`; the public name in `served_model`
+passes admission and is rejected later by the engine as an unknown model). The
+rule is deliberate: a deployment that sets `--served-model-name` to the public
+model name is red too. `runtime_plan.binding` must
+match the controlled endpoint's `target` (node/gateway/pool/instance/binding
+revision), and `admission_expires_at_us` must still be in the future — an expired
+recipe leaves synchronous TTS switched off rather than starting it. The committed
+example holds no credential at all: the engine token lives in
 `gateway-file-tts-endpoint.json`, and
 `scripts/dev-env/check-tts-assembly.py` puts all three files through their own
 production loaders and lists every field as「仍是样例值 / 不一致 / 本地检查通过 /

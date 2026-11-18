@@ -34,6 +34,7 @@ def head_revision() -> str:
 HEAD = head_revision()
 
 
+DELETION_PLAN_REVISION = "0058_speech_deletion_plans"
 ASR_SETTLEMENT_REVISION = "0057_asr_settlement"
 PRE_ASR_SETTLEMENT_REVISION = "0056_debt_probe_live_state_index"
 
@@ -48,6 +49,9 @@ def step_below_asr_settlement(connection: Any) -> None:
     weakening 0057's refusal in production.
     """
     execute = connection.execute
+    # 0058 sits above 0057 and its downgrade is reached first; removing its only
+    # object keeps the simulated pre-0057 database coherent.
+    execute("DROP TABLE IF EXISTS speech_deletion_plans")
     execute("DROP TABLE IF EXISTS speech_asr_settlement")
     execute(
         "UPDATE alembic_version SET version_num = %s",

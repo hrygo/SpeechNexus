@@ -1111,6 +1111,8 @@ FROM <job-writer-role>;
 -- artifact_publisher_grants
 -- deletion_plan_grants
 --
+-- deletion_plan_grants 不属于启动硬门：缺它时 Job writer 仍启动，仅
+-- POST /v1/nexus/deletion-plans 返回 503 deletion_plans_not_configured。
 -- public_job_admission_grants 属于独立的 admission 角色，不要应用到 Job writer：
 -- 它只给 speech_job_events 4/8 列，并额外授予 admission_attempts / requests / leases。
 ```

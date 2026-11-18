@@ -1216,8 +1216,11 @@ statements`；语句数随授权函数变化，不要把它当固定值——以
   `deletion_plan_grants`（删除预检读取资产引用、先锁 workspace 再锁 asset、
   写入不可变计划行；含这两张表的行锁列 `UPDATE`），外加
   `speechnexus_backend.job_runtime` 启动校验需要的发布/素材基线 `SELECT` 和
-  `coordination_jobs` 的四个认领列 `UPDATE`。缺任一项时 API 以
-  `Public Job writer startup rejected` 退出，不会带着错误权限面上线。
+  `coordination_jobs` 的四个认领列 `UPDATE`。除 `deletion_plan_grants` 外缺任一项
+  时 API 以 `Public Job writer startup rejected` 退出；删除预检的授权**不在**启动
+  硬门内，缺失时 API 照常启动、启动日志 WARN 点名缺项，且仅该路由返回
+  `503 deletion_plans_not_configured`（`retryable=false`），不会退化成笼统的
+  `deletion_plans_unavailable`。
 - `sn_job_admission`：`public_job_admission_grants`（原子准入的写入面）。
 - `sn_job_dispatch`：`job_runtime_grants`、`job_dispatch_grants`、`public_job_grants`、
   `cancellation_reconciliation_grants`、`coordination_runtime_grants`，外加迁移元数据

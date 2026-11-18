@@ -28,6 +28,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Plans are the only record that a preview was issued; dropping them would
-    # make a client's accepted idempotency key silently reusable.
-    raise RuntimeError("Deletion plan history requires an explicit recovery plan")
+    # Plans expire within the fixed 300-second window and authorize nothing: the
+    # execution half of the contract is a later slice. Dropping the storage on an
+    # explicit downgrade therefore restores the frozen placeholder without
+    # destroying accepted work; the block below the plan stays guarded by 0057.
+    op.execute("DROP TABLE IF EXISTS speech_deletion_plans")

@@ -79,6 +79,12 @@ class DeletionReferenceUnsupportedError(DeletionError):
     code = "deletion_reference_unsupported"
 
 
+class DeletionPlanConfigurationError(DeletionError):
+    """The route's own grants are missing; the rest of the API still serves."""
+
+    code = "deletion_plans_not_configured"
+
+
 def identifier(value: str) -> str:
     if not isinstance(value, str) or _IDENTIFIER.fullmatch(value) is None:
         raise ValueError("Invalid deletion identifier")

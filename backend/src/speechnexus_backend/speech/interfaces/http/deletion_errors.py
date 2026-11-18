@@ -42,6 +42,11 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
         "service_unavailable_error",
         "Deletion plan storage is unavailable.",
     ),
+    "deletion_plans_not_configured": (
+        503,
+        "service_unavailable_error",
+        "Deletion preview is missing its database grants; apply deletion_plan_grants.",
+    ),
     "deletion_reference_unsupported": (
         503,
         "service_unavailable_error",
@@ -73,7 +78,7 @@ def deletion_error(
                     "message": message,
                     "param": param,
                     "request_id": request_id,
-                    "retryable": status == 503,
+                    "retryable": status == 503 and code != "deletion_plans_not_configured",
                 }
             },
         ),

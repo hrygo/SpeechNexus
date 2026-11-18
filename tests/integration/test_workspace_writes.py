@@ -126,6 +126,9 @@ def upgrade(url: str, schema: str, revision: str) -> None:
                 command.upgrade(config, revision)
             else:
                 connection.execute(text(f'DROP TABLE IF EXISTS "{schema}".speech_asr_settlement'))
+                # 0058 also sits above the rewound revision and would otherwise be
+                # created a second time when the schema advances back to head.
+                connection.execute(text(f'DROP TABLE IF EXISTS "{schema}".speech_deletion_plans'))
                 connection.execute(
                     text(
                         f'UPDATE "{schema}".alembic_version '

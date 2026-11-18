@@ -6,6 +6,9 @@ import logging
 import threading
 import uuid
 
+import psycopg
+from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
+
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.deletions import SpeechDeletions
 from speechnexus_backend.speech.application.job_cancellation import CancellationCapacity
@@ -85,6 +88,18 @@ _PUBLICATION_REQUIRED_SELECT = (
 )
 _PUBLICATION_REQUIRED_INSERT = (*_PUBLICATION_APPEND_ONLY, "speech_publication_heads")
 
+# The deletion preview is one route; its grants are checked when that route is
+# used, not as a process-wide startup condition. A writer that never serves it
+# must still boot, and a deployment that forgets the grants gets a diagnosable
+# 503 on the route instead of a silent runtime failure.
+DELETION_PREVIEW_TABLES = (
+    "speech_asset_objects",
+    "speech_asset_references",
+    "speech_deletion_plans",
+)
+# Allowed but not required. A role may hold these grants (the reference
+# deployment does) or none at all (a writer that never serves the route).
+_JOB_OPTIONAL_TABLES = frozenset(DELETION_PREVIEW_TABLES)
 REQUIRED_SELECT = (
     "speech_workspaces",
     "speech_publications",
@@ -93,8 +108,6 @@ REQUIRED_SELECT = (
     "speech_publication_retirements",
     "speech_binding_revisions",
     "speech_assets",
-    "speech_asset_objects",
-    "speech_asset_references",
     "speech_pronunciation_revisions",
     "speech_jobs",
     "speech_job_intents",
@@ -102,7 +115,6 @@ REQUIRED_SELECT = (
     "speech_job_submissions",
     "speech_job_cancellations",
     "speech_artifacts",
-    "speech_deletion_plans",
     "speech_voice_drafts",
     "speech_voice_draft_revisions",
     # The owner-privileged projection of a published draft's facts; the evidence
@@ -119,7 +131,6 @@ REQUIRED_INSERT = (
     "speech_job_events",
     "speech_job_submissions",
     "speech_job_cancellations",
-    "speech_deletion_plans",
 )
 REQUIRED_INSERT_COLUMNS: dict[str, tuple[str, ...]] = {
     "speech_voice_draft_revisions": (
@@ -133,10 +144,6 @@ REQUIRED_INSERT_COLUMNS: dict[str, tuple[str, ...]] = {
     ),
 }
 REQUIRED_UPDATE_COLUMNS: dict[str, tuple[str, ...]] = {
-    # The deletion planner locks the workspace (FK parent) and the asset row;
-    # neither column is assigned, and PostgreSQL still requires UPDATE per lock.
-    "speech_workspaces": ("metadata_revision",),
-    "speech_assets": ("version",),
     "speech_voice_drafts": (
         "display_name",
         "metadata_revision",
@@ -148,6 +155,7 @@ REQUIRED_UPDATE_COLUMNS: dict[str, tuple[str, ...]] = {
 }
 
 _JOB_SUBJECT = "Public Job writer"
+_LOG = logging.getLogger(__name__)
 # Every relation the combined Job writer may touch. A grant outside this set --
 # table or column -- is refused by name (#561).
 _JOB_DECLARED_TABLES = tuple(
@@ -155,6 +163,7 @@ _JOB_DECLARED_TABLES = tuple(
         (
             *REQUIRED_SELECT,
             *REQUIRED_INSERT,
+            *DELETION_PREVIEW_TABLES,
             "coordination_jobs",
             "coordination_outbox",
             "admission_operations",
@@ -168,6 +177,10 @@ _JOB_DECLARED_TABLES = tuple(
 # for this role, and the two required surfaces must be complete.
 _JOB_UPDATE_SURFACE: dict[str, tuple[str, ...]] = {
     **REQUIRED_UPDATE_COLUMNS,
+    # Allowed, not required: deletion preview takes these row locks, and the
+    # route's own probe names them when they are missing.
+    "speech_workspaces": ("metadata_revision",),
+    "speech_assets": ("version",),
     "coordination_jobs": (
         "claim_owner_id",
         "claim_expires_at_us",
@@ -309,10 +322,23 @@ class JobRuntime:
                     ).release_sync
                 )
                 self.jobs = PublicJobs(adapter, adapter)
+                deletion_store = PostgresDeletionPlans(
+                    pool, timeout_seconds=self._settings.job_transaction_timeout_seconds
+                )
+                try:
+                    missing_grants = deletion_store.missing_privileges()
+                except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
+                    missing_grants = ()
+                if missing_grants:
+                    _LOG.warning(
+                        "deletion preview is not provisioned; missing %s. Apply "
+                        "deletion_plan_grants to the Job writer; the rest of the API "
+                        "starts normally and the route answers 503 "
+                        "deletion_plans_not_configured.",
+                        ", ".join(missing_grants),
+                    )
                 self.deletion_plans = SpeechDeletions(
-                    PostgresDeletionPlans(
-                        pool, timeout_seconds=self._settings.job_transaction_timeout_seconds
-                    ),
+                    deletion_store,
                     workspace_id=self._settings.capability_default_workspace_id,
                 )
                 self.voice_drafts = VoiceDrafts(self.jobs, PostgresVoiceDrafts(pool))
@@ -583,7 +609,9 @@ def _verify_privileges(connection: SpeechConnection, schema: str) -> None:
         ).fetchall()
         granted_columns = {row["column_name"] for row in column_rows if row["insertable"]}
         if expected_columns:
-            if granted_columns != expected_columns:
+            optional = table in _JOB_OPTIONAL_TABLES
+            shapes = (set(), expected_columns) if optional else (expected_columns,)
+            if granted_columns not in shapes:
                 raise ValueError(
                     f"{_JOB_SUBJECT} INSERT columns do not match the declared surface on "
                     f"{table}; revoke the extra column grant or restore the declared column"

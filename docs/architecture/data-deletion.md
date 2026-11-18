@@ -27,14 +27,17 @@ Speech `/v1/nexus/deletion-plans`、`/v1/nexus/deletions` 和 Workbench
 2. 所有者在短事务中读取目标版本与完整依赖快照，建立不可变 plan。依赖按
    `(owner,kind,id,revision,relation)` 排序，不得重复同一关系。
    Speech 侧当前支持 `asset` 与 `operation_content` 目标，且与资产写路径保持同一
-   锁序：先锁 `speech_workspaces` 行，再锁目标行，最后插入计划行，避免与资产
-   写路径反向加锁而死锁。`asset` 固定资产版本、摘要、对象版本，并把未释放的
-   资产引用作为 `persistent_reference / blocks` 依赖；
+   锁序：先以 `FOR KEY SHARE` 锁 `speech_workspaces` 行，再以 `FOR SHARE` 锁目标行，
+   最后插入计划行，避免与资产写路径反向加锁而死锁。`asset` 固定资产版本、摘要、
+   对象版本，并把未释放的资产引用作为 `persistent_reference / blocks` 依赖；
    `operation_content` 固定 Job 的 `status_version` 与请求摘要，活跃 Job 以自身
    `active_execution / blocks` 阻断，引用该 Job 的声音草稿 revision 以
    `persistent_reference / blocks` 阻断，Artifact 与 intent 只进入私有内容快照。
    `artifact`、`voice_revision` 目标返回 `422 deletion_target_unsupported`；遇到本
    版本无法判定的活跃引用类型返回 `503 deletion_reference_unsupported`，不静默丢弃依赖。
+   删除预检的授权（`deletion_plan_grants`）由该路由自己探测：缺失时进程照常启动并在
+   启动日志 WARN 点名缺项，请求返回 `503 deletion_plans_not_configured`
+   （`retryable=false`），而不是让整台 API 拒绝启动或退化成笼统的存储不可用。
    这些排序与关系唯一性要求不由 schema 单独保证；生产者须另行验证。
    `plan_digest` 为移除自身 `plan_digest` 字段后对完整 plan 做 RFC 8785 UTF-8
    canonical JSON 的 SHA-256；包括 id、revision、过期时间、eligible 和全部依赖。

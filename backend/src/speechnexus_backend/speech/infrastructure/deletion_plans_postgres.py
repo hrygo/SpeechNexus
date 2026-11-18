@@ -19,6 +19,7 @@ from speechnexus_backend.speech.application.deletions import (
 from speechnexus_backend.speech.domain.deletion import (
     DeletionIdempotencyConflictError,
     DeletionPlan,
+    DeletionPlanConfigurationError,
     DeletionPlanUnavailableError,
     DeletionReferenceUnsupportedError,
     DeletionTarget,
@@ -33,6 +34,22 @@ from speechnexus_backend.speech.infrastructure.deletion_plan_schema import (
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 
 _ACTIVE_JOB_STATES = frozenset({"pending", "running", "cancelling"})
+# The route checks only its own authority. These are not part of the process
+# startup gate: a deployment that never serves deletion preview must still boot.
+_PRIVILEGES = (
+    ("SELECT", "speech_assets", None),
+    ("SELECT", "speech_workspaces", None),
+    ("SELECT", "speech_asset_objects", None),
+    ("SELECT", "speech_asset_references", None),
+    ("SELECT", "speech_jobs", None),
+    ("SELECT", "speech_job_intents", None),
+    ("SELECT", "speech_artifacts", None),
+    ("SELECT", "speech_voice_draft_revisions", None),
+    ("INSERT", "speech_deletion_plans", "*"),
+    # Both row locks require UPDATE; the columns are never assigned.
+    ("UPDATE", "speech_assets", "version"),
+    ("UPDATE", "speech_workspaces", "metadata_revision"),
+)
 # A reference consumer is another owner of the same deployment; a kind this
 # release cannot plan for is a refusal, never a silently dropped dependency.
 _REFERENCE_KINDS = {"voice_revision": "voice_revision"}
@@ -116,6 +133,26 @@ class _Transaction:
         rows = self._rows("SELECT clock_timestamp() AS now")
         return cast(datetime, rows[0]["now"])
 
+    def missing_privileges(self) -> tuple[str, ...]:
+        placeholders = ", ".join(["(%s, %s, %s)"] * len(_PRIVILEGES))
+        rows = self._rows(
+            "SELECT v.privilege, v.table_name, v.column_name, "
+            "CASE WHEN v.column_name IS NULL "
+            "THEN pg_catalog.has_table_privilege(current_user, v.table_name, v.privilege) "
+            "WHEN v.column_name = '*' "
+            "THEN pg_catalog.has_any_column_privilege(current_user, v.table_name, v.privilege) "
+            "ELSE pg_catalog.has_column_privilege("
+            "current_user, v.table_name, v.column_name, v.privilege) END AS ok "
+            f"FROM (VALUES {placeholders}) AS v(privilege, table_name, column_name)",
+            tuple(item for probe in _PRIVILEGES for item in probe),
+        )
+        return tuple(
+            f"{row['privilege']} on {row['table_name']}"
+            + (f".{row['column_name']}" if row["column_name"] not in (None, "*") else "")
+            for row in rows
+            if not row["ok"]
+        )
+
     def replay(self, key_digest: str) -> PlanReceipt | None:
         rows = self._rows(
             f"SELECT {_PLAN_COLUMNS}, intent_digest FROM {DELETION_PLANS} "
@@ -143,7 +180,7 @@ class _Transaction:
         return bool(
             self._rows(
                 "SELECT workspace_id FROM speech_workspaces "
-                "WHERE workspace_id = %s AND workspace_state = 'active' FOR UPDATE",
+                "WHERE workspace_id = %s AND workspace_state = 'active' FOR KEY SHARE",
                 (self._workspace_id,),
             )
         )
@@ -157,7 +194,7 @@ class _Transaction:
             "FROM speech_assets AS a "
             "LEFT JOIN speech_asset_objects AS o ON o.asset_id = a.asset_id "
             "WHERE a.asset_id = %s AND a.workspace_id = %s "
-            "FOR UPDATE OF a",
+            "FOR SHARE OF a",
             (target.resource_id, self._workspace_id),
         )
         if not rows:
@@ -214,7 +251,7 @@ class _Transaction:
             "SELECT j.job_id, j.workspace_id, j.status_version, j.request_digest, j.state "
             "FROM speech_jobs AS j "
             "WHERE j.job_id = %s AND j.workspace_id = %s "
-            "FOR UPDATE OF j",
+            "FOR SHARE OF j",
             (target.resource_id, self._workspace_id),
         )
         if not rows:
@@ -358,6 +395,14 @@ class PostgresDeletionPlans:
         self._pool = pool
         self._timeout = timeout_seconds
 
+    def missing_privileges(self) -> tuple[str, ...]:
+        """Probe the route's own authority without opening a plan transaction."""
+        with self._pool.connection(timeout=self._timeout) as connection:
+            transaction = _Transaction(
+                connection, time.monotonic() + self._timeout, workspace_id=""
+            )
+            return transaction.missing_privileges()
+
     @contextmanager
     def transaction(self, workspace_id: str) -> Iterator[_Transaction]:
         deadline = time.monotonic() + self._timeout
@@ -366,7 +411,13 @@ class PostgresDeletionPlans:
                 self._pool.connection(timeout=self._timeout) as connection,
                 connection.transaction(),
             ):
-                yield _Transaction(connection, deadline, workspace_id)
+                transaction = _Transaction(connection, deadline, workspace_id)
+                missing = transaction.missing_privileges()
+                if missing:
+                    raise DeletionPlanConfigurationError(
+                        "deletion preview lacks " + ", ".join(missing)
+                    )
+                yield transaction
         except DeletionIdempotencyConflictError:
             raise
         except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:

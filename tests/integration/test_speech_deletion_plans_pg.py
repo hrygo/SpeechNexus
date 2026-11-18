@@ -466,8 +466,10 @@ async def test_two_connections_with_one_key_commit_one_plan(sandbox: Sandbox) ->
         pool.close()
 
 
-def _provision_writer(sandbox: Sandbox) -> tuple[str, psycopg.Connection[dict[str, Any]]]:
-    """Provision exactly the reference writer set, including the asset lock column."""
+def _provision_writer(
+    sandbox: Sandbox, *, include_deletion: bool = True
+) -> tuple[str, psycopg.Connection[dict[str, Any]]]:
+    """Provision exactly the reference writer set, with or without the route's grants."""
     role = "sn_del_writer_" + uuid.uuid4().hex[:8]
     admin = psycopg.connect(sandbox.url, autocommit=True, row_factory=dict_row)
     admin.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
@@ -479,7 +481,7 @@ def _provision_writer(sandbox: Sandbox) -> tuple[str, psycopg.Connection[dict[st
         *job_dispatch_grants(sandbox.schema, role),
         *cancellation_reconciliation_grants(sandbox.schema, role),
         *public_job_submission_grants(sandbox.schema, role),
-        *deletion_plan_grants(sandbox.schema, role),
+        *(deletion_plan_grants(sandbox.schema, role) if include_deletion else ()),
         f'GRANT SELECT ON "{sandbox.schema}".admission_operations, '
         f'"{sandbox.schema}".coordination_jobs TO "{role}"',
         f"GRANT UPDATE (claim_owner_id, claim_expires_at_us, claim_version, job_state) "
@@ -574,3 +576,38 @@ async def test_workspace_is_locked_before_the_asset_like_the_writer_path(
     finally:
         thread.join(10)
         pool.close()
+
+
+async def test_missing_deletion_grants_fail_the_route_not_the_process(
+    sandbox: Sandbox,
+) -> None:
+    """A writer without the route's grants boots, and preview names the gap."""
+    role, admin = _provision_writer(sandbox, include_deletion=False)
+    pool = None
+    try:
+        with psycopg.connect(
+            make_conninfo(sandbox.url, user=role, password=ROLE_PASSWORD), row_factory=dict_row
+        ) as connection:
+            connection.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
+            # The process-wide gate accepts this role: deletion is not a boot condition.
+            _verify_privileges(connection, sandbox.schema)
+        pool = speech_pool(
+            make_conninfo(sandbox.url, user=role, password=ROLE_PASSWORD),
+            schema=sandbox.schema,
+        )
+        pool.open()
+        service = SpeechDeletions(PostgresDeletionPlans(pool), workspace_id=WORKSPACE)
+        app = create_app(settings=_settings(), deletions=service)
+        response = await _post(app, _body("asset", ASSET_ID, 3), "key-no-grants")
+        assert response.status_code == 503, response.text
+        error = response.json()["error"]
+        assert error["code"] == "deletion_plans_not_configured"
+        assert error["retryable"] is False
+        row = admin.execute("SELECT count(*) AS n FROM speech_deletion_plans").fetchone()
+        assert row is not None and row["n"] == 0
+    finally:
+        if pool is not None:
+            pool.close()
+        admin.execute(f'DROP OWNED BY "{role}"')
+        admin.execute(f'DROP ROLE IF EXISTS "{role}"')
+        admin.close()

@@ -409,18 +409,6 @@ JOB_MISGRANTS = (
         "undeclared table speech_pronunciation_families",
     ),
     (
-        # Deletion preview locks these rows; PostgreSQL requires UPDATE for the
-        # lock even though neither column is ever assigned.
-        "asset-lock-column-missing",
-        'REVOKE UPDATE (version) ON "{schema}".speech_assets FROM "{role}"',
-        "lacks UPDATE on speech_assets.version",
-    ),
-    (
-        "workspace-lock-column-missing",
-        'REVOKE UPDATE (metadata_revision) ON "{schema}".speech_workspaces FROM "{role}"',
-        "lacks UPDATE on speech_workspaces.metadata_revision",
-    ),
-    (
         "schema-create",
         'GRANT CREATE ON SCHEMA "{schema}" TO "{role}"',
         "must not hold CREATE on schema",

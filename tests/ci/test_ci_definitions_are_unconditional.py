@@ -17,9 +17,16 @@ The fix is `@unittest.skipUnless(...)` on the class, so the tests exist, run,
 and report `skipped` with a reason. This guard keeps the shape from coming
 back: it parses the sources, it does not import them, and it needs no service.
 
-Allowed exception: a module-level `if TYPE_CHECKING:` block may hold imports
-(those are not `def`/`class`); anything defining at module level behind a
-runtime condition is rejected.
+Every conditional container is walked at any depth — `if`/`elif`/`else`, loops,
+`with`, `match`, `try`/`except`/`finally`/`except*` — and the class body is
+walked too, because a method hidden behind a condition makes the *test* vanish
+just as quietly. `if TYPE_CHECKING:` gets no exception: imports are not looked
+at, and a class written there never exists at runtime, which is exactly the
+failure this guard exists to catch.
+
+Out of scope, because a static read cannot see them: `del X`,
+`globals()["X"] = type(...)`, and `X = type(...)` building a class without an
+`ast.ClassDef` (#995).
 """
 
 from __future__ import annotations
@@ -32,9 +39,9 @@ ROOT = Path(__file__).resolve().parents[2]
 SUITE = ROOT / "tests/ci"
 GUARD_FILE = Path(__file__).resolve()
 
-# Containers whose body runs at runtime only when some condition holds, one level
-# down at a time: every branch of these hides a definition just as well as `if`.
-BRANCHING = (
+# Containers whose body runs only when something holds. `except*` is its own node
+# (`ast.TryStar`), not an `ast.Try`, so it is added when the interpreter has it.
+BRANCHING: tuple[type[ast.AST], ...] = (
     ast.If,
     ast.For,
     ast.AsyncFor,
@@ -43,36 +50,18 @@ BRANCHING = (
     ast.AsyncWith,
     ast.Try,
 )
-if hasattr(ast, "TryStar"):  # `except*` is its own node, not an `ast.Try`
+if hasattr(ast, "TryStar"):
     BRANCHING += (ast.TryStar,)
+CONDITIONAL = (*BRANCHING, ast.Match)
 
 DEFINITION_NODES = (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
 
 
-def imported_type_checking(tree: ast.Module) -> bool:
-    """Whether `TYPE_CHECKING` in this module really comes from `typing`.
-
-    Matching the name alone would let `TYPE_CHECKING = bool(os.environ["X"])`
-    turn a runtime condition into an accepted one.
-    """
-    for node in tree.body:
-        if isinstance(node, ast.ImportFrom) and node.module == "typing":
-            for alias in node.names:
-                if (alias.asname or alias.name) == "TYPE_CHECKING":
-                    return True
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.name == "typing" and (alias.asname or "") in ("", "typing"):
-                    return True
-    return False
-
-
-def _condition_children(node: ast.AST) -> list[ast.AST]:
-    """The bodies this node runs conditionally, at any depth of the same shape."""
+def _conditional_bodies(node: ast.AST) -> list[ast.AST]:
+    """The statements this node runs on a condition, one level down."""
     children: list[ast.AST] = []
     for field in ("body", "orelse", "finalbody"):
-        for statement in getattr(node, field, []) or []:
-            children.append(statement)
+        children.extend(getattr(node, field, []) or [])
     for handler in getattr(node, "handlers", []) or []:
         children.extend(handler.body)
     for case in getattr(node, "cases", []) or []:
@@ -80,76 +69,33 @@ def _condition_children(node: ast.AST) -> list[ast.AST]:
     return children
 
 
-def _walk_conditional(
-    statements: list[ast.AST], *, typing_imported: bool, problems: list[str], where: str
-) -> None:
+def _walk(statements: list[ast.AST], *, problems: list[str], where: str) -> None:
     for statement in statements:
         if isinstance(statement, DEFINITION_NODES):
             kind = type(statement).__name__
             problems.append(f"{where}: defines {kind} {statement.name} at line {statement.lineno}")
-            continue  # 函数/类内部的局部定义不算模块级隐藏
-        if (
-            isinstance(statement, ast.If)
-            and typing_imported
-            and ast.unparse(statement.test) == "TYPE_CHECKING"
-        ):
-            # 只允许 import; 类/函数写在恒 False 的分支里在运行时永远不存在。
-            for inner in statement.body + statement.orelse:
-                if isinstance(inner, DEFINITION_NODES):
-                    problems.append(
-                        f"{where}: defines {type(inner).__name__} {inner.name} at line "
-                        f"{inner.lineno} inside `if TYPE_CHECKING:`"
-                    )
+            # A local class/def inside a function is not a module-level hide.
             continue
-        if isinstance(statement, (*BRANCHING, ast.Match)):
-            _walk_conditional(
-                _condition_children(statement),
-                typing_imported=typing_imported,
-                problems=problems,
-                where=where,
-            )
+        if isinstance(statement, CONDITIONAL):
+            _walk(_conditional_bodies(statement), problems=problems, where=where)
             continue
-        if isinstance(statement, ast.ClassDef):
+        if isinstance(statement, ast.ClassDef):  # pragma: no cover - handled above
             continue
 
 
 def conditional_definitions(source: str, filename: str = "<string>") -> list[str]:
-    """Module-level runtime conditions that decide whether a definition exists."""
+    """Definitions a module-level or class-body runtime condition can hide."""
     tree = ast.parse(source)
     problems: list[str] = []
-    typing_imported = imported_type_checking(tree)
-    # 模块体: 任何条件容器里的 class/def 都算隐藏。
     for statement in tree.body:
-        if isinstance(statement, (*BRANCHING, ast.Match)):
-            if (
-                isinstance(statement, ast.If)
-                and typing_imported
-                and ast.unparse(statement.test) == "TYPE_CHECKING"
-            ):
-                for inner in statement.body + statement.orelse:
-                    if isinstance(inner, DEFINITION_NODES):
-                        problems.append(
-                            f"{filename}: defines {type(inner).__name__} {inner.name} at "
-                            f"line {inner.lineno} inside `if TYPE_CHECKING:`"
-                        )
-                continue
-            _walk_conditional(
-                _condition_children(statement),
-                typing_imported=typing_imported,
-                problems=problems,
-                where=filename,
-            )
-    # 类体: 条件包住的方法同样会让用例悄悄消失。
+        if isinstance(statement, CONDITIONAL):
+            _walk(_conditional_bodies(statement), problems=problems, where=filename)
+    # A method hidden in the class body disappears just as silently as a class.
     for statement in tree.body:
         if isinstance(statement, ast.ClassDef):
             for item in statement.body:
-                if isinstance(item, (*BRANCHING, ast.Match)):
-                    _walk_conditional(
-                        _condition_children(item),
-                        typing_imported=typing_imported,
-                        problems=problems,
-                        where=filename,
-                    )
+                if isinstance(item, CONDITIONAL):
+                    _walk(_conditional_bodies(item), problems=problems, where=filename)
     return problems
 
 
@@ -192,6 +138,16 @@ class SuiteDefinitionsAreUnconditionalTest(unittest.TestCase):
         )
         problems = conditional_definitions(source, "sample.py")
         self.assertEqual(len(problems), 1, problems)
+
+    def test_skip_unless_decorator_is_the_accepted_shape(self) -> None:
+        source = (
+            "import unittest\n"
+            "@unittest.skipUnless(host_can_plan(), 'no plan on this host')\n"
+            "class SkippedButPresentTest(unittest.TestCase):\n"
+            "    def test_x(self) -> None:\n"
+            "        pass\n"
+        )
+        self.assertEqual(conditional_definitions(source, "sample.py"), [])
 
     def test_a_nested_condition_cannot_hide_one(self) -> None:
         source = (
@@ -267,25 +223,26 @@ class SuiteDefinitionsAreUnconditionalTest(unittest.TestCase):
         problems = conditional_definitions(source, "sample.py")
         self.assertEqual(len(problems), 1, problems)
 
-    def test_type_checking_is_only_trusted_when_it_comes_from_typing(self) -> None:
-        rebound = (
-            "import os\n"
-            "import unittest\n"
-            "TYPE_CHECKING = bool(os.environ.get('X'))\n"
-            "if TYPE_CHECKING:\n"
-            "    class HiddenTest(unittest.TestCase):\n"
-            "        def test_x(self) -> None:\n"
-            "            pass\n"
-        )
-        problems = conditional_definitions(rebound, "sample.py")
-        self.assertEqual(len(problems), 1, problems)
-
-    def test_no_definition_inside_a_type_checking_block(self) -> None:
+    def test_type_checking_is_not_an_exception(self) -> None:
+        # `if TYPE_CHECKING:` 恒 False, 写在里面的用例运行时永不存在。
         source = (
             "from typing import TYPE_CHECKING\n"
             "import unittest\n"
             "if TYPE_CHECKING:\n"
             "    class NeverExistsTest(unittest.TestCase):\n"
+            "        def test_x(self) -> None:\n"
+            "            pass\n"
+        )
+        problems = conditional_definitions(source, "sample.py")
+        self.assertEqual(len(problems), 1, problems)
+
+    def test_a_rebound_condition_name_is_no_safer(self) -> None:
+        source = (
+            "import os\n"
+            "import unittest\n"
+            "TYPE_CHECKING = bool(os.environ.get('X'))\n"
+            "if TYPE_CHECKING:\n"
+            "    class HiddenTest(unittest.TestCase):\n"
             "        def test_x(self) -> None:\n"
             "            pass\n"
         )
@@ -300,12 +257,15 @@ class SuiteDefinitionsAreUnconditionalTest(unittest.TestCase):
         )
         self.assertEqual(conditional_definitions(source, "sample.py"), [])
 
-    def test_skip_unless_decorator_is_the_accepted_shape(self) -> None:
+    def test_a_definition_inside_type_checking_is_red_at_any_depth(self) -> None:
         source = (
+            "from typing import TYPE_CHECKING\n"
             "import unittest\n"
-            "@unittest.skipUnless(host_can_plan(), 'no plan on this host')\n"
-            "class SkippedButPresentTest(unittest.TestCase):\n"
-            "    def test_x(self) -> None:\n"
-            "        pass\n"
+            "if TYPE_CHECKING:\n"
+            "    if cond():\n"
+            "        class DeepTest(unittest.TestCase):\n"
+            "            def test_x(self) -> None:\n"
+            "                pass\n"
         )
-        self.assertEqual(conditional_definitions(source, "sample.py"), [])
+        problems = conditional_definitions(source, "sample.py")
+        self.assertEqual(len(problems), 1, problems)

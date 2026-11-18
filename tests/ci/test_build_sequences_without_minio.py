@@ -890,8 +890,11 @@ def running_in_github_actions() -> bool:
 
     The full tier costs one `docker compose --dry-run` per measured argv: cheap on a
     developer host, roughly a minute of a cold runner's budget. `ci.yml` is out of
-    this card's scope, so the tier stays local and the single negative-control plan
-    below (one invocation) carries the criterion into CI.
+    this card's scope, so the tier stays local. On a runner the tier and the
+    negative control both report `skipped` with a reason (measured 2026-11-19: no
+    `Building` line from `docker compose --dry-run` there), so the criterion is
+    carried by the graph, registry and AST checks above, which need no docker at
+    all — not by the negative control, which does not run there either.
     """
     return os.environ.get("GITHUB_ACTIONS") == "true"
 

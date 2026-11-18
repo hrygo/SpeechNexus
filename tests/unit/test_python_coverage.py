@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import importlib.util
 import json
 import os
@@ -551,3 +552,21 @@ def test_every_declared_skip_is_a_real_nodeid_in_this_suite() -> None:
     collected = {line.strip() for line in result.stdout.splitlines() if "::" in line}
     missing = sorted(GATE.EXPECTED_SKIPS - collected)
     assert missing == [], missing
+
+
+def test_every_declared_skip_still_carries_its_skip_decorator() -> None:
+    # 白名单只有「还是跳过为真」时才成立: 删掉某条 skipUnless 后 nodeid 仍被收集,
+    # 白名单就会变成对该方法未来任意 skip 的永久放行。
+    tree = ast.parse(
+        (SCRIPT.parents[2] / "tests/ci/test_build_sequences_without_minio.py").read_text(
+            encoding="utf-8"
+        )
+    )
+    decorated = {
+        node.name
+        for node in tree.body
+        if isinstance(node, ast.ClassDef)
+        and any("unittest.skipUnless" in ast.unparse(item) for item in node.decorator_list)
+    }
+    declared = {nodeid.split("::")[1] for nodeid in GATE.EXPECTED_SKIPS if "::" in nodeid}
+    assert declared <= decorated, sorted(declared - decorated)

@@ -2378,6 +2378,23 @@ instance 来“绕过”冲突；先核对旧 head、owner 和 readiness 证据�
 （`engine_registration.py:477` 的 `_ensure_quota`）；同一工作空间重复注册时 `policy_revision`
 必须一致，否则注册以 `quota_policy_conflict` 失败。
 
+**一个工作空间只有一套配额策略**：`policy_revision` 是工作空间级的准入策略版本，不是每个
+binding 自己的属性。因此同一工作空间里的所有模态（文件 ASR、文件 TTS、后续其他 binding）
+必须用**同一个** `policy_revision`；它取自各自私有配方的 `policy_revision_id`（手工注册时是
+`--policy-revision`），所以两份配方必须写同一个值——参考部署的两份样例配方就是同一个
+`policy-revision-compose-example`。先注册的那个 binding 决定了这一行的取值。
+
+已经存在一行、而本次注册带的是另一个值时，只有两条正当出路，都不改动已写入的行：
+
+1. **对齐配方**（参考部署的做法）：把本次注册的 `policy_revision` 改成上面查询里已有行的值，
+   重新注册。适合两个模态本来共用一套准入策略的部署。
+2. **另建工作空间**：确实需要两套策略时，`POST /v1/nexus/workspaces` 建一个工作空间，把该
+   binding 注册到它上面，请求时带对应的 `nexus.workspace_id`。配额、尝试与租约都按工作空间
+   分开计，不要指望同一工作空间里并存两套策略。
+
+不要 `UPDATE speech.workspace_quotas` 改 `policy_revision` 绕过：写入前的一致性检查是准入
+读取该行的前置，改行会让注册时的核对与实际准入判据分叉。
+
 ## 9. 失败时先看什么
 
 每一步「拒绝启动」的判定跑在哪一层、实测打印什么（一行 `FAIL:` 还是 traceback，退出码几）、文档承诺什么，见[启动闸门的失败输出形态](startup-gate-output.md)；下表只给现象与首查项。
@@ -2394,7 +2411,7 @@ instance 来“绕过”冲突；先核对旧 head、owner 和 readiness 证据�
 | `minio-init` 报 `bucket versioning was not enabled` | 检查 MinIO 健康、root 凭据和 bucket policy；不能删除版本化要求后继续 |
 | `engine-register` 报 `engine_unreachable` | 从 Compose 网络探测 `SPEECHNEXUS_ENGINE_HEALTH_URL`；该 URL 必须能从容器访问，不能只从宿主机访问 |
 | `engine-register` 报 `invalid_recipe` | recipe 结构、摘要、stage/instance 或 binding plan 不一致 |
-| `engine-register` 报 `quota_policy_conflict` / `quota_capacity_conflict` | 该工作空间已有配额行：`policy_revision` 必须与本次注册提供的值一致、`max_attempts` 不得更小；不要用改行的方式绕过，先确认哪个部署先写了这行 |
+| `engine-register` 报 `quota_policy_conflict` / `quota_capacity_conflict` | 该工作空间已有配额行：`policy_revision` 必须与本次注册提供的值一致、`max_attempts` 不得更小；不要用改行的方式绕过，先确认哪个部署先写了这行。同一工作空间的多个模态共用一套策略，两套策略要分工作空间——见 [§8 的一个工作空间只有一套配额策略](#一个工作空间只有一套配额策略) |
 | `engine-register` 报 `host_capacity_insufficient` | `--host-capacity`（缺省 `steady + per_slot × max_slots`，至少覆盖 `peak`）小于计划需求，或该节点已有 held/quarantined 占用；先核对实际容量再调整计划 |
 | `POST /v1/nexus/jobs`（及列表、读取、取消、重试、事件流）返回 `503 job_unavailable` | 优先当「缺前置」读，不要当引擎或容量故障：`error.message` 已按 §9.1 的表点名缺哪个键或该跑哪条命令；`retryable: false`，重试同一请求不会改变结果 |
 | `POST /v1/nexus/jobs` 返回 `422 model_not_published` | 没有任何已发布 binding 作为该 `model` 的 head，或 `execution_recipe` / catalogue 尚未就绪；先按[异步 Job 手册 §7.1](async-job-runbook.md#71-发布-binding注册与创建-job-的前置) 发布（从空库首次创建时这是最先出现的错误，早于引擎与容量判定） |

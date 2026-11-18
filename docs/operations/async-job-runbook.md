@@ -596,7 +596,10 @@ MegaCube 真实引擎窗口，基线 `c0172a22`；记录见
 注册是运维命令 `speechnexus-register-engine`，它把一个**已经运行**的引擎实例写入准入读取
 的关系事实并置为 `ready`；同一个事务还写 `host_nodes`（宿主机容量向量）、
 `workspace_quotas`（该工作空间的并发 attempt 配额）、`resource_pools`（池 owner 与 fencing
-token）。**这两份「容量登记」与「工作空间配额」事实没有别的产品写入入口**：`workspace_quotas`
+token）。`workspace_quotas` 的 `policy_revision` 是**工作空间级**策略版本：同一工作空间里注册第二个
+binding（例如先 ASR 后 TTS）时，本次注册带的 `policy_revision` 必须与已有行一致，否则以
+`quota_policy_conflict` 退出；对齐配方或另建工作空间两条出路见
+[参考部署的注册节](../operations/compose-minimal.md#一个工作空间只有一套配额策略)。**这两份「容量登记」与「工作空间配额」事实没有别的产品写入入口**：`workspace_quotas`
 只有 `_ensure_quota`（`engine_registration.py:477`）会插入，`host_nodes` 只有
 `_ensure_host`（`engine_registration.py:353`）会插入（仓库里另一处写入是
 `scripts/dev-env/del109-local-gateway-fixture.py` 的本地夹具，不是部署入口）；`POST /v1/nexus/workspaces` 只写

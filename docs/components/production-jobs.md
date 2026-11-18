@@ -193,9 +193,13 @@ ORDER BY l.lease_id;
 preflight 另要求无 settlement 根，因此它拒绝启动的那一行必然在这个结果里。
 
 取消结算同样归还容量：`settle_cancelled` 提交 `cancelled` 后按原 `lease_id` 走同一
-`LeaseService.release`（幂等）。释放被拒绝、结果未知或存储不可用时，该次结算返回
-未完成，对账账本按退避重试同一个已 `cancelled` 的 Job，直到释放成功或 `max_attempts`
-用尽；期间租约保持 held，上面的查询会列出该行。
+`LeaseService.release`（幂等）。取消请求内取得已验证停止时由该请求当场释放租约，
+默认部署没有取消对账 worker 也生效；释放被拒绝、结果未知或存储不可用时，Job 仍是
+`cancelled`（已提交的终态不回滚），租约保持 held 作为可重试标记，对账账本按退避重试
+同一个已 `cancelled` 的 Job，直到释放成功或 `max_attempts` 用尽；期间租约保持 held，
+上面的查询会列出该行。释放身份是 `SPEECHNEXUS_DATABASE_URL`（参考部署的 `sn_api`）；
+启动时校验它与 Job writer 同库（已证实的跨库会拒绝启动，无法连接只告警），但不校验释放
+权限——权限不足会在取消时告警并保留租约，不会让 API 起不来。
 
 冻结期限过后再留 60 秒结算窗口，仍被持有且无 settlement 根时，preflight 拒绝 API
 启动，因此这一窗口最迟在期限后被运营侧发现；在此之前由该查询或日志人工巡检。
@@ -528,7 +532,7 @@ ORDER BY f.accepted_at_us, f.job_id, l.lease_id;
 | 执行仍活跃（`submitting`/`executing`/`stopping`） | 操作员按网关 `/abort`、`/drain` 写入执行事实；worker 下一轮领取隔离 | 网关应答即落库；worker 侧受退避上限 300 s | **不可用**（仍 `reserved`，被执行持有） | 网关给出停止事实后自动隔离并收口；否则走上面的证词 |
 | 执行已 `succeeded` 且有 `engine_terminal_response` 证据 | `python -m speechnexus_backend.completed_release_cli` 现场取 drain → 复读 → 释放 | 一次人工操作（跨一个结算周期复读） | **不可用** | 有界操作员出口（见下一小节五步） |
 | 执行已 `succeeded` 但缺终止证据 | **没有推进者**，等 #338 的停止确认协议 | 无界 | **不可用** | 无；`/readyz` 与 diagnostics 的 detail 持续点名 |
-| 部署未启用对账 worker（默认 `deploy/compose.yaml`） | **没有推进者**：没有任何进程会领取围栏 | 无界，直到有人运行 worker | **不可用** | 启用并运行 worker（见「取消对账 worker 与开关」），或按下面的钻取查询人工处置 |
+| 部署未启用对账 worker（默认 `deploy/compose.yaml`） | 只有取消请求内的已验证停止会当场收口；**没有其它推进者**，没有任何进程会领取围栏 | 未取得停止证据时无界，直到有人运行 worker | 请求内已验证停止时当场归还；其余 **不可用** | 启用并运行 worker（见「取消对账 worker 与开关」），或按下面的钻取查询人工处置 |
 
 ##### 执行已完成、取消后到：有界操作员出口
 
@@ -692,8 +696,9 @@ WHERE n.instance_id = '<instance_id>' AND n.instance_generation = <n>;"
 结算提交 `cancelled` 后，组合根以原 `lease_id` 调 `LeaseService.release`（`PostgresLeaseSettler`
 解析唯一租约并重放版本冲突）。释放成功才把本轮记为 `settled`；被拒绝、未知或存储异常
 时返回未完成，账本按退避重试该行（Job 已是 `cancelled` 时重试只做释放），`max_attempts`
-用尽后停止重试并保留 held 租约，由上面的只读查询与 preflight 暴露。取消受理本身仍不
-直接释放容量：只有完成上述无执行或停止证据后，释放才发生。
+用尽后停止重试并保留 held 租约，由上面的只读查询与 preflight 暴露。受理本身（`202
+cancelling`）不释放容量：只有取得无执行事实或已验证停止后才释放——已验证停止时由该取消
+请求当场完成，其余由上面的对账账本推进。
 
 迁移 `0035_job_cancellation_fences` 的 `down_revision` 是
 `0034_public_job_cancellations`，形成单一 head；down 在 reconcile 账本、not-submitted
@@ -748,8 +753,9 @@ SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_ENABLED=true SPEECHNEXUS_DATABASE_UR
 ```
 
 worker 与派发器共享同一条 gateway 契约和停止服务；它不会创建新 execution，也不会把
-单独的 404、传输失败或未验证的 abort 当作停止。未开启该 worker 的部署没有取消结论的
-推进者：受理后的 `cancelling` 会一直保留，租约继续计入 `held_slots`。参考部署
+单独的 404、传输失败或未验证的 abort 当作停止。未开启该 worker 的部署只有取消请求内
+「已验证停止」这一条即时收口路径：拿不到停止证据的受理仍停在 `cancelling`，租约继续
+计入 `held_slots`，没有其它推进者。参考部署
 `deploy/compose.yaml` 目前不包含该服务，需要按本节命令单独运行并确认开关为 `true`。
 worker 角色需要 `public_job_grants`（读取 Job/submission、cancellation receipt
 并条件更新 `state/status_version`）与

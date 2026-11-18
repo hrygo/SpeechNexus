@@ -15,6 +15,11 @@ from speechnexus_backend.job_cancellation_runtime import (
     _PublicJobsStop,
     build_cancellation_runtime,
 )
+from speechnexus_backend.speech.application.job_cancellation import (
+    CancellationCapacity,
+    JobCancellationService,
+    StopObservation,
+)
 from speechnexus_backend.speech.application.leases import LeaseIsolation, LeaseIsolationGap
 
 
@@ -101,17 +106,32 @@ class _Capacity:
 
 def test_settlement_uses_public_job_version_guard_and_returns_capacity() -> None:
     jobs, capacity = _Jobs([_Job("cancelling")]), _Capacity()
-    assert _PublicJobsSettlement(cast(Any, jobs), capacity).settle_cancelled("job-1") is True
+    assert (
+        _PublicJobsSettlement(cast(Any, jobs), CancellationCapacity(capacity)).settle_cancelled(
+            "job-1"
+        )
+        is True
+    )
     assert jobs.settled == ["job-1"]
     assert capacity.calls == ["job-1"]
     running = _Jobs([_Job("running")])
-    assert _PublicJobsSettlement(cast(Any, running), _Capacity()).settle_cancelled("job-1") is False
+    assert (
+        _PublicJobsSettlement(
+            cast(Any, running), CancellationCapacity(_Capacity())
+        ).settle_cancelled("job-1")
+        is False
+    )
 
 
 def test_an_already_cancelled_job_still_retries_the_release() -> None:
     jobs, capacity = _Jobs([_Job("cancelled", 5)]), _Capacity()
 
-    assert _PublicJobsSettlement(cast(Any, jobs), capacity).settle_cancelled("job-1") is True
+    assert (
+        _PublicJobsSettlement(cast(Any, jobs), CancellationCapacity(capacity)).settle_cancelled(
+            "job-1"
+        )
+        is True
+    )
     assert jobs.settled == []
     assert capacity.calls == ["job-1"]
 
@@ -120,7 +140,12 @@ def test_a_refused_release_keeps_the_job_scheduled_for_retry() -> None:
     jobs = _Jobs([_Job("cancelling")])
     capacity = _Capacity(released=False)
 
-    assert _PublicJobsSettlement(cast(Any, jobs), capacity).settle_cancelled("job-1") is False
+    assert (
+        _PublicJobsSettlement(cast(Any, jobs), CancellationCapacity(capacity)).settle_cancelled(
+            "job-1"
+        )
+        is False
+    )
     assert capacity.calls == ["job-1"]
 
 
@@ -128,7 +153,68 @@ def test_an_unavailable_release_is_not_mistaken_for_settlement() -> None:
     jobs = _Jobs([_Job("cancelling")])
     capacity = _Capacity(fail=True)
 
-    assert _PublicJobsSettlement(cast(Any, jobs), capacity).settle_cancelled("job-1") is False
+    assert (
+        _PublicJobsSettlement(cast(Any, jobs), CancellationCapacity(capacity)).settle_cancelled(
+            "job-1"
+        )
+        is False
+    )
+
+
+class _ConfirmJob:
+    def __init__(self, state: str = "cancelling") -> None:
+        self.job_id = "job-1"
+        self.state, self.status_version = state, 3
+
+
+class _Receipt:
+    job_id = "job-1"
+
+
+class _Stopper:
+    def __init__(self, state: str) -> None:
+        self.state, self.calls = state, 0
+
+    async def stop(self, job: Any, receipt: Any) -> StopObservation:
+        self.calls += 1
+        return StopObservation(cast(Any, self.state))
+
+
+async def test_a_verified_stop_releases_capacity_after_settling() -> None:
+    jobs, capacity, stopper = _Jobs([]), _Capacity(), _Stopper("stopped")
+    service = JobCancellationService(cast(Any, jobs), stopper, CancellationCapacity(capacity))
+
+    settled = await service.confirm(cast(Any, _ConfirmJob()), cast(Any, _Receipt()))
+
+    assert settled.state == "cancelled"
+    assert jobs.settled == ["job-1"]
+    assert capacity.calls == ["job-1"]
+    assert stopper.calls == 1
+
+
+async def test_a_refused_release_keeps_the_cancelled_state() -> None:
+    jobs, capacity = _Jobs([]), _Capacity(fail=True)
+    service = JobCancellationService(
+        cast(Any, jobs), _Stopper("stopped"), CancellationCapacity(capacity)
+    )
+
+    settled = await service.confirm(cast(Any, _ConfirmJob()), cast(Any, _Receipt()))
+
+    assert settled.state == "cancelled"
+    assert capacity.calls == ["job-1"]
+
+
+async def test_an_unconfirmed_stop_neither_settles_nor_releases() -> None:
+    jobs, capacity = _Jobs([]), _Capacity()
+    service = JobCancellationService(
+        cast(Any, jobs), _Stopper("unknown"), CancellationCapacity(capacity)
+    )
+
+    confirmed = await service.confirm(cast(Any, _ConfirmJob()), cast(Any, _Receipt()))
+
+    assert confirmed.state == "cancelling"
+    assert jobs.settled == []
+    assert capacity.calls == []
 
 
 async def test_stop_adapter_reuses_job_cancellation_service() -> None:

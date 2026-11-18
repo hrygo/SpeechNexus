@@ -40,6 +40,7 @@ from speechnexus_backend.job_dispatch_runtime import (
     build_dispatch_dependencies,
 )
 from speechnexus_backend.job_dispatch_worker import _main
+from speechnexus_backend.speech.application.job_cancellation import CancellationCapacity
 from speechnexus_backend.speech.application.job_cancellation_reconciliation import (
     JobCancellationReconciler,
 )
@@ -797,7 +798,7 @@ async def test_cancellation_settlement_returns_the_admission_lease(
         classmethod(lambda cls, settings: MissingClient()),
     )
     capacity = PostgresLeaseSettler(pool, timeout_seconds=3)
-    settlement = _PublicJobsSettlement(jobs, capacity.release_sync)
+    settlement = _PublicJobsSettlement(jobs, CancellationCapacity(capacity.release_sync))
     reconciler = JobCancellationReconciler(
         store=PostgresCancellationReconciliationStore(pool),
         confirmer=GatewayCancellationConfirmer(cast(Any, object()), settlement),

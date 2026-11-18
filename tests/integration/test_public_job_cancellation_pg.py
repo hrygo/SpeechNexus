@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, cast
@@ -10,15 +12,26 @@ from typing import Any, cast
 import pytest
 from httpx import ASGITransport, AsyncClient
 from psycopg.conninfo import make_conninfo
-from tests.integration.test_public_jobs_http import PASSWORD, PREFIX, JobSandbox
+from pydantic import SecretStr
+from tests.integration.test_public_jobs_http import (
+    PASSWORD,
+    PREFIX,
+    JobSandbox,
+    _settings_for,
+)
 from tests.integration.test_public_jobs_http import jobs_db as jobs_db
 
 from speechnexus_backend.app import create_app
 from speechnexus_backend.job_cancellation_runtime import (
     JobCancellationRuntime,
     JobCancellationSettings,
+    _PublicJobsSettlement,
 )
-from speechnexus_backend.speech.application.job_cancellation import JobCancellationService
+from speechnexus_backend.speech.application.job_cancellation import (
+    CancellationCapacity,
+    JobCancellationService,
+    StopObservation,
+)
 from speechnexus_backend.speech.application.job_cancellation_reconciliation import (
     JobCancellationReconciler,
     Judgment,
@@ -45,12 +58,16 @@ from speechnexus_backend.speech.infrastructure.gateway_execution_client import (
     GatewayExecutionClient,
     GatewayRejectedError,
 )
+from speechnexus_backend.speech.infrastructure.gateway_job_cancellation import (
+    GatewayJobCancellationStopper,
+)
 from speechnexus_backend.speech.infrastructure.job_cancellation_reconciliation_postgres import (
     PostgresCancellationReconciliationStore,
 )
 from speechnexus_backend.speech.infrastructure.job_dispatch_postgres import (
     PostgresDispatchQueue,
     PostgresDispatchStateStore,
+    PostgresLeaseSettler,
 )
 
 pytestmark = pytest.mark.integration
@@ -103,6 +120,90 @@ async def _create_running(db: JobSandbox, *, key: str, workspace_id: str | None 
     job_id = await _create_pending(db, key=key, workspace_id=workspace_id)
     db.jobs.advance(job_id, "running")
     return job_id
+
+
+_CAPACITY_DIGEST = "sha256:" + "a" * 64
+
+
+def _capacity(db: JobSandbox) -> CancellationCapacity:
+    """The release object under test, on a role that may write capacity.
+
+    Lease release needs the coordination-runtime writes. The reference deployment
+    grants them to its API identity, and the Job writer identity deliberately does
+    not hold them, so the sandbox applies that declaration to its own role instead
+    of widening the writer fixture used by every other Job test.
+    """
+    for grant in coordination_runtime_grants(
+        db.schema, speech_role=db.role, gateway_role=db.role + "_unused"
+    ):
+        if f'"{db.role}"' in grant:
+            db.admin.execute(grant)
+    return CancellationCapacity(PostgresLeaseSettler(db.pool, timeout_seconds=3).release_sync)
+
+
+def _seed_reserved_lease(db: JobSandbox, job_id: str) -> None:
+    """Give the Job one reserved admission lease holding a slot and an attempt."""
+    workspace = db.query("SELECT workspace_id FROM speech_jobs WHERE job_id = %s", (job_id,))[0][
+        "workspace_id"
+    ]
+    suffix = job_id[-12:]
+    pool_id, host_id = "pool-" + suffix, "host-" + suffix
+    instance_id, stage_id = "instance-" + suffix, "stage-" + suffix
+    db.admin.execute(
+        "INSERT INTO resource_pools (pool_id, service_class, pool_state) "
+        "VALUES (%s, 'realtime', 'active')",
+        (pool_id,),
+    )
+    db.admin.execute(
+        "INSERT INTO workspace_quotas (workspace_id, max_attempts, held_attempts, "
+        "policy_revision) VALUES (%s, 8, 1, 'policy-test')",
+        (workspace,),
+    )
+    db.admin.execute(
+        "INSERT INTO host_nodes (host_node_id, memory_architecture, node_state, "
+        "topology_digest, allocatable_unified_physical_memory_bytes, "
+        "held_unified_physical_memory_bytes) "
+        "VALUES (%s, 'unified_memory', 'active', %s, 100, 1)",
+        (host_id, _CAPACITY_DIGEST),
+    )
+    db.admin.execute(
+        "INSERT INTO engine_instances (instance_id, instance_generation, host_node_id, "
+        "pool_id, gateway_id, binding_revision_id, manifest_id, approved_template_id, "
+        "management_mode, loading_policy, config_digest, instance_state, max_slots, held_slots) "
+        "VALUES (%s, 1, %s, %s, 'gateway-test', 'binding-test', 'manifest-test', "
+        "'template-test', 'managed', 'on_demand', %s, 'ready', 4, 1)",
+        (instance_id, host_id, pool_id, _CAPACITY_DIGEST),
+    )
+    db.admin.execute(
+        "INSERT INTO admission_attempts (operation_id, attempt_id, workspace_id, "
+        "binding_revision_id, manifest_id, recipe_digest, policy_revision_id, service_class, "
+        "request_digest, required_stage_ids) VALUES (%s, 'attempt-test', %s, 'binding-test', "
+        "'manifest-test', %s, 'policy-test', 'realtime', %s, %s)",
+        (job_id, workspace, _CAPACITY_DIGEST, _CAPACITY_DIGEST, json.dumps([stage_id])),
+    )
+    db.admin.execute(
+        "INSERT INTO admission_leases (lease_id, operation_id, attempt_id, stage_id, "
+        "host_node_id, instance_id, instance_generation, pool_id, gateway_id, fencing_token, "
+        "reserved_slots, deadline_at_us, reserved_unified_physical_memory_bytes) VALUES "
+        "(%s, %s, 'attempt-test', %s, %s, %s, 1, %s, 'gateway-test', 1, 1, 1, 1)",
+        ("lease-" + suffix, job_id, stage_id, host_id, instance_id, pool_id),
+    )
+
+
+def _lease_row(db: JobSandbox, job_id: str) -> dict[str, Any]:
+    rows = db.query(
+        "SELECT lease_state, cleanup_state FROM admission_leases WHERE operation_id = %s",
+        (job_id,),
+    )
+    assert len(rows) == 1, rows
+    return rows[0]
+
+
+def _held_rows(db: JobSandbox) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    return (
+        db.query("SELECT held_slots FROM engine_instances"),
+        db.query("SELECT held_attempts FROM workspace_quotas"),
+    )
 
 
 async def test_cancel_accepts_once_replays_and_rejects_key_reuse(jobs_db: JobSandbox) -> None:
@@ -263,8 +364,14 @@ async def test_pending_job_can_be_cancelled_without_an_execution(jobs_db: JobSan
 
 async def test_verified_stop_settles_cancelled(jobs_db: JobSandbox) -> None:
     job_id = await _create_running(jobs_db, key="synthetic-cancel-create-6")
+    _seed_reserved_lease(jobs_db, job_id)
+    assert _lease_row(jobs_db, job_id) == {"lease_state": "reserved", "cleanup_state": "pending"}
+    assert _held_rows(jobs_db) == ([{"held_slots": 1}], [{"held_attempts": 1}])
     stopper = Stopper("stopped")
-    app = _app(jobs_db, JobCancellationService(jobs_db.jobs, stopper))
+    app = _app(
+        jobs_db,
+        JobCancellationService(jobs_db.jobs, stopper, _capacity(jobs_db)),
+    )
     url = CANCEL.format(job_id=job_id)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         cancelled = await client.post(url, headers={"Idempotency-Key": "synthetic-stopped-key"})
@@ -290,14 +397,184 @@ async def test_verified_stop_settles_cancelled(jobs_db: JobSandbox) -> None:
         {"state": "cancelled"},
     ]
     assert jobs_db.count("speech_job_cancellations") == 1
+    # The verified stop returned capacity in the same confirmation: no worker and
+    # no deferred reconciliation is needed for this Job.
+    assert _lease_row(jobs_db, job_id) == {"lease_state": "released", "cleanup_state": "complete"}
+    assert jobs_db.query(
+        "SELECT budget_released_at_us IS NOT NULL AS released "
+        "FROM admission_leases WHERE operation_id = %s",
+        (job_id,),
+    ) == [{"released": True}]
+    assert _held_rows(jobs_db) == ([{"held_slots": 0}], [{"held_attempts": 0}])
+
+
+async def test_a_refused_release_keeps_the_cancelled_job_and_retries_later(
+    jobs_db: JobSandbox, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A capacity failure must not undo the confirmed cancellation or answer 5xx."""
+    job_id = await _create_running(jobs_db, key="synthetic-cancel-create-7")
+    _seed_reserved_lease(jobs_db, job_id)
+    real = _capacity(jobs_db)
+    attempts: list[str] = []
+
+    def refused_once(target: str) -> bool:
+        attempts.append(target)
+        if len(attempts) == 1:
+            raise RuntimeError("synthetic lease release refusal")
+        return real.release(target)
+
+    refusal = CancellationCapacity(refused_once)
+    app = _app(
+        jobs_db,
+        JobCancellationService(jobs_db.jobs, Stopper("stopped"), refusal),
+    )
+    url = CANCEL.format(job_id=job_id)
+    with caplog.at_level(logging.WARNING):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            cancelled = await client.post(url, headers={"Idempotency-Key": "synthetic-refused-key"})
+            # The terminal state is committed, so a refused release cannot become a
+            # server error or make the route report cleanup as still pending.
+            assert cancelled.status_code == 200, cancelled.text
+            assert cancelled.json()["status"] == "cancelled"
+            assert cancelled.json()["cleanup_state"] == "complete"
+    # A silent failure would look like a completed cancellation forever; the
+    # warning with the traceback is the only operator signal on this path.
+    capacity_warnings = [
+        record
+        for record in caplog.records
+        if record.levelno == logging.WARNING
+        and record.getMessage().startswith("cancellation capacity release")
+    ]
+    assert [record.getMessage() for record in capacity_warnings] == [
+        "cancellation capacity release raised"
+    ]
+    assert capacity_warnings[0].job_id == job_id
+    assert capacity_warnings[0].exc_info is not None
+    assert jobs_db.query(
+        "SELECT state, status_version FROM speech_jobs WHERE job_id = %s", (job_id,)
+    ) == [{"state": "cancelled", "status_version": 4}]
+    assert _lease_row(jobs_db, job_id) == {"lease_state": "reserved", "cleanup_state": "pending"}
+    assert _held_rows(jobs_db) == ([{"held_slots": 1}], [{"held_attempts": 1}])
+    assert attempts == [job_id]
+
+    # The reserved lease is the durable retry marker: the reconciliation port
+    # retries the same shared release and converges on the next pass.
+    settlement = _PublicJobsSettlement(jobs_db.jobs, refusal)
+    assert settlement.settle_cancelled(job_id) is True
+    assert attempts == [job_id, job_id]
+    assert _lease_row(jobs_db, job_id) == {"lease_state": "released", "cleanup_state": "complete"}
+    assert _held_rows(jobs_db) == ([{"held_slots": 0}], [{"held_attempts": 0}])
+
+
+async def test_confirm_and_reconciliation_settlement_share_one_release_function(
+    jobs_db: JobSandbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job_id = await _create_running(jobs_db, key="synthetic-cancel-create-8")
+    _seed_reserved_lease(jobs_db, job_id)
+    capacity = _capacity(jobs_db)
+    calls: list[str] = []
+    original = CancellationCapacity.release
+
+    def recording(self: CancellationCapacity, target: str) -> bool:
+        calls.append(target)
+        return original(self, target)
+
+    # One patch of the shared method is visible to both entry points only because
+    # both hold the same object; a private copy in either path would miss here.
+    monkeypatch.setattr(CancellationCapacity, "release", recording)
+    app = _app(
+        jobs_db,
+        JobCancellationService(jobs_db.jobs, Stopper("stopped"), capacity),
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        cancelled = await client.post(
+            CANCEL.format(job_id=job_id), headers={"Idempotency-Key": "synthetic-shared-key"}
+        )
+        assert cancelled.status_code == 200, cancelled.text
+    assert calls == [job_id]
+
+    assert _PublicJobsSettlement(jobs_db.jobs, capacity).settle_cancelled(job_id) is True
+    assert calls == [job_id, job_id]
+
+
+async def test_the_composed_app_returns_capacity_without_an_injected_confirmation(
+    jobs_db: JobSandbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The lifespan-assembled confirmation must carry the release port itself."""
+    job_id = await _create_running(jobs_db, key="synthetic-cancel-create-9")
+    _seed_reserved_lease(jobs_db, job_id)
+    # The reference deployment releases under its API identity, which is not the
+    # Job writer; a separate sandbox role keeps that split honest.
+    role = "sn_api_" + jobs_db.schema[-12:]
+    jobs_db.admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{PASSWORD}'")
+    try:
+        for grant in coordination_runtime_grants(
+            jobs_db.schema, speech_role=role, gateway_role=role + "_unused"
+        ):
+            if f'"{role}"' in grant:
+                jobs_db.admin.execute(grant)
+        settings = _settings_for(jobs_db).model_copy(
+            update={
+                "database_url": SecretStr(make_conninfo(jobs_db.url, user=role, password=PASSWORD)),
+                "execution_gateway_base_url": "http://gateway.invalid",
+                "execution_gateway_component_credential": SecretStr("synthetic-credential"),
+            }
+        )
+
+        async def stopped(*args: Any, **kwargs: Any) -> StopObservation:
+            return StopObservation("stopped")
+
+        # Only the gateway answer is faked; the app must assemble the rest itself.
+        monkeypatch.setattr(GatewayJobCancellationStopper, "stop", stopped)
+        app = create_app(settings=settings)
+        async with (
+            app.router.lifespan_context(app),
+            AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client,
+        ):
+            cancelled = await client.post(
+                CANCEL.format(job_id=job_id),
+                headers={"Idempotency-Key": "synthetic-composed-key"},
+            )
+            assert cancelled.status_code == 200, cancelled.text
+            assert cancelled.json()["status"] == "cancelled"
+    finally:
+        jobs_db.admin.execute(f'DROP OWNED BY "{role}"')
+        jobs_db.admin.execute(f'DROP ROLE IF EXISTS "{role}"')
+    assert _lease_row(jobs_db, job_id) == {"lease_state": "released", "cleanup_state": "complete"}
+    assert _held_rows(jobs_db) == ([{"held_slots": 0}], [{"held_attempts": 0}])
+
+
+async def test_a_split_capacity_database_is_rejected_at_startup(
+    jobs_db: JobSandbox,
+) -> None:
+    """A release on another database would answer True without touching the lease."""
+    database = "sn_split_" + jobs_db.schema[-12:]
+    jobs_db.admin.execute(f'CREATE DATABASE "{database}"')
+    try:
+        settings = _settings_for(jobs_db).model_copy(
+            update={"database_url": SecretStr(make_conninfo(jobs_db.url, dbname=database))}
+        )
+        app = create_app(settings=settings)
+        with pytest.raises(ValueError, match="must connect to the same database"):
+            async with app.router.lifespan_context(app):
+                pass
+    finally:
+        jobs_db.admin.execute(f'DROP DATABASE IF EXISTS "{database}"')
 
 
 async def test_unconfirmed_or_missing_execution_stays_cleanup_pending(
     jobs_db: JobSandbox,
 ) -> None:
+    released: list[str] = []
+
+    def record(job_id: str) -> bool:
+        released.append(job_id)
+        return True
+
+    capacity = CancellationCapacity(record)
     for index, state in enumerate(("unconfirmed", "not_found", "failed")):
         job_id = await _create_running(jobs_db, key=f"synthetic-cancel-unconfirmed-{index}")
-        app = _app(jobs_db, JobCancellationService(jobs_db.jobs, Stopper(state)))
+        app = _app(jobs_db, JobCancellationService(jobs_db.jobs, Stopper(state), capacity))
         url = CANCEL.format(job_id=job_id)
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             pending = await client.post(
@@ -310,6 +587,8 @@ async def test_unconfirmed_or_missing_execution_stays_cleanup_pending(
         assert jobs_db.query("SELECT state FROM speech_jobs WHERE job_id = %s", (job_id,)) == [
             {"state": "cancelling"}
         ]
+    # Nothing was stopped or settled, so capacity was never returned.
+    assert released == []
 
 
 async def test_accepted_cancellation_reconciles_from_no_execution_and_restart_converges(

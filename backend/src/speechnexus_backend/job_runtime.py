@@ -7,10 +7,12 @@ import threading
 import uuid
 
 from speechnexus_backend.settings import Settings
+from speechnexus_backend.speech.application.job_cancellation import CancellationCapacity
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
 from speechnexus_backend.speech.application.voice_drafts import VoiceDrafts
 from speechnexus_backend.speech.application.voice_publications import VoicePublications
 from speechnexus_backend.speech.domain.job_prerequisites import ADMISSION_DSN
+from speechnexus_backend.speech.infrastructure.job_dispatch_postgres import PostgresLeaseSettler
 from speechnexus_backend.speech.infrastructure.job_schema_preflight import (
     JobSchemaNotMigratedError,
     require_migrated_schema,
@@ -35,6 +37,8 @@ from speechnexus_backend.startup_privileges import (
     refuse_table_privileges,
     require_schema_usage,
 )
+
+_LOG = logging.getLogger(__name__)
 
 _ADMISSION_RESERVATION_TABLES = ("admission_attempts", "admission_requests", "admission_leases")
 _ADMISSION_REQUIRED_SELECT = (
@@ -205,9 +209,13 @@ class JobRuntime:
         self._pool: SpeechPool | None = None
         self._admission_pool: SpeechPool | None = None
         self._publisher_pool: SpeechPool | None = None
+        self._capacity_pool: SpeechPool | None = None
         self.jobs: PublicJobs | None = None
         self.voice_drafts: VoiceDrafts | None = None
         self.voice_publications: VoicePublications | None = None
+        # The single release object the immediate cancellation and the
+        # reconciliation settlement port share; None until this runtime opens.
+        self.capacity_release: CancellationCapacity | None = None
         self._lifetime = threading.Lock()
         self._diagnostics: _PoolDiagnostics | None = None
 
@@ -278,6 +286,15 @@ class JobRuntime:
                         None if admission_pool is not None else _ADMISSION_DSN_BLANK
                     ),
                 )
+                capacity_pool = self._open_capacity_pool()
+                self._capacity_pool = capacity_pool
+                self._verify_capacity_pool(pool, capacity_pool)
+                self.capacity_release = CancellationCapacity(
+                    PostgresLeaseSettler(
+                        capacity_pool,
+                        timeout_seconds=self._settings.job_transaction_timeout_seconds,
+                    ).release_sync
+                )
                 self.jobs = PublicJobs(adapter, adapter)
                 self.voice_drafts = VoiceDrafts(self.jobs, PostgresVoiceDrafts(pool))
                 self.voice_publications = (
@@ -292,6 +309,10 @@ class JobRuntime:
                 )
             except BaseException as error:
                 try:
+                    self.capacity_release = None
+                    if self._capacity_pool is not None:
+                        self._capacity_pool.close()
+                        self._capacity_pool = None
                     if self._publisher_pool is not None:
                         self._publisher_pool.close()
                         self._publisher_pool = None
@@ -363,11 +384,68 @@ class JobRuntime:
             raise
         return pool
 
+    def _open_capacity_pool(self) -> SpeechPool:
+        """Open the identity that returns capacity for an immediate cancellation.
+
+        The API identity holds the coordination-runtime writes in the reference
+        deployment (``coordination_runtime_grants`` for ``sn_api``), while the Job
+        writer identity does not, so lease release runs on the existing
+        ``SPEECHNEXUS_DATABASE_URL`` rather than on the writer pool. Nothing is
+        verified here: a refused or unavailable release is an already tolerated,
+        retryable answer (the Job stays terminal and the lease stays reserved), so
+        a release-only privilege gap must not take the whole API down. A refused
+        release leaves the reserved row visible to the documented held-lease
+        query, and the already ``cancelled`` Job is what a later pass retries.
+        """
+        name = "speech-cancel-release-" + uuid.uuid4().hex
+        pool = speech_pool(
+            self._settings.database_url.get_secret_value(),
+            schema=self._settings.database_schema,
+            max_size=2,
+            name=name,
+        )
+        pool.open()
+        return pool
+
+    def _verify_capacity_pool(self, writer_pool: SpeechPool, capacity_pool: SpeechPool) -> None:
+        """Refuse a verified split database; never fail on an unverifiable one.
+
+        A capacity pool on another database makes the lease lookup miss, and
+        ``release_sync`` answers True for a Job whose lease stays held: a silent
+        fake success, worse than the held lease it was meant to fix. So a *verified*
+        mismatch is a composition error. An unreachable or under-privileged capacity
+        identity is different: release already answers a retryable False, and that
+        must not stop the whole API from booting, so it only warns (the held lease
+        stays visible to the documented held-lease query).
+        """
+        try:
+            if _database_identity(capacity_pool) != _database_identity(writer_pool):
+                raise _SplitJobDatabaseError(
+                    "SPEECHNEXUS_DATABASE_URL and SPEECHNEXUS_JOB_WRITER_DATABASE_URL must "
+                    "connect to the same database: cancellation releases the admission lease "
+                    "the Job writer's transaction reserved, and a different database would "
+                    "answer released without touching that lease"
+                )
+            with capacity_pool.connection(timeout=3) as connection:
+                connection.execute("SELECT 1")
+        except _SplitJobDatabaseError:
+            raise
+        except Exception:
+            _LOG.warning(
+                "cancellation capacity identity unverified; a release will answer a retryable "
+                "failure instead of stopping the API",
+                exc_info=True,
+            )
+
     def close(self) -> None:
         with self._lifetime:
             self.jobs = None
             self.voice_drafts = None
             self.voice_publications = None
+            self.capacity_release = None
+            if self._capacity_pool is not None:
+                self._capacity_pool.close()
+                self._capacity_pool = None
             if self._publisher_pool is not None:
                 self._publisher_pool.close()
                 self._publisher_pool = None

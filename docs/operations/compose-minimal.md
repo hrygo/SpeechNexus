@@ -360,7 +360,12 @@ chmod 600 "$D/transcription-recipe.json" "$D/gateway-file-asr.json" \
      同名；只把 staging 桶配成另一个名字时，网关写入与提交都成功，直到结果读回才抛
      `result_object_scope_rejected`（`gateway_execution_client.py:720`），同步请求以
      `503 backend_unavailable` 结束，参考部署取同一个 `speechnexus-results`
-     （见 §2 的环境文件注释）。`tools` 步骤对已存在的私有 lane 配置检查这条等式。
+     （见 §2 的环境文件注释）。两条等式由不同步骤检查：同步读回那条（lane ==
+     `SPEECHNEXUS_OBJECT_STORAGE_BUCKET`）由 `tools` 步骤对已存在的私有 lane 配置检查
+     （`lane_result_bucket_gaps`）；staging 那条（lane ==
+     `SPEECHNEXUS_EXECUTION_RESULT_BUCKET`）由 `stack` 步骤
+     （`reference-acceptance.py:1428-1432`）与启动闸门
+     （`deploy/job-startup-gate.py:446-482`）检查。
 
    这两个桶的绑定都不来自 `SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET` 键；参考部署上该键
    **必须与 `SPEECHNEXUS_OBJECT_STORAGE_BUCKET` 相同**。它是同步转写的上传落点

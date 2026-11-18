@@ -354,13 +354,13 @@ def env_gaps(env: Mapping[str, str], keys: Sequence[str]) -> list[str]:
 # answers `503 backend_unavailable` (#972/DEL-539).
 SYNC_UPLOAD_BUCKET = "SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET"
 JOB_INPUT_BUCKET = "SPEECHNEXUS_OBJECT_STORAGE_BUCKET"
-# The backend reads synchronous transcription results back from this key
-# (`transcription_runtime.py` builds `MinioExecutionResultObjects` with
+# The backend reads synchronous results back from the same env key it uses for Job
+# input assets (`transcription_runtime.py` builds `MinioExecutionResultObjects` with
 # `settings.object_storage_bucket`), while the gateway writes them into the lane's
-# private `objects.result_bucket` (#973). `stack_private_inputs` checks the lane
-# against `SPEECHNEXUS_EXECUTION_RESULT_BUCKET`; the `tools` step checks the
-# read-back side, so together the three names must agree.
-RESULT_READ_BUCKET = "SPEECHNEXUS_OBJECT_STORAGE_BUCKET"
+# private `objects.result_bucket` (#973). The alias keeps both roles from drifting
+# apart if the key is renamed; `stack_private_inputs` checks the lane against
+# `SPEECHNEXUS_EXECUTION_RESULT_BUCKET`, and `tools` checks this read-back side.
+RESULT_READ_BUCKET = JOB_INPUT_BUCKET
 
 
 def sync_input_bucket_gap(env: Mapping[str, str]) -> str | None:

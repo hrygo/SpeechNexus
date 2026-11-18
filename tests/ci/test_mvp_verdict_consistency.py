@@ -12,7 +12,7 @@ reader to notice the contradiction:
 * an `A 档` cell of 无 must not sit on a 达标 row;
 * the §2 table is the 12 MVP rows, numbered 1..12 in order, seven cells wide.
 
-It does not check §1's 9/2/1 arithmetic or the release notes.
+It does not check §1's arithmetic or the release notes.
 
 The first test runs on the real document. The remaining tests run the same checks on
 synthetic tables, so the red side is proven in CI and not only by a one-off mutation.

@@ -158,7 +158,12 @@ class DocumentedCapabilityGuardTests(unittest.TestCase):
         self._assert_red("missing production terminal-state")
 
     def test_a_blanket_unverified_cell_turns_red(self) -> None:
-        self._rewrite(COMPOSE, "**已装配、已实现；本部署无公开 `200` 证据**", "**本部署未验证**")
+        """The cell records one measured `200`, never a blanket "not verified" (#974)."""
+        self._rewrite(
+            COMPOSE,
+            "**已在该部署形态上取得真实 `200`（`DEL-540`",
+            "**本部署未验证**",
+        )
         self._assert_red("**本部署未验证**")
 
     def test_a_moved_terminal_write_line_turns_red(self) -> None:

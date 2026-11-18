@@ -193,6 +193,9 @@ ready 事实以及成功的 prepare intent。当前受支持的运维入口是
 参考部署形态上的公开 `200` 不在本文的验证范围内：按
 [最小 Compose 部署面](compose-minimal.md) §0–§7 起栈、引擎为同主机外部托管时，该入口已于 2026-11-18
 在候选 head `19c7f09a` 上取得真实 `200`（请求、响应与执行终态见 [MVP 判定表第 7 行](../plans/mvp-release-readiness.md)）。
-**已知限制**：这一形态下转写成功后租约不自动释放（`lease_state=reserved`、实例 `held_slots=1/1`），
-单槽被一次成功占满且没有可用释放出口（`completed_release_cli` 只接受已受理取消的 Job 形状，同步转写会被 `completed_release_not_accepted_cancellation` 拒绝），因此一次成功后不要向同一实例再发第二次；
-结算实现由 [#974](https://github.com/hrygo/SpeechNexus/issues/974) 跟踪，见发布说明的已知限制 16。
+**结算**：成功后由独立的 ASR 结算 worker 自动释放租约（`lease_state=released`、实例 `held_slots` 与
+工作区 `held_attempts` 回到 0），无需任何命令；释放前单槽仍被占用。该形态要求配置
+`SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL` 并完成 `0057_asr_settlement` 迁移，否则同步 ASR 返回
+`503 backend_unavailable` 并在启动日志点名该键。实现与验收见 [#974](https://github.com/hrygo/SpeechNexus/issues/974)。运维读数：`GET /v1/nexus/admin/diagnostics`
+的 `asr_settlement_debt` 报告 `unknown` / `cleanup_pending` / `route_mismatch` / `settled_but_held` /
+`redacted_held` 计数与最多 3 条样本；detail 始终 `ok`，不参与 `/readyz`。

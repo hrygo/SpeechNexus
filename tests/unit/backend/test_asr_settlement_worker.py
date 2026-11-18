@@ -16,6 +16,9 @@ from speechnexus_backend.speech.domain.leases import (
     rejected,
     unknown,
 )
+from speechnexus_backend.speech.infrastructure.tts_settlement_preflight import (
+    SettlementPreflightUnavailableError,
+)
 
 ROOT = AsrSettlementRoot(
     "lease-test", "operation-test", "attempt-test", "gateway-test", "host-test"
@@ -161,3 +164,27 @@ async def test_rejected_release_keeps_the_root_unsettled() -> None:
     store, gateway, leases = Store(), Gateway("succeeded"), Refusing()
     result = await worker(store, gateway, leases).run_once()
     assert (result.released, result.pending, store.marks, store.deferrals) == (0, 1, 0, 1)
+
+
+def test_runtime_reraises_the_named_preflight_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from speechnexus_backend import asr_settlement_worker as module
+
+    settings = module.AsrSettlementWorkerSettings(
+        database_url="postgresql://settlement.invalid/db",
+        schema="speech",
+        gateway_id="gateway-test",
+        host_node_id="host-test",
+        admission_database_url="postgresql://admission.invalid/db",
+    )
+
+    async def fail(*args: Any, **kwargs: Any) -> None:
+        raise SettlementPreflightUnavailableError(
+            "run `docker compose --profile migration run --rm migrate` before starting"
+        )
+
+    monkeypatch.setattr(module, "run", fail)
+    runtime = module.AsrSettlementRuntime(settings)
+    with pytest.raises(SettlementPreflightUnavailableError, match="migrate"):
+        runtime.open()

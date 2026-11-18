@@ -8,6 +8,7 @@ readiness probes already discard them, and this boundary adds no field.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from datetime import UTC, datetime
 
@@ -25,7 +26,11 @@ OPERATION = "getDiagnostics"
 PATH = "/v1/nexus/admin/diagnostics"
 
 
-def diagnostics_body(report: ReadinessReport, now: datetime) -> dict[str, object]:
+def diagnostics_body(
+    report: ReadinessReport,
+    now: datetime,
+    extra_checks: tuple[dict[str, object], ...] = (),
+) -> dict[str, object]:
     """Map the readiness report onto the declared diagnostics shape.
 
     This deployment reports ``ok`` when every probe passed and ``unready``
@@ -45,7 +50,8 @@ def diagnostics_body(report: ReadinessReport, now: datetime) -> dict[str, object
                 "detail": check.detail,
             }
             for check in report.checks
-        ],
+        ]
+        + list(extra_checks),
     }
 
 
@@ -72,6 +78,7 @@ def create_diagnostics_router(
     readiness: ReadinessService,
     *,
     now: Callable[[], datetime] | None = None,
+    extra_checks: Callable[[], tuple[dict[str, object], ...]] | None = None,
 ) -> APIRouter:
     router = APIRouter(tags=["diagnostics"])
     clock = now or (lambda: datetime.now(UTC))
@@ -81,7 +88,8 @@ def create_diagnostics_router(
         request_id = str(request.state.request_id)
         try:
             report = await readiness.inspect()
-            body = diagnostics_body(report, clock())
+            extra = await asyncio.to_thread(extra_checks) if extra_checks is not None else ()
+            body = diagnostics_body(report, clock(), extra)
             validate_response(
                 OPERATION, 200, {"body": body, "headers": {"X-Request-ID": request_id}}
             )

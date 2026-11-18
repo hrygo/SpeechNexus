@@ -127,3 +127,44 @@ async def test_an_inspection_failure_is_a_declared_503(monkeypatch: pytest.Monke
     assert body["error"]["code"] == "diagnostics_unavailable"
     assert body["error"]["retryable"] is True
     validate_response(OPERATION, 503, {"body": body})
+
+
+async def test_blocked_debt_query_keeps_readyz_responsive() -> None:
+    import asyncio
+    import threading
+    import time
+
+    readiness = ReadinessService([StaticProbe("postgresql")], timeout_seconds=1)
+    release = threading.Event()
+
+    def slow_debt() -> tuple[dict[str, object], ...]:
+        release.wait(3)
+        return ({"name": "asr_settlement_debt", "status": "ok", "detail": "unknown=0"},)
+
+    app = create_app(settings=_settings(), readiness=readiness, diagnostics_checks=slow_debt)
+    ticks = 0
+
+    async def heartbeat() -> None:
+        nonlocal ticks
+        while True:
+            ticks += 1
+            await asyncio.sleep(0.01)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        beat = asyncio.create_task(heartbeat())
+        diagnosis = asyncio.create_task(
+            client.get(PATH, headers={"X-Request-ID": "request-diagnostics-slow"})
+        )
+        await asyncio.sleep(0.2)
+        started = time.monotonic()
+        ready = await client.get("/readyz")
+        elapsed = time.monotonic() - started
+        beat.cancel()
+        release.set()
+        response = await diagnosis
+
+    assert ready.status_code == 200
+    assert elapsed < 1, f"/readyz waited {elapsed:.2f}s behind the debt query"
+    assert ticks >= 5, f"the event loop only ran {ticks} heartbeats while the query blocked"
+    assert response.status_code == 200
+    assert response.json()["checks"][-1]["name"] == "asr_settlement_debt"

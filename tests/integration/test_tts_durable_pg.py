@@ -36,6 +36,9 @@ from speechnexus_backend.speech.infrastructure.admission_postgres import (
     PostgresAdmissionTransactions,
     tts_voice_admission_grants,
 )
+from speechnexus_backend.speech.infrastructure.asr_settlement_schema import (
+    asr_settlement_worker_grants,
+)
 from speechnexus_backend.speech.infrastructure.job_schema import (
     job_dispatch_grants,
     job_runtime_grants,
@@ -412,6 +415,7 @@ async def test_deadline_rescan_releases_unsubmitted_original_and_allows_next_adm
     for grant in (
         *disable_settlement_grants(db.schema, role),
         *tts_settlement_worker_grants(db.schema, role),
+        *asr_settlement_worker_grants(db.schema, role),
     ):
         db.query(grant)
     root_pool = speech_pool(
@@ -472,6 +476,7 @@ def test_worker_lifecycle_with_distinct_restricted_pg_identity(
     for grant in (
         *disable_settlement_grants(db.schema, role),
         *tts_settlement_worker_grants(db.schema, role),
+        *asr_settlement_worker_grants(db.schema, role),
     ):
         db.query(grant)
     settings = TtsSettlementWorkerSettings.model_validate(

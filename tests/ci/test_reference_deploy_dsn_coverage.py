@@ -266,9 +266,16 @@ ROLE_GRANT_BINDINGS: dict[str, tuple[tuple[str, ...], int]] = {
     # Synchronous TTS: the api identity keeps its voice/binding reads and its
     # settlement-root write in one declaration, and the settlement runtime only
     # accepts the exact column surface the two worker declarations hand out.
-    "sn_api": (("speech_synthesis_reader_grants",), 2),
+    "sn_api": (
+        ("speech_synthesis_reader_grants", "asr_settlement_writer_grants"),
+        2,
+    ),
     "sn_speech_settlement": (
-        ("disable_settlement_grants", "tts_settlement_worker_grants"),
+        (
+            "disable_settlement_grants",
+            "tts_settlement_worker_grants",
+            "asr_settlement_worker_grants",
+        ),
         2,
     ),
 }

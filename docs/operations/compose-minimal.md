@@ -17,7 +17,7 @@ date: 2026-10-28
 | --- | --- | --- |
 | 公开 TTS `POST /v1/audio/speech` | **已装配，未在本机验证** | 配方样例、`SPEECHNEXUS_SPEECH_RECIPE_FILE`、`SPEECHNEXUS_SPEECH_DEFAULT_LANGUAGE` 与独立结算角色 `sn_speech_settlement` 都在本部署面内（§3、§6），API 侧运行时授权由 `speech_synthesis_reader_grants` 为 `sn_api` 预置。装配不等于可用：仍需真实引擎、已发布且合格的内置声音版本与一次 `200` 实测，本机（macOS，无 GPU）无法提供那次窗口。其他部署的受控实测见[窗口记录](../archive/audits/2026-11-03-controlled-tts-prepare.md) |
 | 异步 Job 完整执行链 | **未贯通** | 默认 `up` 不启动 `job-dispatch-worker`；`job-dispatch` profile 可按需启动该派发进程，但需要单独的 worker DSN（`SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL`，示例中默认为空，空值在领取租约前 fail-closed）与真实引擎。派发车道限定为参考部署装配的 `asr`、`tts`；`SPEECHNEXUS_JOB_DISPATCH_KINDS` 写其它 kind 时启动闸门点名拒绝，不会认领该车道的 Job（要启用别的车道需先装配 gateway 车道，见 [§6](#异步-job-运行角色与授权)）。API 的创建和读取路由需要另配 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL`；原子准入还需独立的 `SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL` 与同库 admission 角色，未配置时创建返回 503（读取与取消仍可用）。派发入口已装配生产 planner 与结果发布器，容器 entrypoint 是 `deploy/job-startup-gate.py`：迁移 head、派发角色写入列、Artifact 桶与 gateway staging 结果桶缺失或未版本化时在启动期点名退出，不会先领取 Job；三个 Job 角色由 [§6 的异步 Job 运行角色](#异步-job-运行角色与授权) 预置。本配置不提供真实引擎。当前范围见 [F-JOB](../prd.md#f-job) 和 [F-ASYNC](../prd.md#f-async) |
-| 公开同步 ASR 成功响应 | **已在该部署形态上取得真实 `200`（`DEL-540`，2026-11-18，候选 head `19c7f09a`）；成功后租约不自动释放** | 装配：本文件的 `api`、`gateway`、私有 `transcription-recipe.json`/`gateway-file-asr.json` 与 §6 的 `sn_api` 转写授权组成同步 ASR 输入面；网关文件 worker 由 `execution-gateway/src/speechnexus_gateway/file_asr_runtime.py:117` 构造，只在拿到引擎终态事实时写成功终态（`execution-gateway/src/speechnexus_gateway/infrastructure/file_execution_worker.py:380` 调用 `execution-gateway/src/speechnexus_gateway/application/execution_completion.py:55` 的 `record_stop(SUCCEEDED)`）。实现：成功终态路径有 `tests/integration/test_gateway_file_worker.py` 与 `tests/unit/gateway/test_execution_completion.py`。**实测**：按本文件 §0–§7 精确构建并起栈的参考部署形态（七个镜像均由该 head 本地构建，引擎为同主机外部托管的 `del109-asr`，不是由本 Compose 启动的引擎）上，公开 `POST /v1/audio/transcriptions` 返回 `200 OK`（`content-length: 167`、`time_total=0.956069 s`、`x-request-id=b2a34de2…`），引擎侧同窗口一次 `200 OK`；请求、响应、标识与执行终态见 [MVP 判定表第 7 行](../plans/mvp-release-readiness.md)。**复制这次 `200` 的前提**：本 Compose 不提供真实引擎与已注册实例，须自备同机外部托管的引擎并按 §6 注册实例。历史本机装配在 `c435908` 上的 `504 operation_timeout` 是终态写入者补齐（DEL-115，PR #284）之前的记录，见[本机端到端记录](../archive/operations/local-end-to-end.md#112-公开-v1audiotranscriptions已执行504未成功)。**已知限制**：成功后租约不自动释放（`lease_state=reserved`、`cleanup_state=pending`、`budget_released_at_us=NULL`、实例 `held_slots=1`/`max_slots=1`），一次成功即占满单槽、第二次同步转写会因容量不足失败（推断，失败形态未实测），且**没有可用释放出口**——`completed_release_cli` 只接受已受理取消的 Job 形状，同步转写会被 `completed_release_not_accepted_cancellation` 拒绝（已实测），因此一次成功后不要再向同一实例发第二次（[#974](https://github.com/hrygo/SpeechNexus/issues/974)）。 |
+| 公开同步 ASR 成功响应 | **已在该部署形态上取得真实 `200`（`DEL-540`，2026-11-18，候选 head `19c7f09a`）；成功后由 ASR 结算 worker 自动释放** | 装配：本文件的 `api`、`gateway`、私有 `transcription-recipe.json`/`gateway-file-asr.json` 与 §6 的 `sn_api` 转写授权组成同步 ASR 输入面；网关文件 worker 由 `execution-gateway/src/speechnexus_gateway/file_asr_runtime.py:117` 构造，只在拿到引擎终态事实时写成功终态（`execution-gateway/src/speechnexus_gateway/infrastructure/file_execution_worker.py:380` 调用 `execution-gateway/src/speechnexus_gateway/application/execution_completion.py:55` 的 `record_stop(SUCCEEDED)`）。实现：成功终态路径有 `tests/integration/test_gateway_file_worker.py` 与 `tests/unit/gateway/test_execution_completion.py`。**实测**：按本文件 §0–§7 精确构建并起栈的参考部署形态（七个镜像均由该 head 本地构建，引擎为同主机外部托管的 `del109-asr`，不是由本 Compose 启动的引擎）上，公开 `POST /v1/audio/transcriptions` 返回 `200 OK`（`content-length: 167`、`time_total=0.956069 s`、`x-request-id=b2a34de2…`），引擎侧同窗口一次 `200 OK`；请求、响应、标识与执行终态见 [MVP 判定表第 7 行](../plans/mvp-release-readiness.md)。**复制这次 `200` 的前提**：本 Compose 不提供真实引擎与已注册实例，须自备同机外部托管的引擎并按 §6 注册实例。历史本机装配在 `c435908` 上的 `504 operation_timeout` 是终态写入者补齐（DEL-115，PR #284）之前的记录，见[本机端到端记录](../archive/operations/local-end-to-end.md#112-公开-v1audiotranscriptions已执行504未成功)。**结算**：成功后由 ASR 结算 worker 在准入事务内写下的 `speech_asr_settlement` root 上自动释放租约（`lease_state=released`、`budget_released_at_us` 非空、实例 `held_slots` 与工作区 `held_attempts` 回到 0），无需任何命令；释放前单槽仍被占用。升级到含本修复的版本必须配置 `SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL` 并跑完 `0057_asr_settlement` 迁移，否则同步 ASR 返回 `503 backend_unavailable` 并在启动日志点名该键（没有「服务但不结算」的开关） |
 | 节点控制器、runtime delivery、asset maintenance | **未装配** | 本配置有意排除这些服务；不能以本 Compose 的探活结果证明完整部署与发布资格 |
 | Profile 发布 / 激活（`POST .../publications`、`.../activations`） | **默认未启用；启用时资格由部署方文档提供** | 默认 `SPEECHNEXUS_PROFILE_WRITER_DATABASE_URL` 为空，`sn_profile_writer` 未预置，发布路由返回 `503 profile_result_unknown`（能力未启用）。启用 writer 必须同时提供已评审发布证据文档 `SPEECHNEXUS_PROFILE_PUBLICATION_EVIDENCE_FILE`：缺任一输入、文档不可读或格式非法时 API 在启动阶段点名变量退出，不会等发布时才回 503。资格内容与评审责任在部署方，本配置不提供任何默认资格。步骤见 [§6 预设发布资格输入](#预设发布资格输入与-sn_profile_writer-角色) |
 | 自定义发音词典与 voice 发布（`/v1/nexus/pronunciations*`、`/v1/nexus/voice-publications*`） | **默认未启用** | 发音词典的三个身份与 `sn_voice_publisher` 不在本参考部署预置：读取返回 `503 pronunciation_unavailable`，`publish: true` 返回 `422 pronunciation_publication_not_supported`，voice 发布返回 `503 voice_draft_unavailable`。原因与启用路径见 [故意不预置的身份](#故意不预置的身份) |
@@ -521,7 +521,7 @@ head 为准，查询结果须与之相符。不要把旧版 `0027_gateway_abort_
 以下脚本必须使用 **迁移 owner DSN** 运行，创建 API、gateway writer、gateway query、工作区
 writer、审计 reader、实例读取 reader、隔离释放、公开目录 reader、Artifact reader、资源池
 reader、binding 列表 reader、binding 写、binding admin reader、binding 生命周期、Artifact
-保留期清理、同步 TTS 结算、外部托管引擎的资格声明、资格来源审计读取与独立工作台后端的
+保留期清理、同步 TTS/ASR 结算、外部托管引擎的资格声明、资格来源审计读取与独立工作台后端的
 运行/清理两个身份共二十个独立非 owner 角色（三个基线角色 + 十七个其它身份，其中
 `sn_qualification_reader` 只服务宿主侧审计命令）；另有三个 Job 角色由
 [异步 Job 运行角色](#异步-job-运行角色与授权) 的 `provision-job-roles.py` 预置，因此
@@ -533,7 +533,11 @@ reader、binding 列表 reader、binding 写、binding admin reader、binding �
 [预设发布资格输入与 sn_profile_writer 角色](#预设发布资格输入与-sn_profile_writer-角色)。
 各身份的最小授权都由仓库授权函数声明；实例读取、资源池读取与 binding 列表读取三个只读
 投影目前没有对应的 `*_grants` 函数，脚本按各自运行时启动校验所核验的关系显式授权。此段
-只用于新建、独占的 SpeechNexus 数据库：
+结算角色 `sn_speech_settlement` 同时服务同步 TTS 与同步 ASR。即使同步 TTS 关闭，该角色也必须有
+`speech_asr_settlement` 的 `SELECT` 与列级 `UPDATE (next_check_at_us, settled_at_us)`，否则转写工厂
+启动时的共享自检会拒绝启动——不存在「只关 TTS 就不用授 ASR」的组合。
+
+此段只用于新建、独占的 SpeechNexus 数据库：
 它会撤销数据库级 `PUBLIC TEMPORARY/CREATE`、`public` schema 的 CREATE 和大对象
 写函数的 PUBLIC EXECUTE。已有共享数据库应先导出 ACL、核对其他角色依赖，再由部署
 负责人评审等价最小授权；不要直接套用。应用启动只检查这些前置条件，不修改 ACL。
@@ -543,7 +547,7 @@ reader、binding 列表 reader、binding 写、binding admin reader、binding �
 
 工作区 writer、审计 reader、实例读取 reader、隔离释放、公开目录 reader、Artifact reader、
 资源池 reader、binding 列表 reader、binding 写、binding admin reader、binding 生命周期、
-Artifact 保留期清理、同步 TTS 结算、外部托管引擎资格声明、资格来源审计读取与工作台运行/清理
+Artifact 保留期清理、同步 TTS/ASR 结算、外部托管引擎资格声明、资格来源审计读取与工作台运行/清理
 共十七个角色的口令在
 `deploy/compose.env.example` 里只有 `change-me-*` 占位。口令在第一次引导时生成并写入
 `deploy/compose.env`，此后复用；重新生成就是轮换，必须同时 `ALTER ROLE ... PASSWORD`
@@ -685,6 +689,10 @@ from speechnexus_backend.speech.infrastructure.builtin_voice_grants import (
 from speechnexus_backend.speech.infrastructure.qualified_speech_facts_postgres import (
     speech_synthesis_reader_grants,
 )
+from speechnexus_backend.speech.infrastructure.asr_settlement_schema import (
+    asr_settlement_worker_grants,
+    asr_settlement_writer_grants,
+)
 from speechnexus_backend.speech.infrastructure.tts_settlement_schema import (
     tts_settlement_worker_grants,
 )
@@ -788,14 +796,20 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     # even when every TTS key and the recipe file are present.
     for statement in speech_synthesis_reader_grants(schema, "sn_api"):
         conn.execute(statement)
+    # Synchronous ASR writes its settlement root in the same admission
+    # transaction, so the API identity needs exactly that column-level write.
+    for statement in asr_settlement_writer_grants(schema, "sn_api"):
+        conn.execute(statement)
     # The settlement runtime opens a second pool under its own identity. The
-    # lease-settlement reads/writes come from disable_settlement_grants and the
-    # TTS root/cancellation surface from tts_settlement_worker_grants; the worker
-    # verifies that exact column set at startup, so both declarations belong to
-    # one role and nothing else may be granted to it.
+    # lease-settlement reads/writes come from disable_settlement_grants, the TTS
+    # root/cancellation surface from tts_settlement_worker_grants and the ASR
+    # root cursor from asr_settlement_worker_grants; the worker verifies that
+    # exact column set at startup, so all three declarations belong to one role
+    # and nothing else may be granted to it.
     for statement in (
         *disable_settlement_grants(schema, "sn_speech_settlement"),
         *tts_settlement_worker_grants(schema, "sn_speech_settlement"),
+        *asr_settlement_worker_grants(schema, "sn_speech_settlement"),
     ):
         conn.execute(statement)
     # The retention sweep runs as its own identity: SELECT plus
@@ -1796,7 +1810,7 @@ curl -sS -w '\nhttp=%{http_code}\n' -X POST \
 后，用同一个迁移 owner 连接对既有角色重放对应的授权函数即可，`GRANT` 是追加式操作，
 重复执行不改变既有权限。`0049_workspace_commands` 之后新增的工作区写、审计读取、实例读取、
 隔离释放，以及本节新增的公开目录、Artifact、资源池、binding 列表、binding 写、
-binding admin 读取、binding 生命周期、同步 TTS 结算、Artifact 保留清理、外部托管引擎资格声明
+binding admin 读取、binding 生命周期、同步 TTS/ASR 结算、Artifact 保留清理、外部托管引擎资格声明
 、资格来源审计读取与工作台运行/清理两个身份共十七个角色在既有部署上同样需要预置：下面的脚本先按需创建这十七个
 角色，再重放全部相关授权。工作台授权针对工作台
 命名空间，由 §6 的 `speechnexus-workbench-migrate` 幂等重放，不在本脚本内。角色尚不存在时，
@@ -1844,6 +1858,10 @@ from speechnexus_backend.speech.infrastructure.builtin_voice_grants import (
 )
 from speechnexus_backend.speech.infrastructure.qualified_speech_facts_postgres import (
     speech_synthesis_reader_grants,
+)
+from speechnexus_backend.speech.infrastructure.asr_settlement_schema import (
+    asr_settlement_worker_grants,
+    asr_settlement_writer_grants,
 )
 from speechnexus_backend.speech.infrastructure.tts_settlement_schema import (
     tts_settlement_worker_grants,
@@ -1915,9 +1933,12 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     # are replayed here so an upgraded deployment reaches the same ACL as a fresh one.
     for statement in speech_synthesis_reader_grants(schema, "sn_api"):
         conn.execute(statement)
+    for statement in asr_settlement_writer_grants(schema, "sn_api"):
+        conn.execute(statement)
     for statement in (
         *disable_settlement_grants(schema, "sn_speech_settlement"),
         *tts_settlement_worker_grants(schema, "sn_speech_settlement"),
+        *asr_settlement_worker_grants(schema, "sn_speech_settlement"),
     ):
         conn.execute(statement)
     for statement in artifact_reader_grants(schema, "sn_artifact_reader"):
@@ -2131,7 +2152,7 @@ DSN）。健康检查打 `/v1/workbench/status`，它只在真实 lifespan 预�
 | `SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL` | `sn_job_dispatch` | `job-dispatch` profile 派发 | 空值 → 启动闸门点名拒绝启动，不领取 Job | 预置 | 覆盖+Job |
 | `SPEECHNEXUS_DISABLE_DATABASE_URL` | `sn_disable_scan` | `binding-disable` profile 扫描 | 空值 → worker 启动即退出并点名显式连接 | 预置 | 覆盖 |
 | `SPEECHNEXUS_DISABLE_SETTLEMENT_DATABASE_URL` | `sn_disable_settle` | 停用租约结算 | 空值 → worker 启动即退出并点名显式连接（与扫描角色同一条拒绝） | 预置 | 覆盖 |
-| `SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL` | `sn_speech_settlement` | 同步 TTS 的结算运行时（独立连接池）：租约结算的列级读写与 `speech_tts_settlement`/`speech_tts_cancellation` 的结算面 | 空值 → 同步 TTS 保持关闭：启动告警点名该键；配了 DSN 但角色授权与声明不符时启动拒绝服务 | 预置 | 覆盖+角色 |
+| `SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL` | `sn_speech_settlement` | 同步 TTS 与同步 ASR 的结算运行时（独立连接池）：租约结算的列级读写、`speech_tts_settlement`/`speech_tts_cancellation` 与 `speech_asr_settlement` 的结算面 | 空值 → 同步 TTS 与同步 ASR 均不可用：转写路由 `503` 并点名该键；配了 DSN 但角色授权与声明不符时启动拒绝服务 | 预置 | 覆盖+角色 |
 | `SPEECHNEXUS_MODEL_CATALOG_READER_DATABASE_URL` | `sn_catalog_reader` | `GET /v1/models`、`GET /v1/models/{model}`、`GET /v1/nexus/voices` | `503 model_catalogue_unavailable`、`503 voice_catalogue_unavailable` | 预置 | 覆盖+角色 |
 | `SPEECHNEXUS_ARTIFACT_READER_DATABASE_URL` | `sn_artifact_reader` | Artifact 元数据与内容 | `503 artifact_service_unavailable` | 预置 | 覆盖+角色 |
 | `SPEECHNEXUS_ARTIFACT_RETENTION_DATABASE_URL` | `sn_artifact_retention` | `artifact-retention` profile 的保留期清理 | 空值 → 容器启动即失败（无身份）；共用 `sn_api` 等宽权限身份时启动点名拒绝 | 预置 | 覆盖+角色 |
@@ -2160,7 +2181,7 @@ CLI 的配置，不经过本 Compose；它不是死键，只是不属于本部�
 因此也不在上表；身份为 `sn_qualification_reader`，只读授权见
 [外部托管引擎的资格声明角色](#外部托管引擎的资格声明角色-sn_operator_attestation)。
 
-`SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL` 是同步 TTS 的必要输入：缺失时
+`SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL` 是同步 TTS 与同步 ASR 的共同必要输入：缺失时
 `backend/src/speechnexus_backend/speech_runtime.py:50` 的必填清单不完整，工厂按
 「启动告警点名全部缺失键」返回空装配（同步 TTS 关闭），API 其余路由照常。因此本条在
 基座拓扑里以空值转发（`:?` 守卫会让从未启用同步 TTS 的部署连 `docker compose config`

@@ -137,8 +137,9 @@ inputs exist in the topology, not that a synthesis succeeds. The inputs are
 - `SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL`, the independent
   `sn_speech_settlement` role the runbook's §6 creates. It is forwarded with an
   empty default so the base topology renders before that role exists; a blank
-  value keeps synchronous TTS off, and the API logs every missing TTS key by name
-  instead of guessing;
+  value makes synchronous TTS and synchronous ASR unavailable (the transcription
+  route returns `503` and names this key), and the API logs every missing key by
+  name instead of guessing;
 - the existing gateway URL, component credential and object-storage keys, which
   synchronous ASR already requires.
 
@@ -171,11 +172,15 @@ voice qualification) stay undecidable no matter how the file is edited.
 Replacing every field is necessary and not sufficient. A first request additionally
 requires, in order, all of it verifiable only against a running deployment:
 
-0. **A settlement DSN that actually composes the factory.** With
+0. **A settlement DSN that actually composes both factories.** With
    `SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL` blank, `build_speech` logs every
    missing key and returns `None` (`speech_runtime.py:49-66`), so `/v1/audio/speech`
-   answers `503 backend_unavailable` no matter how perfect the three files are. The
-   `sn_speech_settlement` role and its two grants are in runbook §6.
+   answers `503 backend_unavailable`; `build_transcription` does the same, so
+   `/v1/audio/transcriptions` answers `503 backend_unavailable` naming this key. The
+   `sn_speech_settlement` role and its three grants (`disable_settlement_grants`,
+   `tts_settlement_worker_grants`, `asr_settlement_worker_grants`) are in runbook §6,
+   and `sn_api` also needs `asr_settlement_writer_grants` for the admission-time ASR
+   root.
 1. **A registered TTS instance.** `runtime_instance_heads` must hold
    `recipe.stage.instance_id` at the generation the endpoint descriptor pins
    (`qualified_speech_facts_postgres.py:76` selects `current_generation` and raises

@@ -10,7 +10,7 @@ fails the whole request instead of truncating audio or text.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -247,21 +247,28 @@ class Transcription:
         probe: AudioProbe,
         transcriber: Transcriber,
         limits: TranscriptionLimits | None = None,
+        *,
+        close: Callable[[], None] | None = None,
     ) -> None:
         self._facts = facts
         self._probe = probe
         self._transcriber = transcriber
         self._limits = limits or TranscriptionLimits()
+        self._close = close
 
     @property
     def limits(self) -> TranscriptionLimits:
         return self._limits
 
     def close(self) -> None:
-        """Release an injected long-lived transcriber, if it owns resources."""
-        closer = getattr(self._transcriber, "close", None)
-        if callable(closer):
-            closer()
+        """Release an injected long-lived transcriber and the settlement runtime."""
+        try:
+            closer = getattr(self._transcriber, "close", None)
+            if callable(closer):
+                closer()
+        finally:
+            if self._close is not None:
+                self._close()
 
     def transcribe(
         self,

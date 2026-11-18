@@ -10,6 +10,10 @@ so each has a test here:
 - a synchronous upload bucket that differs from the Job asset bucket fails the
   tools step with the `execution_input_scope_mismatch`/503 reason, and equal
   names pass (#972: the gateway has one `objects.input_bucket`);
+- a private lane `objects.result_bucket` that differs from the backend's result
+  read-back bucket fails the tools step with the `result_object_scope_rejected`
+  /503 reason, while an aligned value, a missing private directory and a lane
+  that omits `result_bucket` all pass (#973);
 - ``--dry-run`` performs static checks and plans only, never a write;
 - a second run over an already provisioned database is idempotent *and* compares
   the rendered GRANT set with the installed ACL, so a revoked non-probe grant is
@@ -513,6 +517,108 @@ class ToolsPreflightTest(unittest.TestCase):
             root = Path(temporary)
             private = write_private_inputs(root)
             write_fixture_repo(root)
+            env = dict(BASE_ENV)
+            env["SPEECHNEXUS_PRIVATE_CONFIG_DIR"] = str(private)
+            responder = standard_responder(compose_document=compose_config_document(private))
+            context, _runner = make_context(root, responder, env=env)
+            code, output = run_capture(context, (step("tools"),))
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("结论: PASS", output)
+
+    def test_private_lane_result_bucket_must_match_the_read_back_bucket(self) -> None:
+        """#973: a lane wired only to the staging key fails at result read-back.
+
+        The realistic split: the operator configures the staging bucket for async
+        Jobs, so `SPEECHNEXUS_EXECUTION_RESULT_BUCKET` (and the lane) becomes
+        `staging-results`, while the backend still reads synchronous results back
+        from `SPEECHNEXUS_OBJECT_STORAGE_BUCKET=results-bucket`. The gateway accepts
+        the submission, so nothing fails until the result is read.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            private = write_private_inputs(root)
+            write_fixture_repo(root)
+            (private / "gateway-file-asr.json").write_text(
+                json.dumps(
+                    {
+                        "objects": {
+                            "input_bucket": "results-bucket",
+                            "result_bucket": "staging-results",
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            env = dict(BASE_ENV)
+            env["SPEECHNEXUS_EXECUTION_RESULT_BUCKET"] = "staging-results"
+            env["SPEECHNEXUS_PRIVATE_CONFIG_DIR"] = str(private)
+            responder = standard_responder(compose_document=compose_config_document(private))
+            context, _runner = make_context(root, responder, env=env)
+            code, output = run_capture(context, (step("tools"),))
+
+        self.assertEqual(code, HARNESS.EXIT_TOOLS, output)
+        self.assertIn("FAIL step=tools", output)
+        self.assertIn("gateway-file-asr.json", output)
+        self.assertIn("objects.result_bucket=staging-results", output)
+        self.assertIn("SPEECHNEXUS_OBJECT_STORAGE_BUCKET=results-bucket", output)
+        self.assertIn("result_object_scope_rejected", output)
+        self.assertIn("503 backend_unavailable", output)
+
+    def test_private_lane_result_bucket_comparison_is_case_sensitive(self) -> None:
+        """A case-insensitive comparison would let another bucket name through.
+
+        S3 bucket names are exact strings; `Results-Bucket` is not
+        `results-bucket`, so this must fail even though only the case differs.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            private = write_private_inputs(root)
+            write_fixture_repo(root)
+            (private / "gateway-file-asr.json").write_text(
+                json.dumps(
+                    {
+                        "objects": {
+                            "input_bucket": "results-bucket",
+                            "result_bucket": "Results-Bucket",
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            env = dict(BASE_ENV)
+            env["SPEECHNEXUS_PRIVATE_CONFIG_DIR"] = str(private)
+            responder = standard_responder(compose_document=compose_config_document(private))
+            context, _runner = make_context(root, responder, env=env)
+            code, output = run_capture(context, (step("tools"),))
+
+        self.assertEqual(code, HARNESS.EXIT_TOOLS, output)
+        self.assertIn("objects.result_bucket=Results-Bucket", output)
+
+    def test_missing_private_lane_result_bucket_is_left_to_the_stack_step(self) -> None:
+        """A host that has not copied §3's files yet must still pass `tools`."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write_fixture_repo(root)
+            env = dict(BASE_ENV)
+            env["SPEECHNEXUS_PRIVATE_CONFIG_DIR"] = str(root / "absent-private")
+            context, _runner = make_context(root, standard_responder(), env=env)
+            code, output = run_capture(context, (step("tools"),))
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("结论: PASS", output)
+        self.assertEqual(HARNESS.lane_result_bucket_gaps(dict(BASE_ENV), {}), [])
+
+    def test_lane_without_result_bucket_is_not_reported(self) -> None:
+        """Only a declared value can contradict the env; omission is not a mismatch."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            private = write_private_inputs(root)
+            write_fixture_repo(root)
+            (private / "gateway-file-asr.json").write_text(
+                json.dumps({"objects": {"input_bucket": "results-bucket"}}),
+                encoding="utf-8",
+            )
             env = dict(BASE_ENV)
             env["SPEECHNEXUS_PRIVATE_CONFIG_DIR"] = str(private)
             responder = standard_responder(compose_document=compose_config_document(private))

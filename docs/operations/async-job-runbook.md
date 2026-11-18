@@ -1287,9 +1287,18 @@ FAIL(配置写了但不对,任何阶段都必须修):前置 1
 
 ### 13.1 取消没有推进时的三步判断
 
-取消受理只写受理事实；把容量真正要回来要有人推进，而推进者不是默认部署的一部分
-（`deploy/compose.yaml` 不含取消对账服务，`SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_ENABLED`
-默认 `false`）。因此「取消后不归还」先分清是哪一种，再动手：
+取消请求内能当场取得**已验证停止**（网关回报 `stopped`）时，同一请求把 Job 置
+`cancelled` 并尝试立即释放该 operation 的租约：`admission_leases.lease_state=released`、
+`engine_instances.held_slots` 与 `workspace_quotas.held_attempts` 回到 0，不依赖对账
+worker。拿不到停止证据时受理只写受理事实，Job 停在 `cancelling`、容量继续被持有，此时
+唯一的推进者是取消对账 worker，而它不是默认部署的一部分（`deploy/compose.yaml` 不含
+取消对账服务，`SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_ENABLED` 默认 `false`）。
+因此「取消后不归还」先分清是哪一种，再动手：
+
+- 取消响应是 `200 cancelled` 且 `cleanup_state=complete`，但租约仍非 `released`：
+  当场释放被拒绝或存储不可用，Job 不会回滚，租约保持 `reserved` 作为可重试标记；在仍能
+  取得同一停止事实时，取消对账 worker 的下一次领取会重试同一条幂等释放（见第 2 步）。
+- 取消响应是 `202 cancelling`：停止尚未确认，按下列三步判断。
 
 1. **读面**：`GET /readyz` 与 `GET /v1/nexus/admin/diagnostics` 的 `cancellation_debt` detail。
    探针**只读台账**，看不到进程是否在跑，也看不到 `..._ENABLED` 等部署配置；下面每个标记

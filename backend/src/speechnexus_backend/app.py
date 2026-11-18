@@ -589,14 +589,20 @@ def create_app(
         if job_confirmation is not None:
             return job_confirmation
         jobs_service = get_jobs()
+        # A verified stop is also the authority to return capacity, so the
+        # confirmation needs the release object the Job runtime opened. Without it
+        # the answer would settle `cancelled` and leave the lease held, which is
+        # the defect this path exists to close (#852).
+        capacity = job_runtime.capacity_release if job_runtime is not None else None
         if (
             jobs_service is None
+            or capacity is None
             or resolved_settings.execution_gateway_base_url is None
             or resolved_settings.execution_gateway_component_credential is None
         ):
             return None
         return JobCancellationService(
-            jobs_service, GatewayJobCancellationStopper(resolved_settings)
+            jobs_service, GatewayJobCancellationStopper(resolved_settings), capacity
         )
 
     binding_runtime = (

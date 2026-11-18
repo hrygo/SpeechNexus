@@ -48,6 +48,7 @@ from speechnexus_backend.job_cancellation_runtime import (
     _PublicJobsSettlement,
 )
 from speechnexus_backend.settings import Settings
+from speechnexus_backend.speech.application.job_cancellation import CancellationCapacity
 from speechnexus_backend.speech.application.job_cancellation_reconciliation import (
     JobCancellationReconciler,
 )
@@ -410,7 +411,7 @@ def _reconciler(
         store=PostgresCancellationReconciliationStore(box.pool),
         confirmer=GatewayCancellationConfirmer(
             object(),  # type: ignore[arg-type]
-            _PublicJobsSettlement(jobs, capacity.release_sync),
+            _PublicJobsSettlement(jobs, CancellationCapacity(capacity.release_sync)),
         ),
         unconfirmed=UnconfirmedCancellationSettlement(jobs, capacity),
         max_attempts=max_attempts,

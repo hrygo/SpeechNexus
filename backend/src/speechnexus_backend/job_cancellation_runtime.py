@@ -28,6 +28,7 @@ from pydantic import AnyHttpUrl, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from speechnexus_backend.speech.application.job_cancellation import (
+    CancellationCapacity,
     JobCancellationService,
 )
 from speechnexus_backend.speech.application.job_cancellation_reconciliation import (
@@ -194,9 +195,6 @@ class JobCancellationSettings(BaseSettings):
         return self
 
 
-CapacityRelease = Callable[[str], bool]
-
-
 class _PublicJobsSettlement(CancellationSettlementPort):
     """Settle the public Job, then return its admission lease.
 
@@ -208,10 +206,14 @@ class _PublicJobsSettlement(CancellationSettlementPort):
     is retried by the next reconciliation pass. A failed release keeps the lease
     held (the durable marker) and returns False so the ledger schedules a retry
     instead of dropping the only chance to return capacity.
+
+    ``capacity`` is the same :class:`CancellationCapacity` the immediate HTTP
+    confirmation holds, so both entry points share one release rule rather than a
+    copy of it.
     """
 
-    def __init__(self, jobs: PublicJobs, release_capacity: CapacityRelease) -> None:
-        self._jobs, self._release_capacity = jobs, release_capacity
+    def __init__(self, jobs: PublicJobs, capacity: CancellationCapacity) -> None:
+        self._jobs, self._capacity = jobs, capacity
 
     def settle_cancelled(self, job_id: str) -> bool:
         try:
@@ -233,15 +235,9 @@ class _PublicJobsSettlement(CancellationSettlementPort):
         # thread for up to the lease transaction budget (3s) and
         # asyncio.timeout cannot interrupt it. Moving the call to a worker
         # thread is the step to take if cancellation reconciliation ever runs
-        # concurrently. The broad except also folds programming errors into the
-        # ledger retry; that is safer than dropping the held lease, and the
-        # retry is bounded by max_attempts.
-        try:
-            return self._release_capacity(job_id)
-        except Exception:
-            # The cancelled state is committed; the held lease must stay
-            # discoverable and the ledger retries instead of masking the failure.
-            return False
+        # concurrently. The shared capacity object already folds a refused or
+        # failed release into False, so the ledger retries instead of masking it.
+        return self._capacity.release(job_id)
 
 
 class UnconfirmedCancellationSettlement:
@@ -404,13 +400,14 @@ class JobCancellationRuntime:
                     execution_gateway_timeout_seconds=settings.gateway_timeout_seconds,
                 ),
             )
-            service = JobCancellationService(jobs, GatewayJobCancellationStopper(gateway))
             capacity = PostgresLeaseSettler(
                 pool, timeout_seconds=settings.transaction_timeout_seconds
             )
+            release = CancellationCapacity(capacity.release_sync)
+            service = JobCancellationService(jobs, GatewayJobCancellationStopper(gateway), release)
             confirmer = GatewayCancellationConfirmer(
                 gateway,
-                _PublicJobsSettlement(jobs, capacity.release_sync),
+                _PublicJobsSettlement(jobs, release),
                 stop_attempt=_PublicJobsStop(jobs, adapter.cancellation_receipt, service),
             )
             self._reconciler = JobCancellationReconciler(

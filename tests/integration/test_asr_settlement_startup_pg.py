@@ -17,10 +17,6 @@ import rfc8785
 ROOT = Path(__file__).resolve().parents[2]
 EXAMPLE = ROOT / "deploy/private/transcription-recipe.example.json"
 PASSTHROUGH = ("PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "SYSTEMROOT")
-ENTRY = (
-    "import sys; from speechnexus_backend.asr_settlement_worker import main; "
-    "sys.argv=['asr-settlement','--check']; raise SystemExit(main())"
-)
 
 
 def database_url() -> str:
@@ -41,10 +37,15 @@ def write_recipe(directory: Path) -> Path:
 
 
 def run_check(environment: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    """Run the real ``python -m`` entry a deployer runs, not an imported ``main``.
+
+    ``--once`` sits above the module guard and worked either way; only the module
+    entry proves that ``--check`` resolves after ``if __name__ == "__main__"``.
+    """
     inherited = {name: os.environ[name] for name in PASSTHROUGH if name in os.environ}
     inherited.update(environment)
     return subprocess.run(
-        [sys.executable, "-c", ENTRY],
+        [sys.executable, "-m", "speechnexus_backend.asr_settlement_worker", "--check"],
         cwd=ROOT,
         env=inherited,
         capture_output=True,

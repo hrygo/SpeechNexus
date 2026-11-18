@@ -176,10 +176,6 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
-
-
 async def check(settings: AsrSettlementWorkerSettings) -> None:
     """Open both pools and prove the boundary without reading a lease."""
     if not settings.admission_database_url:
@@ -297,3 +293,7 @@ class AsrSettlementRuntime:
             self._thread.join(timeout=15)
         if self._thread.is_alive():
             raise RuntimeError("ASR settlement worker failed to stop")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

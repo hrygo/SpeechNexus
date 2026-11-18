@@ -25,7 +25,7 @@ date: 2026-10-28
 | 环境变量 | 含义 |
 | --- | --- |
 | `SPEECHNEXUS_TRANSCRIPTION_RECIPE_FILE` | 绝对路径，指向下述 owner-only 私有准入配方 |
-| `SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET` | 网关可读的私有输入桶，必须开启版本化 |
+| `SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET` | 同步上传落点，必须开启版本化，且**必须等于 `SPEECHNEXUS_OBJECT_STORAGE_BUCKET`**：网关只有一个 `objects.input_bucket`，两者分开时同步请求在调用引擎前即 `503 backend_unavailable`（[不变量与实测](compose-minimal.md#4-启动数据库与对象存储)） |
 | `SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL` | 已有执行网关的固定 origin |
 | `SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL` | 网关组件凭据 |
 | `SPEECHNEXUS_OBJECT_STORAGE_ACCESS_KEY` / `_SECRET_KEY` | 仅对输入与结果范围授权的身份 |
@@ -89,7 +89,7 @@ Compose 的最小装配、私有文件引用、迁移/角色与注册命令见
     "silence_duration_ms": 400,
     "preview_interval_ms": 1000,
     "temperature": 0.0,
-    "final_deadline_ms": 1000,
+    "final_deadline_ms": 10000,
     "auxiliary_deadline_ms": 5000
   },
   "recipe_digest": "sha256:<64 lowercase hex>"
@@ -102,6 +102,12 @@ Compose 的最小装配、私有文件引用、迁移/角色与注册命令见
 与部署上限取较小值后形成执行计划期限：准入用它计算执行 deadline，网关轮询也用它
 作为等待预算。当前实现先做请求接收、事实读取、媒体检查、对象写入和准入，提交网关后
 才开始轮询计时；这些阶段及结果读取有各自边界，不能把该值当作整个 HTTP 请求的硬截止时间。
+
+样例取 `final_deadline_ms=10000`：它是**单段最终化预算**，不是请求总超时。DEL-539 在
+MegaCube GB10 上的直连实测是 0.44–0.48 s，但
+[历史记录](../archive/operations/local-end-to-end.md#34-为公开转写追加的-api-配置本轮已执行)
+§3.4 记载 `1000` 曾在真实 ASR 阶段报 `asr_deadline_exceeded`（后用 `10000` 通过）。
+样例因此不贴着实测值取，留出排队与抖动余量；真实部署仍须按目标模型与硬件实测决定。
 
 ## 引擎实例注册前提
 

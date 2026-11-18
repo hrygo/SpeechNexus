@@ -523,7 +523,7 @@ volumes_end
 | 1 | 定项目名、子网、宿主端口 | [§1](compose-minimal.md#1-固定服务集合)、[§1.1](compose-minimal.md)、[§2](compose-minimal.md#2-准备环境文件) | `"${COMPOSE[@]}" … config \| grep -E 'ipv4_address:\|subnet:\|published:'` | 与 `deploy/compose.env` 里 `SPEECHNEXUS_COMPOSE_SUBNET` / `SPEECHNEXUS_MINIO_STATIC_IP` / 宿主端口一致 | 子网被占时网络创建 `Pool overlaps`；两项都由 env 承载，**不需要改仓库文件** |
 | 2 | 应用镜像 | [§0](compose-minimal.md#0-构建前提) | `docker images` 里有 `<项目>-api` 等 7 个 | `BUILD_EXIT=0`；`minio` 复用同 tag 既有镜像 | 缺 `speechnexus-minio:<tag>` 时 `up` 会现场构建并在取 LICENSE 处失败 |
 | 3 | 私有文件 + VAD 摘要 | [§3](compose-minimal.md#3-准备私有文件) | `python3 -m json.tool` 六份 + `chmod 600` 检查 | `vad_model_sha256` 等于仓库钉的摘要 | 全零摘要拒绝启动；摘要与文件不符只在首个 Job 的执行段暴露（§4 记录） |
-| 4 | postgres / minio / 桶 | [§4](compose-minimal.md#4-启动数据库与对象存储) | `curl -fsS http://127.0.0.1:<S3端口>/minio/health/live` | `bucket ready: speechnexus-inputs (versioning enabled)` 与 `…-results…` | 桶缺失 → 派发启动闸门点名桶名与键名 |
+| 4 | postgres / minio / 桶 | [§4](compose-minimal.md#4-启动数据库与对象存储) | `curl -fsS http://127.0.0.1:<S3端口>/minio/health/live` | `bucket ready: speechnexus-results (versioning enabled)`（同步输入桶、Artifact 桶与 staging 桶默认同名，只建一个） | 桶缺失 → 派发启动闸门点名桶名与键名 |
 | 5 | 迁移到唯一 head | [§5](compose-minimal.md#5-迁移到唯一-head) | `select version_num from speech.alembic_version` | 唯一 head | 未迁移：API 起不来（traceback）、闸门先抛 `InvalidSchemaName` |
 | 6 | 非 owner 角色 + 三个 Job 角色 | [§6](compose-minimal.md#6-创建非-owner-运行角色与最小授权) | `provision-job-roles.py --print-statements` | `roles ready: …`、`job roles ready: …`（语句数以 `--print-statements` 为准） | 缺角色：可选能力稳定 `503`，Job 侧闸门点名五组 grant |
 | 7 | api / gateway | [§7](compose-minimal.md#7-启动-api-与-gateway) | 四个公开探针 | `/healthz`、`/readyz` 全 `200` | 起不来说明 §2–§6 有缺项，按探针 `detail` 定位 |

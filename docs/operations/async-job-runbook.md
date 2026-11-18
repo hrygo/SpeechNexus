@@ -826,15 +826,15 @@ PY
 docker compose --env-file deploy/compose.env -f deploy/compose.yaml run --rm minio-init
 ```
 
-预期每个不同桶名一行，且都带 `versioning enabled`：
+预期每个不同桶名一行，且都带 `versioning enabled`；参考部署的三个桶键默认同名，因此只有一行：
 
 ```text
-bucket ready: speechnexus-inputs (versioning enabled)
 bucket ready: speechnexus-results (versioning enabled)
 ```
 
-2026-11-13 在容器 PostgreSQL 16.15 与容器 MinIO（`deploy/compose.yaml`）上实跑，输出与上面
-逐字一致；同一环境的启动闸门在 result 桶缺失时以退出码 `1` 点名
+2026-11-13 在容器 PostgreSQL 16.15 与容器 MinIO（`deploy/compose.yaml`）上实跑，当时默认值
+把同步输入桶与 Artifact 桶分开，输出两行 `speechnexus-inputs` / `speechnexus-results`
+（#972 前的默认值）；同一环境的启动闸门在 result 桶缺失时以退出码 `1` 点名
 `SPEECHNEXUS_EXECUTION_RESULT_BUCKET`（第 14 节）。
 
 ## 9. 第 6 步：前置 6 —— 启动顺序与网络命名空间

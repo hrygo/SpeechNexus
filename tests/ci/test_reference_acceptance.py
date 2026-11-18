@@ -7,6 +7,9 @@ gate and probes health. An entry point is only useful if these properties hold,
 so each has a test here:
 
 - a blank or missing environment key fails the tools step and *names the key*;
+- a synchronous upload bucket that differs from the Job asset bucket fails the
+  tools step with the `execution_input_scope_mismatch`/503 reason, and equal
+  names pass (#972: the gateway has one `objects.input_bucket`);
 - ``--dry-run`` performs static checks and plans only, never a write;
 - a second run over an already provisioned database is idempotent *and* compares
   the rendered GRANT set with the installed ACL, so a revoked non-probe grant is
@@ -79,7 +82,9 @@ BASE_ENV: dict[str, str] = {
         "postgresql://sn_gateway_query:pw-gwq@postgres:5432/db"
     ),
     "SPEECHNEXUS_OBJECT_STORAGE_BUCKET": "results-bucket",
-    "SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET": "inputs-bucket",
+    # The gateway has one `objects.input_bucket`, so the synchronous upload
+    # bucket and the Job asset bucket must be the same name (#972).
+    "SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET": "results-bucket",
     "SPEECHNEXUS_EXECUTION_RESULT_BUCKET": "results-bucket",
     "SPEECHNEXUS_DATABASE_SCHEMA": "speech",
     "SN_ADMIN_DSN": "postgresql://speechnexus:pw-owner@127.0.0.1:55432/speechnexus",
@@ -194,12 +199,23 @@ def make_context(
 
 
 def write_private_inputs(root: Path) -> Path:
+    """Write §3-style private files that agree with ``BASE_ENV``'s buckets.
+
+    The ASR lane declares both buckets because it serves Job inputs and
+    synchronous uploads; the TTS lane declares only results, and a lane without
+    ``input_bucket`` is outside the input-scope check.
+    """
     private = root / "private"
     private.mkdir()
-    for name in ("gateway-file-asr.json", "gateway-file-tts.json"):
-        (private / name).write_text(
-            json.dumps({"objects": {"result_bucket": "results-bucket"}}), encoding="utf-8"
-        )
+    (private / "gateway-file-asr.json").write_text(
+        json.dumps(
+            {"objects": {"input_bucket": "results-bucket", "result_bucket": "results-bucket"}}
+        ),
+        encoding="utf-8",
+    )
+    (private / "gateway-file-tts.json").write_text(
+        json.dumps({"objects": {"result_bucket": "results-bucket"}}), encoding="utf-8"
+    )
     (private / "transcription-recipe.json").write_text("{}", encoding="utf-8")
     return private
 
@@ -337,14 +353,13 @@ def standard_responder(
                 ),
             )
         if "minio-init" in text:
+            # The default deployment gives the sync upload bucket and the Job
+            # asset bucket the same name, so `minio-init` prints one line (#972).
             if "-c" in argv:
-                return command(argv, stdout="buckets verified: inputs-bucket, results-bucket\n")
+                return command(argv, stdout="buckets verified: results-bucket\n")
             return command(
                 argv,
-                stdout=(
-                    "bucket ready: inputs-bucket (versioning enabled)\n"
-                    "bucket ready: results-bucket (versioning enabled)\n"
-                ),
+                stdout="bucket ready: results-bucket (versioning enabled)\n",
             )
         if "job-startup-gate.py" in text or "job-dispatch-worker" in text:
             return command(
@@ -435,6 +450,77 @@ class ToolsPreflightTest(unittest.TestCase):
 
         self.assertEqual(code, HARNESS.EXIT_TOOLS)
         self.assertIn("互不相同", output)
+
+    def test_split_sync_upload_bucket_is_named_before_any_request(self) -> None:
+        """#972: two bucket names cannot reach the single gateway input bucket."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write_fixture_repo(root)
+            env = dict(BASE_ENV)
+            env["SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET"] = "speechnexus-inputs"
+            context, _runner = make_context(root, standard_responder(), env=env)
+            code, output = run_capture(context, (step("tools"),))
+
+        self.assertEqual(code, HARNESS.EXIT_TOOLS, output)
+        self.assertIn("FAIL step=tools", output)
+        self.assertIn("execution_input_scope_mismatch", output)
+        self.assertIn("503 backend_unavailable", output)
+        self.assertIn("SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET=speechnexus-inputs", output)
+        self.assertIn("SPEECHNEXUS_OBJECT_STORAGE_BUCKET=results-bucket", output)
+
+    def test_shared_sync_upload_bucket_passes(self) -> None:
+        """The aligned pair is accepted; the check is not a hidden precondition."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write_fixture_repo(root)
+            context, _runner = make_context(root, standard_responder())
+            code, output = run_capture(context, (step("tools"),))
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("结论: PASS", output)
+
+    def test_private_lane_input_bucket_must_match_the_env(self) -> None:
+        """#972 F3: a lane config that names another input bucket is caught pre-request."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            private = write_private_inputs(root)
+            write_fixture_repo(root)
+            (private / "gateway-file-asr.json").write_text(
+                json.dumps(
+                    {
+                        "objects": {
+                            "input_bucket": "speechnexus-inputs",
+                            "result_bucket": "results-bucket",
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            env = dict(BASE_ENV)
+            env["SPEECHNEXUS_PRIVATE_CONFIG_DIR"] = str(private)
+            responder = standard_responder(compose_document=compose_config_document(private))
+            context, _runner = make_context(root, responder, env=env)
+            code, output = run_capture(context, (step("tools"),))
+
+        self.assertEqual(code, HARNESS.EXIT_TOOLS, output)
+        self.assertIn("FAIL step=tools", output)
+        self.assertIn("gateway-file-asr.json", output)
+        self.assertIn("objects.input_bucket=speechnexus-inputs", output)
+        self.assertIn("execution_input_scope_mismatch", output)
+
+    def test_private_lane_input_bucket_equal_to_env_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            private = write_private_inputs(root)
+            write_fixture_repo(root)
+            env = dict(BASE_ENV)
+            env["SPEECHNEXUS_PRIVATE_CONFIG_DIR"] = str(private)
+            responder = standard_responder(compose_document=compose_config_document(private))
+            context, _runner = make_context(root, responder, env=env)
+            code, output = run_capture(context, (step("tools"),))
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("结论: PASS", output)
 
     def test_key_sources_are_reported_separately(self) -> None:
         """D1: compose-derived keys and entry-extra keys are two different sources."""
@@ -1156,9 +1242,19 @@ class BucketAndGateParsingTest(unittest.TestCase):
             write_fixture_repo(root)
             env = dict(BASE_ENV)
             env.pop("SPEECHNEXUS_EXECUTION_RESULT_BUCKET")
+            env["SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET"] = "inputs-bucket"
             context, _runner = make_context(root, standard_responder(), env=env)
             names = HARNESS.bucket_names(context)
         self.assertEqual(names, ["inputs-bucket", "results-bucket"])
+
+    def test_shared_bucket_names_collapse_to_one_bucket(self) -> None:
+        """The default names one bucket for uploads, Jobs and staging; one create."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write_fixture_repo(root)
+            context, _runner = make_context(root, standard_responder())
+            names = HARNESS.bucket_names(context)
+        self.assertEqual(names, ["results-bucket"])
 
 
 if __name__ == "__main__":

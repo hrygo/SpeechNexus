@@ -60,8 +60,8 @@
     "silence_duration_ms": 400,
     "preview_interval_ms": 1000,
     "temperature": 0.0,
-    "final_deadline_ms": 1000,
+    "final_deadline_ms": 10000,
     "auxiliary_deadline_ms": 5000
   },
-  "recipe_digest": "sha256:de85ebca291f1c7ed660a155092bfd74327d956201a0ba0b4bf61001d28d08f2"
+  "recipe_digest": "sha256:0ef7d19a9cc7ce62f5e0b2e36cc27be7d37eb2814399775fc9854333dcac30e9"
 }

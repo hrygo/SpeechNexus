@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-18T22:50:13+08:00",
+  "fetched_at": "2026-11-19T00:00:44+08:00",
   "issues": [
     {
       "number": 336,
@@ -1314,6 +1314,23 @@
         }
       ],
       "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
+    },
+    {
+      "number": 989,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/989",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "host_capacity_insufficient 的缺省容量把节点锁成单实例，且错误文案不指出路",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "bug"
+        },
+        {
+          "name": "status:ready"
+        }
+      ],
+      "parent_issue_url": null
     }
   ]
 }

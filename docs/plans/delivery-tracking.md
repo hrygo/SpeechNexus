@@ -1,6 +1,6 @@
 # SpeechNexus 需求与交付跟踪
 
-GitHub 来源：GitHub 快照；快照时间：2026-11-18T22:50:13+08:00。
+GitHub 来源：GitHub 快照；快照时间：2026-11-19T00:00:44+08:00。
 实现/集成/验证事实基线核验日期：2026-11-03；逐行另注的增量核验日期优先，各证据仅证明其实际覆盖范围。
 PRD 定义需求，设计规定实现约束；本表关联唯一主 Epic、当前事实、实施卡与验收证据。
 未建卡不等于需求遗漏；任务关闭不自动完成需求。结构校验不替代语义 MECE 审查或业务验收。
@@ -101,6 +101,7 @@ PRD 定义需求，设计规定实现约束；本表关联唯一主 Epic、当�
 - [准入可观察面 A：契约收成单值 cause（拆自 #845，先行片） #862](https://github.com/hrygo/SpeechNexus/issues/862)：父 Epic 未核实；待分类与关联需求。
 - [准入可观察面 B：选择层与准入层收敛成一个函数，报告走同一路径（拆自 #845） #863](https://github.com/hrygo/SpeechNexus/issues/863)：父 Epic 未核实；待分类与关联需求。
 - [契约在 /v1/models 给 admission_state 一个不可能满足的定义（无 workspace 维度 vs 按 workspace 的准入） #941](https://github.com/hrygo/SpeechNexus/issues/941)：父 Epic 未核实；待分类与关联需求。
+- [host_capacity_insufficient 的缺省容量把节点锁成单实例，且错误文案不指出路 #989](https://github.com/hrygo/SpeechNexus/issues/989)：父 Epic 未核实；待分类与关联需求。
 
 ## 下一步建卡
 

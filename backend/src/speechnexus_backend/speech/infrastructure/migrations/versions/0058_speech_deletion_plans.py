@@ -28,8 +28,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Plans expire within the fixed 300-second window and authorize nothing: the
-    # execution half of the contract is a later slice. Dropping the storage on an
-    # explicit downgrade therefore restores the frozen placeholder without
-    # destroying accepted work; the block below the plan stays guarded by 0057.
-    op.execute("DROP TABLE IF EXISTS speech_deletion_plans")
+    # An issued plan is a credential: the operator executes a deletion by this
+    # plan_id and plan_digest, and a same-key retry would collide with the lost
+    # row. The 300-second TTL bounds exposure, not the consequence of losing it,
+    # so a downgrade must never discard accepted rows on its own.
+    raise RuntimeError(
+        "Deletion plan history requires preservation: issued preview rows are "
+        "credentials, and a downgrade would lose their plan_id/plan_digest replay; "
+        "an operator must confirm and handle the rows explicitly"
+    )

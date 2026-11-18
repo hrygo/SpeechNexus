@@ -39,6 +39,22 @@ ASR_SETTLEMENT_REVISION = "0057_asr_settlement"
 PRE_ASR_SETTLEMENT_REVISION = "0056_debt_probe_live_state_index"
 
 
+def step_below_deletion_plans(connection: Any) -> None:
+    """Start an older-guard downgrade from the pre-0058 head.
+
+    0058 preserves issued plan rows unconditionally, so a test that exercises
+    0057's refusal must first reconstruct the database a pre-0058 deployment has:
+    remove 0058's only object and stamp its predecessor. This mirrors the
+    production refusal instead of weakening it.
+    """
+    execute = connection.execute
+    execute("DROP TABLE IF EXISTS speech_deletion_plans")
+    execute(
+        "UPDATE alembic_version SET version_num = %s",
+        (ASR_SETTLEMENT_REVISION,),
+    )
+
+
 def step_below_asr_settlement(connection: Any) -> None:
     """Start an older-guard downgrade from the pre-0057 head.
 

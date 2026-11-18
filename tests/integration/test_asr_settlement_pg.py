@@ -38,14 +38,13 @@ from speechnexus_backend.speech.infrastructure.asr_settlement_preflight import (
     require_complete_asr_roots,
 )
 from speechnexus_backend.speech.infrastructure.asr_settlement_schema import (
-    asr_settlement_worker_grants,
     asr_settlement_writer_grants,
 )
 from speechnexus_backend.speech.infrastructure.asr_settlement_sql import (
     ASR_SETTLEMENT_BACKFILL,
 )
-from speechnexus_backend.speech.infrastructure.binding_disable_targets_schema import (
-    disable_settlement_grants,
+from speechnexus_backend.speech.infrastructure.settlement_worker_verifier import (
+    settlement_worker_grants,
 )
 from speechnexus_backend.speech.infrastructure.transcription_admission import (
     PostgresTranscriptionAdmission,
@@ -275,10 +274,7 @@ async def _settle_once(
     password = "synthetic_asr_settlement"
     db.query(f'CREATE ROLE "{role}" LOGIN PASSWORD {password!r}')
     try:
-        for grant in (
-            *disable_settlement_grants(db.schema, role),
-            *asr_settlement_worker_grants(db.schema, role),
-        ):
+        for grant in settlement_worker_grants(db.schema, role):
             db.query(grant)
         resolved = AsrSettlementWorkerSettings(
             database_url=make_conninfo(db.url, user=role, password=password),

@@ -178,7 +178,7 @@ requires, in order, all of it verifiable only against a running deployment:
    answers `503 backend_unavailable`; `build_transcription` does the same, so
    `/v1/audio/transcriptions` answers `503 backend_unavailable` naming this key. The
    `sn_speech_settlement` role and its three grants (`disable_settlement_grants`,
-   `tts_settlement_worker_grants`, `asr_settlement_worker_grants`) are in runbook §6,
+   `settlement_worker_grants`) are in runbook §6,
    and `sn_api` also needs `asr_settlement_writer_grants` for the admission-time ASR
    root.
 1. **A registered TTS instance.** `runtime_instance_heads` must hold

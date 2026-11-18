@@ -36,9 +36,6 @@ from speechnexus_backend.speech.infrastructure.admission_postgres import (
     PostgresAdmissionTransactions,
     tts_voice_admission_grants,
 )
-from speechnexus_backend.speech.infrastructure.asr_settlement_schema import (
-    asr_settlement_worker_grants,
-)
 from speechnexus_backend.speech.infrastructure.job_schema import (
     job_dispatch_grants,
     job_runtime_grants,
@@ -325,16 +322,13 @@ async def test_deadline_rescan_releases_unsubmitted_original_and_allows_next_adm
 ) -> None:
     from speechnexus_backend.speech.application.leases import LeaseService
     from speechnexus_backend.speech.application.tts_settlement import TtsSettlementWorker
-    from speechnexus_backend.speech.infrastructure.binding_disable_targets_schema import (
-        disable_settlement_grants,
-    )
     from speechnexus_backend.speech.infrastructure.leases_postgres import PostgresLeaseTransactions
     from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
+    from speechnexus_backend.speech.infrastructure.settlement_worker_verifier import (
+        settlement_worker_grants,
+    )
     from speechnexus_backend.speech.infrastructure.tts_settlement_postgres import (
         PostgresTtsSettlementStore,
-    )
-    from speechnexus_backend.speech.infrastructure.tts_settlement_schema import (
-        tts_settlement_worker_grants,
     )
     from speechnexus_backend.tts_settlement_worker import _verify_worker
 
@@ -412,11 +406,7 @@ async def test_deadline_rescan_releases_unsubmitted_original_and_allows_next_adm
             gateway_pool.close()
     role = "sn_tts_settle_" + uuid.uuid4().hex[:12]
     db.query(f"CREATE ROLE \"{role}\" LOGIN PASSWORD 'synthetic_settlement_test'")
-    for grant in (
-        *disable_settlement_grants(db.schema, role),
-        *tts_settlement_worker_grants(db.schema, role),
-        *asr_settlement_worker_grants(db.schema, role),
-    ):
+    for grant in settlement_worker_grants(db.schema, role):
         db.query(grant)
     root_pool = speech_pool(
         make_conninfo(db.url, user=role, password="synthetic_settlement_test"),
@@ -459,11 +449,8 @@ async def test_deadline_rescan_releases_unsubmitted_original_and_allows_next_adm
 def test_worker_lifecycle_with_distinct_restricted_pg_identity(
     admission_database: AdmissionDatabase,
 ) -> None:
-    from speechnexus_backend.speech.infrastructure.binding_disable_targets_schema import (
-        disable_settlement_grants,
-    )
-    from speechnexus_backend.speech.infrastructure.tts_settlement_schema import (
-        tts_settlement_worker_grants,
+    from speechnexus_backend.speech.infrastructure.settlement_worker_verifier import (
+        settlement_worker_grants,
     )
     from speechnexus_backend.tts_settlement_worker import (
         TtsSettlementRuntime,
@@ -473,11 +460,7 @@ def test_worker_lifecycle_with_distinct_restricted_pg_identity(
     db = admission_database.runtime.foundation.database
     role = "sn_tts_life_" + uuid.uuid4().hex[:12]
     db.query(f"CREATE ROLE \"{role}\" LOGIN PASSWORD 'synthetic_settlement_test'")
-    for grant in (
-        *disable_settlement_grants(db.schema, role),
-        *tts_settlement_worker_grants(db.schema, role),
-        *asr_settlement_worker_grants(db.schema, role),
-    ):
+    for grant in settlement_worker_grants(db.schema, role):
         db.query(grant)
     settings = TtsSettlementWorkerSettings.model_validate(
         {

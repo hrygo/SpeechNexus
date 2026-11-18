@@ -686,15 +686,14 @@ from speechnexus_backend.speech.infrastructure.builtin_voice_grants import (
     operator_attestation_writer_grants,
     qualification_reader_grants,
 )
+from speechnexus_backend.speech.infrastructure.settlement_worker_verifier import (
+    settlement_worker_grants,
+)
 from speechnexus_backend.speech.infrastructure.qualified_speech_facts_postgres import (
     speech_synthesis_reader_grants,
 )
 from speechnexus_backend.speech.infrastructure.asr_settlement_schema import (
-    asr_settlement_worker_grants,
     asr_settlement_writer_grants,
-)
-from speechnexus_backend.speech.infrastructure.tts_settlement_schema import (
-    tts_settlement_worker_grants,
 )
 from speechnexus_backend.speech.infrastructure.workspace_schema import workspace_writer_grants
 
@@ -801,16 +800,10 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     for statement in asr_settlement_writer_grants(schema, "sn_api"):
         conn.execute(statement)
     # The settlement runtime opens a second pool under its own identity. The
-    # lease-settlement reads/writes come from disable_settlement_grants, the TTS
-    # root/cancellation surface from tts_settlement_worker_grants and the ASR
-    # root cursor from asr_settlement_worker_grants; the worker verifies that
-    # exact column set at startup, so all three declarations belong to one role
-    # and nothing else may be granted to it.
-    for statement in (
-        *disable_settlement_grants(schema, "sn_speech_settlement"),
-        *tts_settlement_worker_grants(schema, "sn_speech_settlement"),
-        *asr_settlement_worker_grants(schema, "sn_speech_settlement"),
-    ):
+    # single declaration below is the exact union both workers verify at startup:
+    # lease-settlement reads/writes, the TTS root/cancellation surface and the ASR
+    # root cursor. Granting anything else to this role makes startup refuse.
+    for statement in settlement_worker_grants(schema, "sn_speech_settlement"):
         conn.execute(statement)
     # The retention sweep runs as its own identity: SELECT plus
     # UPDATE(artifact_state, deleted_at_us) and nothing else. It refuses to start on a role that
@@ -1856,15 +1849,14 @@ from speechnexus_backend.speech.infrastructure.builtin_voice_grants import (
     operator_attestation_writer_grants,
     qualification_reader_grants,
 )
+from speechnexus_backend.speech.infrastructure.settlement_worker_verifier import (
+    settlement_worker_grants,
+)
 from speechnexus_backend.speech.infrastructure.qualified_speech_facts_postgres import (
     speech_synthesis_reader_grants,
 )
 from speechnexus_backend.speech.infrastructure.asr_settlement_schema import (
-    asr_settlement_worker_grants,
     asr_settlement_writer_grants,
-)
-from speechnexus_backend.speech.infrastructure.tts_settlement_schema import (
-    tts_settlement_worker_grants,
 )
 from speechnexus_backend.speech.infrastructure.workspace_schema import workspace_writer_grants
 
@@ -1935,11 +1927,7 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
         conn.execute(statement)
     for statement in asr_settlement_writer_grants(schema, "sn_api"):
         conn.execute(statement)
-    for statement in (
-        *disable_settlement_grants(schema, "sn_speech_settlement"),
-        *tts_settlement_worker_grants(schema, "sn_speech_settlement"),
-        *asr_settlement_worker_grants(schema, "sn_speech_settlement"),
-    ):
+    for statement in settlement_worker_grants(schema, "sn_speech_settlement"):
         conn.execute(statement)
     for statement in artifact_reader_grants(schema, "sn_artifact_reader"):
         conn.execute(statement)

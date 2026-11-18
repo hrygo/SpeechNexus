@@ -13,7 +13,16 @@ from speechnexus_backend.binding_disable_worker import (
     _SETTLEMENT_UPDATE,
     _verify_no_role_switch,
 )
+from speechnexus_backend.speech.infrastructure.asr_settlement_schema import (
+    asr_settlement_worker_grants,
+)
+from speechnexus_backend.speech.infrastructure.binding_disable_targets_schema import (
+    disable_settlement_grants,
+)
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
+from speechnexus_backend.speech.infrastructure.tts_settlement_schema import (
+    tts_settlement_worker_grants,
+)
 
 OWNED_TABLES = frozenset(
     {"speech_tts_settlement", "speech_tts_cancellation", "speech_asr_settlement"}
@@ -23,6 +32,21 @@ UPDATE_COLUMNS = {
     "speech_asr_settlement": frozenset({"next_check_at_us", "settled_at_us"}),
 }
 INSERT_TABLES = frozenset({"speech_tts_cancellation"})
+
+
+def settlement_worker_grants(schema: str, role: str) -> tuple[str, ...]:
+    """The one grant set both settlement workers verify at startup.
+
+    The lease-settlement reads/writes, the TTS root/cancellation surface and the
+    ASR root cursor belong to one role. Keeping the composition next to
+    ``OWNED_TABLES`` means a new owned table changes this declaration and the
+    verification together, rather than only one of them.
+    """
+    return (
+        *disable_settlement_grants(schema, role),
+        *tts_settlement_worker_grants(schema, role),
+        *asr_settlement_worker_grants(schema, role),
+    )
 
 
 def verify_settlement_worker(pool: SpeechPool, schema: str, *, label: str) -> None:

@@ -63,7 +63,8 @@ class IntentSandbox:
 
 
 def _step_below_asr_settlement(intent_db: IntentSandbox) -> None:
-    """Start the 0046 guard test below 0057; both later revisions are removed."""
+    """Start the 0046 guard test below 0057; all later revisions are removed."""
+    intent_db.admin.execute(f'DROP TABLE IF EXISTS "{intent_db.schema}".speech_deletion_ledger')
     intent_db.admin.execute(f'DROP TABLE IF EXISTS "{intent_db.schema}".speech_deletion_plans')
     intent_db.admin.execute(f'DROP TABLE IF EXISTS "{intent_db.schema}".speech_asr_settlement')
     intent_db.admin.execute(

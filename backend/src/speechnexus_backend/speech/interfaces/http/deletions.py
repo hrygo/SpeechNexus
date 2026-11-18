@@ -1,4 +1,10 @@
-"""Only the implemented deletion-preview operation; no execution or ledger here."""
+"""Deletion preview and execution routes; the read route belongs to slice C.
+
+Both operations own only speech resources, re-check the immutable plan under one
+lock order and never hand-write a wire shape: the request is parsed into the
+domain values and the answer is projected back through the frozen contract's
+deletion schema.
+"""
 
 from __future__ import annotations
 
@@ -18,15 +24,22 @@ from speechnexus_backend.speech.domain.deletion import (
     SPEECH_KINDS,
     WORKBENCH_KINDS,
     DeletionError,
+    DeletionRequest,
     DeletionTarget,
+    deletion_payload,
+    identifier,
     plan_payload,
 )
 from speechnexus_backend.speech.interfaces.http.deletion_errors import deletion_error
 
 PREFIX = "/v1/nexus/deletion-plans"
+DELETIONS = "/v1/nexus/deletions"
 # A preview body is two enums and one reference; anything larger is not this
 # operation's request and never reaches JSON decoding.
 MAX_REQUEST_BYTES = 16 * 1024
+# A confirmation names every target the plan pinned; the bound is the plan's own
+# dependency limit, not an unbounded client array.
+MAX_CONFIRMATION_BYTES = 64 * 1024
 _REVISION = re.compile(r"^[1-9][0-9]{0,18}$")
 
 
@@ -36,8 +49,24 @@ def _request_id(request: Request) -> str:
 
 def _object(value: Any, keys: set[str]) -> dict[str, Any]:
     if not isinstance(value, dict) or set(value) != keys:
-        raise ValueError("Deletion plan body has an unexpected shape")
+        raise ValueError("Deletion body has an unexpected shape")
     return cast(dict[str, Any], value)
+
+
+def _target_document(document: Any) -> DeletionTarget:
+    raw = _object(document, {"owner", "kind", "resource"})
+    owner, kind = raw["owner"], raw["kind"]
+    if not isinstance(owner, str) or owner not in OWNERS:
+        raise ValueError("Invalid deletion owner")
+    if not isinstance(kind, str) or kind not in (*SPEECH_KINDS, *WORKBENCH_KINDS):
+        raise ValueError("Invalid deletion kind")
+    resource = _object(raw["resource"], {"id", "revision"})
+    resource_id, revision = resource["id"], resource["revision"]
+    if not isinstance(resource_id, str):
+        raise ValueError("Invalid deletion resource identifier")
+    if not isinstance(revision, str) or _REVISION.fullmatch(revision) is None:
+        raise ValueError("Invalid deletion resource revision")
+    return DeletionTarget(owner, kind, resource_id, int(revision))
 
 
 def _target(document: Any) -> tuple[DeletionTarget, str]:
@@ -45,19 +74,38 @@ def _target(document: Any) -> tuple[DeletionTarget, str]:
     mode = body["mode"]
     if not isinstance(mode, str) or mode not in MODES:
         raise ValueError("Invalid deletion mode")
-    raw = _object(body["target"], {"owner", "kind", "resource"})
-    owner, kind = raw["owner"], raw["kind"]
-    if not isinstance(owner, str) or owner not in OWNERS:
-        raise ValueError("Invalid deletion owner")
-    if not isinstance(kind, str) or kind not in (*SPEECH_KINDS, *WORKBENCH_KINDS):
-        raise ValueError("Invalid deletion kind")
-    resource = _object(raw["resource"], {"id", "revision"})
-    identifier, revision = resource["id"], resource["revision"]
-    if not isinstance(identifier, str):
-        raise ValueError("Invalid deletion resource identifier")
-    if not isinstance(revision, str) or _REVISION.fullmatch(revision) is None:
-        raise ValueError("Invalid deletion resource revision")
-    return DeletionTarget(owner, kind, identifier, int(revision)), mode
+    return _target_document(body["target"]), mode
+
+
+def _confirmation(document: Any) -> DeletionRequest:
+    body = _object(
+        document, {"plan_id", "expected_plan_revision", "plan_digest", "confirm_targets"}
+    )
+    plan_id = body["plan_id"]
+    if not isinstance(plan_id, str):
+        raise ValueError("Invalid deletion plan identifier")
+    expected = body["expected_plan_revision"]
+    if not isinstance(expected, str) or _REVISION.fullmatch(expected) is None:
+        raise ValueError("Invalid expected plan revision")
+    digest = body["plan_digest"]
+    if not isinstance(digest, str):
+        raise ValueError("Invalid deletion plan digest")
+    confirmed = body["confirm_targets"]
+    if not isinstance(confirmed, list) or not confirmed:
+        raise ValueError("A deletion confirmation names at least one target")
+    targets = tuple(_target_document(item) for item in confirmed)
+    if len(set(targets)) != len(targets):
+        # A duplicate is not a set member twice; the contract declares
+        # `uniqueItems`, so this is an invalid request, not a scope mismatch.
+        raise ValueError("A deletion confirmation names distinct targets")
+    return DeletionRequest(identifier(plan_id), int(expected), digest, targets)
+
+
+def _idempotency_key(request: Request) -> str | None:
+    keys = request.headers.getlist("idempotency-key")
+    if len(keys) != 1 or not 1 <= len(keys[0]) <= 128:
+        return None
+    return keys[0]
 
 
 def create_deletion_router(get_service: Callable[[], DeletionPlanner | None]) -> APIRouter:
@@ -73,8 +121,8 @@ def create_deletion_router(get_service: Callable[[], DeletionPlanner | None]) ->
         service = get_service()
         if service is None:
             return deletion_error("deletion_plans_unavailable", request_id)
-        keys = request.headers.getlist("idempotency-key")
-        if len(keys) != 1 or not 1 <= len(keys[0]) <= 128:
+        key = _idempotency_key(request)
+        if key is None:
             return deletion_error("invalid_idempotency_key", request_id, param="Idempotency-Key")
         body = await request.body()
         if len(body) > MAX_REQUEST_BYTES:
@@ -85,12 +133,43 @@ def create_deletion_router(get_service: Callable[[], DeletionPlanner | None]) ->
             # json.JSONDecodeError is a ValueError; fixed text never echoes input.
             return deletion_error("invalid_deletion_request", request_id)
         try:
-            plan = await run_in_threadpool(service.preview, target, mode, keys[0])
+            plan = await run_in_threadpool(service.preview, target, mode, key)
         except DeletionError as error:
             return deletion_error(error.code, request_id)
         return JSONResponse(plan_payload(plan), headers={"Cache-Control": "no-store"})
 
+    @router.post(
+        DELETIONS,
+        operation_id="speechCreateDeletion",
+        summary="Confirm a plan and execute the deletion",
+        status_code=202,
+    )
+    async def create_deletion(request: Request) -> Response:
+        request_id = _request_id(request)
+        service = get_service()
+        if service is None:
+            return deletion_error("deletion_unavailable", request_id)
+        key = _idempotency_key(request)
+        if key is None:
+            return deletion_error("invalid_idempotency_key", request_id, param="Idempotency-Key")
+        body = await request.body()
+        if len(body) > MAX_CONFIRMATION_BYTES:
+            return deletion_error("invalid_deletion_request", request_id)
+        try:
+            confirmation = _confirmation(json.loads(body))
+        except ValueError, TypeError:
+            return deletion_error("invalid_deletion_request", request_id)
+        try:
+            record = await run_in_threadpool(service.execute, confirmation, key)
+        except DeletionError as error:
+            return deletion_error(error.code, request_id)
+        return JSONResponse(
+            deletion_payload(record),
+            status_code=202,
+            headers={"Cache-Control": "no-store"},
+        )
+
     return router
 
 
-__all__ = ["PREFIX", "create_deletion_router"]
+__all__ = ["DELETIONS", "PREFIX", "create_deletion_router"]

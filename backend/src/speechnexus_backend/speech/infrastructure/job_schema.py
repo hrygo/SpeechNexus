@@ -85,6 +85,58 @@ def deletion_plan_grants(schema: str, role: str) -> tuple[str, ...]:
     )
 
 
+def deletion_execution_grants(schema: str, role: str) -> tuple[str, ...]:
+    """Privileges the deletion executor adds after ``0059_speech_deletion_ledger``.
+
+    Execution removes confirmed content: it expires and deletes an asset through
+    the existing state machine (so it needs that machine's columns, not a second
+    write path) and it deletes the authoritative public Job intent row plus the
+    legacy command copy's tombstone. It gets exactly one DELETE relation and no
+    authority over execution, settlement, lease or fencing evidence.
+
+    Kept out of ``job_runtime_grants`` for the same reason as the preview set: an
+    existing deployment that has not applied this group still boots, and only the
+    deletion route answers ``503 deletion_not_configured``.
+    """
+    from speechnexus_backend.speech.infrastructure.deletion_ledger_schema import (
+        ASSET_EVENT_INSERT_COLUMNS,
+        ASSET_UPDATE_COLUMNS,
+        CONTENT_DELETION_INSERT_COLUMNS,
+        CONTENT_DELETION_UPDATE_COLUMNS,
+        DELETION_LEDGER_INSERT_COLUMNS,
+        DELETION_LEDGER_UPDATE_COLUMNS,
+        JOB_INTENT_DELETE_TABLES,
+        LEGACY_INTENT_UPDATE_COLUMNS,
+    )
+
+    schema, role = checked_sql_name(schema), checked_sql_name(role)
+
+    def columns(items: tuple[str, ...]) -> str:
+        return ", ".join(items)
+
+    return (
+        f'GRANT SELECT ON "{schema}".speech_content_deletions TO "{role}"',
+        # The asset event append uses ON CONFLICT DO NOTHING, which PostgreSQL
+        # authorizes with a read on the conflict key's relation.
+        f'GRANT SELECT ON "{schema}".speech_asset_events TO "{role}"',
+        f'GRANT SELECT ON "{schema}".speech_deletion_ledger TO "{role}"',
+        f"GRANT INSERT ({columns(DELETION_LEDGER_INSERT_COLUMNS)}) "
+        f'ON "{schema}".speech_deletion_ledger TO "{role}"',
+        f"GRANT UPDATE ({columns(DELETION_LEDGER_UPDATE_COLUMNS)}) "
+        f'ON "{schema}".speech_deletion_ledger TO "{role}"',
+        f"GRANT INSERT ({columns(CONTENT_DELETION_INSERT_COLUMNS)}) "
+        f'ON "{schema}".speech_content_deletions TO "{role}"',
+        f"GRANT UPDATE ({columns(CONTENT_DELETION_UPDATE_COLUMNS)}) "
+        f'ON "{schema}".speech_content_deletions TO "{role}"',
+        f"GRANT INSERT ({columns(ASSET_EVENT_INSERT_COLUMNS)}) "
+        f'ON "{schema}".speech_asset_events TO "{role}"',
+        f'GRANT UPDATE ({columns(ASSET_UPDATE_COLUMNS)}) ON "{schema}".speech_assets TO "{role}"',
+        f"GRANT UPDATE ({columns(LEGACY_INTENT_UPDATE_COLUMNS)}) "
+        f'ON "{schema}".admission_operations TO "{role}"',
+        *(f'GRANT DELETE ON "{schema}".{table} TO "{role}"' for table in JOB_INTENT_DELETE_TABLES),
+    )
+
+
 def job_dispatch_grants(schema: str, role: str) -> tuple[str, ...]:
     """Privileges the dispatcher adds on top of the base Job writer.
 

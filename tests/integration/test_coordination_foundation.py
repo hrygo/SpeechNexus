@@ -440,9 +440,12 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
     quarantine_release_tables = (
         {"admission_quarantine_releases"} if db.dialect == "postgresql" else set()
     )
-    # The immutable deletion plan rows (0058). Private to the Job writer's
-    # deletion-preview route, outside the shared coordination surface.
-    deletion_plan_tables = {"speech_deletion_plans"} if db.dialect == "postgresql" else set()
+    # The immutable deletion plan rows (0058) and the execution ledger (0059).
+    # Private to the Job writer's deletion routes, outside the shared
+    # coordination surface.
+    deletion_plan_tables = (
+        {"speech_deletion_plans", "speech_deletion_ledger"} if db.dialect == "postgresql" else set()
+    )
     # The operator-attested qualification declaration and the published-source
     # provenance ledger (0055). Both are private to the qualification writer and
     # publisher identities, outside the shared coordination surface.

@@ -32,7 +32,7 @@ from speechnexus_backend.speech.domain.assets import (
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 
 
-class _Cursor:
+class AssetCursor:
     def __init__(self, cursor: psycopg.Cursor[dict[str, Any]], deadline: float) -> None:
         self.raw = cursor
         self.deadline = deadline
@@ -140,6 +140,115 @@ def _replay(asset: AssetRecord, intent: UploadIntent) -> UploadResult:
     return UploadResult("replayed", asset)
 
 
+RETENTION_REASON = "retention_expired"
+CONFIRMED_REASON = "confirmed_deletion"
+
+
+def prepare_content_deletion(
+    cursor: AssetCursor,
+    asset: AssetRecord,
+    ledger_id: str,
+    *,
+    reason: str,
+    require_expired: bool,
+) -> DeletionTicket | None:
+    """End the asset's content lifetime and queue the one deletion ledger row.
+
+    Both callers share this body: the retention sweep passes
+    ``require_expired=True`` and only acts inside the asset's own TTL, while a
+    confirmed deletion passes ``False`` because the owner already decided the
+    content ends now. Either way the move to ``expired`` bumps the asset version,
+    pins the object version and reuses ``speech_content_deletions`` rather than
+    inventing a second deletion ledger. No object I/O happens here.
+    """
+    if reason not in (RETENTION_REASON, CONFIRMED_REASON):
+        raise ValueError("Unknown asset deletion reason")
+    now = cursor.clock()
+    if asset.status == "deleted" or (require_expired and asset.expires_at_us > now):
+        return None
+    if asset.status != "expired":
+        asset = replace(asset, status="expired", version=asset.version + 1)
+        cursor.save(asset, "expired", now)
+    refs = cursor.rows(
+        "SELECT reference_id FROM speech_asset_references "
+        "WHERE asset_id = %s AND released_at_us IS NULL LIMIT 1",
+        (asset.asset_id,),
+    )
+    blocked = expiry_blocker(asset, has_references=bool(refs))
+    proof = cursor.proof(asset.asset_id)
+    if proof is None and asset.phase == "settled" and asset.writer_id is not None:
+        blocked = "asset_object_binding_missing"
+    state = "blocked" if blocked else "queued"
+    ledgers = cursor.rows(
+        "SELECT ledger_id,deletion_state FROM speech_content_deletions "
+        "WHERE asset_id = %s FOR UPDATE",
+        (asset.asset_id,),
+    )
+    if ledgers:
+        ledger_id = ledgers[0]["ledger_id"]
+        if ledgers[0]["deletion_state"] == "complete":
+            return DeletionTicket(ledger_id, asset.asset_id, "complete", proof)
+        cursor.rows(
+            "UPDATE speech_content_deletions SET storage_version_id = %s, "
+            "deletion_state = %s, blocked_reason = %s WHERE ledger_id = %s",
+            (proof.version_id if proof else None, state, blocked, ledger_id),
+        )
+    else:
+        cursor.rows(
+            "INSERT INTO speech_content_deletions (ledger_id,asset_id,sha256,"
+            "storage_version_id,reason,deletion_state,blocked_reason,created_at_us) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+            (
+                ledger_id,
+                asset.asset_id,
+                asset.sha256,
+                proof.version_id if proof else None,
+                reason,
+                state,
+                blocked,
+                now,
+            ),
+        )
+    return DeletionTicket(ledger_id, asset.asset_id, state, proof)
+
+
+def complete_content_deletion(cursor: AssetCursor, asset: AssetRecord, ledger_id: str) -> bool:
+    """Mark the pinned object version deleted once the caller confirms the purge.
+
+    The caller must already hold the workspace and asset row locks. The object is
+    removed out of band; this step only records the confirmed outcome, so it stays
+    idempotent and refuses to complete a ledger whose preconditions changed.
+    """
+    rows = cursor.rows(
+        "SELECT deletion_state FROM speech_content_deletions "
+        "WHERE ledger_id = %s AND asset_id = %s FOR UPDATE",
+        (ledger_id, asset.asset_id),
+    )
+    if not rows:
+        return False
+    if rows[0]["deletion_state"] == "complete":
+        return True
+    if asset.status != "expired" or rows[0]["deletion_state"] != "queued":
+        return False
+    if (
+        cursor.rows(
+            "SELECT reference_id FROM speech_asset_references "
+            "WHERE asset_id = %s AND released_at_us IS NULL LIMIT 1",
+            (asset.asset_id,),
+        )
+        or asset.phase == "writing"
+    ):
+        return False
+    now = cursor.clock()
+    cursor.rows(
+        "UPDATE speech_content_deletions SET deletion_state = 'complete', "
+        "completed_at_us = %s WHERE ledger_id = %s",
+        (now, ledger_id),
+    )
+    cursor.save(replace(asset, status="deleted", version=asset.version + 1), "object_deleted", now)
+    return True
+
+
 class PostgresAssetMetadata:
     def __init__(
         self, pool: SpeechPool, *, namespace_digest: str, timeout_seconds: float = 3
@@ -150,14 +259,14 @@ class PostgresAssetMetadata:
         self._namespace = digest(namespace_digest)
 
     @contextmanager
-    def _transaction(self, *, readonly: bool = False) -> Iterator[_Cursor]:
+    def _transaction(self, *, readonly: bool = False) -> Iterator[AssetCursor]:
         deadline = time.monotonic() + self._timeout
         try:
             with self._pool.connection(timeout=self._timeout) as connection:
                 if readonly:
                     connection.execute("SET TRANSACTION READ ONLY")
                 with connection.cursor() as raw:
-                    cursor = _Cursor(raw, deadline)
+                    cursor = AssetCursor(raw, deadline)
                     self._require_namespace(cursor, readonly=readonly)
                     yield cursor
                     if time.monotonic() >= deadline:
@@ -175,7 +284,7 @@ class PostgresAssetMetadata:
         with self._transaction(readonly=not initialize):
             pass
 
-    def _require_namespace(self, cursor: _Cursor, *, readonly: bool) -> None:
+    def _require_namespace(self, cursor: AssetCursor, *, readonly: bool) -> None:
         def declared() -> str | None:
             rows = cursor.rows(
                 "SELECT namespace_digest FROM speech_asset_storage_authority WHERE binding_id = 1"
@@ -207,7 +316,7 @@ class PostgresAssetMetadata:
         if found != self._namespace:
             raise AssetError("asset_storage_namespace_mismatch")
 
-    def _original(self, cursor: _Cursor, intent: UploadIntent) -> AssetRecord | None:
+    def _original(self, cursor: AssetCursor, intent: UploadIntent) -> AssetRecord | None:
         rows = cursor.rows(
             "SELECT a.* FROM speech_asset_commands c JOIN speech_assets a USING (asset_id) "
             "WHERE c.workspace_id = %s AND c.key_digest = %s",
@@ -288,7 +397,7 @@ class PostgresAssetMetadata:
             raise
 
     @contextmanager
-    def _locked_asset(self, asset_id: str) -> Iterator[tuple[_Cursor, AssetRecord, bool]]:
+    def _locked_asset(self, asset_id: str) -> Iterator[tuple[AssetCursor, AssetRecord, bool]]:
         identifier(asset_id)
         with self._transaction() as cursor:
             initial = cursor.asset(asset_id)
@@ -411,52 +520,9 @@ class PostgresAssetMetadata:
     def prepare_expiry(self, asset_id: str, ledger_id: str) -> DeletionTicket | None:
         identifier(ledger_id)
         with self._locked_asset(asset_id) as (cursor, asset, _):
-            now = cursor.clock()
-            if asset.expires_at_us > now or asset.status == "deleted":
-                return None
-            if asset.status != "expired":
-                asset = replace(asset, status="expired", version=asset.version + 1)
-                cursor.save(asset, "expired", now)
-            refs = cursor.rows(
-                "SELECT reference_id FROM speech_asset_references "
-                "WHERE asset_id = %s AND released_at_us IS NULL LIMIT 1",
-                (asset_id,),
+            return prepare_content_deletion(
+                cursor, asset, ledger_id, reason=RETENTION_REASON, require_expired=True
             )
-            blocked = expiry_blocker(asset, has_references=bool(refs))
-            proof = cursor.proof(asset_id)
-            if proof is None and asset.phase == "settled" and asset.writer_id is not None:
-                blocked = "asset_object_binding_missing"
-            state = "blocked" if blocked else "queued"
-            ledgers = cursor.rows(
-                "SELECT ledger_id,deletion_state FROM speech_content_deletions "
-                "WHERE asset_id = %s FOR UPDATE",
-                (asset_id,),
-            )
-            if ledgers:
-                ledger_id = ledgers[0]["ledger_id"]
-                if ledgers[0]["deletion_state"] == "complete":
-                    return DeletionTicket(ledger_id, asset_id, "complete", proof)
-                cursor.rows(
-                    "UPDATE speech_content_deletions SET storage_version_id = %s, "
-                    "deletion_state = %s, blocked_reason = %s WHERE ledger_id = %s",
-                    (proof.version_id if proof else None, state, blocked, ledger_id),
-                )
-            else:
-                cursor.rows(
-                    "INSERT INTO speech_content_deletions (ledger_id,asset_id,sha256,"
-                    "storage_version_id,reason,deletion_state,blocked_reason,created_at_us) "
-                    "VALUES (%s,%s,%s,%s,'retention_expired',%s,%s,%s)",
-                    (
-                        ledger_id,
-                        asset_id,
-                        asset.sha256,
-                        proof.version_id if proof else None,
-                        state,
-                        blocked,
-                        now,
-                    ),
-                )
-            return DeletionTicket(ledger_id, asset_id, state, proof)
 
     def complete_deletion(self, ledger_id: str) -> bool:
         identifier(ledger_id)
@@ -469,31 +535,4 @@ class PostgresAssetMetadata:
         if not rows:
             return False
         with self._locked_asset(rows[0]["asset_id"]) as (cursor, asset, _):
-            rows = cursor.rows(
-                "SELECT deletion_state FROM speech_content_deletions "
-                "WHERE ledger_id = %s FOR UPDATE",
-                (ledger_id,),
-            )
-            if rows[0]["deletion_state"] == "complete":
-                return True
-            if asset.status != "expired" or rows[0]["deletion_state"] != "queued":
-                return False
-            if (
-                cursor.rows(
-                    "SELECT reference_id FROM speech_asset_references "
-                    "WHERE asset_id = %s AND released_at_us IS NULL LIMIT 1",
-                    (asset.asset_id,),
-                )
-                or asset.phase == "writing"
-            ):
-                return False
-            now = cursor.clock()
-            cursor.rows(
-                "UPDATE speech_content_deletions SET deletion_state = 'complete', "
-                "completed_at_us = %s WHERE ledger_id = %s",
-                (now, ledger_id),
-            )
-            cursor.save(
-                replace(asset, status="deleted", version=asset.version + 1), "object_deleted", now
-            )
-            return True
+            return complete_content_deletion(cursor, asset, ledger_id)

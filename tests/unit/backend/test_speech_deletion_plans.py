@@ -284,3 +284,72 @@ async def test_http_does_not_echo_a_body_over_the_bound() -> None:
     response = await _post(app, oversized)
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "invalid_deletion_request"
+
+
+# The execution half is decided in the domain before any transaction runs: these
+# pin the refusal order and the set semantics the route relies on.
+
+
+def _confirmation(plan: DeletionPlan, targets: tuple[DeletionTarget, ...] | None = None) -> Any:
+    from speechnexus_backend.speech.domain.deletion import DeletionRequest
+
+    return DeletionRequest(
+        plan.id,
+        plan.revision,
+        plan_digest(plan),
+        targets if targets is not None else (plan.target,),
+    )
+
+
+def test_confirmation_is_order_insensitive_and_rejects_duplicates() -> None:
+    plan = service(snapshot(ASSET)).preview(ASSET, "ordinary", "key-plan-8")
+    from speechnexus_backend.speech.domain.deletion import DeletionRequest, confirm
+
+    reordered = DeletionRequest(plan.id, plan.revision, plan_digest(plan), (plan.target,))
+    confirm(plan, reordered, now=plan.created_at)
+    with pytest.raises(ValueError, match="distinct targets"):
+        DeletionRequest(plan.id, plan.revision, plan_digest(plan), (plan.target, plan.target))
+    with pytest.raises(ValueError, match="at least one target"):
+        DeletionRequest(plan.id, plan.revision, plan_digest(plan), ())
+
+
+def test_confirm_reports_the_first_reason_a_plan_is_stale() -> None:
+    from speechnexus_backend.speech.domain.deletion import (
+        DeletionConfirmationMismatchError,
+        DeletionDependencyConflictError,
+        DeletionPlanExpiredError,
+        DeletionRequest,
+        confirm,
+    )
+
+    plan = service(snapshot(ASSET)).preview(ASSET, "ordinary", "key-plan-9")
+    confirmed = _confirmation(plan)
+    # A wrong digest identifies a different plan, reported before the expiry the
+    # caller would otherwise see.
+    wrong_digest = DeletionRequest(plan.id, plan.revision, "sha256:" + "0" * 64, confirmed.targets)
+    with pytest.raises(DeletionPlanChangedError):
+        confirm(plan, wrong_digest, now=plan.created_at + timedelta(seconds=301))
+    # The right plan, past its fixed window, reports expiry.
+    with pytest.raises(DeletionPlanExpiredError):
+        confirm(plan, confirmed, now=plan.created_at + timedelta(seconds=301))
+    # A blocker is reported before the confirmed set can be compared.
+    blocked = service(snapshot(ASSET, (reference(),))).preview(ASSET, "ordinary", "key-plan-10")
+    with pytest.raises(DeletionDependencyConflictError):
+        confirm(blocked, _confirmation(blocked), now=blocked.created_at)
+    # Only then is the scope compared, and a target outside it is a mismatch.
+    rejected = DeletionTarget("speech", "asset", "asset-other", 1)
+    with pytest.raises(DeletionConfirmationMismatchError):
+        confirm(plan, _confirmation(plan, (rejected,)), now=plan.created_at)
+
+
+def test_the_intent_digest_ignores_confirmation_order() -> None:
+    from speechnexus_backend.speech.domain.deletion import deletion_intent_digest
+
+    plan = service(snapshot(ASSET)).preview(ASSET, "ordinary", "key-plan-11")
+    first = deletion_intent_digest(_confirmation(plan))
+    second = deletion_intent_digest(_confirmation(plan, tuple(reversed((plan.target,)))))
+    assert first == second
+    different = deletion_intent_digest(
+        _confirmation(plan, (DeletionTarget("speech", "asset", "asset-other", 1),))
+    )
+    assert different != first

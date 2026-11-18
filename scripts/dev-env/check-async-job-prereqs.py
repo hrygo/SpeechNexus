@@ -409,6 +409,46 @@ WRITER_INSERT_COLUMNS: dict[str, tuple[str, ...]] = {
         "dependencies",
         "content_snapshot",
     ),
+    # 0059 deletion execution: its own ledger plus the two relations of the
+    # existing asset content-deletion machine it reuses.
+    "speech_deletion_ledger": (
+        "id",
+        "workspace_id",
+        "plan_id",
+        "plan_revision",
+        "plan_digest",
+        "target_owner",
+        "target_kind",
+        "target_id",
+        "target_revision",
+        "idempotency_key_digest",
+        "intent_digest",
+        "deleted",
+        "retained",
+        "status",
+        "cleanup_state",
+        "content_ledger_id",
+        "created_at",
+        "updated_at",
+        "completed_at",
+    ),
+    "speech_content_deletions": (
+        "ledger_id",
+        "asset_id",
+        "sha256",
+        "storage_version_id",
+        "reason",
+        "deletion_state",
+        "blocked_reason",
+        "created_at_us",
+    ),
+    "speech_asset_events": (
+        "event_id",
+        "asset_id",
+        "event_kind",
+        "asset_version",
+        "occurred_at_us",
+    ),
     "speech_voice_metadata_commands": (
         "draft_id",
         "key_digest",
@@ -420,7 +460,21 @@ WRITER_INSERT_COLUMNS: dict[str, tuple[str, ...]] = {
 # 复制自 job_runtime._JOB_UPDATE_SURFACE:唯一允许的 UPDATE 列面。
 WRITER_UPDATE_COLUMNS: dict[str, tuple[str, ...]] = {
     "speech_workspaces": ("metadata_revision",),
-    "speech_assets": ("version",),
+    "speech_assets": ("asset_state", "upload_phase", "writer_id", "error_code", "version"),
+    "speech_deletion_ledger": ("status", "cleanup_state", "updated_at", "completed_at"),
+    "speech_content_deletions": (
+        "storage_version_id",
+        "deletion_state",
+        "blocked_reason",
+        "completed_at_us",
+    ),
+    "admission_operations": (
+        "request_document",
+        "command_redacted_at_us",
+        "command_deletion_job_id",
+        "command_deletion_evidence_digest",
+        "version",
+    ),
     "speech_voice_drafts": (
         "display_name",
         "metadata_revision",
@@ -449,6 +503,10 @@ WRITER_UPDATE_COLUMNS: dict[str, tuple[str, ...]] = {
         "updated_at_us",
     ),
 }
+
+# 复制自 job_runtime._JOB_DELETE_TABLES:删除执行只删公开 Job 意图行(#540),
+# 其余已声明关系仍拒绝 DELETE/TRUNCATE。
+WRITER_DELETE_TABLES: tuple[str, ...] = ("speech_job_intents",)
 
 # 复制自 speech.domain.job_dispatch.DispatchJobKind 的取值。
 DISPATCHABLE_KINDS = frozenset({"asr", "tts", "voice_design", "voice_clone", "voice_validation"})
@@ -787,6 +845,7 @@ def _writer_privilege_sql() -> str:
             for column in columns
         )
     )
+    deletes = ", ".join(f"'{name}'" for name in WRITER_DELETE_TABLES)
     return (
         f"SELECT 'missing SELECT on ' || t FROM unnest(ARRAY[{tables}]::text[]) AS t "
         "WHERE NOT pg_catalog.has_table_privilege(current_user, 'speech.' || t, 'SELECT') "
@@ -798,6 +857,9 @@ def _writer_privilege_sql() -> str:
         f"SELECT 'missing UPDATE on ' || v.t || '.' || v.c FROM (VALUES {updates}) AS v(t, c) "
         "WHERE NOT pg_catalog.has_column_privilege("
         "current_user, 'speech.' || v.t, v.c, 'UPDATE') "
+        "UNION ALL "
+        f"SELECT 'missing DELETE on ' || t FROM unnest(ARRAY[{deletes}]::text[]) AS t "
+        "WHERE NOT pg_catalog.has_table_privilege(current_user, 'speech.' || t, 'DELETE') "
         "ORDER BY 1"
     )
 

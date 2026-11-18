@@ -1,15 +1,16 @@
 ---
 title: 数据删除、依赖裁决与恢复屏障
 status: active
-version: "1.1.0"
-date: 2026-10-25
+version: "1.2.0"
+date: 2026-11-19
 ---
 
 # 数据删除与依赖裁决
 
 本规范定义完整删除契约。Workbench 已实现项目与稿件删除路由、持久账本及启动重放，
-覆盖范围和保守阻断见下文。Speech 已实现删除预检（`POST /v1/nexus/deletion-plans`），
-在锁定快照上固定目标版本/摘要并写入不可变计划行；Speech 删除执行、持久删除账本、
+覆盖范围和保守阻断见下文。Speech 已实现删除预检（`POST /v1/nexus/deletion-plans`）与
+已确认删除执行（`POST /v1/nexus/deletions`）：预检在锁定快照上固定目标版本/摘要并写入
+不可变计划行，执行在同一事务边界内复核计划、删除已确认内容并写入持久删除账本（0059）；
 `GET /v1/nexus/deletions/{id}` 与跨模块停止协调仍待实现。
 执行网关已实现需显式可信许可的[命令正文清理事务](../components/execution-gateway.md#10-redact_execution_command)，
 未提供默认许可签发或 HTTP 清理入口，不能据此声明完整删除闭环可用。机器定义为
@@ -56,7 +57,9 @@ Speech `/v1/nexus/deletion-plans`、`/v1/nexus/deletions` 和 Workbench
    停止证据的 force 标志。目标契约对确认缺失、多余、重复或跨 owner 返回
    `422 deletion_confirmation_mismatch`；当前 Workbench HTTP 对重复项、空数组或
    缺少必填字段先由 schema 校验拒绝并返回 `400 invalid_request`，合法形状但确认集合
-   不匹配才进入应用层检查。
+   不匹配才进入应用层检查。Speech HTTP 对空数组、重复项与缺字段返回
+   `422 invalid_deletion_request`，形状合法但集合不等于计划范围（缺少或多余目标）才
+   返回 `422 deletion_confirmation_mismatch`；确认顺序不影响结果。
 6. 首次接受时，同事务验证 plan 未过期、目标和所有依赖版本仍一致、依赖集合未
    新增/删除且 eligible；原子写入删除意图、资源 tombstone 和 outbox，关闭新
    引用及新执行入口。写引用/提交执行也必须锁同一资源版本状态；不能先预检再无锁
@@ -94,6 +97,44 @@ succeeded，或进入 blocked/failed。blocked 记录依赖或停止未确认的
 比较原 plan、确认集合与结果，也不检查 deleted 与保留副本之间是否重叠；生产者须
 在发布结果前按资源身份和版本执行这些跨记录校验。
 
+### Speech 当前执行与账本
+
+Speech 的执行路由只接受 `asset` 与 `operation_content` 两类目标（`artifact`、
+`voice_revision` 仍返回 `422 deletion_target_unsupported`），并在一个事务边界内完成
+复核与写入：先以 `FOR KEY SHARE` 锁 `speech_workspaces`、再以 `FOR UPDATE` 锁目标行，
+与资产写路径同一锁序；随后依次比对计划版本、重算 `plan_digest`、检查有效期与
+`eligible`、按集合比对 `confirm_targets`，并重新读取实时快照与计划私有快照
+（目标版本/摘要、对象版本、意图与 Artifact 列表、依赖集合）逐项相等。任一不一致即
+`409 deletion_plan_changed`，过期是 `409 deletion_plan_expired`，仍存在阻断依赖是
+`409 deletion_dependency_conflict`；任何拒绝都不产生部分级联。
+
+`asset` 复用既有资产内容删除状态机，不另造一套：在同一事务内把资产推进到
+`expired`（追加 `speech_asset_events`），写入或复用 `speech_content_deletions` 行
+（`reason=confirmed_deletion`，与保留期到期的 `retention_expired` 可区分）并固定对象
+版本；对象清除是唯一的事务外步骤，由部署注入的对象存储身份执行，失败则账本保持
+`queued/pending`、`result` 为空，不声明成功。对象清除确认后再以同一锁序把资产推进到
+`deleted` 并把内容账本标为 `complete`。`operation_content` 在同一事务内删除
+`speech_job_intents` 行（正文与摘要一起消失，重试无法重放正文，#540），并把 0007 的
+私有命令行按命令形状约束改写成 tombstones（`request_document=NULL`、
+`command_redacted_at_us`、`command_deletion_job_id`、`command_deletion_evidence_digest`、
+版本加一）。执行身份、状态事件、`admission_leases`、结算与 `gateway_*` 事实不属于
+删除范围，也不被改写。
+
+`0059_speech_deletion_ledger` 是持久删除账本：一行对应一次已接受删除，记录计划身份与
+摘要、目标、删除/保留集合、幂等键摘要与意图摘要、内容账本外键与完成时间。
+`(workspace_id, idempotency_key_digest)` 唯一，因此一个键只能提交一次删除；
+`(workspace_id, plan_id)` 唯一，因此已签发的计划是一次性凭据，第二个键不能把它当新
+删除重放（返回 `409 deletion_plan_changed`）。相同键的重复请求在检查计划是否过期之前
+先重放账本，返回同一 `id`、`ledger_id`、`completed_at`；进程重启后由新连接池重放同一
+行，不会二次删除或漏删。键相同而意图不同是 `409 idempotency_conflict`。
+`retained_independent_copies` 如实反映计划声明的 `retain` 依赖：当前 Speech 计划不产生
+此类依赖，跨模块独立副本由对方模块负责，故为空数组；Artifact 是独立资源、由其自有
+计划删除，不在本次删除范围内。删除执行的授权（`deletion_execution_grants`）与预检
+授权同样由路由自行探测，缺失时进程照常启动、路由返回
+`503 deletion_not_configured`（`retryable=false`）。0059 的 downgrade 显式拒绝，
+删除账本是"确实删除过"的唯一证据，丢弃它会让恢复重新暴露已清除内容并让旧计划重新
+成为可用的删除凭据。
+
 删除只移除业务内容与允许删除的配置投影；执行/计量/租约/fencing 的不变量证据
 不在级联范围。`operation_content` 删除正文/制品，不删除执行身份、状态、脱敏
 receipt、幂等摘要或计量事实。保留 tombstone 和最低 fencing 水位的审计归档由
@@ -101,7 +142,9 @@ receipt、幂等摘要或计量事实。保留 tombstone 和最低 fencing 水�
 
 ## 备份恢复
 
-删除账本独立持久保存且随备份有恢复水位。恢复快照后，先重放晚于快照水位的
+删除账本独立持久保存且随备份有恢复水位；Speech 的 0059 账本与其引用的
+`speech_content_deletions` 对象版本记录一起构成"删了什么、清了哪个对象版本"的权威
+记录，downgrade 会拒绝丢弃它。恢复快照后，先重放晚于快照水位的
 所有删除和 tombstone，再重新开放内容查询、引用创建与执行入口。重放同一
 ledger_id 必须幂等；账本缺失、对象版本不确定或执行状态未知时保持不可见并
 进入协调，不能把被删除内容恢复为 ready。恢复演练须证明源 Artifact 删除后

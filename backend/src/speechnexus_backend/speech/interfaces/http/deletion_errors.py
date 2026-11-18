@@ -32,6 +32,21 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
         "invalid_request_error",
         "The target revision changed since the request.",
     ),
+    "deletion_plan_expired": (
+        409,
+        "invalid_request_error",
+        "The deletion plan expired; create a new one.",
+    ),
+    "deletion_dependency_conflict": (
+        409,
+        "invalid_request_error",
+        "A blocking dependency prevents this deletion.",
+    ),
+    "deletion_confirmation_mismatch": (
+        422,
+        "invalid_request_error",
+        "The confirmation does not match the plan's complete scope.",
+    ),
     "idempotency_conflict": (
         409,
         "invalid_request_error",
@@ -46,6 +61,21 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
         503,
         "service_unavailable_error",
         "Deletion preview is missing its database grants; apply deletion_plan_grants.",
+    ),
+    "deletion_unavailable": (
+        503,
+        "service_unavailable_error",
+        "Deletion execution storage is unavailable.",
+    ),
+    "deletion_not_configured": (
+        503,
+        "service_unavailable_error",
+        "Deletion execution is missing its database grants; apply deletion_execution_grants.",
+    ),
+    "deletion_object_storage_unconfigured": (
+        503,
+        "service_unavailable_error",
+        "Deletion execution requires the asset object-store identity.",
     ),
     "deletion_reference_unsupported": (
         503,
@@ -78,7 +108,10 @@ def deletion_error(
                     "message": message,
                     "param": param,
                     "request_id": request_id,
-                    "retryable": status == 503 and code != "deletion_plans_not_configured",
+                    # A missing grant is a deployment gap, not a transient fault:
+                    # retrying the same request cannot fix it.
+                    "retryable": status == 503
+                    and code not in ("deletion_plans_not_configured", "deletion_not_configured"),
                 }
             },
         ),

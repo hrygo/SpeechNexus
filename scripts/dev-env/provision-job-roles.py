@@ -38,6 +38,7 @@ from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema imp
     job_cancellation_fence_grants,
 )
 from speechnexus_backend.speech.infrastructure.job_schema import (
+    deletion_execution_grants,
     deletion_plan_grants,
     job_dispatch_grants,
     job_runtime_grants,
@@ -120,8 +121,11 @@ def statements(
     grants += list(public_job_grants(schema, writer))
     grants += list(voice_draft_grants(schema, writer))
     grants += list(public_job_submission_grants(schema, writer))
-    # Only the writer assembles the deletion preview; the dispatcher never plans.
+    # Only the writer assembles the deletion routes; the dispatcher never plans or
+    # executes one. Execution adds its ledger and reuses the asset deletion
+    # machine's relations, so both groups belong to the same identity.
     grants += list(deletion_plan_grants(schema, writer))
+    grants += list(deletion_execution_grants(schema, writer))
     grants += list(job_cancellation_fence_grants(schema, writer))
     grants += list(cancellation_not_submitted_grants(schema, writer))
     grants += list(cancellation_reconciliation_grants(schema, writer))

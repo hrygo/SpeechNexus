@@ -1,4 +1,10 @@
-"""Deletion plan preview; the immutable plan is written before it is returned."""
+"""Deletion preview and execution over one owner-scoped workspace.
+
+``preview`` writes the immutable plan before returning it. ``execute`` re-validates
+that plan, removes the confirmed content and returns the durable ledger record; the
+only step outside a database transaction is the asset object purge, which the
+ledger's queued row makes resumable under the same ``Idempotency-Key``.
+"""
 
 from __future__ import annotations
 
@@ -8,14 +14,19 @@ from datetime import datetime
 from typing import Protocol
 from uuid import uuid4
 
+from speechnexus_backend.speech.domain.assets import AssetError, VerifiedObject
 from speechnexus_backend.speech.domain.deletion import (
     DeletionIdempotencyConflictError,
+    DeletionLedgerUnavailableError,
     DeletionOwnerMismatchError,
     DeletionPlan,
     DeletionPlanChangedError,
+    DeletionRecord,
+    DeletionRequest,
     DeletionTarget,
     DeletionTargetNotFoundError,
     Dependency,
+    deletion_intent_digest,
     idempotency_key_digest,
     intent_digest,
 )
@@ -59,16 +70,57 @@ class DeletionPlanStore(Protocol):
     def transaction(self, workspace_id: str) -> AbstractContextManager[DeletionPlanTransaction]: ...
 
 
+@dataclass(frozen=True, slots=True)
+class AcceptedDeletion:
+    """One accepted execution plus the object version still awaiting its purge."""
+
+    record: DeletionRecord
+    pending_object: VerifiedObject | None
+
+
+class DeletionExecutionStore(Protocol):
+    def accept(
+        self,
+        request: DeletionRequest,
+        *,
+        key_digest: str,
+        intent_digest: str,
+        purge_available: bool,
+        workspace_id: str,
+    ) -> AcceptedDeletion: ...
+
+    def complete(
+        self, deletion_id: str, *, key_digest: str, workspace_id: str
+    ) -> DeletionRecord: ...
+
+
+class DeletionObjectPurge(Protocol):
+    """The asset object-store step; object I/O never runs inside a transaction."""
+
+    def delete_version(self, proof: VerifiedObject) -> None: ...
+
+
 class DeletionPlanner(Protocol):
     def preview(self, target: DeletionTarget, mode: str, idempotency_key: str) -> DeletionPlan: ...
 
+    def execute(self, request: DeletionRequest, idempotency_key: str) -> DeletionRecord: ...
+
 
 class SpeechDeletions:
-    """Owner-scoped preview service; acceptance and the ledger are not part of it."""
+    """Owner-scoped preview and execution service."""
 
-    def __init__(self, store: DeletionPlanStore, *, workspace_id: str) -> None:
+    def __init__(
+        self,
+        store: DeletionPlanStore,
+        *,
+        workspace_id: str,
+        executions: DeletionExecutionStore | None = None,
+        purge: DeletionObjectPurge | None = None,
+    ) -> None:
         self._store = store
         self._workspace_id = workspace_id
+        self._executions = executions
+        self._purge = purge
 
     def preview(self, target: DeletionTarget, mode: str, idempotency_key: str) -> DeletionPlan:
         if target.owner != "speech":
@@ -104,8 +156,45 @@ class SpeechDeletions:
                 content_snapshot=snapshot.content_snapshot,
             )
 
+    def execute(self, request: DeletionRequest, idempotency_key: str) -> DeletionRecord:
+        """Execute the confirmed scope, or resume the row the same key accepted."""
+        for target in request.targets:
+            if target.owner != "speech":
+                # This route owns speech content only; a workbench plan is not a
+                # speech resource even when the identifier exists here.
+                raise DeletionOwnerMismatchError
+        if self._executions is None:
+            raise DeletionLedgerUnavailableError("deletion execution is not configured")
+        accepted = self._executions.accept(
+            request,
+            key_digest=idempotency_key_digest(idempotency_key),
+            intent_digest=deletion_intent_digest(request),
+            purge_available=self._purge is not None,
+            workspace_id=self._workspace_id,
+        )
+        if accepted.pending_object is None:
+            return accepted.record
+        if self._purge is None:
+            # Accepted and durable, but the object identity is not configured: the
+            # record stays queued instead of claiming a purge nobody performed.
+            return accepted.record
+        try:
+            self._purge.delete_version(accepted.pending_object)
+        except AssetError:
+            # The ledger keeps the deletion queued; the same key resumes it. Never
+            # report success without a confirmed object purge.
+            return accepted.record
+        return self._executions.complete(
+            accepted.record.id,
+            key_digest=idempotency_key_digest(idempotency_key),
+            workspace_id=self._workspace_id,
+        )
+
 
 __all__ = [
+    "AcceptedDeletion",
+    "DeletionExecutionStore",
+    "DeletionObjectPurge",
     "DeletionPlanStore",
     "DeletionPlanTransaction",
     "DeletionPlanner",

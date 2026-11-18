@@ -194,5 +194,5 @@ ready 事实以及成功的 prepare intent。当前受支持的运维入口是
 [最小 Compose 部署面](compose-minimal.md) §0–§7 起栈、引擎为同主机外部托管时，该入口已于 2026-11-18
 在候选 head `19c7f09a` 上取得真实 `200`（请求、响应与执行终态见 [MVP 判定表第 7 行](../plans/mvp-release-readiness.md)）。
 **已知限制**：这一形态下转写成功后租约不自动释放（`lease_state=reserved`、实例 `held_slots=1/1`），
-单槽被一次成功占满，需用运维工具 `python -m speechnexus_backend.completed_release_cli` 释放；
+单槽被一次成功占满且没有可用释放出口（`completed_release_cli` 只接受已受理取消的 Job 形状，同步转写会被 `completed_release_not_accepted_cancellation` 拒绝），因此一次成功后不要向同一实例再发第二次；
 结算实现由 [#974](https://github.com/hrygo/SpeechNexus/issues/974) 跟踪，见发布说明的已知限制 16。

@@ -155,7 +155,12 @@ CLAIMS = (
             "成功后租约不自动释放",
             "POST /v1/audio/transcriptions",
         ),
-        forbidden=("**本部署未验证**", "本部署已验证", "本部署无公开 `200` 证据"),
+        forbidden=(
+            "**本部署未验证**",
+            "本部署已验证",
+            "本部署无公开 `200` 证据",
+            "本部署未验证的只有最后一步",
+        ),
         anchor=(FILE_WORKER, "_completion.complete("),
     ),
     Claim(

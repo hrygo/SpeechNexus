@@ -8,7 +8,11 @@ from tests.integration.test_public_job_progress_migration_pg import (
     _isolated_schema,
     _url,
 )
-from tests.support.migrations import step_below_deletion_plans
+from tests.support.migrations import (
+    ASR_SETTLEMENT_REVISION,
+    HEAD,
+    step_below_deletion_plans,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -32,3 +36,27 @@ def test_downgrade_refuses_even_when_no_root_exists() -> None:
         ).fetchone()
         assert present is not None
         assert present["present"]
+
+
+def test_0058_downgrade_refuses_to_discard_issued_plans() -> None:
+    """0058 is the first hop; its own refusal must stop the downgrade."""
+    with _isolated_schema(_url()) as (config, query):
+        command.upgrade(config, "head")
+        query.execute(
+            "INSERT INTO speech_deletion_plans "
+            "(id, workspace_id, target_owner, target_kind, target_id, target_revision, "
+            " target_digest, mode, plan_revision, plan_digest, idempotency_key_digest, "
+            " intent_digest, created_at, expires_at, dependencies, content_snapshot) "
+            "VALUES ('dp-0058-guard', 'workspace-default', 'speech', 'asset', "
+            " 'asset-0058-guard', '1', %s, 'ordinary', '1', %s, %s, %s, "
+            " now(), now() + interval '300 seconds', '[]'::jsonb, '{}'::jsonb)",
+            ("sha256:" + "a" * 64, "sha256:" + "b" * 64, "c" * 64, "d" * 64),
+        )
+
+        with pytest.raises(RuntimeError, match="Deletion plan history requires preservation"):
+            command.downgrade(config, ASR_SETTLEMENT_REVISION)
+
+        retained = query.execute("SELECT count(*) AS n FROM speech_deletion_plans").fetchone()
+        assert retained is not None and retained["n"] == 1
+        revision = query.execute("SELECT version_num FROM alembic_version").fetchone()
+        assert revision is not None and revision["version_num"] == HEAD

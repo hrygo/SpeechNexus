@@ -34,6 +34,7 @@ def downgrade() -> None:
     # so a downgrade must never discard accepted rows on its own.
     raise RuntimeError(
         "Deletion plan history requires preservation: issued preview rows are "
-        "credentials, and a downgrade would lose their plan_id/plan_digest replay; "
-        "an operator must confirm and handle the rows explicitly"
+        "plan_id/plan_digest deletion credentials, dropping them loses their replay, "
+        "and a same-key retry would collide with the lost rows; an operator must "
+        "confirm and handle the rows explicitly"
     )

@@ -1,13 +1,13 @@
 ---
 title: 同步转写结算实施计划
-status: planned
+status: implemented
 version: "1.0.0"
 date: 2026-11-18
 ---
 
 # 2026-11-18 同步转写结算实施计划
 
-状态：**计划，未实施**。本文按依赖顺序拆出提交单元、用例、反例、本地门禁与真机项；设计判据见
+状态：**已实施（PR #979 / #980）**，真实引擎与参考部署验收待 U8。本文按依赖顺序拆出提交单元、用例、反例、本地门禁与真机项；设计判据见
 [同步转写的租约结算](../design/sync-transcription-settlement.md)。相关工作项：[#974](https://github.com/hrygo/SpeechNexus/issues/974)
 （成功后不结算，已实测）、[#338](https://github.com/hrygo/SpeechNexus/issues/338)（停止证据协议）。
 
@@ -56,7 +56,7 @@ Slice A = U1–U3；Slice B = U4–U7。U0 已由本切片完成。U2 与 U3 可
     部分到期索引、历史回填；`downgrade` 拒绝，理由同 `0031_tts_settlement.py`）。
   - `backend/src/speechnexus_backend/speech/infrastructure/asr_settlement_schema.py`
     （`asr_settlement_writer_grants`、`asr_settlement_worker_grants`）。
-  - `tests/integration/test_asr_settlement_migration_pg.py`。
+  - `tests/integration/test_asr_settlement_pg.py` 的迁移/回填用例。
 - 用例：
   1. 迁移后表、主键、外键、部分到期索引存在；`down_revision` 接在 `0056` 后。
   2. 迁移前已持有、`kind='asr_file'`、`operation-…` 的租约被回填一条 root，`next_check_at_us=0`；
@@ -66,7 +66,7 @@ Slice A = U1–U3；Slice B = U4–U7。U0 已由本切片完成。U2 与 U3 可
 - 反例：删掉回填的 `WHERE l.lease_state <> 'released'`，`test_migration_skips_released_leases` 变红；
   删掉 `kind='asr_file'` 过滤，`test_migration_ignores_public_jobs_and_probes` 变红；把条件放宽到全部
   `operation-…`，`test_migration_ignores_non_asr_operations` 变红。
-- 本地门禁：`UV_NO_CONFIG=1 uv run pytest tests/integration/test_asr_settlement_migration_pg.py -q`；
+- 本地门禁：`UV_NO_CONFIG=1 uv run pytest tests/integration/test_asr_settlement_pg.py -q`；
   `UV_NO_CONFIG=1 uv run pytest tests/ci -q`（迁移头与授权名被 CI 的部署覆盖测试引用时）。
 - 真机：在参考部署的迁移身份上跑一次 `alembic upgrade head`，核对回填行数等于迁移前仍被持有的
   同步 ASR 租约数（`#974` 的部署上为 1），且不触碰已释放租约。
@@ -83,20 +83,21 @@ Slice A = U1–U3；Slice B = U4–U7。U0 已由本切片完成。U2 与 U3 可
     `_record_settlement`，`asr_file` 走 root 插入，其它 kind 调 `super()`，基类与 TTS 分支不动）。
   - `backend/src/speechnexus_backend/transcription_runtime.py`（把 `AdmissionService` 的
     `PostgresAdmissionTransactions` 换成上面的子类；`PostgresTranscriptionAdmission` 的字段不变）。
-  - `tests/unit/backend/test_asr_settlement_root.py`、`tests/integration/test_transcription_admission_pg.py`
-    追加用例。
+  - `tests/integration/test_asr_settlement_pg.py`（同事务 root、晚失败回滚、回填）与
+    `tests/unit/backend/test_asr_settlement_sql.py`（回读冲突的 fake cursor）。
 - 用例：
   1. 成功准入后 root 的 `lease_id/operation_id/attempt_id/gateway_id/host_node_id` 与租约、stage 一致。
   2. 同一租约已存在不同身份的 root → 准入返回 `reconciliation_required`，租约、配额、实例计数、Job
      全部回滚（用事务后计数断言）。
   3. 非 `asr_file`（公开 Job TTS、资格探针）不写 ASR root。
   4. 准入重放（同 `request_id`）不产生第二条 root，也不因 root 已存在而失败。
-  5. 提交前在同一事务连接内同时可见 root 与租约；事务回滚后两者都不存在（证明原子性，不靠事后对账）。
-- 反例：删掉插入后的回读比对，`test_conflicting_root_rolls_back_admission` 变红（`DO NOTHING` 会静默
+  5. 提交前在同一事务连接内同时可见 root 与租约（`test_root_and_lease_share_one_commit` 在
+     `_recheck_before_commit` 的 hook 里用传进来的同一个 cursor 数 root）；事务回滚后两者都不存在。
+- 反例：删掉插入后的回读比对，`test_asr_settlement_sql.py` 的回读冲突用例变红（`DO NOTHING` 会静默
   成功并留下错 root）；把插入从准入事务里移到提交之后，`test_root_and_lease_share_one_commit` 变红
-  （提交前的同一连接里看不到 root）。
-- 本地门禁：`UV_NO_CONFIG=1 uv run pytest tests/unit/backend/test_asr_settlement_root.py
-  tests/integration/test_transcription_admission_pg.py -q`。
+  （提交前的同一连接里看不到 root，或独立连接因看不到未提交租约而被 FK 拒绝）。
+- 本地门禁：`UV_NO_CONFIG=1 uv run pytest tests/unit/backend/test_asr_settlement_sql.py
+  tests/integration/test_asr_settlement_pg.py -q`。
 - 真机：无独立项；随 U8 的准入成功项一起观察（root 行存在且与租约同身份）。
 
 规模：4 个文件，约 240–280 行（SQL 模块 90、hook 40、单元用例 70、集成用例 60）。
@@ -114,7 +115,9 @@ Slice A = U1–U3；Slice B = U4–U7。U0 已由本切片完成。U2 与 U3 可
     `clock_timestamp()`，`SET TRANSACTION READ ONLY` 用于只读查询）。
   - `backend/src/speechnexus_backend/asr_settlement_worker.py` 的 `--once` 入口（此单元只放一次性运行所需
     的设置读取与连接池，周期循环留到 U4）。
-  - `tests/unit/backend/test_asr_settlement_worker.py`（照 `test_tts_settlement_worker.py` 的 fake 形态）。
+  - `tests/unit/backend/test_asr_settlement_worker.py`（照 `test_tts_settlement_worker.py` 的 fake 形态）；
+    `tests/integration/test_asr_settlement_pg.py::test_once_settles_the_held_asr_lease_without_double_accounting`
+    用真实 PG + 结算角色跑 `--once` 两次。
 - 用例：
   1. 成功终态 + 停止证据：一轮扫描 → 释放一次、标记一次、defer 零次。
   2. 网关 `succeeded` 但租约 `execution_cleanup_pending`：零释放、零标记、defer 一次。
@@ -128,7 +131,8 @@ Slice A = U1–U3；Slice B = U4–U7。U0 已由本切片完成。U2 与 U3 可
   10. `--once` 在空表上退出码 0，在有 root 时打印计数（released/pending）。
 - 反例：删掉「租约已 released → 只标记」分支，用例 5 变红（会再调一次 `release`，在真实适配器上得到
   `replayed` 但计数器被错误计为释放）；删掉终态判断，用例 3/4 变红；删掉路由校验，用例 8 变红。
-- 本地门禁：`UV_NO_CONFIG=1 uv run pytest tests/unit/backend/test_asr_settlement_worker.py -q`；
+- 本地门禁：`UV_NO_CONFIG=1 uv run pytest tests/unit/backend/test_asr_settlement_worker.py
+  tests/integration/test_asr_settlement_pg.py -q`；
   `UV_NO_CONFIG=1 uv run ruff format --check backend/src tests`。
 - 真机：在参考部署上对 `#974` 的残留租约跑一次 `--once`，核对 `lease_state='released'`、
   `cleanup_state='complete'`、`budget_released_at_us` 非空、实例 `held_slots=0`、
@@ -149,7 +153,8 @@ Slice A = U1–U3；Slice B = U4–U7。U0 已由本切片完成。U2 与 U3 可
     （API 启动失败）。
   - `backend/src/speechnexus_backend/settings.py`：复用现有 `speech_settlement_database_url`，不新增键；
     不新增 `ENABLED` 开关。
-  - `tests/unit/backend/test_transcription_production.py` 追加缺配置/启动失败用例。
+  - `tests/unit/backend/test_transcription_production.py` 追加缺 DSN 用例（`503` 且点名键）；
+    启动失败由 `test_asr_settlement_pg.py` 的预检用例与 `--check` 启动门用例覆盖。
 - 用例：
   1. 结算 DSN 为空 → `build_transcription` 返回 `None`，HTTP 路由 `503`，日志包含
      `SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL`；API 其余路由照常。
@@ -175,16 +180,18 @@ Slice A = U1–U3；Slice B = U4–U7。U0 已由本切片完成。U2 与 U3 可
     `SELECT` 与列级 `UPDATE (next_check_at_us, settled_at_us)`，其余列/表/破坏性权限仍逐列拒绝。
   - `backend/src/speechnexus_backend/asr_settlement_worker.py`：打开两个池后核对同库同 schema、不同角色、
     无 `SET ROLE`/角色管理/预定义角色；调用共用的列核对与 preflight。
-  - `tests/integration/test_asr_settlement_preflight_pg.py`。
+  - `tests/integration/test_asr_settlement_pg.py` 的预检用例；共享列核对由
+    `tests/integration/test_tts_durable_pg.py` 的真实 PG 角色用例覆盖。
 - 用例：
-  1. 未迁移数据库 → 启动错误点名迁移命令，不含驱动 traceback。
+  1. 未迁移数据库（缺 `speech_asr_settlement`）→ `SettlementPreflightUnavailableError` 文本含迁移命令，不含驱动 traceback。
   2. held `asr_file` 租约缺 root → 拒绝启动，detail 点名租约。
   3. root `settled` 但租约仍 `reserved` → 拒绝启动。
-  4. root `settled` 且租约 `released` → 允许启动。
-  5. 结算角色与准入角色相同 → 拒绝启动。
-  6. 结算角色多出 root 表之外的写权限 → 拒绝启动（逐列核对）。
-- 反例：删掉「settled 但未释放」检查，用例 3 变红；删掉逐列核对（改成只看表级 `SELECT`），用例 6 变红。
-- 本地门禁：`UV_NO_CONFIG=1 uv run pytest tests/integration/test_asr_settlement_preflight_pg.py -q`。
+  4. 共享列核对：结算角色恰好持有三张结算表的列级权限；多余或缺失都拒绝启动。
+  5. 两个池同库同 schema、不同角色、无 `SET ROLE`/角色管理/预定义角色。
+- 反例：删掉「settled 但未释放」检查，用例 3 变红；删掉逐列核对（改成只看表级 `SELECT`），
+  `test_tts_durable_pg.py` 的角色用例变红。
+- 本地门禁：`UV_NO_CONFIG=1 uv run pytest tests/integration/test_asr_settlement_pg.py
+  tests/integration/test_tts_durable_pg.py -q`。
 - 真机：在参考部署上故意缺一条 `asr_settlement_worker_grants` 起栈，核对启动被拒绝且错误只含类别；
   恢复授权后正常启动。
 - 规模：4 个文件，约 320–380 行（preflight 120、自检 80、接线 20、用例 120）。
@@ -215,28 +222,37 @@ Slice A = U1–U3；Slice B = U4–U7。U0 已由本切片完成。U2 与 U3 可
   `speech_asr_settlement(next_check_at_us, settled_at_us)`，`sn_api` 对新表只有 `SELECT`/`INSERT`。
 - 规模：5 个文件，约 110–140 行（三处文档、门禁声明、测试期望）。
 
-### U7 债探针（可见面）
+### U7 债探针（管理诊断，首发）
 
 - 文件：
-  - `backend/src/speechnexus_backend/speech/infrastructure/readiness.py`：新增 `asr_settlement_debt` 前缀，
-    统计「root 未 settled 且租约仍被持有且已过 `deadline_at_us`」的条数与形状
-    （`succeeded`/`unknown`/`other`），以及「settled 但租约未 released」的异常条数；探针始终 `ok`，
-    detail 有界，不使 `/readyz` 失败。
-  - `backend/src/speechnexus_backend/speech/interfaces/http/diagnostics.py`（或现有 diagnostics 路由）：
-    暴露同一 detail。
-  - `tests/unit/backend/test_readiness_asr_settlement.py` 与 `tests/integration/test_asr_settlement_debt_pg.py`。
+  - `backend/src/speechnexus_backend/speech/infrastructure/asr_settlement_debt.py`：只读查询 +
+    纯函数 `summarize`；五类计数 `unknown` / `cleanup_pending` / `route_mismatch` / `settled_but_held` /
+    `redacted_held`，detail 最多 3 条样本并按 512 字符截断。
+  - `backend/src/speechnexus_backend/speech/interfaces/http/diagnostics.py`：`diagnostics_body` 接受
+    `extra_checks`；路由用 `asyncio.to_thread` 调用同步查询，避免阻塞事件循环。
+  - `backend/src/speechnexus_backend/transcription_runtime.py`：`_debt_checks` 缓存
+    `worker_settings` 派生的 route；DSN 缺失报 `unavailable (not configured)`，查询失败报带类别名的
+    `unavailable (...)`，都不抛。
+  - `tests/unit/backend/test_asr_settlement_debt.py` 与
+    `tests/integration/test_asr_settlement_pg.py` 的债探针用例。
 - 用例：
-  1. 空表 → `asr_settlement_debt: 0`。
-  2. 一条成功未结算 → 计数 1，形状 `succeeded`。
-  3. 一条 `unknown_quarantined` 未结算 → 形状 `unknown`，不与成功混淆。
-  4. settled 但未 released → 异常计数 1，detail 点名租约。
-  5. 数据库不可用 → `asr_settlement_debt: unavailable (<category>)`，不抛。
-- 反例：删掉 `settled_at_us IS NULL` 过滤，用例 4 的异常计数被正常行淹没而变红；删掉形状分类，
-  用例 3 与 2 无法区分而变红。
-- 本地门禁：`UV_NO_CONFIG=1 uv run pytest tests/unit/backend/test_readiness_asr_settlement.py
-  tests/integration/test_asr_settlement_debt_pg.py -q`。
-- 真机：`unknown_quarantined` 的同步 ASR 租约在 detail 里可见，且 `/readyz` 仍 `ok`。
-- 规模：3 个文件，约 180–220 行（探针 110、用例 90）。
+  1. 空表 → 五类全 0。
+  2. `succeeded` + `cleanup_state='complete'` + 停止证据不是 `engine_terminal_response` → `cleanup_pending=1`。
+  3. `unknown_quarantined` 未结算 → `unknown=1`，不与成功混淆。
+  4. root 的 route 与当前 worker 不同 → `route_mismatch=1`。
+  5. `settled_at_us` 非空而租约仍 held → `settled_but_held=1`。
+  6. 脱敏的 held ASR 租约（`request_document` 为 NULL、无 root）→ `redacted_held=1`，detail 点名
+     `operation_id`。
+  7. DSN 缺失/未迁移/查询超时 → `unavailable (...)`，不抛，`/readyz` 仍 `ok`。
+  8. 查询被卡住时，同一事件循环上的 `/readyz` 在 1 秒内返回。
+  9. detail 长度 ≤512 字符。
+- 反例：把 `succeeded` 的终态一律算正常，用例 2 变红；删掉脱敏分支，用例 6 变红；把
+  `extra_checks` 改回同步调用，用例 8 变红。
+- 本地门禁：`UV_NO_CONFIG=1 uv run pytest tests/unit/backend/test_asr_settlement_debt.py
+  tests/integration/test_asr_settlement_pg.py -q`。
+- 真机：`unknown_quarantined` / `cleanup_pending` / `redacted_held` 的同步 ASR 租约在 detail 里可见，
+  且 `/readyz` 仍 `ok`。
+- 规模：4 个文件，约 260–320 行（探针 150、诊断接线 30、用例 140）。
 
 ### U8 真机验收（不是提交单元）
 

@@ -228,7 +228,7 @@ worker 在调用释放前查询一次网关执行状态（`GatewayExecutionClien
 | 批大小 | `SPEECHNEXUS_ASR_SETTLEMENT_BATCH_SIZE`，默认 32，范围 1–128 | 越界拒绝启动 |
 | `next_check_at_us` / `settled_at_us` | 数据库 `clock_timestamp()` | 不使用进程时间；defer 量等于一个扫描周期 |
 | `budget_released_at_us` | 释放事务提交前的数据库时间 | 规则要求不早于停止证据 `observed_at_us` |
-| `deadline_at_us` | 准入时冻结，租约上的原值 | 只作运维债判据（过了 deadline 仍被持有 = 债）；**不参与释放授权**：迟到的成功仍必须归还容量 |
+| `deadline_at_us` | 准入时冻结，租约上的原值 | 只作 `overdue_us` 运维读数，不作类别前置；**不参与释放授权**：迟到的成功仍必须归还容量 |
 
 结算周期是**容量可见性的上界**，不是授权的一部分：一个成功执行从网关落终态到 `held_slots` 下降，
 最坏多等一个扫描周期加一次释放事务。这个上界只在 worker 运行且 preflight 通过时成立；worker 没启动时
@@ -364,14 +364,18 @@ root、租约或证据；恢复 DSN 后按未结算 root 继续。
 
 ### 9.3 可见面（管理诊断）
 
-`/v1/nexus/admin/diagnostics` 的 `asr_settlement_debt` 报告四类计数与有界明细：
+`/v1/nexus/admin/diagnostics` 的 `asr_settlement_debt` 报告五类计数与有界明细（detail 最多 3 条样本、
+整体按 512 字符截断；查询不可用时给 `unavailable (<类别/reason>)`，不让诊断路由失败）：
 
 | 类别 | 判据 | 含义 |
 | --- | --- | --- |
-| `unknown` | root 未 settled、租约仍被持有、`deadline_at_us` 已过、网关终态是 `unknown_quarantined` | 等隔离/隔离释放，本机制不碰 |
-| `cleanup_pending` | 同上，但执行终态缺停止/清理证据 | 等网关停止证据修复 |
-| `route_mismatch` | root 的 `(gateway_id, host_node_id)` 不是任何已配置 worker 的路由 | 没有推进者；运维债 |
+| `unknown` | root 未 settled、租约仍被持有、网关终态是 `unknown_quarantined` | 等隔离/隔离释放，本机制不碰 |
+| `cleanup_pending` | root 未 settled、租约仍被持有，且（执行终态缺停止/清理证据，或 `succeeded` 的停止证据不是 `engine_terminal_response`） | 等网关停止证据修复；`release()` 永远拒绝，容量会一直占用 |
+| `route_mismatch` | root 的 `(gateway_id, host_node_id)` 不是当前 worker 的路由 | 没有推进者；运维债 |
 | `settled_but_held` | root `settled_at_us` 非空而租约仍非 `released` | 实现缺陷；应恒为 0 |
+| `redacted_held` | 仍持有的 `operation-…` 租约，`request_document` 已被脱敏（无 kind）且没有 root | 回填/预检无法按 kind 识别，必须由运维可见面点名 |
+
+`deadline_at_us` 只用于 detail 里的 `overdue_us` 读数，不是任何类别的前置条件，也不参与释放授权。
 
 该 detail 始终 `ok`，不进入 `/readyz` 的失败判据：`/readyz` 只反映依赖（数据库、对象存储等）是否可用，
 债是「依赖可用但没有推进者」的运维事实，应由诊断暴露并告警，而不是把 API 判成不健康。

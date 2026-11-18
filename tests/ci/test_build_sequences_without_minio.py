@@ -32,9 +32,12 @@ What is checked, and where each half gets its evidence from:
   needs no detour, the v2 plugin has no `build --dry-run` plan), and the measured
   set must equal the graph's prediction. That tier costs one plan per argv, which
   is why it does not run in the 5-minute guards job.
-* nothing here is skipped: a host that cannot plan a build simply does not collect
-  the plan tier, because the coverage gate rejects any selected test that did not
-  pass.
+* a host that cannot plan a build still collects both classes and reports them as
+  `skipped` with a reason, never as absent: `@unittest.skipUnless` keeps the tests in
+  the count so "did not run" cannot look like "passed" (issue #992). The merged
+  coverage gate accepts exactly those five nodeids, declared in
+  `scripts/dev-env/python-coverage.py:EXPECTED_SKIPS`; an undeclared skip is still a
+  failure, and a declared one that stops being collected is a failure too.
 
 Dated records are excluded on purpose and listed in `HISTORICAL_RECORDS`: they keep
 the command that was run and its output as measured; rewriting a record to satisfy a
@@ -887,8 +890,11 @@ def running_in_github_actions() -> bool:
 
     The full tier costs one `docker compose --dry-run` per measured argv: cheap on a
     developer host, roughly a minute of a cold runner's budget. `ci.yml` is out of
-    this card's scope, so the tier stays local and the single negative-control plan
-    below (one invocation) carries the criterion into CI.
+    this card's scope, so the tier stays local. On a runner the tier and the
+    negative control both report `skipped` with a reason (measured 2026-11-19: no
+    `Building` line from `docker compose --dry-run` there), so the criterion is
+    carried by the graph, registry and AST checks above, which need no docker at
+    all — not by the negative control, which does not run there either.
     """
     return os.environ.get("GITHUB_ACTIONS") == "true"
 
@@ -899,98 +905,103 @@ def up_build_plan() -> tuple[str, ...] | None:
     return dry_run_images(("up", "-d", "--build", "--wait", "api", "gateway"), ())
 
 
-if up_build_plan():
+@unittest.skipUnless(
+    up_build_plan(),
+    "this host planned no build for `up --build`, so the negative control cannot run",
+)
+class ComposeNegativeControlTest(unittest.TestCase):
+    """The criterion still sees the defect: `up --build` must plan `minio`."""
 
-    class ComposeNegativeControlTest(unittest.TestCase):
-        """The criterion still sees the defect: `up --build` must plan `minio`."""
-
-        def test_the_removed_up_build_form_still_plans_minio(self) -> None:
-            planned = up_build_plan()
-            assert planned is not None
-            self.assertIn(
-                "minio",
-                planned,
-                "the removed form must still plan minio, otherwise the criterion this "
-                "guard rests on cannot see the failure it removes",
-            )
+    def test_the_removed_up_build_form_still_plans_minio(self) -> None:
+        planned = up_build_plan()
+        assert planned is not None
+        self.assertIn(
+            "minio",
+            planned,
+            "the removed form must still plan minio, otherwise the criterion this "
+            "guard rests on cannot see the failure it removes",
+        )
 
 
-if not running_in_github_actions() and plan_tier_available():
+@unittest.skipUnless(
+    not running_in_github_actions() and plan_tier_available(),
+    "this host cannot plan a build with `docker compose --dry-run`, so the plan tier "
+    "does not run here",
+)
+class ComposePlanTest(unittest.TestCase):
+    """The graph model and the real plugin agree, and minio stays out of the plan."""
 
-    class ComposePlanTest(unittest.TestCase):
-        """The graph model and the real plugin agree, and minio stays out of the plan."""
+    def setUp(self) -> None:
+        self.graph = compose_graph(COMPOSE_FILE.read_text(encoding="utf-8"))
 
-        def setUp(self) -> None:
-            self.graph = compose_graph(COMPOSE_FILE.read_text(encoding="utf-8"))
+    def plan(self, builder: str, argv: tuple[str, ...]) -> tuple[str, ...]:
+        planned = planned_build_set(argv)
+        self.assertIsNotNone(
+            planned,
+            f"{builder}: this host planned no build for {argv}, so the tier's own "
+            "probe and the plan disagree",
+        )
+        assert planned is not None
+        return planned
 
-        def plan(self, builder: str, argv: tuple[str, ...]) -> tuple[str, ...]:
-            planned = planned_build_set(argv)
-            self.assertIsNotNone(
-                planned,
-                f"{builder}: this host planned no build for {argv}, so the tier's own "
-                "probe and the plan disagree",
-            )
-            assert planned is not None
-            return planned
+    def test_the_registered_argv_plans_match_the_graph(self) -> None:
+        for builder, argv in entry_invocations().items():
+            if not explicit_build(argv):
+                continue  # a bare up/run has no build plan to judge
+            predicted = built_services(argv, self.graph)[1]
+            with self.subTest(builder=builder):
+                self.assertEqual(
+                    self.plan(builder, argv),
+                    predicted,
+                    f"{builder}: the graph and the plugin must agree before either is trusted",
+                )
 
-        def test_the_registered_argv_plans_match_the_graph(self) -> None:
-            for builder, argv in entry_invocations().items():
-                if not explicit_build(argv):
-                    continue  # a bare up/run has no build plan to judge
-                predicted = built_services(argv, self.graph)[1]
-                with self.subTest(builder=builder):
-                    self.assertEqual(
-                        self.plan(builder, argv),
-                        predicted,
-                        f"{builder}: the graph and the plugin must agree before either is trusted",
-                    )
+    def test_no_planned_argv_builds_minio(self) -> None:
+        for builder, argv in entry_invocations().items():
+            if not explicit_build(argv):
+                continue
+            with self.subTest(builder=builder):
+                self.assertNotIn("minio", self.plan(builder, argv))
 
-        def test_no_planned_argv_builds_minio(self) -> None:
-            for builder, argv in entry_invocations().items():
-                if not explicit_build(argv):
+    def test_the_removed_forms_still_plan_minio(self) -> None:
+        """Negative control: the criterion really detects the defect it removed."""
+        old_up = ("docker", "compose", "up", "-d", "--build", "--wait", "api", "gateway")
+        old_run = (
+            "docker",
+            "compose",
+            "--profile",
+            "job-dispatch",
+            "run",
+            "--build",
+            "--rm",
+            "-T",
+            "job-dispatch-worker",
+            "true",
+        )
+        for label, argv in (
+            ("up --build api gateway", old_up),
+            ("run --build worker", old_run),
+        ):
+            with self.subTest(form=label):
+                self.assertIn(
+                    "minio",
+                    self.plan(label, argv),
+                    "the old form must still plan minio, otherwise this guard's "
+                    "criterion cannot see the failure it is meant to remove",
+                )
+
+    def test_the_documented_build_plans_only_its_services(self) -> None:
+        for relative in ACTIVE_DOCUMENTS:
+            for number, argv in scan_document(ROOT / relative):
+                if compose_parts(argv)[1] != "build":
                     continue
-                with self.subTest(builder=builder):
-                    self.assertNotIn("minio", self.plan(builder, argv))
-
-        def test_the_removed_forms_still_plan_minio(self) -> None:
-            """Negative control: the criterion really detects the defect it removed."""
-            old_up = ("docker", "compose", "up", "-d", "--build", "--wait", "api", "gateway")
-            old_run = (
-                "docker",
-                "compose",
-                "--profile",
-                "job-dispatch",
-                "run",
-                "--build",
-                "--rm",
-                "-T",
-                "job-dispatch-worker",
-                "true",
-            )
-            for label, argv in (
-                ("up --build api gateway", old_up),
-                ("run --build worker", old_run),
-            ):
-                with self.subTest(form=label):
-                    self.assertIn(
-                        "minio",
-                        self.plan(label, argv),
-                        "the old form must still plan minio, otherwise this guard's "
-                        "criterion cannot see the failure it is meant to remove",
+                label = f"{relative}:{number}"
+                with self.subTest(document=relative, line=number):
+                    self.assertEqual(
+                        self.plan(label, tuple(argv)),
+                        tuple(sorted(named_services(compose_parts(argv)[2]))),
+                        f"{label} builds more than it names",
                     )
-
-        def test_the_documented_build_plans_only_its_services(self) -> None:
-            for relative in ACTIVE_DOCUMENTS:
-                for number, argv in scan_document(ROOT / relative):
-                    if compose_parts(argv)[1] != "build":
-                        continue
-                    label = f"{relative}:{number}"
-                    with self.subTest(document=relative, line=number):
-                        self.assertEqual(
-                            self.plan(label, tuple(argv)),
-                            tuple(sorted(named_services(compose_parts(argv)[2]))),
-                            f"{label} builds more than it names",
-                        )
 
 
 if __name__ == "__main__":

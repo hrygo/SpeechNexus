@@ -196,6 +196,8 @@ python3 -m unittest discover -s tests/ci -v
 
 汇总作业对每份数据校验名称、存在性、大小、SHA-256 与 branch 数据，并要求采集作业结果为成功、十二片结果均为成功、数据摘要与分片报告一致；任一份缺失、为空、被替换或采集作业未成功都直接失败，不会退化为「只用采集作业的数据判定通过」。合并结果写入 `merged.json`（数据份数、合并百分比、判定结果），同时以 `merged-python-coverage` 制品留存。
 
+测量作业对每条被选用例要求结果为 `passed`，唯一的例外是 `scripts/dev-env/python-coverage.py` 的 `EXPECTED_SKIPS` 里显式登记的 nodeid：这类用例在收集期恒定存在、在无法执行它的宿主上逐条报 `skipped` 并带原因（`tests/ci/test_build_sequences_without_minio.py` 的 计划层与负控制层），库内其余任何跳过一律判失败。名单是双向约束：未登记的跳过失败，登记了却已从收集里消失也失败（`tests/unit/test_python_coverage.py` 用真实 `--collect-only` 钉住后者），所以名单不会腐烂成「这批用例其实一直没跑」。
+
 覆盖率判定只存在于执行十二个分片的全量路由（`full`）。`web` 与 `no-db` 路由仍采集数据但不判定，这是「判定与采集同源」的直接结果，作为已知覆盖缺口记入下文维护事项。
 
 判定函数是 `coverage.results.should_fail_under`，语义为 `round(total, 0) < fail_under`：**79.5%–79.99% 通过、低于 79.5% 失败**，失败输出 `Coverage failure: total of N is less than fail-under=80`。`total` 是语句与分支的加权覆盖率 `(已覆盖语句 + 已覆盖分支) / (语句 + 分支)`，不是语句覆盖率。

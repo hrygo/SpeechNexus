@@ -20,7 +20,7 @@ import subprocess
 import sys
 import time
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, cast
@@ -170,8 +170,10 @@ def run_worker(args: argparse.Namespace) -> int:
                 raise pytest.UsageError("A later plugin changed the Python coverage partition")
 
         def pytest_runtest_logreport(self, report: pytest.TestReport) -> None:
-            if report.failed or report.skipped or hasattr(report, "wasxfail"):
+            if report.failed or hasattr(report, "wasxfail"):
                 self.outcomes[report.nodeid] = "failed"
+            elif report.skipped:
+                self.outcomes[report.nodeid] = outcome_verdict(report.nodeid, "skipped")
             elif report.when == "call" and self.outcomes.get(report.nodeid) != "failed":
                 self.outcomes[report.nodeid] = "passed"
 
@@ -224,6 +226,50 @@ def nodeids(value: Any) -> list[str]:
     ):
         raise ValueError("Python evidence needs a sorted, complete, unique test collection")
     return cast(list[str], value)
+
+
+# A test that cannot run on every host is skipped explicitly (see
+# `tests/ci/test_build_sequences_without_minio.py`) and the merged gate accepts
+# exactly these skips, never an undeclared one. Every nodeid here must appear in the
+# collection: if one disappears the gate turns red, so the list cannot rot into
+# "the tier was silently never collected" — the shape issue #992 removed.
+EXPECTED_SKIPS: frozenset[str] = frozenset(
+    {
+        "tests/ci/test_build_sequences_without_minio.py::ComposeNegativeControlTest"
+        "::test_the_removed_up_build_form_still_plans_minio",
+        "tests/ci/test_build_sequences_without_minio.py::ComposePlanTest"
+        "::test_no_planned_argv_builds_minio",
+        "tests/ci/test_build_sequences_without_minio.py::ComposePlanTest"
+        "::test_the_documented_build_plans_only_its_services",
+        "tests/ci/test_build_sequences_without_minio.py::ComposePlanTest"
+        "::test_the_registered_argv_plans_match_the_graph",
+        "tests/ci/test_build_sequences_without_minio.py::ComposePlanTest"
+        "::test_the_removed_forms_still_plan_minio",
+    }
+)
+
+
+def outcome_verdict(nodeid: str, result: str) -> str:
+    """How the merged gate reads one test outcome.
+
+    A pass is a pass. A skip is only accepted for a nodeid declared in
+    EXPECTED_SKIPS, so "the test could not run here" stays a reviewed fact rather
+    than an accident; anything else is a failure.
+    """
+    if result == "passed":
+        return "passed"
+    if result == "skipped" and nodeid in EXPECTED_SKIPS:
+        return "skipped"
+    return "failed"
+
+
+def uncollected_expected_skips(collection: Iterable[str]) -> list[str]:
+    """Declared skips that the suite no longer collects.
+
+    A test defined inside a runtime condition disappears from collection when the
+    condition is false; that is the shape issue #992 removed, so it must be red.
+    """
+    return sorted(EXPECTED_SKIPS - set(collection))
 
 
 def verify_reports(
@@ -283,7 +329,10 @@ def verify_reports(
             or data["exit_code"] != 0
             or not isinstance(data["outcomes"], dict)
             or set(data["outcomes"]) != set(selected)
-            or any(result != "passed" for result in data["outcomes"].values())
+            or any(
+                outcome_verdict(nodeid, result) == "failed"
+                for nodeid, result in data["outcomes"].items()
+            )
         ):
             raise ValueError("Python evidence contains failed, skipped or unexecuted tests")
         seconds = data["elapsed_seconds"]

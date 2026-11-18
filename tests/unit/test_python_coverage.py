@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import importlib.util
 import json
 import os
@@ -504,3 +505,68 @@ def test_real_worker_collects_and_executes_only_the_canonical_synthetic_suite(
         assert set(evidence["outcomes"].values()) == {"passed" if condition == "pass" else "failed"}
     else:
         assert not report.exists()
+
+
+def test_an_undeclared_skip_fails_the_merged_gate() -> None:
+    # #992 的教训: 「没跑」和「通过」不能长得一样。未声明的 skip 一律算失败。
+    assert GATE.outcome_verdict("tests/unit/test_x.py::test_y", "skipped") == "failed"
+
+
+def test_a_declared_skip_is_accepted_and_still_visible() -> None:
+    declared = sorted(GATE.EXPECTED_SKIPS)[0]
+    assert GATE.outcome_verdict(declared, "skipped") == "skipped"
+
+
+def test_a_pass_is_a_pass_even_when_the_nodeid_is_declared() -> None:
+    declared = sorted(GATE.EXPECTED_SKIPS)[0]
+    assert GATE.outcome_verdict(declared, "passed") == "passed"
+
+
+def test_a_skip_that_is_no_longer_collected_is_reported() -> None:
+    collection = set(GATE.EXPECTED_SKIPS) - {sorted(GATE.EXPECTED_SKIPS)[0]}
+    missing = GATE.uncollected_expected_skips(collection)
+    assert missing == [sorted(GATE.EXPECTED_SKIPS)[0]]
+
+
+def test_a_complete_collection_reports_nothing_missing() -> None:
+    assert GATE.uncollected_expected_skips(GATE.EXPECTED_SKIPS) == []
+
+
+def test_every_declared_skip_is_a_real_nodeid_in_this_suite() -> None:
+    # 声明与套件对不上时, 白名单会静默腐烂: 要么条目过期, 要么那条用例又回到了
+    # 条件定义里。这里用一个真实的 collect-only 把两者钉在一起。
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "--collect-only",
+            "-q",
+            "tests/ci/test_build_sequences_without_minio.py",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=SCRIPT.parents[2],
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    collected = {line.strip() for line in result.stdout.splitlines() if "::" in line}
+    missing = sorted(GATE.EXPECTED_SKIPS - collected)
+    assert missing == [], missing
+
+
+def test_every_declared_skip_still_carries_its_skip_decorator() -> None:
+    # 白名单只有「还是跳过为真」时才成立: 删掉某条 skipUnless 后 nodeid 仍被收集,
+    # 白名单就会变成对该方法未来任意 skip 的永久放行。
+    tree = ast.parse(
+        (SCRIPT.parents[2] / "tests/ci/test_build_sequences_without_minio.py").read_text(
+            encoding="utf-8"
+        )
+    )
+    decorated = {
+        node.name
+        for node in tree.body
+        if isinstance(node, ast.ClassDef)
+        and any("unittest.skipUnless" in ast.unparse(item) for item in node.decorator_list)
+    }
+    declared = {nodeid.split("::")[1] for nodeid in GATE.EXPECTED_SKIPS if "::" in nodeid}
+    assert declared <= decorated, sorted(declared - decorated)

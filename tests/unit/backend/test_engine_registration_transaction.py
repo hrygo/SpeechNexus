@@ -24,6 +24,7 @@ from speechnexus_backend.engine_registration import (
     RegistrationError,
     RegistrationResult,
     RegistrationSpec,
+    _capacity_headroom,
     _Cursor,
     _default_capacity,
     _ensure_host,
@@ -1215,10 +1216,11 @@ def test_registration_warns_when_the_host_cannot_hold_a_second_same_shape_instan
     assert captured.out
 
 
-def test_registration_stays_silent_when_a_second_same_shape_instance_still_fits(
+def test_explicit_capacity_at_the_exact_fit_boundary_stays_silent(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Boundary: held(=steady after the observation) + required == allocatable still fits.
+    # Explicit capacity at the exact two-instance boundary: it fits after the
+    # first registration, and the default-capacity guard keeps the run silent.
     roomy = PhysicalResources(0, 9_000_000_000, 2_500_000_000, 2_200, 0, 0)
     spec, store = make_spec(host_capacity=roomy), Store()
     stub_domain(monkeypatch, store, spec)
@@ -1231,6 +1233,22 @@ def test_registration_stays_silent_when_a_second_same_shape_instance_still_fits(
     # The success path is silent by default: no warning, only the stdout JSON.
     assert captured.err == ""
     assert captured.out
+
+
+def test_capacity_headroom_treats_an_exact_fit_as_no_gap() -> None:
+    # Direct helper input: equality is a fit. A non-zero hold makes the just-over
+    # boundary distinguish ``fits`` from a strict comparison.
+    spec = make_spec()
+    capacity = _default_capacity(spec.plan)
+    assert _capacity_headroom(host_row(allocatable=capacity), spec) is None
+    just_over = host_row(
+        allocatable=capacity,
+        held=PhysicalResources(0, 1, 0, 0, 0, 0),
+    )
+    headroom = _capacity_headroom(just_over, spec)
+    assert headroom is not None
+    assert headroom.remaining.device_memory_bytes == capacity.device_memory_bytes - 1
+    assert headroom.required == _default_capacity(spec.plan)
 
 
 def test_capacity_warning_leaves_stdout_byte_identical(

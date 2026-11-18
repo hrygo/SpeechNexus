@@ -88,6 +88,7 @@ def _recipe_document(
     model_id: str = "asr-quality",
     node_id: str = "node-reg-1",
     max_slots: int = 2,
+    steady_device_memory_bytes: int | None = None,
 ) -> dict[str, Any]:
     peak = {
         "unified_physical_memory_bytes": 0,
@@ -97,6 +98,13 @@ def _recipe_document(
         "host_pcm_buffer_bytes": 0,
         "scratch_disk_bytes": 0,
     }
+    # Only a steady below peak makes an observation distinguishable from the
+    # prepare-time peak hold; the default keeps the original peak == steady recipe.
+    steady = (
+        peak
+        if steady_device_memory_bytes is None
+        else {**peak, "device_memory_bytes": steady_device_memory_bytes}
+    )
     per_slot = {
         "unified_physical_memory_bytes": 0,
         "device_memory_bytes": 500_000_000,
@@ -139,7 +147,7 @@ def _recipe_document(
             "max_slots": max_slots,
             "realtime_reserved_slots": 0,
             "peak": peak,
-            "steady": peak,
+            "steady": steady,
             "per_slot": per_slot,
         },
         "asr": {
@@ -329,7 +337,10 @@ def test_default_capacity_first_registration_warns_that_no_second_instance_fits(
     registration leaves exactly one instance worth of room and the warning must
     name the per-dimension remainder a second instance would need.
     """
-    recipe_path = _write_recipe(tmp_path / "recipe.json", _recipe_document())
+    recipe_path = _write_recipe(
+        tmp_path / "recipe.json",
+        _recipe_document(steady_device_memory_bytes=3_000_000_000),
+    )
     document, stderr = _run_registration_with_stderr(
         capsys,
         _register_args(database, recipe_path, engine_origin, host_capacity=None),
@@ -337,10 +348,12 @@ def test_default_capacity_first_registration_warns_that_no_second_instance_fits(
 
     assert document["outcome"] == "registered"
     assert document["instance_id"] == "instance-reg-1"
+    # steady=3e9 with peak=4e9: the committed hold can only be 3e9 if the successful
+    # observation ran held = held - peak + steady. Keeping peak would leave 4e9.
     assert (
         "warning: host node-reg-1 cannot hold another instance of this shape under the "
         "current holds: remaining 0,1000000000,500000000,200,0,0, one more requires "
-        "0,5000000000,1500000000,1200,0,0"
+        "0,4000000000,1500000000,1200,0,0"
     ) in stderr
     assert "release held or quarantined capacity first" in stderr
     assert "--host-capacity" in stderr
@@ -351,8 +364,8 @@ def test_default_capacity_first_registration_warns_that_no_second_instance_fits(
     )
     assert hosts == [
         {
-            "allocatable_device_memory_bytes": 5_000_000_000,
-            "held_device_memory_bytes": 4_000_000_000,
+            "allocatable_device_memory_bytes": 4_000_000_000,
+            "held_device_memory_bytes": 3_000_000_000,
             "quarantined_device_memory_bytes": 0,
         }
     ]

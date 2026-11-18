@@ -448,7 +448,7 @@ async def test_a_refused_release_keeps_the_cancelled_job_and_retries_later(
     assert [record.getMessage() for record in capacity_warnings] == [
         "cancellation capacity release raised"
     ]
-    assert capacity_warnings[0].job_id == job_id
+    assert getattr(capacity_warnings[0], "job_id", None) == job_id
     assert capacity_warnings[0].exc_info is not None
     assert jobs_db.query(
         "SELECT state, status_version FROM speech_jobs WHERE job_id = %s", (job_id,)

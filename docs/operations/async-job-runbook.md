@@ -1228,8 +1228,9 @@ FAIL 与 PENDING 下逐条给出原因，末尾分别汇总编号。
   `network_mode`/`depends_on` 声明）；
 - 运行时判定只做 `SELECT`（`has_table_privilege`/`has_column_privilege` 与 `LIMIT 0` 列探测）、
   引擎 `/health` GET 和 `docker inspect` 读取；
-- 权限项覆盖 writer 的 21 张表 `SELECT`、16 张表的列级 `INSERT`/`UPDATE`（含 `speech_jobs`
-  的 `error_code` 等终止写列），以及派发角色的启动探测与认领后写入列（列数随写面增长，
+- 权限项覆盖 writer 的 21 张表 `SELECT`、16 张表的列级 `INSERT`、6 张表的列级 `UPDATE`
+  （含 `speech_jobs` 的 `error_code` 等终止写列，以及删除预检对 `speech_workspaces` /
+  `speech_assets` 的行锁列），以及派发角色的启动探测与认领后写入列（列数随写面增长，
   以闸门实际输出为准）；
 - 没有 `psql`、Docker daemon 或数据库从宿主机不可达时，相应运行时证据标 `SKIP` 并说明原因；
 - 对象桶的存在与版本化需要签名凭据，脚本不持有凭据，因此该项恒为 SKIP，靠 `minio-init`

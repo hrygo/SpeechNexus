@@ -422,6 +422,8 @@ WRITER_INSERT_COLUMNS: dict[str, tuple[str, ...]] = {
 
 # 复制自 job_runtime._JOB_UPDATE_SURFACE:唯一允许的 UPDATE 列面。
 WRITER_UPDATE_COLUMNS: dict[str, tuple[str, ...]] = {
+    "speech_workspaces": ("metadata_revision",),
+    "speech_assets": ("version",),
     "speech_voice_drafts": (
         "display_name",
         "metadata_revision",

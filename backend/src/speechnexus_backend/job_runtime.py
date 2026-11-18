@@ -133,6 +133,10 @@ REQUIRED_INSERT_COLUMNS: dict[str, tuple[str, ...]] = {
     ),
 }
 REQUIRED_UPDATE_COLUMNS: dict[str, tuple[str, ...]] = {
+    # The deletion planner locks the workspace (FK parent) and the asset row;
+    # neither column is assigned, and PostgreSQL still requires UPDATE per lock.
+    "speech_workspaces": ("metadata_revision",),
+    "speech_assets": ("version",),
     "speech_voice_drafts": (
         "display_name",
         "metadata_revision",

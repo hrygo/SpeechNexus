@@ -26,8 +26,10 @@ Speech `/v1/nexus/deletion-plans`、`/v1/nexus/deletions` 和 Workbench
    资源不存在返回 `404 resource_not_found`。部署/工作空间仍遵循当前入口规则。
 2. 所有者在短事务中读取目标版本与完整依赖快照，建立不可变 plan。依赖按
    `(owner,kind,id,revision,relation)` 排序，不得重复同一关系。
-   Speech 侧当前支持 `asset` 与 `operation_content` 目标：`asset` 固定资产版本、
-   摘要、对象版本，并把未释放的资产引用作为 `persistent_reference / blocks` 依赖；
+   Speech 侧当前支持 `asset` 与 `operation_content` 目标，且与资产写路径保持同一
+   锁序：先锁 `speech_workspaces` 行，再锁目标行，最后插入计划行，避免与资产
+   写路径反向加锁而死锁。`asset` 固定资产版本、摘要、对象版本，并把未释放的
+   资产引用作为 `persistent_reference / blocks` 依赖；
    `operation_content` 固定 Job 的 `status_version` 与请求摘要，活跃 Job 以自身
    `active_execution / blocks` 阻断，引用该 Job 的声音草稿 revision 以
    `persistent_reference / blocks` 阻断，Artifact 与 intent 只进入私有内容快照。

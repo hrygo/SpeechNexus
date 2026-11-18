@@ -133,13 +133,28 @@ class _Transaction:
             return self._job_snapshot(target)
         raise DeletionTargetUnsupportedError
 
+    def _lock_workspace(self) -> bool:
+        """Take the FK parent lock before any child row, like every asset writer.
+
+        The plan insert takes a key-share lock on ``speech_workspaces`` anyway;
+        acquiring it first keeps one order with ``_locked_asset`` (workspace,
+        then asset) instead of locking the child and waiting on the parent.
+        """
+        return bool(
+            self._rows(
+                "SELECT workspace_id FROM speech_workspaces "
+                "WHERE workspace_id = %s AND workspace_state = 'active' FOR UPDATE",
+                (self._workspace_id,),
+            )
+        )
+
     def _asset_snapshot(self, target: DeletionTarget) -> PlanSnapshot | None:
+        if not self._lock_workspace():
+            return None
         rows = self._rows(
             "SELECT a.asset_id, a.workspace_id, a.version, a.sha256, a.asset_state, "
             "a.object_key, o.storage_version_id "
             "FROM speech_assets AS a "
-            "JOIN speech_workspaces AS w ON w.workspace_id = a.workspace_id "
-            "AND w.workspace_state = 'active' "
             "LEFT JOIN speech_asset_objects AS o ON o.asset_id = a.asset_id "
             "WHERE a.asset_id = %s AND a.workspace_id = %s "
             "FOR UPDATE OF a",
@@ -193,11 +208,11 @@ class _Transaction:
         return references
 
     def _job_snapshot(self, target: DeletionTarget) -> PlanSnapshot | None:
+        if not self._lock_workspace():
+            return None
         rows = self._rows(
             "SELECT j.job_id, j.workspace_id, j.status_version, j.request_digest, j.state "
             "FROM speech_jobs AS j "
-            "JOIN speech_workspaces AS w ON w.workspace_id = j.workspace_id "
-            "AND w.workspace_state = 'active' "
             "WHERE j.job_id = %s AND j.workspace_id = %s "
             "FOR UPDATE OF j",
             (target.resource_id, self._workspace_id),

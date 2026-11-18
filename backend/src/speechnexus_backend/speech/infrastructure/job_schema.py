@@ -74,6 +74,12 @@ def deletion_plan_grants(schema: str, role: str) -> tuple[str, ...]:
         f'GRANT SELECT ON "{schema}".speech_asset_objects TO "{role}"',
         f'GRANT SELECT ON "{schema}".speech_asset_references TO "{role}"',
         f'GRANT SELECT ON "{schema}".speech_deletion_plans TO "{role}"',
+        # PostgreSQL requires UPDATE privilege for a row lock, not only for an
+        # assignment. The planner locks the workspace (FK parent) and the asset
+        # row to pin the revision; neither column is assigned, so one column per
+        # table is enough. The asset writer holds the same two lock columns.
+        f'GRANT UPDATE (metadata_revision) ON "{schema}".speech_workspaces TO "{role}"',
+        f'GRANT UPDATE (version) ON "{schema}".speech_assets TO "{role}"',
         f"GRANT INSERT ({', '.join(DELETION_PLAN_INSERT_COLUMNS)}) "
         f'ON "{schema}".speech_deletion_plans TO "{role}"',
     )

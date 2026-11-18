@@ -18,6 +18,8 @@ import asyncio
 import hashlib
 import json
 import os
+import threading
+import time
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -30,6 +32,7 @@ import pytest
 import rfc8785
 from alembic import command
 from alembic.config import Config
+from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
@@ -37,12 +40,29 @@ from tests.contract.test_architecture_repairs import _deletion_validator
 from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app
+from speechnexus_backend.job_runtime import _verify_privileges
 from speechnexus_backend.speech.application.deletions import SpeechDeletions
-from speechnexus_backend.speech.domain.deletion import idempotency_key_digest
+from speechnexus_backend.speech.domain.deletion import (
+    DeletionTarget,
+    idempotency_key_digest,
+)
 from speechnexus_backend.speech.infrastructure.deletion_plans_postgres import (
     PostgresDeletionPlans,
 )
+from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
+    cancellation_reconciliation_grants,
+)
+from speechnexus_backend.speech.infrastructure.job_schema import (
+    deletion_plan_grants,
+    job_dispatch_grants,
+    job_runtime_grants,
+)
 from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
+from speechnexus_backend.speech.infrastructure.public_job_schema import public_job_grants
+from speechnexus_backend.speech.infrastructure.public_job_submission_schema import (
+    public_job_submission_grants,
+)
+from speechnexus_backend.speech.infrastructure.voice_draft_schema import voice_draft_grants
 
 pytestmark = pytest.mark.integration
 
@@ -57,6 +77,7 @@ DRAFT_ID = "draft-plan-pg"
 ARTIFACT_ID = "artifact-plan-pg"
 NOW_US = 1_760_000_000_000_000
 DAY_US = 86_400_000_000
+ROLE_PASSWORD = "synthetic_deletion_test"
 
 
 def sha(letter: str) -> str:
@@ -442,4 +463,114 @@ async def test_two_connections_with_one_key_commit_one_plan(sandbox: Sandbox) ->
         assert first.json()["id"] == second.json()["id"]
         assert _rows_for_key(sandbox.url, sandbox.schema, _key_digest("key-race-1")) == 1
     finally:
+        pool.close()
+
+
+def _provision_writer(sandbox: Sandbox) -> tuple[str, psycopg.Connection[dict[str, Any]]]:
+    """Provision exactly the reference writer set, including the asset lock column."""
+    role = "sn_del_writer_" + uuid.uuid4().hex[:8]
+    admin = psycopg.connect(sandbox.url, autocommit=True, row_factory=dict_row)
+    admin.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
+    admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{ROLE_PASSWORD}'")
+    for grant in (
+        *job_runtime_grants(sandbox.schema, role),
+        *public_job_grants(sandbox.schema, role),
+        *voice_draft_grants(sandbox.schema, role),
+        *job_dispatch_grants(sandbox.schema, role),
+        *cancellation_reconciliation_grants(sandbox.schema, role),
+        *public_job_submission_grants(sandbox.schema, role),
+        *deletion_plan_grants(sandbox.schema, role),
+        f'GRANT SELECT ON "{sandbox.schema}".admission_operations, '
+        f'"{sandbox.schema}".coordination_jobs TO "{role}"',
+        f"GRANT UPDATE (claim_owner_id, claim_expires_at_us, claim_version, job_state) "
+        f'ON "{sandbox.schema}".coordination_jobs TO "{role}"',
+        f"GRANT SELECT ON speech_workspaces, speech_publications, "
+        f"speech_publication_heads, speech_catalog_state, speech_publication_retirements, "
+        f"speech_binding_revisions, speech_assets, speech_pronunciation_revisions "
+        f'TO "{role}"',
+    ):
+        admin.execute(grant)
+    return role, admin
+
+
+async def test_the_provisioned_writer_role_can_preview_both_targets(sandbox: Sandbox) -> None:
+    """The grant surface is proven by the identity the deployment actually uses."""
+    role, admin = _provision_writer(sandbox)
+    pool = None
+    try:
+        with psycopg.connect(
+            make_conninfo(sandbox.url, user=role, password=ROLE_PASSWORD), row_factory=dict_row
+        ) as connection:
+            connection.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
+            # The real startup gate accepts this exact surface.
+            _verify_privileges(connection, sandbox.schema)
+        pool = speech_pool(
+            make_conninfo(sandbox.url, user=role, password=ROLE_PASSWORD),
+            schema=sandbox.schema,
+        )
+        pool.open()
+        service = SpeechDeletions(PostgresDeletionPlans(pool), workspace_id=WORKSPACE)
+        asset_plan = service.preview(
+            DeletionTarget("speech", "asset", ASSET_ID, 3), "ordinary", "key-role-asset"
+        )
+        job_plan = service.preview(
+            DeletionTarget("speech", "operation_content", GEN_JOB, 4),
+            "ordinary",
+            "key-role-job",
+        )
+        assert asset_plan.eligible is False
+        assert asset_plan.target.revision == 3
+        assert job_plan.eligible is False
+        assert job_plan.target.revision == 4
+        app = create_app(settings=_settings(), deletions=service)
+        response = await _post(app, _body("asset", ASSET_ID, 3), "key-role-http")
+        assert response.status_code == 200, response.text
+        assert response.json()["target"]["resource"]["revision"] == "3"
+    finally:
+        if pool is not None:
+            pool.close()
+        admin.execute(f'DROP OWNED BY "{role}"')
+        admin.execute(f'DROP ROLE IF EXISTS "{role}"')
+        admin.close()
+
+
+async def test_workspace_is_locked_before_the_asset_like_the_writer_path(
+    sandbox: Sandbox,
+) -> None:
+    """The planner must take the FK parent lock first, or it deadlocks the publisher."""
+    app, pool = _app(sandbox)
+    started, published = threading.Event(), threading.Event()
+    failures: list[BaseException] = []
+
+    def publisher() -> None:
+        try:
+            with psycopg.connect(sandbox.url, row_factory=dict_row) as connection:
+                connection.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
+                connection.execute(
+                    "SELECT 1 FROM speech_workspaces WHERE workspace_id = %s FOR UPDATE",
+                    (WORKSPACE,),
+                )
+                started.set()
+                time.sleep(0.5)
+                connection.execute(
+                    "SELECT 1 FROM speech_assets WHERE asset_id = %s FOR UPDATE", (ASSET_ID,)
+                )
+                connection.commit()
+                published.set()
+        except BaseException as error:
+            failures.append(error)
+
+    thread = threading.Thread(target=publisher)
+    thread.start()
+    try:
+        assert started.wait(5)
+        # The publisher holds workspace then asset, the order every asset writer uses.
+        response = await _post(app, _body("asset", ASSET_ID, 3), "key-lock-order-1")
+        thread.join(10)
+        assert failures == []
+        assert published.is_set()
+        assert response.status_code == 200, response.text
+        assert response.json()["target"]["resource"]["revision"] == "3"
+    finally:
+        thread.join(10)
         pool.close()

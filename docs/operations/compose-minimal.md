@@ -1213,7 +1213,8 @@ statements`；语句数随授权函数变化，不要把它当固定值——以
 - `sn_job_writer`：`job_runtime_grants`、`job_dispatch_grants`、`public_job_grants`、
   `voice_draft_grants`、`public_job_submission_grants`、`job_cancellation_fence_grants`、
   `cancellation_not_submitted_grants`、`cancellation_reconciliation_grants`、
-  `deletion_plan_grants`（删除预检读取资产引用并写入不可变计划行），外加
+  `deletion_plan_grants`（删除预检读取资产引用、先锁 workspace 再锁 asset、
+  写入不可变计划行；含这两张表的行锁列 `UPDATE`），外加
   `speechnexus_backend.job_runtime` 启动校验需要的发布/素材基线 `SELECT` 和
   `coordination_jobs` 的四个认领列 `UPDATE`。缺任一项时 API 以
   `Public Job writer startup rejected` 退出，不会带着错误权限面上线。

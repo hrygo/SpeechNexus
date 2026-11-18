@@ -277,6 +277,14 @@ class _DeletionExecution:
         plan = plan_from_row(plan_row)
         confirm(plan, request, now=self._tx.now())
         snapshot = snapshot_target(self._tx, self._workspace_id, plan.target, exclusive=True)
+        # Re-read the key now that the target lock is held: a concurrent request
+        # with the same key may have committed while this transaction waited, and
+        # its accepted deletion -- not the moved target -- is the answer.
+        late = self._tx.ledger_by_key(key_digest)
+        if late is not None:
+            if late.row["intent_digest"] != intent_digest:
+                raise DeletionIdempotencyConflictError
+            return self._resume(late)
         if snapshot is None:
             raise DeletionPlanChangedError
         if (
@@ -405,7 +413,8 @@ class _DeletionExecution:
         if content_ledger_id is None:
             raise _unavailable()
         content = self._tx.rows(
-            "SELECT deletion_state FROM speech_content_deletions WHERE ledger_id = %s",
+            "SELECT deletion_state, storage_version_id FROM speech_content_deletions "
+            "WHERE ledger_id = %s",
             (content_ledger_id,),
         )
         if not content:
@@ -416,7 +425,10 @@ class _DeletionExecution:
         if state != "queued":
             raise DeletionDependencyConflictError
         proof = self._proof(cast(str, existing.row["target_id"]))
-        if proof is None:
+        # The accepted deletion pinned one object version. Confirming a different
+        # live version would claim a purge the ledger cannot back up, so it stays
+        # queued and the same key can be retried after the inconsistency is fixed.
+        if proof is None or proof.version_id != content[0]["storage_version_id"]:
             raise _unavailable()
         return AcceptedDeletion(record, proof)
 

@@ -85,6 +85,10 @@ def test_writer_surfaces_match_runtime() -> None:
     assert module.WRITER_REQUIRED_SELECT == job_runtime.REQUIRED_SELECT
     assert module.WRITER_INSERT_COLUMNS == JOB_WRITER_INSERT_COLUMNS
     assert module.WRITER_UPDATE_COLUMNS == job_runtime._JOB_UPDATE_SURFACE
+    # Deletion execution is the only writer surface with a DELETE, and it is one
+    # table: a copy that drifts would let the preflight pass while the startup
+    # gate refuses, or vice versa.
+    assert frozenset(module.WRITER_DELETE_TABLES) == job_runtime._JOB_DELETE_TABLES
 
 
 def test_required_tables_are_declared_by_the_runtime() -> None:

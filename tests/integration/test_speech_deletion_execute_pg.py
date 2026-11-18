@@ -18,11 +18,12 @@ answer with what the database actually stores:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import threading
 import time
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -47,12 +48,18 @@ from speechnexus_backend.job_runtime import _verify_privileges
 from speechnexus_backend.speech.application.deletions import SpeechDeletions
 from speechnexus_backend.speech.domain.assets import AssetError, VerifiedObject
 from speechnexus_backend.speech.domain.deletion import (
+    DeletionIdempotencyConflictError,
     DeletionPlan,
+    DeletionRequest,
     DeletionTarget,
+    confirmed_targets,
+    deletion_intent_digest,
     plan_digest,
 )
 from speechnexus_backend.speech.infrastructure.deletion_executions_postgres import (
     PostgresDeletionExecutions,
+    _DeletionExecution,
+    _Transaction,
 )
 from speechnexus_backend.speech.infrastructure.deletion_plans_postgres import (
     PostgresDeletionPlans,
@@ -110,8 +117,11 @@ class FakeObjects:
         self.versions: list[str] = []
         self.failures = 0
         self.fail_first = fail_first
+        self.on_delete: Callable[[VerifiedObject], None] | None = None
 
     def delete_version(self, proof: VerifiedObject) -> None:
+        if self.on_delete is not None:
+            self.on_delete(proof)
         if self.fail_first:
             # A failed purge must leave the ledger queued, never claim success.
             self.fail_first = False
@@ -201,7 +211,7 @@ def _seed(admin: psycopg.Connection[dict[str, Any]]) -> None:
             """INSERT INTO admission_operations (operation_id, workspace_id,
                 request_digest, request_document, initial_attempt_id, current_attempt_id,
                 recorded_at_us)
-            VALUES (%s, %s, %s, '{"input":"synthetic"}', 'attempt-1', 'attempt-1', %s)""",
+            VALUES (%s, %s, %s, '{"input":"synthetic"}', 'attempt-exec', 'attempt-exec', %s)""",
             (job_id, WORKSPACE, digest, NOW_US),
         )
         # Execution evidence that must survive: state transitions, the lease, and
@@ -211,6 +221,52 @@ def _seed(admin: psycopg.Connection[dict[str, Any]]) -> None:
             VALUES (%s, 1, 'pending', %s), (%s, 2, 'succeeded', %s)""",
             (job_id, NOW_US, job_id, NOW_US + 1),
         )
+    # A real reserved lease for the deleted operation: capacity, attempt identity,
+    # instance and metering facts that deletion must never touch.
+    admin.execute(
+        "INSERT INTO resource_pools (pool_id, service_class, pool_state) "
+        "VALUES ('tts-realtime', 'realtime', 'active')"
+    )
+    admin.execute(
+        "INSERT INTO workspace_quotas (workspace_id, max_attempts, held_attempts, "
+        "policy_revision) VALUES (%s, 8, 1, 'policy-exec')",
+        (WORKSPACE,),
+    )
+    admin.execute(
+        "INSERT INTO host_nodes (host_node_id, memory_architecture, node_state, topology_digest, "
+        "allocatable_unified_physical_memory_bytes, held_unified_physical_memory_bytes) "
+        "VALUES ('host-exec', 'unified_memory', 'active', %s, 128, 64)",
+        (sha("7"),),
+    )
+    admin.execute(
+        "INSERT INTO engine_instances (instance_id, instance_generation, host_node_id, pool_id, "
+        "gateway_id, binding_revision_id, manifest_id, approved_template_id, management_mode, "
+        "loading_policy, config_digest, instance_state, max_slots, held_slots) VALUES "
+        "('instance-exec', 1, 'host-exec', 'tts-realtime', 'gateway-exec', 'binding-exec', "
+        "'manifest-exec', 'template-exec', 'managed', 'on_demand', %s, 'ready', 1, 1)",
+        (sha("8"),),
+    )
+    admin.execute(
+        "INSERT INTO admission_attempts (operation_id, attempt_id, workspace_id, "
+        "binding_revision_id, manifest_id, recipe_digest, policy_revision_id, service_class, "
+        "request_digest, required_stage_ids) VALUES (%s, 'attempt-exec', %s, 'binding-exec', "
+        "'manifest-exec', %s, 'policy-exec', 'realtime', %s, %s)",
+        (JOB, WORKSPACE, sha("6"), sha("5"), '["lease-exec"]'),
+    )
+    admin.execute(
+        "INSERT INTO admission_leases (lease_id, operation_id, attempt_id, stage_id, "
+        "host_node_id, instance_id, instance_generation, pool_id, gateway_id, fencing_token, "
+        "reserved_slots, deadline_at_us, reserved_unified_physical_memory_bytes) VALUES "
+        "('lease-exec', %s, 'attempt-exec', 'lease-exec', 'host-exec', 'instance-exec', 1, "
+        "'tts-realtime', 'gateway-exec', 7, 1, 1, 32)",
+        (JOB,),
+    )
+    admin.execute(
+        "INSERT INTO speech_tts_settlement (lease_id, operation_id, attempt_id, "
+        "submit_intent_id, target_document, deadline_at_us, next_check_at_us, settled_at_us) "
+        "VALUES ('lease-exec', %s, 'attempt-exec', 'submit-exec-1', '{\"meter\":1}', 1, 0, 1)",
+        (JOB,),
+    )
     admin.execute(
         """INSERT INTO speech_voice_drafts (draft_id, generation_job_id, kind, status,
             head_revision, metadata_revision, display_name, input_json, binding_json,
@@ -298,6 +354,42 @@ async def _post(app: Any, path: str, body: dict[str, Any], key: str) -> httpx.Re
         transport=httpx.ASGITransport(app=app), base_url="http://localhost"
     ) as http:
         return await http.post(path, json=body, headers={"Idempotency-Key": key})
+
+
+def _evidence(sandbox: Sandbox) -> dict[str, list[dict[str, Any]]]:
+    """Every fact a content deletion must leave byte-identical."""
+    return {
+        "leases": _read(sandbox, "SELECT * FROM admission_leases ORDER BY lease_id"),
+        "attempts": _read(sandbox, "SELECT * FROM admission_attempts ORDER BY attempt_id"),
+        "settlement": _read(sandbox, "SELECT * FROM speech_tts_settlement ORDER BY lease_id"),
+        "instances": _read(sandbox, "SELECT * FROM engine_instances ORDER BY instance_id"),
+        "quotas": _read(sandbox, "SELECT * FROM workspace_quotas ORDER BY workspace_id"),
+        "fencing": _read(
+            sandbox,
+            "SELECT operation_id, initial_attempt_id, current_attempt_id "
+            "FROM admission_operations ORDER BY operation_id",
+        ),
+    }
+
+
+def _plan(
+    pool: Any, kind: str, identifier: str, revision: int, key: str, mode: str = "ordinary"
+) -> DeletionPlan:
+    service = SpeechDeletions(PostgresDeletionPlans(pool), workspace_id=WORKSPACE)
+    return service.preview(DeletionTarget("speech", kind, identifier, revision), mode, key)
+
+
+def _confirmation_of(plan: DeletionPlan) -> DeletionRequest:
+    return DeletionRequest(plan.id, plan.revision, plan_digest(plan), confirmed_targets(plan))
+
+
+def _blocked_on_the_key(sandbox: Sandbox) -> bool:
+    rows = _read(
+        sandbox,
+        "SELECT count(*) AS n FROM pg_stat_activity WHERE wait_event_type = 'Lock' "
+        "AND strpos(query, 'INSERT INTO speech_deletion_ledger') > 0",
+    )
+    return bool(rows and rows[0]["n"])
 
 
 async def _preview(app: Any, kind: str, identifier: str, revision: int, key: str) -> dict[str, Any]:
@@ -695,10 +787,11 @@ async def test_operation_content_deletes_the_intent_and_keeps_the_evidence(
         for table, expected in (
             ("speech_job_events", 4),
             ("speech_jobs", 2),
-            # No lease or attempt exists in this fixture, and the deletion creates
-            # none: execution, metering and fencing evidence is never a target.
-            ("admission_leases", 0),
-            ("admission_attempts", 0),
+            # The lease and attempt seeded for this operation survive: execution,
+            # metering and fencing evidence is never a target.
+            ("admission_leases", 1),
+            ("admission_attempts", 1),
+            ("speech_tts_settlement", 1),
             ("speech_artifacts", 1),
             ("speech_voice_draft_revisions", 1),
         ):
@@ -707,6 +800,153 @@ async def test_operation_content_deletes_the_intent_and_keeps_the_evidence(
         assert ledger[0]["deleted"] == [["speech", "operation_content", JOB, "4"]]
         assert ledger[0]["retained"] == []
         assert ledger[0]["content_ledger_id"] is None
+    finally:
+        pool.close()
+
+
+async def test_execution_evidence_and_settlement_are_unchanged(sandbox: Sandbox) -> None:
+    """Capacity, attempt identity, fencing and metering are not deletion targets.
+
+    The fixture holds a real reserved lease, its attempt, the instance that served
+    it, the workspace quota count and one settlement row, so "unchanged" is a
+    real negative: those rows exist before the delete and must still exist, byte
+    for byte, afterwards.
+    """
+    app, pool, objects = _app(sandbox)
+    try:
+        before = _evidence(sandbox)
+        assert before["leases"] and before["attempts"] and before["settlement"]
+        plan = await _preview(app, "operation_content", JOB, 4, "key-plan-evidence")
+        response = await _execute(app, _confirm(plan), "key-exec-evidence")
+        assert response.status_code == 202, response.text
+        after = _evidence(sandbox)
+        for table in ("leases", "attempts", "settlement", "instances", "quotas"):
+            assert after[table] == before[table], table
+        # The tombstoned command keeps the fencing identity that produced it.
+        assert after["fencing"] == before["fencing"]
+        assert {
+            row["initial_attempt_id"] for row in after["fencing"] if row["operation_id"] == JOB
+        } == {"attempt-exec"}
+        assert objects.versions == []
+        # Only the content moved: the intent row is gone, the command body cleared.
+        assert _read(
+            sandbox, "SELECT count(*) AS n FROM speech_job_intents WHERE job_id = %s", (JOB,)
+        ) == [{"n": 0}]
+        assert after["leases"][0]["lease_state"] == "reserved"
+        assert after["settlement"][0]["settled_at_us"] == 1
+    finally:
+        pool.close()
+
+
+def test_the_schema_itself_forbids_an_unpinned_object_version(sandbox: Sandbox) -> None:
+    """The pinned version cannot drift: the composite foreign key refuses it.
+
+    The runtime check in ``complete_content_deletion`` is the second line of
+    defence; the first is this constraint, so no reachable state has a live
+    object version different from the one the accepted deletion pinned.
+    """
+    admin = _admin(sandbox.url)
+    admin.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
+    try:
+        with pytest.raises(psycopg.errors.ForeignKeyViolation):
+            admin.execute(
+                "INSERT INTO speech_content_deletions (ledger_id, asset_id, sha256, "
+                "storage_version_id, reason, deletion_state, blocked_reason, created_at_us) "
+                "VALUES ('ledger-unpinned', %s, %s, 'minio-forged', 'confirmed_deletion', "
+                "'queued', NULL, 1)",
+                (ASSET, sha("a")),
+            )
+    finally:
+        admin.rollback()
+        admin.close()
+
+
+async def test_a_concurrent_same_key_request_replays_the_winner(sandbox: Sandbox) -> None:
+    """Two connections, one key, one plan: both answer the same accepted deletion."""
+    app, pool, objects = _app(sandbox)
+    plan = await _preview(app, "asset", ASSET, 3, "key-plan-concurrent")
+    body = _confirm(plan)
+    barrier = threading.Barrier(2)
+    responses: list[httpx.Response] = []
+
+    def submit() -> None:
+        barrier.wait(timeout=5)
+        responses.append(asyncio.run(_execute(app, body, "key-exec-concurrent")))
+
+    threads = [threading.Thread(target=submit) for _ in range(2)]
+    try:
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=30)
+        assert [response.status_code for response in responses] == [202, 202], [
+            response.text for response in responses
+        ]
+        ledger = _ledger(sandbox, "key-exec-concurrent")
+        assert len(ledger) == 1
+        assert {response.json()["id"] for response in responses} == {ledger[0]["id"]}
+        assert {response.json()["result"]["ledger_id"] for response in responses} == {
+            ledger[0]["id"]
+        }
+        assert objects.versions == ["minio-asset-exec-1"]
+    finally:
+        pool.close()
+
+
+def test_the_unique_key_race_falls_back_to_the_winning_row(sandbox: Sandbox) -> None:
+    """A key race that reaches the insert resolves to the committed row.
+
+    The winner's insert is held open until the loser has passed both reads and is
+    blocked inside the unique index, so this reaches the UniqueViolation fallback
+    instead of the ordinary replay path. A different intent under the same key is
+    a conflict, not a second deletion.
+    """
+    _app_instance, pool, _objects = _app(sandbox)
+    asset_plan = _plan(pool, "asset", ASSET, 3, "key-plan-race-fallback")
+    job_plan = _plan(pool, "operation_content", JOB, 4, "key-plan-race-other")
+    asset_request = _confirmation_of(asset_plan)
+    job_request = _confirmation_of(job_plan)
+    key_digest = hashlib.sha256(b"key-exec-race-fallback").hexdigest()
+    store = PostgresDeletionExecutions(pool, timeout_seconds=5)
+    outcome: list[BaseException] = []
+
+    def lose() -> None:
+        try:
+            store.accept(
+                job_request,
+                key_digest=key_digest,
+                intent_digest=deletion_intent_digest(job_request),
+                purge_available=True,
+                workspace_id=WORKSPACE,
+            )
+        except BaseException as error:
+            outcome.append(error)
+
+    try:
+        with pool.connection(timeout=5) as connection:
+            transaction = _Transaction(connection, time.monotonic() + 5, WORKSPACE)
+            accepted = _DeletionExecution(transaction, WORKSPACE).accept(
+                asset_request,
+                key_digest=key_digest,
+                intent_digest=deletion_intent_digest(asset_request),
+                purge_available=True,
+            )
+            assert accepted.record.status == "queued" or accepted.record.status == "succeeded"
+            loser = threading.Thread(target=lose)
+            loser.start()
+            # Give the loser time to pass its reads and block inside the index.
+            deadline = time.monotonic() + 2
+            while not _blocked_on_the_key(sandbox) and time.monotonic() < deadline:
+                time.sleep(0.02)
+            connection.commit()
+        loser.join(timeout=30)
+        assert not loser.is_alive()
+        assert len(outcome) == 1, outcome
+        assert isinstance(outcome[0], DeletionIdempotencyConflictError)
+        ledger = _ledger(sandbox, "key-exec-race-fallback")
+        assert len(ledger) == 1
+        assert ledger[0]["plan_id"] == asset_plan.id
+        assert ledger[0]["target_id"] == ASSET
     finally:
         pool.close()
 

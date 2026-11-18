@@ -220,7 +220,7 @@ def complete_content_deletion(cursor: AssetCursor, asset: AssetRecord, ledger_id
     idempotent and refuses to complete a ledger whose preconditions changed.
     """
     rows = cursor.rows(
-        "SELECT deletion_state FROM speech_content_deletions "
+        "SELECT deletion_state, storage_version_id FROM speech_content_deletions "
         "WHERE ledger_id = %s AND asset_id = %s FOR UPDATE",
         (ledger_id, asset.asset_id),
     )
@@ -238,6 +238,12 @@ def complete_content_deletion(cursor: AssetCursor, asset: AssetRecord, ledger_id
         )
         or asset.phase == "writing"
     ):
+        return False
+    # The accepted deletion pinned one storage version. Never mark the row
+    # complete against a newer one: the purge evidence would name an object this
+    # ledger never authorized.
+    current = cursor.proof(asset.asset_id)
+    if current is None or current.version_id != rows[0]["storage_version_id"]:
         return False
     now = cursor.clock()
     cursor.rows(

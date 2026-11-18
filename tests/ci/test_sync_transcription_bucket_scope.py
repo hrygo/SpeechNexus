@@ -16,17 +16,29 @@ Job inputs and synchronous uploads from it, so the two deployment keys must name
 the same bucket. Each property that keeps them aligned is pinned here:
 
 * `deploy/compose.env.example` assigns both keys one value;
-* every `deploy/compose.yaml` default for either key resolves to that value, so a
-  stack started from the committed files cannot split the pair;
+* every `deploy/compose.yaml` default for either key resolves to that value, and a
+  line that mentions a key in any other shape is reported instead of skipped — a
+  new bare `KEY: value` pin cannot slip past the equality assertions;
 * the operator-facing entry point fails before the request (`tools` step) with a
-  readable reason instead of surfacing the 503 at request time.
+  readable reason instead of surfacing the 503 at request time — for the env pair
+  and for the private lane `objects.input_bucket` when that file already exists;
+* the bootstrap script still creates exactly one versioned bucket when the keys
+  collapse onto one name.
 
 Counterexample, run and restored: setting
 `SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET=speechnexus-inputs` in the example turns
-both file guards red; the original output is recorded in the PR body. The
-`reference-acceptance.py` preflight has its own pair of cases
-(`test_split_sync_upload_bucket_is_named_before_any_request` and
-`test_shared_sync_upload_bucket_passes`).
+the file guards red; a new literal compose pin is red too. The original output is
+recorded in the PR body. The `reference-acceptance.py` preflight has its own cases
+(`test_split_sync_upload_bucket_is_named_before_any_request`,
+`test_shared_sync_upload_bucket_passes`,
+`test_private_lane_input_bucket_must_match_the_env`,
+`test_private_lane_input_bucket_equal_to_env_passes`).
+
+This module stays standard-library-only: the `guards` CI job runs
+`python3 -m unittest discover -s tests/ci` on the system interpreter with nothing
+installed, so `_install_minio_stub()` stands in for the `minio` package that
+`deploy/init-object-storage.py` imports at module scope. Under `uv run pytest` the
+real package is used instead.
 """
 
 from __future__ import annotations
@@ -37,6 +49,8 @@ import io
 import os
 import re
 import sys
+import tempfile
+import types
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -55,13 +69,53 @@ ASSET_BUCKET = "SPEECHNEXUS_OBJECT_STORAGE_BUCKET"
 ENV_ASSIGNMENT = re.compile(
     rf"^(?:export\s+)?(?P<key>{UPLOAD_BUCKET}|{ASSET_BUCKET})=(?P<value>.*)$"
 )
-# `KEY: ${KEY:-default}` in compose.yaml; the nested default must be a literal
-# because Compose's nested interpolation is unreliable.
-COMPOSE_DEFAULT = re.compile(
-    r"^\s*(?P<key>[A-Z][A-Z0-9_]*):\s*\$\{(?P=key):-(?P<default>[^}]*)\}\s*$"
+
+KEY_ALTERNATION = f"{UPLOAD_BUCKET}|{ASSET_BUCKET}"
+KEY_MENTION = re.compile(rf"\b(?:{KEY_ALTERNATION})\b")
+# The two legal Compose forms for these keys: a mapping or a list entry. The
+# nested default must be a literal because Compose's nested interpolation is
+# unreliable. Any other line that mentions a key is a problem, not ignorable.
+COMPOSE_MAPPING_DEFAULT = re.compile(
+    rf"^\s*(?P<key>{KEY_ALTERNATION}):\s*\$\{{(?P=key):-(?P<default>[^}}]*)\}}\s*(?:#.*)?$"
+)
+COMPOSE_LIST_DEFAULT = re.compile(
+    rf"^\s*-\s*(?P<key>{KEY_ALTERNATION})=\$\{{(?P=key):-(?P<default>[^}}]*)\}}\s*(?:#.*)?$"
 )
 
 
+def _install_minio_stub() -> None:
+    """Keep this module importable under the dependency-free `guards` job.
+
+    That job runs `python3 -m unittest discover -s tests/ci` on the system
+    interpreter and installs nothing, while `deploy/init-object-storage.py` does
+    `from minio import Minio` at import time. The real package is used when it is
+    present; otherwise three stub modules cover exactly the symbols the bootstrap
+    script imports, and every test replaces `Minio` with a fake client anyway.
+    """
+    try:
+        for name in ("minio.commonconfig", "minio.versioningconfig"):
+            importlib.import_module(name)
+        return
+    except ModuleNotFoundError:
+        pass
+    minio = types.ModuleType("minio")
+    minio.Minio = object  # type: ignore[attr-defined]
+    commonconfig = types.ModuleType("minio.commonconfig")
+    commonconfig.ENABLED = "Enabled"  # type: ignore[attr-defined]
+    versioningconfig = types.ModuleType("minio.versioningconfig")
+
+    def _versioning_config(status: object) -> SimpleNamespace:
+        return SimpleNamespace(status=status)
+
+    versioningconfig.VersioningConfig = _versioning_config  # type: ignore[attr-defined]
+    minio.commonconfig = commonconfig  # type: ignore[attr-defined]
+    minio.versioningconfig = versioningconfig  # type: ignore[attr-defined]
+    sys.modules.setdefault("minio", minio)
+    sys.modules.setdefault("minio.commonconfig", commonconfig)
+    sys.modules.setdefault("minio.versioningconfig", versioningconfig)
+
+
+_install_minio_stub()
 _INIT_SPEC = importlib.util.spec_from_file_location("init_object_storage", INIT_STORAGE)
 assert _INIT_SPEC is not None and _INIT_SPEC.loader is not None
 INIT: Any = importlib.util.module_from_spec(_INIT_SPEC)
@@ -127,15 +181,32 @@ def env_example_values() -> dict[str, str]:
     return values
 
 
-def compose_defaults() -> dict[str, list[str]]:
-    """Map each bucket key to every interpolated default `compose.yaml` declares."""
+def compose_bucket_lines(path: Path = COMPOSE) -> tuple[dict[str, list[str]], list[str]]:
+    """Parse every bucket-key line; a line in an unknown shape is a problem.
+
+    Silently skipping a non-interpolated pin is how a new literal site could split
+    the pair while every equality assertion still passed: the site would simply
+    not be in the list. So a line that mentions either key must match the mapping
+    or the list form, and anything else is reported with its line number.
+    """
     defaults: dict[str, list[str]] = {UPLOAD_BUCKET: [], ASSET_BUCKET: []}
-    for line in COMPOSE.read_text(encoding="utf-8").splitlines():
-        match = COMPOSE_DEFAULT.match(line)
-        if match is None or match.group("key") not in defaults:
+    problems: list[str] = []
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if line.lstrip().startswith("#") or KEY_MENTION.search(line) is None:
+            continue
+        match = COMPOSE_MAPPING_DEFAULT.match(line) or COMPOSE_LIST_DEFAULT.match(line)
+        if match is None:
+            problems.append(
+                f"{path.name}:{number} 提到桶键但不是 ${{KEY:-literal}} 形态: {line.strip()}"
+            )
             continue
         defaults[match.group("key")].append(_clean(match.group("default")))
-    return defaults
+    return defaults, problems
+
+
+def compose_defaults() -> dict[str, list[str]]:
+    """Map each bucket key to every interpolated default `compose.yaml` declares."""
+    return compose_bucket_lines()[0]
 
 
 class ObjectStorageInitTest(unittest.TestCase):
@@ -186,10 +257,11 @@ class ComposeEnvExampleBucketTest(unittest.TestCase):
 
 
 class ComposeYamlBucketDefaultsTest(unittest.TestCase):
-    """Both Compose services that carry the key must use the aligned literal."""
+    """Every Compose site that mentions a bucket key is a default, and aligned."""
 
     def test_every_compose_default_resolves_to_the_asset_bucket(self) -> None:
-        defaults = compose_defaults()
+        defaults, problems = compose_bucket_lines()
+        self.assertEqual(problems, [], "桶键出现在无法解析的形态里，可能被渲染成分叉的桶")
         # `minio-init` and `api` both declare the upload key, and the asset key
         # appears in those services and in the Artifact/staging ones. At least
         # two sites each keeps the bootstrap and the API on one bucket.
@@ -210,6 +282,38 @@ class ComposeYamlBucketDefaultsTest(unittest.TestCase):
             env_example_values()[UPLOAD_BUCKET],
             "示例环境文件与 compose 默认值必须指向同一个桶",
         )
+
+    def test_a_literal_pin_is_reported_instead_of_skipped(self) -> None:
+        """Adding a bare `KEY: value` site must turn this guard red (#972 F2)."""
+        with tempfile.TemporaryDirectory() as temporary:
+            compose = Path(temporary) / "compose.yaml"
+            compose.write_text(
+                "services:\n"
+                "  artifact-retention:\n"
+                "    environment:\n"
+                f"      {UPLOAD_BUCKET}: speechnexus-inputs\n",
+                encoding="utf-8",
+            )
+            _defaults, problems = compose_bucket_lines(compose)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn(f"{UPLOAD_BUCKET}: speechnexus-inputs", problems[0])
+
+    def test_both_legal_interpolation_shapes_are_accepted(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            compose = Path(temporary) / "compose.yaml"
+            compose.write_text(
+                "services:\n"
+                "  api:\n"
+                "    environment:\n"
+                f"      {UPLOAD_BUCKET}: ${{{UPLOAD_BUCKET}:-speechnexus-results}}\n"
+                "      env_file_list:\n"
+                f"        - {ASSET_BUCKET}=${{{ASSET_BUCKET}:-speechnexus-results}}\n",
+                encoding="utf-8",
+            )
+            defaults, problems = compose_bucket_lines(compose)
+        self.assertEqual(problems, [])
+        self.assertEqual(defaults[UPLOAD_BUCKET], ["speechnexus-results"])
+        self.assertEqual(defaults[ASSET_BUCKET], ["speechnexus-results"])
 
 
 if __name__ == "__main__":

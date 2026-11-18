@@ -199,12 +199,23 @@ def make_context(
 
 
 def write_private_inputs(root: Path) -> Path:
+    """Write §3-style private files that agree with ``BASE_ENV``'s buckets.
+
+    The ASR lane declares both buckets because it serves Job inputs and
+    synchronous uploads; the TTS lane declares only results, and a lane without
+    ``input_bucket`` is outside the input-scope check.
+    """
     private = root / "private"
     private.mkdir()
-    for name in ("gateway-file-asr.json", "gateway-file-tts.json"):
-        (private / name).write_text(
-            json.dumps({"objects": {"result_bucket": "results-bucket"}}), encoding="utf-8"
-        )
+    (private / "gateway-file-asr.json").write_text(
+        json.dumps(
+            {"objects": {"input_bucket": "results-bucket", "result_bucket": "results-bucket"}}
+        ),
+        encoding="utf-8",
+    )
+    (private / "gateway-file-tts.json").write_text(
+        json.dumps({"objects": {"result_bucket": "results-bucket"}}), encoding="utf-8"
+    )
     (private / "transcription-recipe.json").write_text("{}", encoding="utf-8")
     return private
 
@@ -463,6 +474,49 @@ class ToolsPreflightTest(unittest.TestCase):
             root = Path(temporary)
             write_fixture_repo(root)
             context, _runner = make_context(root, standard_responder())
+            code, output = run_capture(context, (step("tools"),))
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("结论: PASS", output)
+
+    def test_private_lane_input_bucket_must_match_the_env(self) -> None:
+        """#972 F3: a lane config that names another input bucket is caught pre-request."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            private = write_private_inputs(root)
+            write_fixture_repo(root)
+            (private / "gateway-file-asr.json").write_text(
+                json.dumps(
+                    {
+                        "objects": {
+                            "input_bucket": "speechnexus-inputs",
+                            "result_bucket": "results-bucket",
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            env = dict(BASE_ENV)
+            env["SPEECHNEXUS_PRIVATE_CONFIG_DIR"] = str(private)
+            responder = standard_responder(compose_document=compose_config_document(private))
+            context, _runner = make_context(root, responder, env=env)
+            code, output = run_capture(context, (step("tools"),))
+
+        self.assertEqual(code, HARNESS.EXIT_TOOLS, output)
+        self.assertIn("FAIL step=tools", output)
+        self.assertIn("gateway-file-asr.json", output)
+        self.assertIn("objects.input_bucket=speechnexus-inputs", output)
+        self.assertIn("execution_input_scope_mismatch", output)
+
+    def test_private_lane_input_bucket_equal_to_env_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            private = write_private_inputs(root)
+            write_fixture_repo(root)
+            env = dict(BASE_ENV)
+            env["SPEECHNEXUS_PRIVATE_CONFIG_DIR"] = str(private)
+            responder = standard_responder(compose_document=compose_config_document(private))
+            context, _runner = make_context(root, responder, env=env)
             code, output = run_capture(context, (step("tools"),))
 
         self.assertEqual(code, 0, output)

@@ -80,7 +80,7 @@ reference acceptance: FAIL step=migrate exit=20
 
 | 步骤 | 前置检查 | 预期输出 | 失败退出码 |
 | --- | --- | --- | --- |
-| `tools` | `docker version` 可用；Compose v2+；python3 ≥ 3.12；`uv` 可用；compose 的 `${KEY:?}` 派生键与入口额外 6 键非空；三条 Job DSN 互异；同步上传桶与 Job 资产桶同名；compose 能渲染 | 版本行；`N 个 compose 派生键 + 6 个入口额外键（共 N+6 个）非空`；`compose 渲染通过` | 10 |
+| `tools` | `docker version` 可用；Compose v2+；python3 ≥ 3.12；`uv` 可用；compose 的 `${KEY:?}` 派生键与入口额外 6 键非空；三条 Job DSN 互异；同步上传桶与 Job 资产桶同名；已存在的私有 lane 配置其 `objects.input_bucket` 同名；compose 能渲染 | 版本行；`N 个 compose 派生键 + 6 个入口额外键（共 N+6 个）非空`；`compose 渲染通过` | 10 |
 | `migrate` | `alembic.ini` 的 `script_location` 可解析；迁移目录恰好一个 head；`SPEECHNEXUS_MIGRATION_DATABASE_URL` 可用 | `postgres` healthy；`migrate` 用 `--build` 构建镜像后退出 0；`alembic_version` 单行且等于派生 head | 20 |
 | `roles` | §6 基线角色存在；三条 Job DSN 身份互异；`SN_ADMIN_DSN` 是迁移 owner | 首跑：`sn_job_writer sn_job_admission sn_job_dispatch 已创建；grants: N statements；M 项声明授权与已装 ACL 逐条核对全部在位；8 个授权探针通过`。重跑：`三个角色已存在（幂等：未重复 CREATE ROLE，未新增授权）；重渲染 N 条 GRANT、M 项授权与已装 ACL 逐条核对全部在位；8 个授权探针通过` | 30 |
 | `buckets` | `MINIO_*` 与两个桶名键非空；`minio` 可启动 | 每个不同桶名一行 `bucket ready: ... (versioning enabled)`；独立只读核对通过 | 40 |

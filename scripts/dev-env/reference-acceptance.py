@@ -848,16 +848,82 @@ def container_private_path(ctx: Context, container_path: str) -> Path:
     return private_config_dir(ctx) / container_path.removeprefix(prefix)
 
 
-def gateway_lane_configs(ctx: Context, config: Mapping[str, object]) -> list[Path]:
+def gateway_lane_config_paths(config: Mapping[str, object]) -> list[str]:
     environment = service_environment(config, "gateway")
-    paths = [
+    return [
         value
         for key, value in sorted(environment.items())
         if key.startswith("SPEECHNEXUS_GATEWAY_FILE_") and key.endswith("_CONFIG_FILE")
     ]
+
+
+def gateway_lane_configs(ctx: Context, config: Mapping[str, object]) -> list[Path]:
+    paths = gateway_lane_config_paths(config)
     if not paths:
         raise StepFailureError("compose gateway 服务没有配置任何 file lane 配置文件")
     return [container_private_path(ctx, path) for path in paths]
+
+
+def lane_input_bucket_gaps(
+    env: Mapping[str, str], documents: Mapping[str, Mapping[str, object]]
+) -> list[str]:
+    """Pure: every lane that declares `objects.input_bucket` must name the asset bucket.
+
+    The gateway compares a submission's reference with its own lane
+    `objects.input_bucket` and rejects before any S3 or engine I/O, so a private
+    config that names a different bucket makes synchronous requests answer
+    `503 backend_unavailable` while every env-only check still passes (#972 F3).
+    Lanes without `input_bucket` (the TTS lane reads only results) are skipped.
+    """
+    asset = env.get(JOB_INPUT_BUCKET, "").strip()
+    gaps: list[str] = []
+    if not asset:
+        return gaps
+    for name, document in sorted(documents.items()):
+        objects = document.get("objects")
+        if not isinstance(objects, Mapping) or "input_bucket" not in objects:
+            continue
+        configured = objects.get("input_bucket")
+        if str(configured) != asset:
+            gaps.append(
+                f"{name} 的 objects.input_bucket={configured} 与 "
+                f"{JOB_INPUT_BUCKET}={asset} 不一致："
+                "同步请求会被 execution_input_scope_mismatch 在引擎调用前拒绝"
+                "（503 backend_unavailable）"
+            )
+    return gaps
+
+
+def existing_lane_documents(ctx: Context) -> dict[str, Mapping[str, object]]:
+    """Read the private lane files that already exist; the stack step names the rest.
+
+    A from-zero host has not copied §3's private files yet, so a missing directory
+    or file is not a `tools` failure: `stack_private_inputs` reports it with the
+    missing path. Only a file that is present and readable can contradict the env.
+    """
+    try:
+        directory = private_config_dir(ctx)
+        if not directory.is_dir():
+            return {}
+        config = compose_config(ctx)
+    except StepFailureError:
+        return {}
+    documents: dict[str, Mapping[str, object]] = {}
+    for raw in gateway_lane_config_paths(config):
+        path = container_private_path(ctx, raw)
+        if not path.is_file():
+            continue
+        try:
+            documents[path.name] = as_mapping(
+                json.loads(path.read_text(encoding="utf-8")), path.name
+            )
+        except OSError:
+            continue
+        except json.JSONDecodeError:
+            continue
+        except StepFailureError:
+            continue
+    return documents
 
 
 def sha256_file(path: Path) -> str:
@@ -938,6 +1004,15 @@ def step_tools(ctx: Context) -> str:
     scope_gap = sync_input_bucket_gap(ctx.env)
     if scope_gap is not None:
         raise StepFailureError(scope_gap, inputs=[SYNC_UPLOAD_BUCKET, JOB_INPUT_BUCKET])
+    lane_gaps = lane_input_bucket_gaps(ctx.env, existing_lane_documents(ctx))
+    if lane_gaps:
+        raise StepFailureError(
+            "; ".join(lane_gaps),
+            inputs=[
+                f"{JOB_INPUT_BUCKET}=<网关 lane objects.input_bucket 的值>",
+                "deploy/private/gateway-file-*.json 的 objects.input_bucket",
+            ],
+        )
     render = ctx.read((*ctx.compose_argv, "config", "--quiet"))
     if not render.ok:
         raise StepFailureError(
@@ -1481,8 +1556,10 @@ STEPS: tuple[Step, ...] = (
         EXIT_TOOLS,
         "docker daemon + compose v2 + python3 ≥ 3.12 + uv；"
         "deploy/compose.yaml 的 ${KEY:?} 键与三条 Job DSN 均非空；"
-        "同步上传桶与 Job 资产桶同名；compose 能渲染",
-        "各工具版本行；无空白必需键；两个桶键取值相同；docker compose config --quiet 退出 0",
+        "同步上传桶与 Job 资产桶同名；已存在的私有 lane 配置其 objects.input_bucket 同名；"
+        "compose 能渲染",
+        "各工具版本行；无空白必需键；两个桶键取值相同；私有 lane 配置与 env 的输入桶一致；"
+        "docker compose config --quiet 退出 0",
         step_tools,
     ),
     Step(

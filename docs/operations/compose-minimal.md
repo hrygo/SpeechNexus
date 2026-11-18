@@ -357,8 +357,11 @@ chmod 600 "$D/transcription-recipe.json" "$D/gateway-file-asr.json" \
    （`transcription_runtime.py:111`），而网关的 `objects.input_bucket` 只有一个：
    同一进程既服务异步 Job 输入，也服务同步转写上传。两个桶名不相等时，同步请求在
    **调用引擎之前**就被 `execution_input_scope_mismatch` 拒绝，对外固定
-   `503 backend_unavailable`——引擎侧完全看不到该请求，dispatch 标记后约 16 ms 即被隔离，
-   并占用一个 ASR 槽位（DEL-539 实测，2026-11-18）。默认值已对齐为同一个桶；
+   `503 backend_unavailable`——引擎侧完全看不到该请求，dispatch 标记后约 16 ms 即被隔离
+   （DEL-539 实测，2026-11-18）。隔离占用计入 `engine_instances.quarantined_slots`，而
+   `CHECK (held_slots <= max_slots - quarantined_slots)`
+   （`backend/src/speechnexus_backend/speech/infrastructure/coordination_schema.py:145`）
+   使隔离槽位与已持有槽位共享 `max_slots` 上限，所以这不是零成本失败。默认值已对齐为同一个桶；
    「网关单输入桶」是当前实现边界，按 lane 配置第二个输入桶属于后续工作。
 5. endpoint 的地址、端口、served model 与 bearer token 是部署网络内的受控值。
 

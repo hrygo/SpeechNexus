@@ -14,11 +14,14 @@ default. A host that already uses `172.28.0.0/24` sets both variables in
 address `python3 deploy/compose-network.py <subnet>` prints. The runbook step is
 `docs/operations/compose-minimal.md` §1.1.
 
-The bucket keys play different roles, but two of them must carry the same name.
-A lane that declares `objects.input_bucket` (`file_asr_v1`,
-`file_voice_clone_v1`) reads the **Job input asset bucket**, so it must equal
-`SPEECHNEXUS_OBJECT_STORAGE_BUCKET` — the bucket `/v1/nexus/assets` writes to and
-admission copies into the command's `storage.storage_bucket`.
+The bucket keys play different roles, and one equality is mandatory:
+`SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET` (the synchronous upload bucket) must name
+the same bucket as `SPEECHNEXUS_OBJECT_STORAGE_BUCKET` (the Job input asset
+bucket); the staging/result bucket may name a different one. A lane that declares
+`objects.input_bucket` (`file_asr_v1`, `file_voice_clone_v1`) reads the **Job
+input asset bucket**, so it must equal `SPEECHNEXUS_OBJECT_STORAGE_BUCKET` — the
+bucket `/v1/nexus/assets` writes to and admission copies into the command's
+`storage.storage_bucket`.
 `objects.result_bucket` must equal `SPEECHNEXUS_EXECUTION_RESULT_BUCKET`.
 `SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET` is the synchronous-transcription upload
 bucket; because the gateway exposes one `objects.input_bucket` per lane and

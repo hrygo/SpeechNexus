@@ -55,6 +55,10 @@ TTS_ENDPOINT = EXAMPLES / "gateway-file-tts-endpoint.example.json"
 # built from them is "every field really replaced" rather than "most fields".
 REPLACED = {
     "model": "tts-approved-model",
+    # The engine's own name, as the reference CustomVoice engine serves it. It is a
+    # different string from the public model above: admission never compares them
+    # (DEL-538), and the old checker rule that did is what this file pins against.
+    "engine_model": "qwen3-tts-1p7b-custom",
     "binding": "binding-revision-approved-tts",
     "manifest": "capacity-manifest-approved-tts",
     "policy": "policy-revision-approved-tts",
@@ -130,7 +134,7 @@ def write_assembly(directory: Path, *, replace: bool, keep: tuple[str, ...] = ()
         endpoint.update(
             address=REPLACED["address"],
             port=REPLACED["port"],
-            served_model=REPLACED["model"],
+            served_model=REPLACED["engine_model"],
             bearer_token="0123456789abcdef" * 4,
         )
         gateway["builtin_voice_binding"].update(
@@ -271,6 +275,71 @@ class AssemblyCheckerTests(unittest.TestCase):
         self.assertNotIn("replace-ready", message)
         summary = re.search(r"summary: 仍是样例值 \d+ 项 / 不一致 \d+ 项", message)
         assert summary is not None, message
+
+    def test_the_public_model_and_the_engine_model_may_differ(self) -> None:
+        # DEL-538's shape: the reference engine serves `qwen3-tts-1p7b-custom`
+        # while the caller's public `model` is the binding id, a different name.
+        # Runtime admission compares the public model and the binding revision
+        # only (`tts_admission.py`), so this assembly is green. The old rule
+        # reported it as inconsistent and steered the operator into writing the
+        # engine name into `recipe.model_id`, which is the actual failure.
+        with tempfile.TemporaryDirectory() as directory:
+            assembly = write_assembly(Path(directory), replace=True)
+            endpoint = json.loads(
+                (assembly / "gateway-file-tts-endpoint.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(endpoint["served_model"], REPLACED["engine_model"])
+            self.assertNotEqual(REPLACED["engine_model"], REPLACED["model"])
+            result = self._run(assembly)
+        message = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, message)
+        self.assertNotIn("agreement: recipe.model_id", message)
+
+    def test_the_engine_name_written_into_model_id_is_inconsistent(self) -> None:
+        # `recipe.model_id` is the public model/binding id admission compares with
+        # `plan.model_id`; the engine name does not belong there. Writing it in is
+        # what the old rule recommended, and the first request answers a 503
+        # `stage=recipe_mismatch`.
+        with tempfile.TemporaryDirectory() as directory:
+            assembly = write_assembly(Path(directory), replace=True)
+            recipe = json.loads((assembly / "speech-recipe.json").read_text(encoding="utf-8"))
+            recipe["model_id"] = REPLACED["engine_model"]
+            _redigest(recipe)
+            (assembly / "speech-recipe.json").write_text(json.dumps(recipe), encoding="utf-8")
+            result = self._run(assembly)
+        message = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 1, message)
+        self.assertIn("agreement: recipe.model_id (public model/binding id)", message)
+        # This direction is rejected by admission itself on the first request.
+        self.assertIn("stage=recipe_mismatch", message)
+
+    def test_a_served_model_equal_to_the_public_model_is_inconsistent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            assembly = write_assembly(Path(directory), replace=True)
+            mutate(
+                assembly,
+                "gateway-file-tts-endpoint.json",
+                "served_model",
+                REPLACED["model"],
+            )
+            result = self._run(assembly)
+        message = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 1, message)
+        self.assertIn("agreement: recipe.model_id (public model/binding id)", message)
+        # The detail names this direction's failure too: admission passes, and only
+        # the engine refuses the public name, as an unknown model.
+        self.assertIn("未知 model", message)
+
+    def test_an_empty_served_model_is_rejected_by_the_descriptor_loader(self) -> None:
+        # The descriptor's own loader requires an identifier, so a blank name never
+        # reaches the relation above; it rejects the whole file instead.
+        with tempfile.TemporaryDirectory() as directory:
+            assembly = write_assembly(Path(directory), replace=True)
+            mutate(assembly, "gateway-file-tts-endpoint.json", "served_model", "")
+            result = self._run(assembly)
+        message = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 1, message)
+        self.assertIn("invalid private controlled TTS deployment descriptor", message)
 
     def test_one_field_left_at_the_example_value_is_red(self) -> None:
         # The review's counter-example: everything replaced except policy_revision_id.

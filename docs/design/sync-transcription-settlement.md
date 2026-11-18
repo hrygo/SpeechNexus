@@ -177,7 +177,7 @@ worker 在调用释放前查询一次网关执行状态（`GatewayExecutionClien
 
 | 形状 | 归谁管 | 本机制的动作 | 可见面 |
 | --- | --- | --- | --- |
-| `unknown_quarantined`（执行未知） | 隔离 + 隔离释放：`LeaseService.quarantine` 把租约移入隔离桶，`QuarantineReleaseService` 的 `operator_verified_instance_terminated` 证词才能解除 | 不隔离、不释放、不写执行事实；root 保持未结算 | 运维债查询（§9.2）；同步转写目前没有隔离推进者，这是本设计范围外的缺口 |
+| `unknown_quarantined`（执行未知） | 隔离 + 隔离释放：`LeaseService.quarantine` 把租约移入隔离桶，`QuarantineReleaseService` 的 `operator_verified_instance_terminated` 证词才能解除 | 不隔离、不释放、不写执行事实；root 保持未结算 | 管理诊断 `asr_settlement_debt` 的 `unknown` 类（§9.2）；同步转写目前没有隔离推进者，这是本设计范围外的缺口 |
 | `execution_cleanup_pending`（终态缺停止/清理证据） | 网关停止证据修复（`#338`） | defer，保持占用 | 同上；detail 点名执行状态 |
 | `failed`（执行失败） | 失败结果路径拥有「失败意味着什么」；本机制不新增分支 | 只把已持久终态交给共享 `release()`：`not_required` 且证明确未派发时可释放，否则拒绝并 defer | 同上 |
 | `aborted`（执行中止） | 取消路径拥有「中止意味着什么」 | 同上：只有停止与释放双证据齐全时由 `release()` 放行 | 同上 |
@@ -232,7 +232,7 @@ worker 在调用释放前查询一次网关执行状态（`GatewayExecutionClien
 
 结算周期是**容量可见性的上界**，不是授权的一部分：一个成功执行从网关落终态到 `held_slots` 下降，
 最坏多等一个扫描周期加一次释放事务。这个上界只在 worker 运行且 preflight 通过时成立；worker 没启动时
-`/readyz` 的债探针与 preflight 负责把「没有推进者」暴露出来，而不是让容量静默消失。
+管理诊断的 `asr_settlement_debt` 与 preflight 负责把「没有推进者」暴露出来，而不是让容量静默消失。
 
 ## 7. 配置与权限面
 
@@ -293,10 +293,12 @@ worker 再用准入身份重跑一次，确保两个池指向同一套事实。
 
 ### 7.5 漏配时的启动语义
 
+没有单独的 `ENABLED` 开关：装配条件与结算条件是同一个结算 DSN。不存在「转写可用但结算停止」的配置，
+因为那正是 `#974` 要消灭的可达状态。
+
 | 状态 | 结果 |
 | --- | --- |
 | `SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL` 未设置或为空 | 同步转写不装配：`POST /v1/audio/transcriptions` 返回 `503`，启动日志点名该键；API 其余路由照常启动 |
-| `SPEECHNEXUS_ASR_SETTLEMENT_ENABLED=false` | 同上：转写路由不可用，worker 不启动。不存在「继续服务但不结算」的模式 |
 | DSN 已配置但表缺、权限不符、身份过宽、preflight 拒绝 | API 启动失败，错误只含键名/类别，不含 DSN 或凭据 |
 | 准入身份缺 `INSERT` 授权 | 准入事务整体回滚，请求失败（不产生「有租约无 root」的半成品）；修复是重放 provisioning 授权 |
 
@@ -307,10 +309,10 @@ worker 再用准入身份重跑一次，确保两个池指向同一套事实。
 
 ### 8.1 怎么停
 
-唯一安全的停法是让**准入与结算一起停**：`SPEECHNEXUS_ASR_SETTLEMENT_ENABLED=false`（或把结算 DSN 置空）
-使 `build_transcription` 返回 `None`，转写路由 `503`，worker 不启动；也可以直接停 API 容器。
+唯一安全的停法是让**准入与结算一起停**：把结算 DSN 置空/失效，或直接停 API 容器。前者使
+`build_transcription` 返回 `None`，转写路由 `503`，worker 不启动；后者同时停掉两者。
 不存在「保持转写、只停扫描」的开关：那会恢复 `#974` 的泄漏形态，而没有任何推进者。停服务不删除
-root、租约或证据；重新启用后按未结算 root 继续。
+root、租约或证据；恢复 DSN 后按未结算 root 继续。
 
 ### 8.2 已释放的预算不能重算
 
@@ -347,7 +349,8 @@ root、租约或证据；重新启用后按未结算 root 继续。
 | 已释放先到 | 先由运维/其它写者释放 → worker 只 `mark_settled`，释放调用次数为 0 |
 | 崩溃重放 | 提交前崩溃 → 重放；提交后崩溃 → 只补标记 |
 | 双 worker | 同一 root 被两次扫描 → 只提交一次，另一个按已释放收口 |
-| 历史回填 | 迁移前持有的成功租约 → 迁移后一轮扫描结算 |
+| 历史回填 | 迁移前持有的成功租约 → 迁移后一轮扫描结算；第二轮回填不产生第二行 |
+| 重复 `--once` | 同一成功租约连跑两次 → `budget_released_at_us` 与计数都不再变化 |
 | 启动拒绝 | 缺表/缺 root/settled-but-held/身份过宽/同角色 → 启动失败且错误不含凭据 |
 
 ### 9.2 参考部署（真机）
@@ -359,7 +362,21 @@ root、租约或证据；重新启用后按未结算 root 继续。
 4. 杀 worker（停 API 再起）：重启后未结算 root 被继续处理，已结算 root 不被重复扣账。
 5. 并发：同一实例上连续两次成功转写，第二次不被容量拒绝。
 
-### 9.3 不在本机制内
+### 9.3 可见面（管理诊断）
+
+`/v1/nexus/admin/diagnostics` 的 `asr_settlement_debt` 报告四类计数与有界明细：
+
+| 类别 | 判据 | 含义 |
+| --- | --- | --- |
+| `unknown` | root 未 settled、租约仍被持有、`deadline_at_us` 已过、网关终态是 `unknown_quarantined` | 等隔离/隔离释放，本机制不碰 |
+| `cleanup_pending` | 同上，但执行终态缺停止/清理证据 | 等网关停止证据修复 |
+| `route_mismatch` | root 的 `(gateway_id, host_node_id)` 不是任何已配置 worker 的路由 | 没有推进者；运维债 |
+| `settled_but_held` | root `settled_at_us` 非空而租约仍非 `released` | 实现缺陷；应恒为 0 |
+
+该 detail 始终 `ok`，不进入 `/readyz` 的失败判据：`/readyz` 只反映依赖（数据库、对象存储等）是否可用，
+债是「依赖可用但没有推进者」的运维事实，应由诊断暴露并告警，而不是把 API 判成不健康。
+
+### 9.4 不在本机制内
 
 - 不发 abort/drain：执行停在非终态时，容量保持占用，归停止/取消路径。
 - 不推进 `unknown_quarantined` 的隔离：同步转写目前没有隔离推进者，这是独立缺口。

@@ -11,6 +11,10 @@ date: 2026-11-18
 [同步转写的租约结算](../design/sync-transcription-settlement.md)。相关工作项：[#974](https://github.com/hrygo/SpeechNexus/issues/974)
 （成功后不结算，已实测）、[#338](https://github.com/hrygo/SpeechNexus/issues/338)（停止证据协议）。
 
+交付切分（PO 裁决）：设计文档单独成 PR；实现分两片——**PR A = U1–U3**（迁移、准入写 root、worker 与
+`--once`），**PR B = U4–U7**（运行时装配与 fail-closed、preflight、部署文档、管理诊断）。两片都合入
+同一候选 head 后才进最终真机验收。
+
 范围：让 `POST /v1/audio/transcriptions` 的成功执行把容量归还，并让归还由一个持久、可重放的
 结算运行时负责。不改执行网关、不改公开契约、不改引擎路径、不新增容器。
 
@@ -24,10 +28,10 @@ U0 文档（本切片）
  └─ U1 迁移 + 授权声明
      ├─ U2 准入事务内写 root
      └─ U3 领域/应用 worker + 存储 + 一次性入口      ← Slice A 结束（能释放）
-         └─ U4 运行时装配 + 开关 + fail-closed
+         └─ U4 运行时装配 + fail-closed
              ├─ U5 preflight + 身份自检
              └─ U6 参考部署与运维文档                ← Slice B 结束（自动周期）
-                 └─ U7 债探针（可见面）
+                 └─ U7 债探针（管理诊断，首发）
                      └─ U8 真机验收（不是提交单元）
 ```
 
@@ -60,7 +64,8 @@ Slice A = U1–U3；Slice B = U4–U7。U0 已由本切片完成。U2 与 U3 可
   3. 回填对同一租约重复执行不产生第二行（迁移只跑一次，测试用重复 INSERT 证明幂等 SQL）。
   4. 无对应 `admission_leases` 行的 root 插入被外键拒绝。
 - 反例：删掉回填的 `WHERE l.lease_state <> 'released'`，`test_migration_skips_released_leases` 变红；
-  删掉 `kind='asr_file'` 过滤，`test_migration_ignores_public_jobs_and_probes` 变红。
+  删掉 `kind='asr_file'` 过滤，`test_migration_ignores_public_jobs_and_probes` 变红；把条件放宽到全部
+  `operation-…`，`test_migration_ignores_non_asr_operations` 变红。
 - 本地门禁：`UV_NO_CONFIG=1 uv run pytest tests/integration/test_asr_settlement_migration_pg.py -q`；
   `UV_NO_CONFIG=1 uv run pytest tests/ci -q`（迁移头与授权名被 CI 的部署覆盖测试引用时）。
 - 真机：在参考部署的迁移身份上跑一次 `alembic upgrade head`，核对回填行数等于迁移前仍被持有的
@@ -132,25 +137,27 @@ Slice A = U1–U3；Slice B = U4–U7。U0 已由本切片完成。U2 与 U3 可
 
 规模：5 个文件，约 360–420 行（领域 40、应用 100、存储 80、一次性入口 60、用例 120）。
 
-### U4 运行时装配 + 开关 + fail-closed
+### U4 运行时装配 + fail-closed
 
 - 文件：
   - `backend/src/speechnexus_backend/asr_settlement_worker.py` 追加 `AsrSettlementWorkerSettings`、
     `AsrSettlementRuntime`（线程 + 事件循环，照 `TtsSettlementRuntime` 的形态）、`run` 循环与
     `__main__`。
   - `backend/src/speechnexus_backend/transcription_runtime.py`：在 `build_transcription` 成功链里打开
-    settlement 运行时；缺少结算 DSN 或 `SPEECHNEXUS_ASR_SETTLEMENT_ENABLED=false` 时返回 `None` 并点名键；
-    运行时启动失败则让 `build_transcription` 抛出（API 启动失败）。
-  - `backend/src/speechnexus_backend/settings.py`：新增 `asr_settlement_enabled`（`Literal["true","false"]`，
-    未设置按 `true`）；结算 DSN 复用现有 `speech_settlement_database_url`，不新增键。
-  - `tests/unit/backend/test_transcription_production.py` 追加开关/缺配置用例。
+    settlement 运行时；结算 DSN 缺失/为空时把 `SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL` 并入
+    `missing` 列表，返回 `None` 并点名（转写 `503`）；运行时启动失败则让 `build_transcription` 抛出
+    （API 启动失败）。
+  - `backend/src/speechnexus_backend/settings.py`：复用现有 `speech_settlement_database_url`，不新增键；
+    不新增 `ENABLED` 开关。
+  - `tests/unit/backend/test_transcription_production.py` 追加缺配置/启动失败用例。
 - 用例：
   1. 结算 DSN 为空 → `build_transcription` 返回 `None`，HTTP 路由 `503`，日志包含
-     `SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL`。
-  2. `SPEECHNEXUS_ASR_SETTLEMENT_ENABLED=false` → 同上，worker 未启动。
-  3. 结算 DSN 已配置但身份/表不可用 → `build_transcription` 抛出，API 启动失败，异常文本不含 DSN。
-  4. 正常运行 → worker 线程启动，`close()` 在超时内停止；重复 `close()` 幂等。
-- 反例：删掉开关判断，用例 2 变红；把运行时启动失败降级为 warning + `return None`，用例 3 变红。
+     `SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL`；API 其余路由照常。
+  2. 结算 DSN 已配置但身份/表不可用 → `build_transcription` 抛出，API 启动失败，异常文本不含 DSN。
+  3. 正常运行 → worker 线程启动，`close()` 在超时内停止；重复 `close()` 幂等。
+  4. 不存在「转写可用但结算停止」的配置：没有该开关，测试断言 settings 里没有这个键。
+- 反例：把运行时启动失败降级为 warning + `return None`，用例 2 变红；给 settings 加回 `ENABLED` 开关，
+  用例 4 变红。
 - 本地门禁：`UV_NO_CONFIG=1 uv run pytest tests/unit/backend/test_transcription_production.py -q`；
   真机项：空 DSN 起栈，转写 `503`，`/readyz` 正常；恢复 DSN 后转写恢复。
 - 规模：4 个文件，约 260–300 行（运行时 140、装配 30、设置 20、用例 70）。
@@ -237,7 +244,7 @@ Slice A = U1–U3；Slice B = U4–U7。U0 已由本切片完成。U2 与 U3 可
 
 1. 升级后 `--once` 结算 `#974` 残留租约（`held_slots=0`、`held_attempts=0`），第二次同步转写 `200`。
 2. 启用周期后，一次成功转写在一个扫描周期内 `held_slots` 回 0，无需命令。
-3. 结算 DSN 置空重启：转写 `503`，容量不再增长；恢复后继续结算。
+3. 结算 DSN 置空重启：转写 `503`，容量不再增长；恢复后继续结算（没有单独的开关可停结算）。
 4. 停 API 再起：未结算 root 继续，已结算 root 不重复扣账。
 5. 同一实例连续两次成功转写，第二次不被容量拒绝。
 
@@ -249,10 +256,10 @@ Slice A = U1–U3；Slice B = U4–U7。U0 已由本切片完成。U2 与 U3 可
 | U1 迁移 + 授权 | 3 | 200–240 | 1 个（`0057`） | 无 |
 | U2 准入写 root | 4 | 240–280 | 无 | 无 |
 | U3 worker + 存储 + once | 5 | 360–420 | 无 | 无 |
-| U4 运行时 + 开关 | 4 | 260–300 | 无 | 无 |
+| U4 运行时 + fail-closed | 4 | 240–280 | 无 | 无 |
 | U5 preflight + 自检 | 4 | 320–380 | 无 | 无 |
 | U6 部署文档 + CI | 5 | 110–140 | 无 | 无 |
-| U7 债探针 | 3 | 180–220 | 无 | 无 |
+| U7 债探针（管理诊断） | 3 | 180–220 | 无 | 无 |
 | **合计（U1–U7）** | **约 28 个文件**（含新增与修改，测试约占一半） | **约 1,730–1,980 行** | **1 个迁移** | **0** |
 
 诚实边界：这是按现有 TTS 同类模块的行数外推的量级，不含 review 返修；测试行数按现有
@@ -273,7 +280,7 @@ Slice A = U1–U3；Slice B = U4–U7。U0 已由本切片完成。U2 与 U3 可
 ### Slice B：自动周期（U4–U7）
 
 - 已具备：API 进程内周期扫描、启动 fail-closed、preflight、可见面。
-- 可验：成功转写后一个扫描周期内 `held_slots` 回 0（无命令）；空 DSN/开关关闭时转写 `503`；
+- 可验：成功转写后一个扫描周期内 `held_slots` 回 0（无命令）；空 DSN 时转写 `503`；
   缺授权/表时启动失败；`unknown_quarantined` 在债探针可见。
 - 不可验/仍存在：`unknown_quarantined` 与执行失败形状没有自动推进者（只有可见面）；没有 abort/drain；
   没有多节点/跨网关结算。
@@ -302,13 +309,13 @@ UV_NO_CONFIG=1 uv run ruff format --check .
 2. **失败形状的自动归属**：`failed`（非 `not_required`）与 `aborted` 目前只有共享释放规则的判据，
    没有专门的触发者。本计划让 worker 把终态交给共享规则，因此有证据的失败会被结算、无证据的保持占用；
    是否要为「失败但无证据」再建一条隔离路径，属于 #338 的范围。
-3. **开关的产品语义**：`SPEECHNEXUS_ASR_SETTLEMENT_ENABLED=false` 同时关闭转写路由，是本计划的建议
-   （避免「服务但不结算」）；如果产品要求保留转写，需要接受容量泄漏并另行设计只读告警。
-4. **`/readyz` 的债探针是否进首发**：U7 是可见面的最小实现；如果首发范围收紧，可以先只留运维 SQL，
-   但必须把「同步 ASR 的未知租约无人推进」写进已知限制。
+3. **升级顺序**：必须先跑迁移与授权、再换 API 镜像。新镜像在没有 `speech_asr_settlement` 表时会
+   fail-closed（preflight 点名迁移命令），不会带病服务；部署文档把这一步写成升级前置。
+4. **诊断 detail 的上限**：`asr_settlement_debt` 只给计数与每类前 N 条（默认 5，N 由查询参数控制），
+   避免一个大债表把响应撑爆；上限值在实现时固定到常量并用例断言。
 
 ## 7. 回滚
 
-- 代码回滚：停用 `SPEECHNEXUS_ASR_SETTLEMENT_ENABLED` 或回退 API 镜像；root 表与已释放账目保留。
+- 代码回滚：回退 API 镜像（或把结算 DSN 置空，转写随 `503`）；root 表与已释放账目保留。
 - 迁移不回滚（`downgrade` 拒绝），与 TTS 结算迁移同口径；回退版本后 root 表成为未被读取的历史。
 - 已释放容量不能重算，理由与处置见设计 §8.2。

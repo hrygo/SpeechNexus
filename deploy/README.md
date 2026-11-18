@@ -186,9 +186,9 @@ requires, in order, all of it verifiable only against a running deployment:
    (`qualified_speech_facts_postgres.py:76` selects `current_generation` and raises
    `missing instance head` otherwise). Registration is
    `speechnexus-register-engine`; this Compose's `engine-register` service only
-   loads the **transcription** recipe (`engine_registration.py:1136` calls
+   loads the **transcription** recipe (`engine_registration.py:1168` calls
    `load_transcription_recipe`), so a TTS instance is registered in manual mode
-   (`_spec_from_manual`, `engine_registration.py:1072`) with `--model --node --pool
+   (`_spec_from_manual`, `engine_registration.py:1101`) with `--model --node --pool
    --gateway --instance --template-id --binding-revision-id --manifest-id
    --config-digest --topology-digest --qualification-digest --architecture
    --service-class --loading-policy --max-slots --policy-revision --peak --steady
@@ -201,7 +201,7 @@ requires, in order, all of it verifiable only against a running deployment:
    values (`transcription_admission.py:88-123`, surfaced as
    `TranscriptionUnavailableError … disagree with the private recipe`). Registration
    also refuses a plan whose budget does not fit the host's declared capacity
-   (`_require_capacity`, `host_capacity_insufficient`, `engine_registration.py:494`),
+   (`_require_capacity`, `host_capacity_insufficient`, `engine_registration.py:502`),
    so the recipe's budget must be the one registration accepted.
 3. **`policy_revision_id` matching two independent facts.** The workspace quota row's
    `policy_revision` must equal it (`transcription_admission.py:116`), and the

@@ -512,7 +512,14 @@ def _require_capacity(cursor: _Cursor, spec: RegistrationSpec) -> None:
         raise RegistrationError(
             "host_capacity_insufficient",
             "existing host allocatable vector cannot hold the requested plan; "
-            f"need at least {_vector_text(required)} beyond current holds",
+            f"need at least {_vector_text(required)} beyond current holds "
+            f"(allocatable {_vector_text(capacity)}, held+quarantined {_vector_text(occupied)}). "
+            "This command cannot enlarge host_nodes.allocatable_* after the first registration "
+            "on a node inserted it (ON CONFLICT DO NOTHING), and the runtime role cannot update "
+            "those columns either. First check whether the held or quarantined part can be "
+            "released; otherwise raise the allocatable vector in a reviewed change, or rebuild "
+            "the data volume and pass an explicit --host-capacity when the first registration "
+            "on this node runs",
         )
 
 
@@ -1312,7 +1319,17 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--peak", type=_vector, default=None)
     parser.add_argument("--steady", type=_vector, default=None)
     parser.add_argument("--per-slot", type=_vector, default=None)
-    parser.add_argument("--host-capacity", type=_vector, default=None)
+    parser.add_argument(
+        "--host-capacity",
+        type=_vector,
+        default=None,
+        help=(
+            "host allocatable vector for this node; defaults to this plan's own need "
+            "(steady + per_slot*max_slots, at least peak per dimension). It is written only "
+            "when the node row is first inserted, so pass a value sized for every instance "
+            "you intend to run here"
+        ),
+    )
     parser.add_argument("--policy-revision", default=None)
     options = parser.parse_args(argv)
     try:

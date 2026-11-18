@@ -2380,12 +2380,18 @@ instance 来“绕过”冲突；先核对旧 head、owner 和 readiness 证据�
 
 **宿主机的容量向量只在首次注册时写入，且必须一次声明够**：`host_nodes.allocatable_*` 由
 `--host-capacity` 决定，缺省值是**本次注册这一条 plan 的需求**（`engine_registration.py:169`
-的 `steady + per_slot × max_slots`，逐维取与 `peak` 的较大者）。也就是说，不传 `--host-capacity`
-注册的第一个实例会把整台宿主机的可分配量恰好占满，**第二个实例必然以 `host_capacity_insufficient`
-失败**，报错形如「need at least … beyond current holds」。而且这一行只在首次插入时写
-（`engine_registration.py:359` 的 `ON CONFLICT (host_node_id) DO NOTHING`），之后没有产品入口能把它
-改大——所以要在这台宿主机上跑多个实例（例如同一台机器既有 ASR 又有 TTS）时，**第一次注册就要显式传
-`--host-capacity`，按宿主机真实可用量写，并留够所有实例峰值之和**。核对方式：
+的 `steady + per_slot × max_slots`，逐维取与 `peak` 的较大者）。注册事务先按 `peak` 预留，
+观察成功后把这一份换成 `steady`（`held = held − peak + steady`，
+`speech/domain/runtime_observations.py:474`），所以缺省注册成功后留下的余量逐维是
+`max(per_slot × max_slots, peak − steady)`（即「缺省 allocatable − `steady`」）。余量归零的准确条件是
+`peak == steady` 且 `per_slot × max_slots == 0`——单槽常驻引擎就属这种（`DEL-544` 现场即是），
+第二个实例会以 `host_capacity_insufficient` 失败（报错形如「need at least … beyond current holds」）；
+`peak > steady` 或 `max_slots > 1` 时通常还能挤进一个较小的实例。这一行只在首次
+插入时写（`engine_registration.py:359` 的 `ON CONFLICT (host_node_id) DO NOTHING`），运行角色没有放大
+路径（`host_nodes` 的 UPDATE 权限只含 `node_state`/`version`/`held_*`/`quarantined_*`）；要扩只能走变更
+评审下的行调整，或者重建数据卷后重来。因此**打算在这台宿主机上跑多个实例**（例如同一台机器既有 ASR
+又有 TTS）时，第一次注册就显式传 `--host-capacity`，按宿主机真实可用量写，并留够所有实例峰值之和。
+核对方式：
 
 ```bash
 "${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
@@ -2432,7 +2438,7 @@ binding 自己的属性。因此同一工作空间里的所有模态（文件 AS
 | `engine-register` 报 `engine_unreachable` | 从 Compose 网络探测 `SPEECHNEXUS_ENGINE_HEALTH_URL`；该 URL 必须能从容器访问，不能只从宿主机访问 |
 | `engine-register` 报 `invalid_recipe` | recipe 结构、摘要、stage/instance 或 binding plan 不一致 |
 | `engine-register` 报 `quota_policy_conflict` / `quota_capacity_conflict` | 该工作空间已有配额行：`policy_revision` 必须与本次注册提供的值一致、`max_attempts` 不得更小；不要用改行的方式绕过，先确认哪个部署先写了这行。同一工作空间的多个模态共用一套策略，两套策略要分工作空间——见 [§8 的一个工作空间只有一套配额策略](#一个工作空间只有一套配额策略) |
-| `engine-register` 报 `host_capacity_insufficient` | `--host-capacity`（缺省 `steady + per_slot × max_slots`，至少覆盖 `peak`）小于计划需求，或该节点已有 held/quarantined 占用。**在同一节点注册第二个实例时几乎必然是这条**：缺省值等于第一个实例自己的需求，把整台宿主机占满，且该行只在首次插入时写；见[§8 的宿主机容量规则](#宿主机的容量向量只在首次注册时写入且必须一次声明够) |
+| `engine-register` 报 `host_capacity_insufficient` | `--host-capacity`（缺省 `steady + per_slot × max_slots`，至少覆盖 `peak`）小于计划需求，或该节点已有 held/quarantined 占用。**在同一节点注册第二个实例、余量不够时是这条**：缺省值等于第一个实例自己的需求，`peak == steady` 的单槽常驻计划会把该维余量吃光，且该行只在首次插入时写；报错里带 `allocatable`/`held+quarantined` 两个向量与出路。注意同一错误码有两条路径：参数校验那条（`engine_registration.py:986`，退出码 2）在连库前就拒绝，本节这条（`:513`，退出码 4）发生在已有节点行上；见[§8 的宿主机容量规则](#宿主机的容量向量只在首次注册时写入且必须一次声明够) |
 | `POST /v1/nexus/jobs`（及列表、读取、取消、重试、事件流）返回 `503 job_unavailable` | 优先当「缺前置」读，不要当引擎或容量故障：`error.message` 已按 §9.1 的表点名缺哪个键或该跑哪条命令；`retryable: false`，重试同一请求不会改变结果 |
 | `POST /v1/nexus/jobs` 返回 `422 model_not_published` | 没有任何已发布 binding 作为该 `model` 的 head，或 `execution_recipe` / catalogue 尚未就绪；先按[异步 Job 手册 §7.1](async-job-runbook.md#71-发布-binding注册与创建-job-的前置) 发布（从空库首次创建时这是最先出现的错误，早于引擎与容量判定） |
 | `POST /v1/nexus/jobs` 返回 `422 workspace_not_configured` | 该工作空间没有 `workspace_quotas` 行——即没为它注册过引擎；配额只由 §8 的注册写入，重试不会改变结果 |

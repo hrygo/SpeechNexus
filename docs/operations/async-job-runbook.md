@@ -656,7 +656,7 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 | 配方 `manifest_id` / `--manifest-id` | 该 binding 的 `execution_recipe.capacity_manifest_id` | 准入要求 `plan.binding.manifest_id` 与定义里的清单 ID 相等（`public_job_admission.py:655`） |
 | 配方 `policy_revision_id` / `--policy-revision` | 部署的 VAD/语音策略版本，且等于 §7.1 第 5 步 gateway 私有配置的 `config_revision` | 该值经注册写入 `workspace_quotas.policy_revision`（`engine_registration.py:479`），准入再把它作为执行的 `policy_revision_id`（`public_job_admission.py:887`）；gateway 逐字段比对（`file_asr_command.py:109`） |
 | `--node` / `--gateway` / `--instance` / `--generation` | 部署实参与 gateway 端点配置里的同名身份 | 配方模式下给出与配方不一致的值会以 `<name>_override_conflict` 退出（`engine_registration.py:1078`） |
-| `--template-id`、`--config-digest`、`--topology-digest`、`--qualification-digest`、容量向量、`--max-attempts` | 部署与镜像事实；binding 不校验这些值 | `_config_matches`（`engine_registration.py:520`）只把已有行与 plan 自身比对 |
+| `--template-id`、`--config-digest`、`--topology-digest`、`--qualification-digest`、容量向量、`--max-attempts` | 部署与镜像事实；binding 不校验这些值 | `_config_matches`（`engine_registration.py:526`）只把已有行与 plan 自身比对 |
 
 **注册不检查 binding 是否已发布**：整条注册路径没有对 `speech_binding_revisions` 或
 `speech_publication_heads` 的查询，`--binding-revision-id` 是调用方声明的字符串（依据

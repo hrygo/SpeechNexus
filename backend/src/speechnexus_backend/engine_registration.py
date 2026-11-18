@@ -1319,7 +1319,17 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--peak", type=_vector, default=None)
     parser.add_argument("--steady", type=_vector, default=None)
     parser.add_argument("--per-slot", type=_vector, default=None)
-    parser.add_argument("--host-capacity", type=_vector, default=None)
+    parser.add_argument(
+        "--host-capacity",
+        type=_vector,
+        default=None,
+        help=(
+            "host allocatable vector for this node; defaults to this plan's own need "
+            "(steady + per_slot*max_slots, at least peak per dimension). It is written only "
+            "when the node row is first inserted, so pass a value sized for every instance "
+            "you intend to run here"
+        ),
+    )
     parser.add_argument("--policy-revision", default=None)
     options = parser.parse_args(argv)
     try:

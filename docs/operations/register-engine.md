@@ -192,7 +192,7 @@ speechnexus-register-engine \
 
 输出 JSON 的 `readiness.state` 是本次运行发现的窗口（`valid` / `expiring` /
 `expired`），`readiness.renewed` 表示是否重签；窗口为 `expiring` 或 `expired` 时
-另在 stderr 输出 `warning: readiness ...`，因此定时任务的日志本身就是预警信号。
+另在 stderr 输出 `warning: readiness ...`，因此定时任务的日志本身就是预警信号。使用缺省 `--host-capacity` 的注册还可能出现第二条 `warning: host ... cannot hold another instance of this shape under the current holds`（含逐维剩余量、再一个实例的需求与三条出路）；stdout 的 JSON 不变。
 不带 `--renew-readiness` 的登记只在收据已过期时重签，所以定时间隔应短于
 `--readiness-ttl-seconds`。
 

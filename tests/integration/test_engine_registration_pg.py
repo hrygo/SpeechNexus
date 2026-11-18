@@ -48,6 +48,9 @@ pytestmark = [
 WORKSPACE = "workspace-default"
 DIGEST = "sha256:" + "a" * 64
 AUDIO = b"\x00" * 1024
+# steady (4e9, 1e9, 1000) + required (5e9, 1.5e9, 1200): exactly two same-shape
+# instances, so a third would fail while the first two stay silent.
+TWO_INSTANCE_CAPACITY = "0,9000000000,2500000000,2200,0,0"
 
 
 class _Health(BaseHTTPRequestHandler):
@@ -85,6 +88,7 @@ def _recipe_document(
     model_id: str = "asr-quality",
     node_id: str = "node-reg-1",
     max_slots: int = 2,
+    steady_device_memory_bytes: int | None = None,
 ) -> dict[str, Any]:
     peak = {
         "unified_physical_memory_bytes": 0,
@@ -94,6 +98,13 @@ def _recipe_document(
         "host_pcm_buffer_bytes": 0,
         "scratch_disk_bytes": 0,
     }
+    # Only a steady below peak makes an observation distinguishable from the
+    # prepare-time peak hold; the default keeps the original peak == steady recipe.
+    steady = (
+        peak
+        if steady_device_memory_bytes is None
+        else {**peak, "device_memory_bytes": steady_device_memory_bytes}
+    )
     per_slot = {
         "unified_physical_memory_bytes": 0,
         "device_memory_bytes": 500_000_000,
@@ -136,7 +147,7 @@ def _recipe_document(
             "max_slots": max_slots,
             "realtime_reserved_slots": 0,
             "peak": peak,
-            "steady": peak,
+            "steady": steady,
             "per_slot": per_slot,
         },
         "asr": {
@@ -164,8 +175,17 @@ def _register_args(
     engine_origin: str,
     *,
     generation: int = 1,
+    host_capacity: str | None = TWO_INSTANCE_CAPACITY,
 ) -> list[str]:
-    return [
+    """Registration arguments with an explicit capacity by default.
+
+    The default command value is this plan's own need, which would leave every
+    first registration in this file warning about a second instance. Sizing the
+    shared host for two instances keeps the repeat/generation/readiness cases
+    (whose subject is not capacity) on a silent stderr; the two capacity tests
+    below pass ``host_capacity=None`` or their own value explicitly.
+    """
+    args = [
         "--database-url",
         database.url,
         "--schema",
@@ -185,6 +205,9 @@ def _register_args(
         "--transaction-timeout-seconds",
         "10",
     ]
+    if host_capacity is not None:
+        args.extend(["--host-capacity", host_capacity])
+    return args
 
 
 def _run_registration(capsys: pytest.CaptureFixture[str], args: list[str]) -> dict[str, Any]:
@@ -300,6 +323,93 @@ def test_command_registers_ready_instance_and_real_admission_succeeds(
             "fencing_token": admitted.fencing_token,
         }
     ]
+
+
+def test_default_capacity_first_registration_warns_that_no_second_instance_fits(
+    database: JobDatabase,
+    engine_origin: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Real PG is the only path that runs ``held = held - peak + steady``.
+
+    The default ``--host-capacity`` is this plan's own need, so the committed
+    registration leaves exactly one instance worth of room and the warning must
+    name the per-dimension remainder a second instance would need.
+    """
+    recipe_path = _write_recipe(
+        tmp_path / "recipe.json",
+        _recipe_document(steady_device_memory_bytes=3_000_000_000),
+    )
+    document, stderr = _run_registration_with_stderr(
+        capsys,
+        _register_args(database, recipe_path, engine_origin, host_capacity=None),
+    )
+
+    assert document["outcome"] == "registered"
+    assert document["instance_id"] == "instance-reg-1"
+    # steady=3e9 with peak=4e9: the committed hold can only be 3e9 if the successful
+    # observation ran held = held - peak + steady. Keeping peak would leave 4e9.
+    assert (
+        "warning: host node-reg-1 cannot hold another instance of this shape under the "
+        "current holds: remaining 0,1000000000,500000000,200,0,0, one more requires "
+        "0,4000000000,1500000000,1200,0,0"
+    ) in stderr
+    assert "release held or quarantined capacity first" in stderr
+    assert "--host-capacity" in stderr
+    assert stderr.count("\n") == 1
+    hosts = database.query(
+        "SELECT allocatable_device_memory_bytes, held_device_memory_bytes, "
+        "quarantined_device_memory_bytes FROM host_nodes WHERE host_node_id = 'node-reg-1'"
+    )
+    assert hosts == [
+        {
+            "allocatable_device_memory_bytes": 4_000_000_000,
+            "held_device_memory_bytes": 3_000_000_000,
+            "quarantined_device_memory_bytes": 0,
+        }
+    ]
+
+
+def test_explicit_capacity_for_two_instances_stays_silent_for_both_and_rejects_a_third(
+    database: JobDatabase,
+    engine_origin: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    first_recipe = _write_recipe(
+        tmp_path / "first.json", _recipe_document(instance_id="instance-reg-1")
+    )
+    second_recipe = _write_recipe(
+        tmp_path / "second.json", _recipe_document(instance_id="instance-reg-2")
+    )
+    first = _run_registration(capsys, _register_args(database, first_recipe, engine_origin))
+    # The host row now exists, so this run cannot rewrite allocatable_*; an explicit
+    # capacity that still fits must not produce capacity advice on the second run.
+    second = _run_registration(capsys, _register_args(database, second_recipe, engine_origin))
+
+    assert (first["outcome"], second["outcome"]) == ("registered", "registered")
+    assert database.query("SELECT count(*) AS n FROM engine_instances")[0]["n"] == 2
+    hosts = database.query(
+        "SELECT allocatable_device_memory_bytes, held_device_memory_bytes "
+        "FROM host_nodes WHERE host_node_id = 'node-reg-1'"
+    )
+    assert hosts == [
+        {
+            "allocatable_device_memory_bytes": 9_000_000_000,
+            "held_device_memory_bytes": 8_000_000_000,
+        }
+    ]
+
+    third_recipe = _write_recipe(
+        tmp_path / "third.json", _recipe_document(instance_id="instance-reg-3")
+    )
+    with pytest.raises(SystemExit) as exit_info:
+        register_main(_register_args(database, third_recipe, engine_origin))
+    assert exit_info.value.code == 4
+    error = capsys.readouterr().err
+    assert "host_capacity_insufficient" in error
+    assert database.query("SELECT count(*) AS n FROM engine_instances")[0]["n"] == 2
 
 
 def test_repeat_registration_is_idempotent_and_different_plan_is_rejected(

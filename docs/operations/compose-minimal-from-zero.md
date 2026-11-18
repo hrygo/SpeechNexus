@@ -556,15 +556,15 @@ volumes_end
 给出但不合法的取值则在草稿期就是 `400 invalid_binding_request`。
 
 **（2）工作空间配额。** `workspace_quotas` 没有独立管理入口：`POST /v1/nexus/workspaces`
-只写 `speech_workspaces`，配额行只由注册写入（`backend/src/speechnexus_backend/engine_registration.py:477`
-的 `_ensure_quota`，INSERT 在 `:479`）。同一工作空间重复注册时 `policy_revision` 必须与已有行一致，
+只写 `speech_workspaces`，配额行只由注册写入（`backend/src/speechnexus_backend/engine_registration.py:488`
+的 `_ensure_quota`，INSERT 在 `:490`）。同一工作空间重复注册时 `policy_revision` 必须与已有行一致，
 否则注册以 `quota_policy_conflict` 退出
-（`backend/src/speechnexus_backend/engine_registration.py:491`）。约束对照的是**配方**的
+（`backend/src/speechnexus_backend/engine_registration.py:502`）。约束对照的是**配方**的
 `policy_revision_id`，不是 binding 的字段：`workspace_quotas.policy_revision` 取注册输入，
 gateway 在执行期再按私有端点配置的 `vad_tuning.config_revision` 逐字段比对。
 
 **（3）宿主机容量。** `host_nodes` 同样只有一个写入口：`_ensure_host`
-（`backend/src/speechnexus_backend/engine_registration.py:353`，INSERT 在 `:359`）。容量向量
+（`backend/src/speechnexus_backend/engine_registration.py:364`，INSERT 在 `:370`）。容量向量
 来自注册输入的计划（`steady + per_slot × max_slots` 与 `peak` 取大），准入侧不再重读
 `host_nodes` 做算术，只要求存在 ready 实例与 active 池 owner。因此「容量登记」不是单独的管理
 端点，就是第 12 步本身。
@@ -763,7 +763,7 @@ http=202
 | --- | --- | --- | --- |
 | D12 | 实例已 `ready` 后 `GET /v1/models` 仍报 `"engine_ready":false,"admission_state":"unavailable"`：目录的 readiness 是静态投影，从未接入实例事实 | `backend/src/speechnexus_backend/speech/infrastructure/model_catalog_postgres.py:35`（`readiness or ReadinessFacts()` 恒为空），`public_job_admission` 才是真判据 | 本轮只记录：不要用 `/v1/models` 的 readiness 判断能否创建 Job；runbook §7.1 第 4 步「未注册实例时是 unavailable」暗示它会变，需要订正措辞 |
 | D13 | `api` 的 `/readyz` 现在有四项检查（多 `cancellation_debt`、`stop_evidence_debt`） | `compose-minimal.md:2218` 起写两项 | 文档漂移，记录于此 |
-| D14 | 发布新 revision 后实例身份失效：直接重跑注册被 `instance_config_conflict` 拒绝；创建变成 `429 job_capacity_exhausted`，message 是「no engine instance is registered for model …」 | `engine_registration.py:604`、`public_job_admission.py:211`–`:253` | 记录：换 revision 需要新的 generation/实例轮换路径，本轮**未验证**该路径 |
+| D14 | 发布新 revision 后实例身份失效：直接重跑注册被 `instance_config_conflict` 拒绝；创建变成 `429 job_capacity_exhausted`，message 是「no engine instance is registered for model …」 | `engine_registration.py:638`、`public_job_admission.py:211`–`:253` | 记录：换 revision 需要新的 generation/实例轮换路径，本轮**未验证**该路径 |
 | D15 | 单个注册实例的 `max_slots=1`，一个 queued Job 就占满：同一栈上第二次创建是 `429`，message 为「Job capacity is exhausted; retry after the indicated delay.」 | 配方 `runtime_plan.max_slots`、`public_job_admission.py:253` | 不是缺陷，是容量语义：占用持续到该 Job 的租约被释放或准入截止（`retry_after`）到期；写进 §13 判定表第 4 项 |
 
 ### 14.6 未验证项

@@ -600,8 +600,8 @@ token）。`workspace_quotas` 的 `policy_revision` 是**工作空间级**策略
 binding（例如先 ASR 后 TTS）时，本次注册带的 `policy_revision` 必须与已有行一致，否则以
 `quota_policy_conflict` 退出；对齐配方或另建工作空间两条出路见
 [参考部署的注册节](../operations/compose-minimal.md#一个工作空间只有一套配额策略)。**这两份「容量登记」与「工作空间配额」事实没有别的产品写入入口**：`workspace_quotas`
-只有 `_ensure_quota`（`engine_registration.py:477`）会插入，`host_nodes` 只有
-`_ensure_host`（`engine_registration.py:353`）会插入（仓库里另一处写入是
+只有 `_ensure_quota`（`engine_registration.py:488`）会插入，`host_nodes` 只有
+`_ensure_host`（`engine_registration.py:364`）会插入（仓库里另一处写入是
 `scripts/dev-env/del109-local-gateway-fixture.py` 的本地夹具，不是部署入口）；`POST /v1/nexus/workspaces` 只写
 `speech_workspaces`（`workspaces_postgres.py:275`），不产生配额行。边界与参数见
 [引擎注册](register-engine.md)。
@@ -654,9 +654,9 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 | --- | --- | --- |
 | 配方 `binding_revision_id` / `--binding-revision-id` | 已发布 binding 的 `revision_id` | 准入按 `engine_instances.binding_revision_id = <已发布 revision_id>` 找 ready 实例（`public_job_admission.py:217`），并把它与 plan 比对（`:652`） |
 | 配方 `manifest_id` / `--manifest-id` | 该 binding 的 `execution_recipe.capacity_manifest_id` | 准入要求 `plan.binding.manifest_id` 与定义里的清单 ID 相等（`public_job_admission.py:655`） |
-| 配方 `policy_revision_id` / `--policy-revision` | 部署的 VAD/语音策略版本，且等于 §7.1 第 5 步 gateway 私有配置的 `config_revision` | 该值经注册写入 `workspace_quotas.policy_revision`（`engine_registration.py:479`），准入再把它作为执行的 `policy_revision_id`（`public_job_admission.py:887`）；gateway 逐字段比对（`file_asr_command.py:109`） |
-| `--node` / `--gateway` / `--instance` / `--generation` | 部署实参与 gateway 端点配置里的同名身份 | 配方模式下给出与配方不一致的值会以 `<name>_override_conflict` 退出（`engine_registration.py:1078`） |
-| `--template-id`、`--config-digest`、`--topology-digest`、`--qualification-digest`、容量向量、`--max-attempts` | 部署与镜像事实；binding 不校验这些值 | `_config_matches`（`engine_registration.py:526`）只把已有行与 plan 自身比对 |
+| 配方 `policy_revision_id` / `--policy-revision` | 部署的 VAD/语音策略版本，且等于 §7.1 第 5 步 gateway 私有配置的 `config_revision` | 该值经注册写入 `workspace_quotas.policy_revision`（`engine_registration.py:490`），准入再把它作为执行的 `policy_revision_id`（`public_job_admission.py:887`）；gateway 逐字段比对（`file_asr_command.py:109`） |
+| `--node` / `--gateway` / `--instance` / `--generation` | 部署实参与 gateway 端点配置里的同名身份 | 配方模式下给出与配方不一致的值会以 `<name>_override_conflict` 退出（`engine_registration.py:1121`） |
+| `--template-id`、`--config-digest`、`--topology-digest`、`--qualification-digest`、容量向量、`--max-attempts` | 部署与镜像事实；binding 不校验这些值 | `_config_matches`（`engine_registration.py:560`）只把已有行与 plan 自身比对 |
 
 **注册不检查 binding 是否已发布**：整条注册路径没有对 `speech_binding_revisions` 或
 `speech_publication_heads` 的查询，`--binding-revision-id` 是调用方声明的字符串（依据
@@ -682,9 +682,9 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 | `engine_unreachable` | 健康 URL 只能在宿主机访问；须从注册容器/网络内可达 |
 | `invalid_recipe` | 配方摘要、`stage.instance_id` 或 binding plan 与实际不一致 |
 | `pool_owner_conflict` / `previous_generation_active` | 旧 owner 或旧 generation 仍 ready；先核对/停止旧实例，不要改 token 假装接管 |
-| `quota_policy_conflict` / `quota_capacity_conflict` | 该工作空间已有配额行：`policy_revision` 与本次不同，或已有 `max_attempts` 更小（`engine_registration.py:477`） |
-| `host_capacity_insufficient` | `--host-capacity`（缺省 `steady + per_slot × max_slots`，且至少覆盖 `peak`，`engine_registration.py:176`）容不下计划，或该节点已有 held/quarantined 占用。缺省值等于本次 plan 的需求，所以同一节点注册第二个实例时这条几乎是必然——`host_nodes` 只在首次插入时写，第一次注册就要传够，见[参考部署的宿主机容量规则](../operations/compose-minimal.md#宿主机的容量向量只在首次注册时写入且必须一次声明够) |
-| `host_architecture_mismatch` / `host_topology_mismatch` | 该 `host_node_id` 已登记过不同的 architecture 或 topology digest（`engine_registration.py:377`、`:382`） |
+| `quota_policy_conflict` / `quota_capacity_conflict` | 该工作空间已有配额行：`policy_revision` 与本次不同，或已有 `max_attempts` 更小（`engine_registration.py:488`） |
+| `host_capacity_insufficient` | `--host-capacity`（缺省 `steady + per_slot × max_slots`，且至少覆盖 `peak`，`engine_registration.py:187`）容不下计划，或该节点已有 held/quarantined 占用。缺省值等于本次 plan 的需求，所以同一节点注册第二个实例时这条几乎是必然——`host_nodes` 只在首次插入时写，第一次注册就要传够；缺省容量注册时若按当前占用已放不下第二个同形状实例，命令会在 stderr 提前打一行 `warning:`（逐维剩余量、再一个实例的需求与三条出路），不必等到第二次注册才失败，见[参考部署的宿主机容量规则](../operations/compose-minimal.md#宿主机的容量向量只在首次注册时写入且必须一次声明够) |
+| `host_architecture_mismatch` / `host_topology_mismatch` | 该 `host_node_id` 已登记过不同的 architecture 或 topology digest（`engine_registration.py:388`、`:393`） |
 | 创建返回 `429 job_capacity_exhausted` | 没有 `ready` 实例，或其实例的 binding revision 与请求的发布不一致 |
 | 创建返回 `503 engine_not_ready` | 实例仍 `ready`，但 readiness 收据已过期；跑续期（§7.4），不要重新注册新 generation |
 | 创建返回 `503 engine_state_mismatch` | 收据身份（instance / generation / topology / fencing token）与固定实例不符，或实例行已不存在；重新注册同一实例，不要新建 generation |
@@ -729,7 +729,7 @@ CPU 毫核 `2500/2000`）；`instance-asr-1|1|ready` 一行，其 `binding_revis
 `host_memory`、`cpu_decode`、`host_pcm_buffer`、`scratch_disk`；拓扑只填其中适用的维度，其余
 保持 `0`，所以「有维度非零」不等于「device 列非零」。`held_*` / `quarantined_*` 由准入与租约
 结算维护；
-注册时的容量校验在 `engine_registration.py:502` 的 `_require_capacity`，准入侧不再重读
+注册时的容量校验在 `engine_registration.py:513` 的 `_require_capacity`，准入侧不再重读
 `host_nodes` 做容量算术，而是要求存在 ready 实例与 active 池 owner
 （`public_job_admission.py:206`、`:663`）。因此「容量登记」这份事实的产生入口就是 §7.2 的注册，
 不是单独的管理端点。

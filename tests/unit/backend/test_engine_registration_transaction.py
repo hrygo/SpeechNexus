@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -23,6 +24,7 @@ from speechnexus_backend.engine_registration import (
     RegistrationError,
     RegistrationResult,
     RegistrationSpec,
+    _capacity_headroom,
     _Cursor,
     _default_capacity,
     _ensure_host,
@@ -30,6 +32,7 @@ from speechnexus_backend.engine_registration import (
     _ensure_quota,
     _existing_result,
     _register_in_transaction,
+    _report,
     _require_capacity,
     _require_schema,
     _snapshot,
@@ -83,7 +86,9 @@ def make_plan(*, max_slots: int = 2) -> ApprovedRuntimePlan:
     )
 
 
-def make_spec(*, generation: int = 1) -> RegistrationSpec:
+def make_spec(
+    *, generation: int = 1, host_capacity: PhysicalResources | None = None
+) -> RegistrationSpec:
     plan = make_plan()
     return RegistrationSpec(
         model_id="asr-quality",
@@ -92,7 +97,7 @@ def make_spec(*, generation: int = 1) -> RegistrationSpec:
         instance_id="instance-1",
         generation=generation,
         plan=plan,
-        host_capacity=_default_capacity(plan),
+        host_capacity=host_capacity or _default_capacity(plan),
         max_attempts=8,
     )
 
@@ -1076,6 +1081,17 @@ def stub_domain(
         cursor: object, command: Any, prepared: Any, *, clock: Callable[[], int]
     ) -> Any:
         calls.append("observe")
+        # The real observation replaces the prepare-time peak hold with steady
+        # (runtime_observations.py: held = held - peak + steady), so one committed
+        # registration leaves exactly `steady` occupied on the host.
+        host = store.hosts[spec.plan.binding.target_node_id]
+        held = PhysicalResources(
+            *(
+                int(host["held_" + name]) + value
+                for name, value in zip(DIMENSIONS, spec.plan.steady.values, strict=True)
+            )
+        )
+        with_vector(host, "held_", held)
         store.instances[(spec.instance_id, spec.generation)].update(
             instance_state="ready", ready_at_us=NOW
         )
@@ -1163,6 +1179,8 @@ def test_register_in_transaction_short_circuits_an_already_ready_instance(
     monkeypatch.setattr(registration, "create_in_transaction", refuse)
     result = run_registration(spec, store)
     assert result.outcome == "already_ready"
+    # A replay/renewal neither creates a reservation nor re-advises capacity.
+    assert result.capacity_headroom is None
     assert store.writes == []
 
 
@@ -1171,3 +1189,106 @@ def test_register_in_transaction_fails_past_its_bounded_deadline() -> None:
     error = error_of(lambda: run_registration(spec, store, timeout_seconds=-1.0))
     assert (error.code, error.exit_code) == ("transaction_timeout", EXIT_UNAVAILABLE)
     assert store.writes == []
+
+
+def test_registration_warns_when_the_host_cannot_hold_a_second_same_shape_instance(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    spec, store = make_spec(), Store()
+    stub_domain(monkeypatch, store, spec)
+
+    result = run_registration(spec, store)
+    _report(result)
+    captured = capsys.readouterr()
+
+    assert result.capacity_headroom is not None
+    # Per-dimension remaining = allocatable - (held + quarantined), plus this plan's need.
+    assert "remaining 0,1000000000,500000000,200,0,0" in captured.err
+    assert "one more requires 0,5000000000,1500000000,1200,0,0" in captured.err
+    # Three remedies in order: release holds, reviewed change, rebuild the volume.
+    assert "cannot hold another instance of this shape under the current holds" in captured.err
+    assert "release held or quarantined capacity first" in captured.err
+    assert "raise allocatable_* in a reviewed change" in captured.err
+    assert "rebuild the data volume" in captured.err
+    assert "--host-capacity" in captured.err
+    # Exactly one warning line, and stdout stays the only machine-readable document.
+    assert captured.err.count("\n") == 1
+    assert captured.out
+
+
+def test_explicit_capacity_at_the_exact_fit_boundary_stays_silent(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Explicit capacity at the exact two-instance boundary: it fits after the
+    # first registration, and the default-capacity guard keeps the run silent.
+    roomy = PhysicalResources(0, 9_000_000_000, 2_500_000_000, 2_200, 0, 0)
+    spec, store = make_spec(host_capacity=roomy), Store()
+    stub_domain(monkeypatch, store, spec)
+
+    result = run_registration(spec, store)
+    _report(result)
+    captured = capsys.readouterr()
+
+    assert result.capacity_headroom is None
+    # The success path is silent by default: no warning, only the stdout JSON.
+    assert captured.err == ""
+    assert captured.out
+
+
+def test_capacity_headroom_treats_an_exact_fit_as_no_gap() -> None:
+    # Direct helper input: equality is a fit. A non-zero hold makes the just-over
+    # boundary distinguish ``fits`` from a strict comparison.
+    spec = make_spec()
+    capacity = _default_capacity(spec.plan)
+    assert _capacity_headroom(host_row(allocatable=capacity), spec) is None
+    just_over = host_row(
+        allocatable=capacity,
+        held=PhysicalResources(0, 1, 0, 0, 0, 0),
+    )
+    headroom = _capacity_headroom(just_over, spec)
+    assert headroom is not None
+    assert headroom.remaining.device_memory_bytes == capacity.device_memory_bytes - 1
+    assert headroom.required == _default_capacity(spec.plan)
+
+
+def test_capacity_warning_leaves_stdout_byte_identical(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    tight_spec, tight_store = make_spec(), Store()
+    stub_domain(monkeypatch, tight_store, tight_spec)
+    warned = run_registration(tight_spec, tight_store)
+    _report(warned)
+    with_warning = capsys.readouterr()
+
+    roomy = PhysicalResources(0, 9_000_000_000, 2_500_000_000, 2_200, 0, 0)
+    roomy_spec, roomy_store = make_spec(host_capacity=roomy), Store()
+    stub_domain(monkeypatch, roomy_store, roomy_spec)
+    silent = run_registration(roomy_spec, roomy_store)
+    _report(silent)
+    without_warning = capsys.readouterr()
+
+    assert warned.capacity_headroom is not None
+    assert silent.capacity_headroom is None
+    assert with_warning.err and without_warning.err == ""
+    # The warning goes to stderr only: both stdout captures are byte-identical.
+    assert with_warning.out == without_warning.out
+    # The two results are equal apart from the warning fact, so nothing else differs.
+    assert replace(warned, capacity_headroom=None) == silent
+
+
+def test_explicit_capacity_that_fits_only_one_instance_does_not_warn(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # An explicit declaration is the operator's answer already: it fits this run
+    # but not a second one, and the success path must not re-advise rebuilding.
+    declared = PhysicalResources(0, 8_000_000_000, 2_000_000_000, 2_000, 0, 0)
+    spec, store = make_spec(host_capacity=declared), Store()
+    stub_domain(monkeypatch, store, spec)
+
+    result = run_registration(spec, store)
+    _report(result)
+    captured = capsys.readouterr()
+
+    assert result.capacity_headroom is None
+    assert captured.err == ""
+    assert captured.out

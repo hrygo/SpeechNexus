@@ -20,9 +20,6 @@ from speechnexus_backend.speech.application.transcription import (
     Transcription,
     TranscriptionLimits,
 )
-from speechnexus_backend.speech.infrastructure.admission_postgres import (
-    PostgresAdmissionTransactions,
-)
 from speechnexus_backend.speech.infrastructure.audio_duration_probe import PyAvAudioProbe
 from speechnexus_backend.speech.infrastructure.gateway_execution_client import (
     GatewayExecutionClient,
@@ -38,6 +35,9 @@ from speechnexus_backend.speech.infrastructure.public_jobs_postgres import (
 from speechnexus_backend.speech.infrastructure.transcription_admission import (
     PostgresTranscriptionAdmission,
     PostgresTranscriptionAdmissionFacts,
+)
+from speechnexus_backend.speech.infrastructure.transcription_admission_postgres import (
+    PostgresTranscriptionAdmissionTransactions,
 )
 from speechnexus_backend.speech.infrastructure.transcription_objects import (
     MinioTranscriptionInputs,
@@ -125,7 +125,7 @@ def build_transcription(settings: Settings) -> Transcription | None:
                 pool, timeout_seconds=settings.transcription_storage_timeout_seconds
             ),
             AdmissionService(
-                PostgresAdmissionTransactions(
+                PostgresTranscriptionAdmissionTransactions(
                     pool,
                     max_command_bytes=settings.transcription_max_command_bytes,
                     enforce_binding_disable=True,

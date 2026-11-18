@@ -209,6 +209,9 @@ class Settings(BaseSettings):
     transcription_timeout_seconds: float = Field(default=120, gt=0, le=600)
     transcription_max_command_bytes: int = Field(default=65_536, ge=1024, le=1_048_576)
     transcription_storage_timeout_seconds: float = Field(default=3, gt=0, le=30)
+    asr_settlement_poll_seconds: float = Field(default=1, ge=0.1, le=300, allow_inf_nan=False)
+    asr_settlement_batch_size: int = Field(default=32, ge=1, le=128)
+    asr_settlement_storage_timeout_seconds: float = Field(default=3, gt=0, le=30)
 
     speech_enabled: Literal["true", "false"] = "true"
     speech_recipe_file: Path | None = None

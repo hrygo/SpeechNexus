@@ -183,12 +183,15 @@ def test_actual_commit_reply_loss_pressure_and_original_identity(
     keyed: bool,
 ) -> None:
     monkeypatch.setattr(runtime_module, "speech_pool", fault_pool)
-    body, app = binding_request(), http_db.app(binding_transaction_timeout_seconds=0.05)
-    headers = KEY if keyed else {}
-    # The 0.05 s budget bounds only the manufactured failures below: the lost
-    # commit acknowledgment fails during commit, and while this block holds the
-    # pool's single connection every checkout waits for it and is guaranteed to
-    # time out. Neither outcome depends on machine speed.
+    body, headers = binding_request(), KEY if keyed else {}
+    # The write whose acknowledgment is lost runs on the fixture's normal budget:
+    # its unknown result comes from the fault armed below, never from a deadline.
+    # Write+commit measured 10.7-11.5 ms idle and 33.9-40.3 ms under 40 busy loops
+    # in the #1002 review (6.3-16.4 ms re-measured here), so 1 s keeps more than
+    # 20x headroom. The 0.05 s this block inherited left only ~1.25x: once the
+    # write needed more than 50 ms the cursor aborted before commit, the caller
+    # still received "unknown", and only the row count showed nothing was written.
+    app = http_db.app()
     with TestClient(app) as client:
         pool = app.state.binding_runtime._pool
         with pool.connection() as connection:
@@ -205,19 +208,19 @@ def test_actual_commit_reply_loss_pressure_and_original_identity(
         assert (
             len(before["speech_binding_revisions"]) == len(before["speech_binding_commands"]) == 1
         )
-        with pool.connection():
-            for path in (fixed(body), fixed(body, "99")):
-                read = client.get(path)
-                assert (
-                    read.status_code == 503
-                    and read.json()["error"]["code"] == "binding_unavailable"
-                )
-            if keyed:
-                response = client.post(PATH, json=body, headers=KEY)
-                assert (
-                    response.status_code == 503 and response.json()["error"]["retryable"] is False
-                )
-        assert http_db.snapshot() == before
+    # Occupying the pool is what forces the failures below, not the clock: this
+    # block holds the pool's single connection, so every checkout waits for it
+    # and is guaranteed to time out. The 0.05 s budget only bounds how long that
+    # wait lasts; no write that must succeed runs under it.
+    pressure = http_db.app(binding_transaction_timeout_seconds=0.05)
+    with TestClient(pressure) as client, pressure.state.binding_runtime._pool.connection():
+        for path in (fixed(body), fixed(body, "99")):
+            read = client.get(path)
+            assert read.status_code == 503 and read.json()["error"]["code"] == "binding_unavailable"
+        if keyed:
+            response = client.post(PATH, json=body, headers=KEY)
+            assert response.status_code == 503 and response.json()["error"]["retryable"] is False
+    assert http_db.snapshot() == before
     # The pool is released. Reading the committed revision and replaying the
     # original key are paths that must succeed, so they run on the fixture's
     # normal budget instead of inheriting the 0.05 s used to force the failures.

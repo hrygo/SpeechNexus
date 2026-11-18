@@ -32,9 +32,12 @@ What is checked, and where each half gets its evidence from:
   needs no detour, the v2 plugin has no `build --dry-run` plan), and the measured
   set must equal the graph's prediction. That tier costs one plan per argv, which
   is why it does not run in the 5-minute guards job.
-* nothing here is skipped: a host that cannot plan a build simply does not collect
-  the plan tier, because the coverage gate rejects any selected test that did not
-  pass.
+* a host that cannot plan a build still collects both classes and reports them as
+  `skipped` with a reason, never as absent: `@unittest.skipUnless` keeps the tests in
+  the count so "did not run" cannot look like "passed" (issue #992). The merged
+  coverage gate accepts exactly those five nodeids, declared in
+  `scripts/dev-env/python-coverage.py:EXPECTED_SKIPS`; an undeclared skip is still a
+  failure, and a declared one that stops being collected is a failure too.
 
 Dated records are excluded on purpose and listed in `HISTORICAL_RECORDS`: they keep
 the command that was run and its output as measured; rewriting a record to satisfy a

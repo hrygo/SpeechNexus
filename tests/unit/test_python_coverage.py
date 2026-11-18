@@ -504,3 +504,50 @@ def test_real_worker_collects_and_executes_only_the_canonical_synthetic_suite(
         assert set(evidence["outcomes"].values()) == {"passed" if condition == "pass" else "failed"}
     else:
         assert not report.exists()
+
+
+def test_an_undeclared_skip_fails_the_merged_gate() -> None:
+    # #992 的教训: 「没跑」和「通过」不能长得一样。未声明的 skip 一律算失败。
+    assert GATE.outcome_verdict("tests/unit/test_x.py::test_y", "skipped") == "failed"
+
+
+def test_a_declared_skip_is_accepted_and_still_visible() -> None:
+    declared = sorted(GATE.EXPECTED_SKIPS)[0]
+    assert GATE.outcome_verdict(declared, "skipped") == "skipped"
+
+
+def test_a_pass_is_a_pass_even_when_the_nodeid_is_declared() -> None:
+    declared = sorted(GATE.EXPECTED_SKIPS)[0]
+    assert GATE.outcome_verdict(declared, "passed") == "passed"
+
+
+def test_a_skip_that_is_no_longer_collected_is_reported() -> None:
+    collection = set(GATE.EXPECTED_SKIPS) - {sorted(GATE.EXPECTED_SKIPS)[0]}
+    missing = GATE.uncollected_expected_skips(collection)
+    assert missing == [sorted(GATE.EXPECTED_SKIPS)[0]]
+
+
+def test_a_complete_collection_reports_nothing_missing() -> None:
+    assert GATE.uncollected_expected_skips(GATE.EXPECTED_SKIPS) == []
+
+
+def test_every_declared_skip_is_a_real_nodeid_in_this_suite() -> None:
+    # 声明与套件对不上时, 白名单会静默腐烂: 要么条目过期, 要么那条用例又回到了
+    # 条件定义里。这里用一个真实的 collect-only 把两者钉在一起。
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "--collect-only",
+            "-q",
+            "tests/ci/test_build_sequences_without_minio.py",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=SCRIPT.parents[2],
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    collected = {line.strip() for line in result.stdout.splitlines() if "::" in line}
+    missing = sorted(GATE.EXPECTED_SKIPS - collected)
+    assert missing == [], missing

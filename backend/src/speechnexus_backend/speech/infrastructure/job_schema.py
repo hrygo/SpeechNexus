@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import re
 
+from speechnexus_backend.speech.infrastructure.deletion_plan_schema import (
+    DELETION_PLAN_INSERT_COLUMNS,
+)
 from speechnexus_backend.speech.infrastructure.job_writer_columns import (
     ADMISSION_OPERATION_INSERT_COLUMNS,
     COORDINATION_JOB_INSERT_COLUMNS,
@@ -56,6 +59,29 @@ def job_runtime_grants(schema: str, role: str) -> tuple[str, ...]:
         f'ON "{schema}".coordination_jobs TO "{role}"',
         f"GRANT INSERT ({', '.join(COORDINATION_OUTBOX_INSERT_COLUMNS)}) "
         f'ON "{schema}".coordination_outbox TO "{role}"',
+    )
+
+
+def deletion_plan_grants(schema: str, role: str) -> tuple[str, ...]:
+    """Privileges the deletion planner adds after ``0058_speech_deletion_plans``.
+
+    Kept out of ``job_runtime_grants`` because that set is also applied to
+    historical revisions whose schema predates these tables; provisioning applies
+    this set only after a full upgrade.
+    """
+    schema, role = checked_sql_name(schema), checked_sql_name(role)
+    return (
+        f'GRANT SELECT ON "{schema}".speech_asset_objects TO "{role}"',
+        f'GRANT SELECT ON "{schema}".speech_asset_references TO "{role}"',
+        f'GRANT SELECT ON "{schema}".speech_deletion_plans TO "{role}"',
+        # PostgreSQL requires UPDATE privilege for a row lock, not only for an
+        # assignment. The planner locks the workspace (FK parent) and the asset
+        # row to pin the revision; neither column is assigned, so one column per
+        # table is enough. The asset writer holds the same two lock columns.
+        f'GRANT UPDATE (metadata_revision) ON "{schema}".speech_workspaces TO "{role}"',
+        f'GRANT UPDATE (version) ON "{schema}".speech_assets TO "{role}"',
+        f"GRANT INSERT ({', '.join(DELETION_PLAN_INSERT_COLUMNS)}) "
+        f'ON "{schema}".speech_deletion_plans TO "{role}"',
     )
 
 

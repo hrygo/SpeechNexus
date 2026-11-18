@@ -1230,7 +1230,8 @@ FAIL 与 PENDING 下逐条给出原因，末尾分别汇总编号。
   引擎 `/health` GET 和 `docker inspect` 读取；
 - 权限项覆盖 writer 的 17 张表 `SELECT`、15 张表的列级 `INSERT`/`UPDATE`（含 `speech_jobs`
   的 `error_code` 等终止写列），以及派发角色的启动探测与认领后写入列（列数随写面增长，
-  以闸门实际输出为准）；
+  以闸门实际输出为准）；删除预检的 `deletion_plan_grants` 不在启动硬门内，缺失时仅该
+  路由返回 `deletion_plans_not_configured`；
 - 没有 `psql`、Docker daemon 或数据库从宿主机不可达时，相应运行时证据标 `SKIP` 并说明原因；
 - 对象桶的存在与版本化需要签名凭据，脚本不持有凭据，因此该项恒为 SKIP，靠 `minio-init`
   输出核对；

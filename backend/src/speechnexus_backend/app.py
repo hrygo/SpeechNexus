@@ -50,6 +50,7 @@ from speechnexus_backend.speech.application.binding_publication import (
 )
 from speechnexus_backend.speech.application.binding_summaries import BindingSummaryService
 from speechnexus_backend.speech.application.capability_snapshot import CapabilityPolicy
+from speechnexus_backend.speech.application.deletions import DeletionPlanner
 from speechnexus_backend.speech.application.job_cancellation import JobCancellationService
 from speechnexus_backend.speech.application.model_instances import ModelInstanceService
 from speechnexus_backend.speech.application.profile_drafts import ProfileDrafts
@@ -105,6 +106,9 @@ from speechnexus_backend.speech.interfaces.http.binding_lifecycle import (
     create_binding_lifecycle_router,
 )
 from speechnexus_backend.speech.interfaces.http.bindings import create_binding_router
+from speechnexus_backend.speech.interfaces.http.deletions import (
+    create_deletion_router,
+)
 from speechnexus_backend.speech.interfaces.http.diagnostics import create_diagnostics_router
 from speechnexus_backend.speech.interfaces.http.health import create_health_router
 from speechnexus_backend.speech.interfaces.http.job_errors import job_error
@@ -320,6 +324,7 @@ def create_app(
     voice_publications: VoicePublications | None = None,
     voice_retirements: VoiceRetirements | None = None,
     jobs: PublicJobs | None = None,
+    deletions: DeletionPlanner | None = None,
     job_confirmation: JobCancellationService | None = None,
     speech: SpeechSynthesis | None = None,
     transcriptions: Transcription | None = None,
@@ -545,6 +550,11 @@ def create_app(
         if jobs is not None:
             return jobs
         return job_runtime.jobs if job_runtime is not None else None
+
+    def get_deletion_plans() -> DeletionPlanner | None:
+        if deletions is not None:
+            return deletions
+        return job_runtime.deletion_plans if job_runtime is not None else None
 
     def job_unavailable_detail() -> str | None:
         """Name the one prerequisite that leaves the whole Job surface unassembled.
@@ -804,6 +814,7 @@ def create_app(
     # literal handler has to be registered before the `{job_id}` handler for the
     # same reason (#863): a parameter matches any single segment.
     app.include_router(create_unimplemented_router())
+    app.include_router(create_deletion_router(get_deletion_plans))
     app.include_router(create_asset_router(lambda: asset_service))
     app.include_router(create_artifact_router(get_artifacts))
     app.include_router(create_model_router(get_catalogue, capability_policy))
@@ -988,6 +999,7 @@ def create_app(
     app.state.binding_defaults_runtime = binding_defaults_runtime
     app.state.binding_admin_runtime = binding_admin_runtime
     app.state.job_runtime = job_runtime
+    app.state.deletion_plans = get_deletion_plans()
     app.state.artifact_runtime = artifact_runtime
     app.state.speech = speech
     app.state.transcriptions = transcriptions

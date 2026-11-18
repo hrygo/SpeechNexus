@@ -275,10 +275,13 @@ PY
   Job 输入资产桶（`/v1/nexus/assets` 的落点），后者是同步转写的上传桶。两者的**角色**不同，
   但参考部署必须给它们**同一个桶名**：网关只有一个 `objects.input_bucket`，同时服务这两条
   路径，分开配置会让同步转写在调用引擎前失败（不变量与实测见 §3 第 4 项）。私有 JSON 里
-  `objects.input_bucket` 绑定前者、`objects.result_bucket` 绑定
-  `SPEECHNEXUS_EXECUTION_RESULT_BUCKET`。
+  `objects.input_bucket` 绑定前者；`objects.result_bucket` 必须同时等于
+  `SPEECHNEXUS_EXECUTION_RESULT_BUCKET`（异步 staging 读取桶）与
+  `SPEECHNEXUS_OBJECT_STORAGE_BUCKET`（后端同步转写的结果读回桶），参考部署让三者同名，
+  否则同步结果读回失败（见 §3 第 4 项）。
 - `SPEECHNEXUS_EXECUTION_RESULT_BUCKET`：gateway 私有 JSON 的 `result_bucket` 与
-  `job-dispatch` profile 的 staging 读取桶；`minio-init` 会一并创建并启用版本化。
+  `job-dispatch` profile 的 staging 读取桶；`minio-init` 会一并创建并启用版本化。参考部署
+  必须让它与 `SPEECHNEXUS_OBJECT_STORAGE_BUCKET` 同名，因为后端同步转写按后者读回结果。
 
 生成脚本使用示例的 `POSTGRES_USER=speechnexus` 和 `POSTGRES_DB=speechnexus` 写入
 各数据库连接地址。若在启动前更改数据库名，须同步更新 API、gateway、gateway 查询、
@@ -349,8 +352,20 @@ chmod 600 "$D/transcription-recipe.json" "$D/gateway-file-asr.json" \
      启动，而是**首个 Job 在调用引擎前被隔离**：gateway 对
      `reference.storage_bucket != objects.input_bucket` 直接抛
      `execution_input_scope_mismatch`（`execution_objects_minio.py:110`）。
-   - `objects.result_bucket` 必须等于 `SPEECHNEXUS_EXECUTION_RESULT_BUCKET`，派发 worker
-     按该键读回 staging 结果（参考部署取同一个 `speechnexus-results`，见 §2 的环境文件注释）。
+   - `objects.result_bucket` 必须同时等于 `SPEECHNEXUS_EXECUTION_RESULT_BUCKET` 与
+     `SPEECHNEXUS_OBJECT_STORAGE_BUCKET`：派发 worker 按前者读回异步 staging 结果
+     （`job_dispatch_runtime.py:258` 用 `settings.execution_result_bucket` 构造读回客户端），
+     后端同步转写按后者读回同一批结果（`transcription_runtime.py:118` 用
+     `settings.object_storage_bucket` 构造 `MinioExecutionResultObjects`）。参考部署让三者
+     同名；只把 staging 桶配成另一个名字时，网关写入与提交都成功，直到结果读回才抛
+     `result_object_scope_rejected`（`gateway_execution_client.py:720`），同步请求以
+     `503 backend_unavailable` 结束，参考部署取同一个 `speechnexus-results`
+     （见 §2 的环境文件注释）。两条等式由不同步骤检查：同步读回那条（lane ==
+     `SPEECHNEXUS_OBJECT_STORAGE_BUCKET`）由 `tools` 步骤对已存在的私有 lane 配置检查
+     （`lane_result_bucket_gaps`）；staging 那条（lane ==
+     `SPEECHNEXUS_EXECUTION_RESULT_BUCKET`）由 `stack` 步骤
+     （`reference-acceptance.py:1428-1432`）与启动闸门
+     （`deploy/job-startup-gate.py:446-482`）检查。
 
    这两个桶的绑定都不来自 `SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET` 键；参考部署上该键
    **必须与 `SPEECHNEXUS_OBJECT_STORAGE_BUCKET` 相同**。它是同步转写的上传落点

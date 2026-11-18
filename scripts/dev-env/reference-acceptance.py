@@ -354,6 +354,13 @@ def env_gaps(env: Mapping[str, str], keys: Sequence[str]) -> list[str]:
 # answers `503 backend_unavailable` (#972/DEL-539).
 SYNC_UPLOAD_BUCKET = "SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET"
 JOB_INPUT_BUCKET = "SPEECHNEXUS_OBJECT_STORAGE_BUCKET"
+# The backend reads synchronous results back from the same env key it uses for Job
+# input assets (`transcription_runtime.py` builds `MinioExecutionResultObjects` with
+# `settings.object_storage_bucket`), while the gateway writes them into the lane's
+# private `objects.result_bucket` (#973). The alias keeps both roles from drifting
+# apart if the key is renamed; `stack_private_inputs` checks the lane against
+# `SPEECHNEXUS_EXECUTION_RESULT_BUCKET`, and `tools` checks this read-back side.
+RESULT_READ_BUCKET = JOB_INPUT_BUCKET
 
 
 def sync_input_bucket_gap(env: Mapping[str, str]) -> str | None:
@@ -894,6 +901,49 @@ def lane_input_bucket_gaps(
     return gaps
 
 
+def lane_result_bucket_gaps(
+    env: Mapping[str, str], documents: Mapping[str, Mapping[str, object]]
+) -> list[str]:
+    """Pure: every lane that declares `objects.result_bucket` must write the read-back bucket.
+
+    The gateway writes synchronous results into the lane's `objects.result_bucket`,
+    while the backend sync paths read them back from
+    ``SPEECHNEXUS_OBJECT_STORAGE_BUCKET`` (``transcription_runtime.py`` and
+    ``speech_runtime.py`` pass ``settings.object_storage_bucket`` to
+    ``MinioExecutionResultObjects``). A split pair is not a startup error: the
+    gateway succeeds and the backend then raises `result_object_scope_rejected`
+    (`gateway_execution_client.py`), which surfaces as
+    `TranscriptionOutcomeUnknownError` and `503 backend_unavailable` on the request
+    (#973). `stack_private_inputs` already ties the lane to
+    `SPEECHNEXUS_EXECUTION_RESULT_BUCKET`; together the two checks pin the chain
+    lane == EXECUTION_RESULT_BUCKET == the read-back bucket.
+
+    Lanes without `result_bucket` are skipped rather than reported: only a declared
+    value can contradict the env, and a missing required key is the gateway's own
+    startup validation. A missing private file is likewise out of scope here — the
+    `stack` step names it, so a from-zero host still reaches `tools` cleanly.
+    """
+    read_back = env.get(RESULT_READ_BUCKET, "").strip()
+    gaps: list[str] = []
+    if not read_back:
+        return gaps
+    for name, document in sorted(documents.items()):
+        objects = document.get("objects")
+        if not isinstance(objects, Mapping) or "result_bucket" not in objects:
+            continue
+        configured = objects.get("result_bucket")
+        if str(configured) != read_back:
+            gaps.append(
+                f"{name} 的 objects.result_bucket={configured} 与 "
+                f"{RESULT_READ_BUCKET}={read_back} 不一致："
+                "网关把同步结果写进 lane 的 result_bucket，后端同步路径按后者读回，"
+                "两者不等时读回抛 result_object_scope_rejected，"
+                "请求以 503 backend_unavailable 结束（提交与启动都不报错）；"
+                "把私配的 objects.result_bucket 与该环境键改成同一个桶名"
+            )
+    return gaps
+
+
 def existing_lane_documents(ctx: Context) -> dict[str, Mapping[str, object]]:
     """Read the private lane files that already exist; the stack step names the rest.
 
@@ -1004,13 +1054,23 @@ def step_tools(ctx: Context) -> str:
     scope_gap = sync_input_bucket_gap(ctx.env)
     if scope_gap is not None:
         raise StepFailureError(scope_gap, inputs=[SYNC_UPLOAD_BUCKET, JOB_INPUT_BUCKET])
-    lane_gaps = lane_input_bucket_gaps(ctx.env, existing_lane_documents(ctx))
+    lane_documents = existing_lane_documents(ctx)
+    lane_gaps = lane_input_bucket_gaps(ctx.env, lane_documents)
     if lane_gaps:
         raise StepFailureError(
             "; ".join(lane_gaps),
             inputs=[
                 f"{JOB_INPUT_BUCKET}=<网关 lane objects.input_bucket 的值>",
                 "deploy/private/gateway-file-*.json 的 objects.input_bucket",
+            ],
+        )
+    result_gaps = lane_result_bucket_gaps(ctx.env, lane_documents)
+    if result_gaps:
+        raise StepFailureError(
+            "; ".join(result_gaps),
+            inputs=[
+                f"{RESULT_READ_BUCKET}=<网关 lane objects.result_bucket 的值>",
+                "deploy/private/gateway-file-*.json 的 objects.result_bucket",
             ],
         )
     render = ctx.read((*ctx.compose_argv, "config", "--quiet"))
@@ -1556,10 +1616,10 @@ STEPS: tuple[Step, ...] = (
         EXIT_TOOLS,
         "docker daemon + compose v2 + python3 ≥ 3.12 + uv；"
         "deploy/compose.yaml 的 ${KEY:?} 键与三条 Job DSN 均非空；"
-        "同步上传桶与 Job 资产桶同名；已存在的私有 lane 配置其 objects.input_bucket 同名；"
-        "compose 能渲染",
-        "各工具版本行；无空白必需键；两个桶键取值相同；私有 lane 配置与 env 的输入桶一致；"
-        "docker compose config --quiet 退出 0",
+        "同步上传桶与 Job 资产桶同名；已存在的私有 lane 配置其 objects.input_bucket 同名、"
+        "objects.result_bucket 等于后端结果读回桶；compose 能渲染",
+        "各工具版本行；无空白必需键；两个桶键取值相同；"
+        "私有 lane 配置的输入桶与结果桶分别与 env 一致；docker compose config --quiet 退出 0",
         step_tools,
     ),
     Step(

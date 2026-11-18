@@ -16,6 +16,7 @@ from uuid import uuid4
 
 from speechnexus_backend.speech.domain.assets import AssetError, VerifiedObject
 from speechnexus_backend.speech.domain.deletion import (
+    DeletionError,
     DeletionIdempotencyConflictError,
     DeletionLedgerUnavailableError,
     DeletionOwnerMismatchError,
@@ -93,6 +94,14 @@ class DeletionExecutionStore(Protocol):
         self, deletion_id: str, *, key_digest: str, workspace_id: str
     ) -> DeletionRecord: ...
 
+    def release_claim(
+        self, deletion_id: str, *, key_digest: str, workspace_id: str
+    ) -> DeletionRecord: ...
+
+    def await_completion(
+        self, deletion_id: str, *, key_digest: str, workspace_id: str
+    ) -> DeletionRecord: ...
+
 
 class DeletionObjectPurge(Protocol):
     """The asset object-store step; object I/O never runs inside a transaction."""
@@ -165,30 +174,61 @@ class SpeechDeletions:
                 raise DeletionOwnerMismatchError
         if self._executions is None:
             raise DeletionLedgerUnavailableError("deletion execution is not configured")
-        accepted = self._executions.accept(
+        executions = self._executions
+        key_digest = idempotency_key_digest(idempotency_key)
+        accepted = executions.accept(
             request,
-            key_digest=idempotency_key_digest(idempotency_key),
+            key_digest=key_digest,
             intent_digest=deletion_intent_digest(request),
             purge_available=self._purge is not None,
             workspace_id=self._workspace_id,
         )
+        record = accepted.record
         if accepted.pending_object is None:
-            return accepted.record
+            if record.status == "succeeded":
+                return record
+            # Another request owns this row's purge. Answer that same deletion
+            # once it commits instead of purging the pinned version a second time.
+            return executions.await_completion(
+                record.id, key_digest=key_digest, workspace_id=self._workspace_id
+            )
         if self._purge is None:
             # Accepted and durable, but the object identity is not configured: the
             # record stays queued instead of claiming a purge nobody performed.
-            return accepted.record
+            return executions.release_claim(
+                record.id, key_digest=key_digest, workspace_id=self._workspace_id
+            )
         try:
             self._purge.delete_version(accepted.pending_object)
         except AssetError:
             # The ledger keeps the deletion queued; the same key resumes it. Never
             # report success without a confirmed object purge.
-            return accepted.record
-        return self._executions.complete(
-            accepted.record.id,
-            key_digest=idempotency_key_digest(idempotency_key),
-            workspace_id=self._workspace_id,
-        )
+            return self._release(executions, record.id, key_digest)
+        try:
+            return executions.complete(
+                record.id, key_digest=key_digest, workspace_id=self._workspace_id
+            )
+        except BaseException:
+            # This attempt is over: free the claim so a retry is not blocked by the
+            # crash-recovery lease, then let the caller see the real failure.
+            self._release(executions, record.id, key_digest)
+            raise
+
+    def _release(
+        self,
+        executions: DeletionExecutionStore,
+        deletion_id: str,
+        key_digest: str,
+    ) -> DeletionRecord:
+        """Best effort: never mask the failure that ended this attempt."""
+        try:
+            return executions.release_claim(
+                deletion_id, key_digest=key_digest, workspace_id=self._workspace_id
+            )
+        except DeletionError:
+            return executions.await_completion(
+                deletion_id, key_digest=key_digest, workspace_id=self._workspace_id
+            )
 
 
 __all__ = [

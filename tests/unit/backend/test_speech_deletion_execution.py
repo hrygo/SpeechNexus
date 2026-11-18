@@ -58,11 +58,17 @@ def _ledger_row(**overrides: Any) -> _LedgerRow:
 class _Transaction:
     """Only the reads ``_resume`` performs, answered in order."""
 
-    def __init__(self, reply: list[list[dict[str, Any]]]) -> None:
+    def __init__(
+        self, reply: list[list[dict[str, Any]]], *, claim: dict[str, Any] | None = None
+    ) -> None:
         self._reply = list(reply)
+        self._claim = claim
 
     def rows(self, statement: str, args: tuple[object, ...] = ()) -> list[dict[str, Any]]:
         return self._reply.pop(0)
+
+    def claim_purge(self, ledger_id: str) -> dict[str, Any] | None:
+        return self._claim
 
     def now(self) -> datetime:
         return NOW
@@ -80,8 +86,10 @@ def _object(version: str) -> dict[str, Any]:
 
 
 def test_resume_accepts_the_pinned_object_version() -> None:
+    row = _ledger_row().row
     transaction = _Transaction(
-        [[{"deletion_state": "queued", "storage_version_id": "v-1"}], [_object("v-1")]]
+        [[{"deletion_state": "queued", "storage_version_id": "v-1"}], [_object("v-1")]],
+        claim=row,
     )
     accepted = _DeletionExecution(cast(Any, transaction), "workspace-default")._resume(
         _ledger_row()
@@ -89,6 +97,19 @@ def test_resume_accepts_the_pinned_object_version() -> None:
     assert accepted.record.status == "queued"
     assert accepted.pending_object is not None
     assert accepted.pending_object.version_id == "v-1"
+
+
+def test_resume_does_not_purge_when_another_request_holds_the_claim() -> None:
+    """Losing the claim means the caller waits, not that it purges again."""
+    transaction = _Transaction(
+        [[{"deletion_state": "queued", "storage_version_id": "v-1"}], [_object("v-1")]],
+        claim=None,
+    )
+    accepted = _DeletionExecution(cast(Any, transaction), "workspace-default")._resume(
+        _ledger_row()
+    )
+    assert accepted.record.status == "queued"
+    assert accepted.pending_object is None
 
 
 def test_resume_refuses_a_live_version_that_was_never_pinned() -> None:

@@ -862,34 +862,59 @@ def test_the_schema_itself_forbids_an_unpinned_object_version(sandbox: Sandbox) 
 
 
 async def test_a_concurrent_same_key_request_replays_the_winner(sandbox: Sandbox) -> None:
-    """Two connections, one key, one plan: both answer the same accepted deletion."""
+    """Two overlapping requests, one key: one purge, one durable answer.
+
+    The winner is held inside its object purge -- after it owns the purge claim
+    and before it can complete -- so the loser is *guaranteed* to enter the
+    queued window while the claim is live. Without the claim the loser would
+    purge the same pinned version a second time, which is exactly the assertion
+    below.
+    """
     app, pool, objects = _app(sandbox)
     plan = await _preview(app, "asset", ASSET, 3, "key-plan-concurrent")
     body = _confirm(plan)
-    barrier = threading.Barrier(2)
+    purging = threading.Event()
+    allow_completion = threading.Event()
     responses: list[httpx.Response] = []
 
-    def submit() -> None:
-        barrier.wait(timeout=5)
-        responses.append(asyncio.run(_execute(app, body, "key-exec-concurrent")))
+    def hold_purge(proof: VerifiedObject) -> None:
+        purging.set()
+        assert allow_completion.wait(timeout=30), "the purge was never released"
 
-    threads = [threading.Thread(target=submit) for _ in range(2)]
+    objects.on_delete = hold_purge
+    winner = threading.Thread(
+        target=lambda: responses.append(asyncio.run(_execute(app, body, "key-exec-concurrent")))
+    )
     try:
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join(timeout=30)
+        winner.start()
+        assert purging.wait(timeout=15), "the winner never reached its purge"
+        # The loser enters while the claim is live: it must wait, not purge.
+        loser = threading.Thread(
+            target=lambda: responses.append(asyncio.run(_execute(app, body, "key-exec-concurrent")))
+        )
+        loser.start()
+        # The loser is inside its wait on the claim now; release the winner.
+        await asyncio.sleep(0.3)
+        allow_completion.set()
+        winner.join(timeout=30)
+        loser.join(timeout=30)
+        assert not winner.is_alive() and not loser.is_alive()
         assert [response.status_code for response in responses] == [202, 202], [
             response.text for response in responses
         ]
         ledger = _ledger(sandbox, "key-exec-concurrent")
         assert len(ledger) == 1
+        assert ledger[0]["status"] == "succeeded"
         assert {response.json()["id"] for response in responses} == {ledger[0]["id"]}
         assert {response.json()["result"]["ledger_id"] for response in responses} == {
             ledger[0]["id"]
         }
+        assert len({response.json()["result"]["completed_at"] for response in responses}) == 1
+        assert len({response.text for response in responses}) == 1
+        # The whole point: one pinned version, purged once.
         assert objects.versions == ["minio-asset-exec-1"]
     finally:
+        allow_completion.set()
         pool.close()
 
 

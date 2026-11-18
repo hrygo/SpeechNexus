@@ -80,11 +80,16 @@ DELETION_LEDGER_DDL = (
         cleanup_state VARCHAR(16) NOT NULL CHECK (cleanup_state IN ('pending', 'complete')),
         content_ledger_id VARCHAR(128) COLLATE "C"
             REFERENCES speech_content_deletions (ledger_id),
+        -- The one executor that may purge the pinned object version claims the
+        -- row here. A live claim forbids a second purge; an expired one is
+        -- presumed dead (process crash) and may be reclaimed.
+        purge_claimed_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ NOT NULL,
         updated_at TIMESTAMPTZ NOT NULL CHECK (updated_at >= created_at),
         completed_at TIMESTAMPTZ,
         CHECK ((status = 'succeeded') = (completed_at IS NOT NULL)),
         CHECK ((status = 'succeeded') = (cleanup_state = 'complete')),
+        CHECK (purge_claimed_at IS NULL OR purge_claimed_at >= created_at),
         UNIQUE (workspace_id, idempotency_key_digest),
         -- An issued plan is a single-use credential: a second key cannot replay
         -- it as if it were a fresh deletion.
@@ -97,7 +102,14 @@ DELETION_LEDGER_DDL = (
 # The exact column surfaces the Job writer needs on top of 0058. Declared once so
 # the grant function, the route's own privilege probe and the deployment preflight
 # cannot drift from the SQL the executor runs.
-DELETION_LEDGER_UPDATE_COLUMNS = ("status", "cleanup_state", "updated_at", "completed_at")
+DELETION_LEDGER_UPDATE_COLUMNS = (
+    "status",
+    "cleanup_state",
+    "updated_at",
+    "completed_at",
+    # The purge claim is the one-executor CAS; granting it is part of execution.
+    "purge_claimed_at",
+)
 CONTENT_DELETION_INSERT_COLUMNS = (
     "ledger_id",
     "asset_id",

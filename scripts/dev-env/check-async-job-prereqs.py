@@ -461,7 +461,13 @@ WRITER_INSERT_COLUMNS: dict[str, tuple[str, ...]] = {
 WRITER_UPDATE_COLUMNS: dict[str, tuple[str, ...]] = {
     "speech_workspaces": ("metadata_revision",),
     "speech_assets": ("asset_state", "upload_phase", "writer_id", "error_code", "version"),
-    "speech_deletion_ledger": ("status", "cleanup_state", "updated_at", "completed_at"),
+    "speech_deletion_ledger": (
+        "status",
+        "cleanup_state",
+        "updated_at",
+        "completed_at",
+        "purge_claimed_at",
+    ),
     "speech_content_deletions": (
         "storage_version_id",
         "deletion_state",

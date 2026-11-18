@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-17T21:18:47+08:00",
+  "fetched_at": "2026-11-18T12:11:46+08:00",
   "issues": [
     {
       "number": 336,
@@ -1288,14 +1288,18 @@
       "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
     },
     {
-      "number": 959,
-      "html_url": "https://github.com/hrygo/SpeechNexus/issues/959",
+      "number": 970,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/970",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "取消债务探针：补 due now 的未来 next_check 负例，并对齐三处部署自检信号",
+      "title": "TTS 装配校验把 recipe.model_id 与 endpoint.served_model 当同一命名空间：DEL-538 首请求 503 的直接诱导",
       "state": "open",
       "state_reason": null,
-      "labels": [],
-      "parent_issue_url": null
+      "labels": [
+        {
+          "name": "bug"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
     }
   ]
 }

@@ -8,7 +8,7 @@ def asr_settlement_writer_grants(schema: str, role: str) -> tuple[str, ...]:
     schema, role = checked_sql_name(schema), checked_sql_name(role)
     return (
         f"GRANT SELECT, INSERT (lease_id,operation_id,attempt_id,gateway_id,"
-        f"host_node_id,next_check_at_us,settled_at_us) ON "
+        f"host_node_id,next_check_at_us) ON "
         f'"{schema}".speech_asr_settlement TO "{role}"',
     )
 

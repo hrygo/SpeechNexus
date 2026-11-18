@@ -355,21 +355,15 @@ def _voice(admission: AdmissionDatabase, *, audio_format: str = "pcm") -> None:
 
 @pytest.fixture
 def settlement_database_url(admission_database: AdmissionDatabase) -> Iterator[str]:
-    from speechnexus_backend.speech.infrastructure.binding_disable_targets_schema import (
-        disable_settlement_grants,
-    )
-    from speechnexus_backend.speech.infrastructure.tts_settlement_schema import (
-        tts_settlement_worker_grants,
+    from speechnexus_backend.speech.infrastructure.settlement_worker_verifier import (
+        settlement_worker_grants,
     )
 
     db = admission_database.runtime.foundation.database
     role = "sn_tts_api_" + uuid.uuid4().hex[:12]
     db.query(f"CREATE ROLE \"{role}\" LOGIN PASSWORD 'synthetic_settlement_test'")
     try:
-        for grant in (
-            *disable_settlement_grants(db.schema, role),
-            *tts_settlement_worker_grants(db.schema, role),
-        ):
+        for grant in settlement_worker_grants(db.schema, role):
             db.query(grant)
         yield make_conninfo(db.url, user=role, password="synthetic_settlement_test")
     finally:

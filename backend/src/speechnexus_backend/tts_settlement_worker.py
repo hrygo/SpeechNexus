@@ -13,10 +13,6 @@ from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from speechnexus_backend.binding_disable_worker import (
-    _SETTLEMENT_FULL_READ,
-    _SETTLEMENT_READ,
-    _SETTLEMENT_UPDATE,
-    _verify_no_role_switch,
     _verify_pool_pair,
 )
 from speechnexus_backend.speech.application.leases import LeaseService
@@ -27,6 +23,9 @@ from speechnexus_backend.speech.infrastructure.gateway_execution_client import (
 )
 from speechnexus_backend.speech.infrastructure.leases_postgres import PostgresLeaseTransactions
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool, speech_pool
+from speechnexus_backend.speech.infrastructure.settlement_worker_verifier import (
+    verify_settlement_worker,
+)
 from speechnexus_backend.speech.infrastructure.tts_settlement_postgres import (
     PostgresTtsSettlementStore,
 )
@@ -87,70 +86,8 @@ class TtsSettlementWorkerSettings(BaseSettings):
 
 
 def _verify_worker(pool: SpeechPool, schema: str) -> None:
-    """Require a non-owner principal and the essential worker permissions."""
-    with pool.connection(timeout=3) as conn:
-        conn.execute("SET LOCAL statement_timeout='3s'")
-        _verify_no_role_switch(conn, "TTS settlement worker")
-        row = conn.execute(
-            "SELECT CURRENT_USER AS role, current_schema() AS schema, "
-            "pg_catalog.has_schema_privilege(CURRENT_USER,%s,'CREATE') AS creates, "
-            "EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
-            "ON c.relnamespace=n.oid WHERE n.nspname=%s "
-            "AND pg_catalog.pg_has_role(CURRENT_USER,c.relowner,'MEMBER')) AS owns",
-            (schema, schema),
-        ).fetchone()
-        if row is None or row["schema"] != schema or row["creates"] or row["owns"]:
-            raise ValueError("TTS settlement requires a restricted non-owner identity")
-        rows = conn.execute(
-            "SELECT c.relname, a.attname, "
-            "pg_catalog.has_column_privilege(CURRENT_USER,c.oid,a.attnum,'SELECT') AS rd, "
-            "pg_catalog.has_column_privilege(CURRENT_USER,c.oid,a.attnum,'UPDATE') AS upd, "
-            "pg_catalog.has_column_privilege(CURRENT_USER,c.oid,a.attnum,'INSERT') AS ins, "
-            "pg_catalog.has_column_privilege(CURRENT_USER,c.oid,a.attnum,'REFERENCES') AS ref, "
-            "pg_catalog.has_table_privilege(CURRENT_USER,c.oid,'DELETE,TRUNCATE,TRIGGER') "
-            "AS destructive "
-            "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
-            "JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid AND a.attnum>0 "
-            "AND NOT a.attisdropped WHERE n.nspname=%s AND c.relkind IN ('r','p','v','m')",
-            (schema,),
-        ).fetchall()
-        for column in rows:
-            table, name = column["relname"], column["attname"]
-            can_read = (
-                table in _SETTLEMENT_FULL_READ
-                or name in _SETTLEMENT_READ.get(table, set())
-                or table in ("speech_tts_settlement", "speech_tts_cancellation")
-            )
-            can_update = name in _SETTLEMENT_UPDATE.get(table, set()) or (
-                table == "speech_tts_settlement"
-                and name in ("abort_reason", "next_check_at_us", "settled_at_us")
-            )
-            can_insert = table == "speech_tts_cancellation"
-            if (
-                bool(column["rd"]) != can_read
-                or bool(column["upd"]) != can_update
-                or bool(column["ins"]) != can_insert
-                or column["ref"]
-                or column["destructive"]
-            ):
-                raise ValueError("TTS settlement privileges exceed or miss the worker boundary")
-        for table, privilege in (
-            ("speech_tts_settlement", "SELECT"),
-            ("speech_tts_cancellation", "SELECT,INSERT"),
-        ):
-            result = conn.execute(
-                "SELECT pg_catalog.has_table_privilege(CURRENT_USER,%s,%s) AS allowed",
-                (f"{schema}.{table}", privilege),
-            ).fetchone()
-            if result is None or not result["allowed"]:
-                raise ValueError("TTS settlement privileges are incomplete")
-        for update_column in ("abort_reason", "next_check_at_us", "settled_at_us"):
-            result = conn.execute(
-                "SELECT pg_catalog.has_column_privilege(CURRENT_USER,%s,%s,'UPDATE') AS allowed",
-                (f"{schema}.speech_tts_settlement", update_column),
-            ).fetchone()
-            if result is None or not result["allowed"]:
-                raise ValueError("TTS settlement privileges are incomplete")
+    """Require a non-owner principal and the shared settlement boundary."""
+    verify_settlement_worker(pool, schema, label="TTS settlement worker")
 
 
 async def run(

@@ -307,6 +307,7 @@ def test_missing_operator_configuration_is_named_and_route_remains_503(
         "SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL",
         "SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL",
         "SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET",
+        "SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL",
     ):
         assert name in message
 

@@ -31,15 +31,20 @@ from speechnexus_backend.asr_settlement_worker import (
     run_once,
 )
 from speechnexus_backend.speech.application.admission import AdmissionService
+from speechnexus_backend.speech.infrastructure.asr_settlement_debt import (
+    read_asr_settlement_debt,
+)
+from speechnexus_backend.speech.infrastructure.asr_settlement_preflight import (
+    require_complete_asr_roots,
+)
 from speechnexus_backend.speech.infrastructure.asr_settlement_schema import (
-    asr_settlement_worker_grants,
     asr_settlement_writer_grants,
 )
 from speechnexus_backend.speech.infrastructure.asr_settlement_sql import (
     ASR_SETTLEMENT_BACKFILL,
 )
-from speechnexus_backend.speech.infrastructure.binding_disable_targets_schema import (
-    disable_settlement_grants,
+from speechnexus_backend.speech.infrastructure.settlement_worker_verifier import (
+    settlement_worker_grants,
 )
 from speechnexus_backend.speech.infrastructure.transcription_admission import (
     PostgresTranscriptionAdmission,
@@ -47,6 +52,9 @@ from speechnexus_backend.speech.infrastructure.transcription_admission import (
 )
 from speechnexus_backend.speech.infrastructure.transcription_admission_postgres import (
     PostgresTranscriptionAdmissionTransactions,
+)
+from speechnexus_backend.speech.infrastructure.tts_settlement_preflight import (
+    SettlementPreflightUnavailableError,
 )
 
 pytestmark = [
@@ -88,9 +96,15 @@ def _synthetic(
     kind: str | None,
     lease_state: str,
     request_document: str | None = None,
+    operation_prefix: str | None = None,
 ) -> str:
     token = uuid.uuid4().hex[:16]
-    operation_id = ("operation-" if kind is not None else "job-") + token
+    prefix = (
+        operation_prefix + "-"
+        if operation_prefix is not None
+        else ("operation-" if kind is not None else "job-")
+    )
+    operation_id = prefix + token
     attempt_id, lease_id, stage_id = "attempt-" + token, "lease-" + token, "stage-" + token
     instance = db.query(
         "SELECT instance_id, instance_generation, host_node_id, pool_id, gateway_id "
@@ -260,10 +274,7 @@ async def _settle_once(
     password = "synthetic_asr_settlement"
     db.query(f'CREATE ROLE "{role}" LOGIN PASSWORD {password!r}')
     try:
-        for grant in (
-            *disable_settlement_grants(db.schema, role),
-            *asr_settlement_worker_grants(db.schema, role),
-        ):
+        for grant in settlement_worker_grants(db.schema, role):
             db.query(grant)
         resolved = AsrSettlementWorkerSettings(
             database_url=make_conninfo(db.url, user=role, password=password),
@@ -463,3 +474,111 @@ async def test_once_settles_the_held_asr_lease_without_double_accounting(
         )[0]["settled_at_us"]
         == settled_at
     )
+
+
+def test_preflight_refuses_a_held_asr_lease_without_a_root(
+    admission_database: AdmissionDatabase,
+) -> None:
+    admission = admission_database
+    db = admission.runtime.foundation.database
+    _grant_writer(admission)
+    result = _admitted(admission, "request-asr-preflight")
+    pool = admission.runtime.pool
+    assert pool is not None
+    require_complete_asr_roots(pool)
+    db.query("DELETE FROM speech_asr_settlement WHERE lease_id=%s", (result.lease_id,))
+    with pytest.raises(ValueError, match="lacks a settlement root"):
+        require_complete_asr_roots(pool)
+    db.query(ASR_SETTLEMENT_BACKFILL)
+    require_complete_asr_roots(pool)
+    db.query(
+        "UPDATE speech_asr_settlement SET settled_at_us=1 WHERE lease_id=%s",
+        (result.lease_id,),
+    )
+    with pytest.raises(ValueError, match="settled root still holds"):
+        require_complete_asr_roots(pool)
+
+
+def test_preflight_names_the_migration_when_the_root_table_is_absent(
+    admission_database: AdmissionDatabase,
+) -> None:
+    admission = admission_database
+    db = admission.runtime.foundation.database
+    db.query("DROP TABLE speech_asr_settlement")
+    pool = admission.runtime.pool
+    assert pool is not None
+    with pytest.raises(SettlementPreflightUnavailableError) as raised:
+        require_complete_asr_roots(pool)
+    assert "migrate" in str(raised.value)
+
+
+def test_debt_counts_terminal_release_refusal_as_cleanup_pending(
+    admission_database: AdmissionDatabase,
+) -> None:
+    admission = admission_database
+    db = admission.runtime.foundation.database
+    _grant_writer(admission)
+    result = _admitted(admission, "request-asr-debt-cleanup")
+    now = db.query("SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) AS n")[
+        0
+    ]["n"]
+    deadline = db.query(
+        "SELECT deadline_at_us FROM admission_leases WHERE lease_id=%s", (result.lease_id,)
+    )[0]["deadline_at_us"]
+    db.query(
+        "INSERT INTO submit_intents (submit_intent_id,lease_id,operation_id,attempt_id,"
+        "command_digest,request_digest,request_document,deadline_at_us,recorded_at_us,"
+        "updated_at_us,execution_state,cleanup_state,terminated_at_us) "
+        "VALUES ('submit-asr-debt-cleanup',%s,%s,%s,%s,%s,'{}',%s,%s,%s,'succeeded','complete',%s)",
+        (
+            result.lease_id,
+            result.operation_id,
+            result.attempt_id,
+            DIGEST,
+            DIGEST,
+            deadline,
+            now,
+            now,
+            now,
+        ),
+    )
+    db.query(
+        "INSERT INTO execution_stop_evidence (evidence_id,submit_intent_id,evidence_kind,"
+        "evidence_digest,observed_at_us,execution_stopped,resources_released) "
+        "VALUES ('evidence-asr-debt-cleanup','submit-asr-debt-cleanup',"
+        "'engine_abort_ack',%s,%s,1,1)",
+        (DIGEST, now - 1),
+    )
+
+    debt = read_asr_settlement_debt(db.url, db.schema, (result.gateway_id, result.host_node_id))
+
+    assert (
+        debt.cleanup_pending,
+        debt.unknown,
+        debt.route_mismatch,
+        debt.settled_but_held,
+        debt.redacted_held,
+    ) == (1, 0, 0, 0, 0)
+    assert result.operation_id in debt.detail()
+
+
+def test_debt_reports_a_redacted_held_asr_lease(
+    admission_database: AdmissionDatabase,
+) -> None:
+    admission = admission_database
+    db = admission.runtime.foundation.database
+    lease_id = _synthetic(
+        db,
+        kind=None,
+        lease_state="reserved",
+        request_document=None,
+        operation_prefix="operation",
+    )
+    operation_id = db.query(
+        "SELECT operation_id FROM admission_leases WHERE lease_id=%s", (lease_id,)
+    )[0]["operation_id"]
+
+    debt = read_asr_settlement_debt(db.url, db.schema, None)
+
+    assert debt.redacted_held == 1
+    assert operation_id in debt.detail()

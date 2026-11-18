@@ -10,15 +10,23 @@ from __future__ import annotations
 
 import contextlib
 import logging
+from collections.abc import Callable
 
 from fastapi import FastAPI
 
 from speechnexus_backend.app import create_app
+from speechnexus_backend.asr_settlement_worker import (
+    AsrSettlementRuntime,
+    worker_settings,
+)
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.admission import AdmissionService
 from speechnexus_backend.speech.application.transcription import (
     Transcription,
     TranscriptionLimits,
+)
+from speechnexus_backend.speech.infrastructure.asr_settlement_debt import (
+    read_asr_settlement_debt,
 )
 from speechnexus_backend.speech.infrastructure.audio_duration_probe import PyAvAudioProbe
 from speechnexus_backend.speech.infrastructure.gateway_execution_client import (
@@ -81,6 +89,10 @@ def build_transcription(settings: Settings) -> Transcription | None:
             (
                 "SPEECHNEXUS_OBJECT_STORAGE_SECRET_KEY",
                 settings.object_storage_secret_key is not None,
+            ),
+            (
+                "SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL",
+                settings.speech_settlement_database_url is not None,
             ),
         )
         if not configured
@@ -145,6 +157,9 @@ def build_transcription(settings: Settings) -> Transcription | None:
             poll_seconds=settings.transcription_poll_seconds,
         )
         created.append(transcriber)
+        settlement = AsrSettlementRuntime(worker_settings(settings))
+        created.append(settlement)
+        settlement.open()
         return Transcription(
             PostgresPublicJobs(
                 pool, timeout_seconds=settings.transcription_storage_timeout_seconds
@@ -156,6 +171,7 @@ def build_transcription(settings: Settings) -> Transcription | None:
                 max_upload_bytes=settings.transcription_max_upload_bytes,
                 timeout_seconds=settings.transcription_timeout_seconds,
             ),
+            close=settlement.close,
         )
     except BaseException:
         for resource in reversed(created):
@@ -168,6 +184,26 @@ def build_transcription(settings: Settings) -> Transcription | None:
         raise
 
 
+def _debt_checks(settings: Settings) -> Callable[[], tuple[dict[str, object], ...]]:
+    categories = "unknown/cleanup_pending/route_mismatch/settled_but_held/redacted_held"
+    try:
+        resolved = worker_settings(settings)
+    except Exception:
+        detail = f"unavailable ({categories}; not configured)"
+        return lambda: ({"name": "asr_settlement_debt", "status": "ok", "detail": detail},)
+    route = (resolved.gateway_id, resolved.host_node_id)
+
+    def describe() -> tuple[dict[str, object], ...]:
+        try:
+            debt = read_asr_settlement_debt(resolved.database_url, resolved.schema, route)
+            detail = debt.detail()
+        except Exception as error:
+            detail = (f"unavailable ({categories}; reason={type(error).__name__})")[:512]
+        return ({"name": "asr_settlement_debt", "status": "ok", "detail": detail},)
+
+    return describe
+
+
 def create_app_from_env() -> FastAPI:
     """``uvicorn speechnexus_backend.transcription_runtime:create_app_from_env --factory``."""
     settings = Settings()
@@ -175,7 +211,12 @@ def create_app_from_env() -> FastAPI:
     speech = None
     try:
         speech = build_speech(settings)
-        return create_app(settings=settings, transcriptions=transcriptions, speech=speech)
+        return create_app(
+            settings=settings,
+            transcriptions=transcriptions,
+            speech=speech,
+            diagnostics_checks=_debt_checks(settings),
+        )
     except BaseException:
         for service in (speech, transcriptions):
             if service is not None:

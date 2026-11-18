@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from typing import Any, cast
 
@@ -324,6 +324,7 @@ def create_app(
     speech: SpeechSynthesis | None = None,
     transcriptions: Transcription | None = None,
     quarantine_releases: QuarantineReleaseService | None = None,
+    diagnostics_checks: Callable[[], tuple[dict[str, object], ...]] | None = None,
 ) -> FastAPI:
     """Create an API instance with explicit dependencies for tests and deployment."""
 
@@ -853,7 +854,9 @@ def create_app(
     )
     app.include_router(create_binding_lifecycle_router(get_binding_lifecycle))
     app.include_router(create_binding_evidence_router(get_binding_evidence))
-    app.include_router(create_diagnostics_router(resolved_readiness))
+    app.include_router(
+        create_diagnostics_router(resolved_readiness, extra_checks=diagnostics_checks)
+    )
     app.include_router(
         create_quarantine_release_router(
             get_quarantine_releases,

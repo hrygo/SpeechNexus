@@ -172,8 +172,7 @@ PROVISIONED_ANCHORS: dict[str, tuple[str, ...]] = {
     ),
     "SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL": (
         '"SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL": (',
-        'disable_settlement_grants(schema, "sn_speech_settlement")',
-        'tts_settlement_worker_grants(schema, "sn_speech_settlement")',
+        'settlement_worker_grants(schema, "sn_speech_settlement")',
     ),
     "SPEECHNEXUS_MODEL_CATALOG_READER_DATABASE_URL": (
         '"SPEECHNEXUS_MODEL_CATALOG_READER_DATABASE_URL": (',
@@ -266,11 +265,11 @@ ROLE_GRANT_BINDINGS: dict[str, tuple[tuple[str, ...], int]] = {
     # Synchronous TTS: the api identity keeps its voice/binding reads and its
     # settlement-root write in one declaration, and the settlement runtime only
     # accepts the exact column surface the two worker declarations hand out.
-    "sn_api": (("speech_synthesis_reader_grants",), 2),
-    "sn_speech_settlement": (
-        ("disable_settlement_grants", "tts_settlement_worker_grants"),
+    "sn_api": (
+        ("speech_synthesis_reader_grants", "asr_settlement_writer_grants"),
         2,
     ),
+    "sn_speech_settlement": (("settlement_worker_grants",), 2),
 }
 
 # Roles the runbook creates after the three base identities: the fresh-install

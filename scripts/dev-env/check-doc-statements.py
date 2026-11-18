@@ -152,7 +152,7 @@ CLAIMS = (
         doc="docs/operations/compose-minimal.md",
         required=(
             "已在该部署形态上取得真实 `200`（`DEL-540`",
-            "成功后租约不自动释放",
+            "成功后由 ASR 结算 worker",
             "POST /v1/audio/transcriptions",
         ),
         forbidden=(
@@ -160,6 +160,7 @@ CLAIMS = (
             "本部署已验证",
             "本部署无公开 `200` 证据",
             "本部署未验证的只有最后一步",
+            "成功后租约不自动释放",
         ),
         anchor=(FILE_WORKER, "_completion.complete("),
     ),

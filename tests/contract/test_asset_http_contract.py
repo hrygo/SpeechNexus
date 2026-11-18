@@ -39,6 +39,7 @@ def test_packaged_http_surface_is_closed_and_matches_real_operations() -> None:
     actual = create_app(settings=_settings()).openapi()
     assert set(actual["paths"]) == PATHS | ARTIFACT_PATHS | {
         "/v1/nexus/deletion-plans",
+        "/v1/nexus/deletions",
         "/healthz",
         "/readyz",
         "/v1/nexus/workspaces",

@@ -2,12 +2,12 @@
 title: "SpeechNexus MVP 0.1.0 发布说明"
 status: active
 version: "0.1.0"
-date: 2026-11-17
+date: 2026-11-18
 ---
 
 # SpeechNexus MVP 0.1.0 发布说明
 
-本说明陈述该版本实际具备的能力、部署与运维入口、升级与回滚边界，以及 13 条已知限制。每一
+本说明陈述该版本实际具备的能力、部署与运维入口、升级与回滚边界，以及 15 条已知限制。每一
 条都带证据档位与出处：**只有 A 档（真实部署或真实引擎上的端到端）计入「能做什么」**；B 档
 （真实进程、真实 PostgreSQL、真实对象存储，但未走真实引擎或未在参考部署上）与 C 档
 （组件级、fake、契约级）只说明「实现存在」，不是发布承诺。档位定义与逐行推导见
@@ -17,6 +17,10 @@ date: 2026-11-17
 （2026-11-17T20:48:37+08:00），核验日期 2026-11-17。仓库没有任何发布 tag（`git tag` 为空），
 所以本文描述的「0.1.0」是一个基线及其构建产物，不是一个已打标的制品；每次部署实际运行的镜像
 由它自己的构建提交决定，见 §1。
+
+**增量核验**（2026-11-18，卡 `DEL-539`）：在候选 SHA `4542ab6b`（当前 `origin/main` `7c420783`
+的父提交）上只更新了同步 TTS 一行（§2、§7.1）、同步 ASR 的缺口与原因（§2、§6 已知限制 15、
+§7.4），并新增已知限制 14；其余能力的证据未重新复核。
 
 ## 1. 版本标识
 
@@ -88,7 +92,8 @@ grep -o 'sha256:[0-9a-f]\{64\}' web/workbench/dist/assets/*.js | sort -u
 | 制品发布与下载：staging 不可公开读取、发布固定对象版本、`GET …/content` 返回字节且 `ETag` 与 `sha256` 逐字一致、落盘字节独立重算相符 | [F-ARTIFACT](../prd.md#f-artifact) | A（窄口径：发布与下载） | [§11.2](../operations/compose-minimal-from-zero.md)（`docs/operations/compose-minimal-from-zero.md:406`；`artifact-5b93ea73…`，92 字节，`sha256:3002c23c…`）。**保留期与过期链路未在参考部署上观测**：`artifact-retention` profile 存在但从未在该部署上启动留证 |
 | `workspace` 作为分组语义：默认 workspace 承载 Job 与配额，Job 的 `workspace_id` 与准入读取的配额行是同一个 `workspace-default` | [F-SHARED](../prd.md#f-shared) | A（默认 workspace + 注册/配额/准入引用一致；窄口径） | 2026-11-17 从**空 PostgreSQL/MinIO 卷**起参考部署（项目 `sn935`）：`workspace-default` 由迁移种下，配额行由 `engine-register` 经产品入口写入（脚本该行以 `PASS workspace_quotas:` 给出 `workspace-default`、配额 `8`、`policy-revision-compose-example`），`POST /v1/nexus/jobs` `202` 且 Job 回报 `workspace_id=workspace-default`、准入读取的正是该配额行；起点由 `--phase all` 的 `require-empty` 断言钉住（[从零实跑 §14](../operations/compose-minimal-from-zero.md)（`docs/operations/compose-minimal-from-zero.md:628`））。**边界**：单主机、单 workspace，该栈无真实引擎（Job 止于 `202`）；第二个 workspace 的分组行为与身份边界、工作台模块的 workspace 语义未验（判定表第 8 行） |
 | 同版浏览器消费：默认部署上由真实 Chromium 打开同版工作台，读到真实 GPU ASR Job 产出的同一份制品并落盘，`pageErrors=[]`，CSP 未放宽；同版读取另有一条同 Job 同 Artifact 的浏览器用例 | [F-CLIENT](../prd.md#f-client) | A（`DEL-534` 窗口 + `#952` 同版读取） | `DEL-534` 的证据体不在仓库内，结论与逐项数值在[判定表第 5 行](../plans/mvp-release-readiness.md)；PR `#952`（源 head `5fbea085`，合入 `b6ec7871`；审查 `#956` 三轮）在真实 Chromium + 真实 PostgreSQL/版本化 MinIO + `create_app` 组合根 + 部署镜像层下让页面读取同一 Job 的同一 Artifact，页面/`/content`/提交行五项一致，bundle 烘焙摘要与 `/v1/nexus/version` 逐字相同，三条反例均红（边界：不启动 compose 栈，Job 与制品行是夹具状态；A 档只限「同版读取」，引擎产出那一半仍不可得）。可执行的离线/在线核对入口是[前后端同版核对](../operations/same-version-check.md) |
-| 同步语音入口：`POST /v1/audio/transcriptions` 与 `POST /v1/audio/speech` 在标准 SDK 下各取得过一次真实 `200` | [F-ASR](../prd.md#f-asr)、[F-TTS](../prd.md#f-tts) | A（窄口径、单次受控窗口、早于当前 head；**当前 head 未取到**） | ASR：2026-11-02 MegaCube 窗口，`200`/1.237 s/文本与 5.36 s 合成句一致（记录在 PR #317 正文与 issue #243，仓库外材料）；TTS：2026-11-03 第六窗口，`200`/96044 bytes/2 s PCM16 24 kHz（[受控验收记录](../archive/audits/2026-11-03-controlled-tts-prepare.md)，脱敏 JSON 已入库）。**这两条只证明入口在受控窗口里可用，不构成本版本的当前时点证据**：参考部署未复跑这两个 `200`，ASR 缺最后一步公开调用（[compose-minimal.md](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:20`），收口卡 [#957](https://github.com/hrygo/SpeechNexus/issues/957)），TTS 缺已合格内建声音（见已知限制 1 与 §4 的声音资格前置，收口卡 [#885](https://github.com/hrygo/SpeechNexus/issues/885)） |
+| 同步 TTS：`POST /v1/audio/speech` 在参考部署上以标准请求取得真实 `200`（`audio/wav`、`299564 B`、6.24 s、24 kHz mono） | [F-TTS](../prd.md#f-tts) | A（候选 head `4542ab6b` 真实 `200`） | `DEL-539`（2026-11-18，MegaCube GB10，真实 `del109-tts`）：七个镜像由候选 SHA `4542ab6bc503ca2fb76b2a990aaf0c0dfc6eb9f0` 本地构建（api `sha256:1793ea17598d06df4e767de7650c5fc888ba226ffa303915c5863009e2b6c3a3`、gateway `sha256:41117871b6d2f5d881465d3d19d3f920ac1a4da4795350259bf92121a0c7dd80`），请求 `model=file-tts-qwen3-customvoice-del539`、`voice=voice-vivian-del539`（`voice_revision=1`）、`response_format=wav`、`deadline_ms=120000`、`max_output_audio_ms=30000` → `200 OK` / `content-type: audio/wav` / `content-length: 299564` / `x-sample-rate-hz: 24000` / `x-channels: 1` / `x-request-id: 918f7502…`；音频 mono / 24000 Hz / 16-bit / 149760 frames / 6.24 s，`sha256=0df873ed14e8272402ce449c50d821834ddc1953730308d982d8b8eb1bad762e`；引擎侧 `[OmniTiming] req=speech-9bb81dae… total=2.78s engine=2.78s`（`frames=78 × 1920 = 149760` 与 WAV 帧数相等）；执行 `succeeded`、`cleanup_state=complete`、租约 `released`、停止证据 `engine_terminal_response`。资格为 `operator_attested` 自证（`attest-vivian-del539-20261118`），不是控制器观测；墙钟 `3.055215 s` 未在重建容器后复测；与 ASR 同栈共存未验（已知限制 14） |
+| 同步 ASR：`POST /v1/audio/transcriptions` 在受控窗口里取得过一次真实 `200`，但**当前候选 head 上未取得** | [F-ASR](../prd.md#f-asr) | A（窄口径受控窗口，早于当前 head） | 历史 `200`：2026-11-02 MegaCube 窗口，`200` / 1.237 s / 文本与 5.36 s 合成句一致（记录在 PR #317 正文与 issue #243，仓库外材料）。`DEL-539`（2026-11-18，候选 `4542ab6b`）在本部署上得到 `503 backend_unavailable`（0.39 s），账本 `unknown_quarantined` / `error_code=engine_transport_unknown`，引擎侧同窗口没有转写请求；根因是默认值不一致（同步上传桶与网关 `objects.input_bucket`），修法在 `#972`，见已知限制 15 |
 | 工作台侧删除：`POST /v1/workbench/deletion-plans` → `200`、以 `plan_id`/`plan_revision`/`plan_digest` 固定的 `POST /v1/workbench/deletions` → `202` → `succeeded`/`complete`，账本落行、`cascade` 模式擦除正文而不只删元数据行，错 revision/错 digest `409 deletion_plan_changed` | [F-DELETE](../prd.md#f-delete)（仅工作台单元） | A（工作台单元窄口径） | Compose 项目 `sn832` 真实栈实测，逐项见[判定表第 9 行](../plans/mvp-release-readiness.md)；实现为 `backend/src/speechnexus_backend/workbench/application/deletions.py`。**语音侧删除不在本版本**（`/v1/nexus/deletion-plans`、`/v1/nexus/deletions` 恒 `503 operation_not_implemented`，见已知限制 9） |
 | 运维可见面：`/healthz`、`/readyz`、`GET /v1/nexus/version`、`GET /v1/nexus/admin/diagnostics`（含 `cancellation_debt` 明细与 `never claimed` / `never claimable (exhausted)` / `due now` 三类账本状态）、启动闸门（Job/workbench/隔离释放/保留期各自在领取前点名缺项） | [O-OBSERVE](../prd.md#o-observe) | A（探活与闸门本身）+ 明确缺口 | 探活期望值见 [compose-minimal.md §7](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:2184`）；闸门缺项命名见 [deploy/README.md](../../deploy/README.md) 与 [production-jobs.md](../components/production-jobs.md)。**`/readyz` 不反映 Job 准入可用性**，见已知限制 10 |
 
@@ -337,7 +342,8 @@ head，见下），但有三个地方会**硬拒绝启动**，以及四类数据
 
 ## 6. 已知限制
 
-以下 13 条与 [issue #912](https://github.com/hrygo/SpeechNexus/issues/912) 的清单一一对应，按
+以下 15 条：前 13 条与 [issue #912](https://github.com/hrygo/SpeechNexus/issues/912) 的清单一一对应，
+第 14、15 条是 `DEL-539`（2026-11-18）实测新增的两条。按
 「使用者会踩到什么 → 怎么处置」重写。「处置」列只有两种取值：**可操作**（有命令或步骤能消掉或
 绕过）与**无处置，只能避免**（技术上没有出口，唯一的做法是不进入该场景）。
 
@@ -356,6 +362,8 @@ head，见下），但有三个地方会**硬拒绝启动**，以及四类数据
 | 11 | 以为浏览器侧已被完整验证：浏览器覆盖只有 Chromium 无头；CI 不跑镜像内 nginx 的完整链路 | **无处置，只能避免**：三个 Playwright 配置都用 `chromium`（`playwright.a11y.config.mjs:19`、`playwright.behavior.config.mjs:27`、`playwright.deployed.config.mjs:29`）；CI 的 deployed-headers 门禁（`.github/workflows/ci.yml:1184`）是把**同一份构建产物**用从 `deploy/web/nginx.conf` 解析出的响应头起静态服务、跑 Chromium 首屏，不是跑镜像里的 nginx 容器。因此不要据 CI 绿宣称「浏览器已通过」；发布前在默认部署上人工跑一次同版核对第 3 项 | `.github/workflows/ci.yml` 的 Web job；`playwright.deployed.config.mjs` |
 | 12 | 以为「启动失败的输出里没有凭据」——**不成立**：`api` 的 lifespan 失败是 traceback，里面原样带着驱动的连接报文（真口令错时含 `connection to server at "<host>", port <port> failed: FATAL: password authentication failed for user "<role>"`，一次失败打印两次）；`gateway` 控制面、`job-dispatch-worker` 的两条路径同样是 traceback | **无处置，只能避免**：**一行结论类**的闸门（结算预检、asset-inspector、workbench-migrate、workbench-api、`speechnexus-job-dispatch-worker` 自身入口）确实不泄露，实测按 SQLSTATE 分类后只留「登录被拒 / 服务器不可达 / 异常类型名」；但 traceback 类单元打印的是驱动原文，**任何「启动失败不泄露凭据」的通稿都是假的**。处置只有一条：这些单元的输出**不要整段贴进公开 issue 或聊天**，要贴就贴 `FAIL:` 行与异常类型名 | `docs/operations/startup-gate-output.md` 的 24 行表；`docs/operations/async-job-runbook.md` §1；`compose-minimal.md` §9.1 |
 | 13 | 以为 `GET /v1/models` 的 `nexus.readiness.admission_state` 是「现在能不能建 Job」的答案——**契约把它定义成实时准入判据**（`contracts/speech-openapi.yaml:4063-4070`：「available means currently admissible」「unavailable means the model cannot be admitted now」；另见 `:53-54` 的「current admission facts」），而本端点的取值恒为 `unavailable` | **无处置，只能避免**：这不是「还没接实时证据」——**接入多少实时事实都满足不了该定义**。`admission_state` 是**按 workspace** 计（`backend/src/speechnexus_backend/speech/infrastructure/public_job_admission.py:695` 用 `job.workspace_id`、`:514` 按 `speech_assets.workspace_id` 过滤），而 `GET /v1/models` 的签名里**没有 workspace**（`backend/src/speechnexus_backend/speech/interfaces/http/models.py:42`；契约 `:56-63` 只有 `X-Request-ID` 与 `If-None-Match`），两类事实压不进一个无 workspace 的字段。判「能不能建 Job」看 `POST /v1/nexus/jobs` 的实际应答码；契约声明的实时读面是 `GET /v1/nexus/jobs/admission-readiness`（带 `workspace_id`），**当前仍是占位**，答 `503 operation_not_implemented` | 结构性不符的实现在 `backend/src/speechnexus_backend/model_catalog_runtime.py:92` 起的装配注释；契约与 PRD 的冲突与三条出路跟踪 [#941](https://github.com/hrygo/SpeechNexus/issues/941)；运维侧措辞见 [异步 Job 运行手册](../operations/async-job-runbook.md) §4 |
+| 14 | 把 `operator_attested` 资格链下取得的同步 TTS `200` 当成容量或部署形态结论：该次实测的 `capacity-manifest` 里 `management_mode` 与实际部署形态不一致，`host_peak_held` 低于声明峰值 | **无处置，只能避免**：资格链允许在已知不一致下自证（`DEL-539` 实际通过），但这两项不能用来推导容量、峰值或部署形态；要容量结论必须有与真实部署一致的 manifest 与测量。这两条不一致已作为该次实测的保留限制进判定表第 6 行 | [判定表第 6 行](../plans/mvp-release-readiness.md)、`DEL-539` 报告 §3–§4、[运维声明资格的读面与拒绝码](../design/operator-attested-voice-qualification.md) |
+| 15 | 按文档默认值起参考部署后，同步 ASR 入口 **100% 不可用**：`POST /v1/audio/transcriptions` 恒答 `503 backend_unavailable`（0.39 s），账本只留 `unknown_quarantined` / `error_code=engine_transport_unknown`，引擎侧没有任何转写请求 | **可操作（需配置一致）**：同步上传桶 `SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET`（默认 `speechnexus-inputs`）必须与网关 ASR 私有配置 `objects.input_bucket`（样例为 `speechnexus-results`）取同一值，否则 `execution-gateway/src/speechnexus_gateway/infrastructure/execution_objects_minio.py:111` 在引擎调用前抛 `execution_input_scope_mismatch`。默认值对齐由 [#972](https://github.com/hrygo/SpeechNexus/issues/972) 处理（进行中）；把两个桶配成同一值可消除该错误，**其后的链路仍未被验证**（本候选 head 上没有 ASR 的 `200`） | [判定表第 7 行](../plans/mvp-release-readiness.md)、`deploy/compose.yaml:118`、`deploy/private/gateway-file-asr.example.json:9`、`execution-gateway/src/speechnexus_gateway/infrastructure/execution_objects_minio.py:111` |
 
 **一处已不再成立的历史观察**：`DEL-535` 当时见到的 `GET /v1/models` → `503 model_catalogue_unavailable` 在本版本已不复现——`DEL-537` 在同一路径上实测 `200`。要注意的是它的 `readiness` 仍是**静态投影**（`engine_ready=false`、`admission_state=unavailable`）：契约对这个字段的定义（实时准入）**在本端点结构性不可满足**，见已知限制 13 与 [#941](https://github.com/hrygo/SpeechNexus/issues/941)——**不是「等接入实时证据就对上了」**。**不要用这个响应判断能不能建Job**：同一套部署上 Job 实际创建并成功。判「能不能建 Job」看 `POST /v1/nexus/jobs` 的实际应答码（见已知限制 10 与 [缺什么 → 看到什么 → 做什么](../operations/compose-minimal.md) §9.1）。
 
@@ -398,12 +406,21 @@ head，见下），但有三个地方会**硬拒绝启动**，以及四类数据
   GPU）；**A 档只限「同版读取」这一半，引擎产出那一半仍不可得**，`DEL-534` 是参考部署上的
   另一段证据。
 - **工作台侧删除（Compose 项目 `sn832`）**：预检 → 确认 → 账本端到端，含级联擦除正文。
-- **两条同步入口的受控窗口（A 档，但不是当前时点证据）**：2026-11-02 的同步 ASR 与 2026-11-03
-  的同步 TTS 各一次真实 `200`（固定声音、单节点、单实例、短英文，早于当前 head）。参考部署
-  至今没有复跑出这两个 `200`，ASR 与 TTS 分别由 `#957`、`#885` 收口，见 §7.4。
+- **同步 TTS 在候选 head 上的真实 `200`（`DEL-539`，2026-11-18，MegaCube GB10）**：候选 SHA
+  `4542ab6b` 的七个镜像本地构建后，在真实 `del109-tts` 上以
+  `model=file-tts-qwen3-customvoice-del539`、`voice=voice-vivian-del539`（`voice_revision=1`）、
+  `response_format=wav`、`deadline_ms=120000`、`max_output_audio_ms=30000` 取得 `200 audio/wav`
+  （`299564 B`、6.24 s、24 kHz mono、`sha256=0df873ed…`）；引擎侧
+  `[OmniTiming] req=speech-9bb81dae… total=2.78s engine=2.78s` 与 WAV 帧数 `149760 = 78 × 1920`
+  精确对齐；执行 `succeeded`、租约 `released`、停止证据 `engine_terminal_response`。边界：资格来自
+  `operator_attested` 自证（已知限制 14 的 `capacity-manifest` 两项与真实部署不一致）、墙钟未在
+  重建 API/gateway 容器后复测、与 ASR 同栈共存未验。
+- **同步 ASR 的受控窗口（A 档，但不是当前时点证据）**：2026-11-02 的同步 ASR 一次真实 `200`
+  （单节点、单实例，早于当前 head）；参考部署至今没有复跑出这个 `200`——`DEL-539` 在候选 head 上
+  得到 `503 backend_unavailable`，根因是默认值不一致（已知限制 15、§7.4），收口卡 `#957`。
 
-这些证据合起来，判定表计为 **9 行达标**（F-ASSET、F-JOB、F-ASYNC、F-ARTIFACT、F-CLIENT、
-F-SHARED、F-DELETE、Gate `#572`、部署入口）；另有 **2 行**（F-TTS `#885`、F-ASR `#957`）有 A 档但
+这些证据合起来，判定表计为 **10 行达标**（F-ASSET、F-JOB、F-ASYNC、F-ARTIFACT、F-CLIENT、
+F-SHARED、F-DELETE、F-TTS、Gate `#572`、部署入口）；另有 **1 行**（F-ASR `#957`）有 A 档但
 缺当前时点的公开 `200`；声音设计/克隆的 Job 级泳道（`#529`）无 A 档但已被用户后置，不计入首发
 阻塞。逐行推导见[判定表](../plans/mvp-release-readiness.md)。
 
@@ -424,8 +441,8 @@ F-SHARED、F-DELETE、Gate `#572`、部署入口）；另有 **2 行**（F-TTS `
 | 项 | 为什么没有 |
 | --- | --- |
 | 第二位操作者 / 第三台主机的独立复验 | 部署入口的两层证据是同一操作者换两台主机（`DEL-537` 在 MegaCube GB10，`#935`/`#876` 在 macOS arm64）；判定表第 12 行的「他人」只到这个范围，没有第二位操作者或第三台主机。MegaCube 宿主还须按 §0 预存同 tag 的 MinIO 镜像 |
-| 参考部署上的同步 ASR 真实 `200` | 装配齐、缺最后一步公开调用（[#957](https://github.com/hrygo/SpeechNexus/issues/957)）；历史 `200` 来自 2026-11-02 受控窗口，早于当前 head |
-| 参考部署上的同步 TTS 真实 `200` | 缺已合格内建声音，运维自证路径已实现但真实 `200` 未取得（[#885](https://github.com/hrygo/SpeechNexus/issues/885)）；`DEL-537` 在同一簇拿到的 `503 backend_unavailable` 是正确拒绝（缺三个身份与四份原件），不是装配缺陷 |
+| 参考部署上的同步 ASR 真实 `200` | 装配齐但入口在默认值下不可用：同步上传桶（`SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET`，默认 `speechnexus-inputs`）与网关 `objects.input_bucket`（样例 `speechnexus-results`）不一致，`execution_objects_minio.py:111` 在引擎调用前抛 `execution_input_scope_mismatch`；`DEL-539` 实测 `503 backend_unavailable`（0.39 s、`engine_transport_unknown`），修法在 [#972](https://github.com/hrygo/SpeechNexus/issues/972)。历史 `200` 来自 2026-11-02 受控窗口，早于当前 head（收口卡 [#957](https://github.com/hrygo/SpeechNexus/issues/957)） |
+| 重建 API/gateway 容器后的同步 TTS 墙钟 | 已测得 `3.055215 s` 是重建前的值，重建后未复测；重建后的墙钟只能由响应 `Date`、`OmniTiming total=2.78s` 与 WAV 帧数互为佐证，不构成实测值（`DEL-539`） |
 | 制品保留期在参考部署上运行 | `artifact-retention` profile 从未在该部署上启动留证 |
 | 取消在默认部署里的自愈 | 默认部署不运行取消对账 worker；`#951` 只让读面可观察（`never claimed` / `never claimable (exhausted)` / `due now`），没有增加推进者 |
 | 真实引擎故障、引擎/控制器重启、物理多机与故障演练 | 无目标环境；`O-PHYSICAL` 不在 MVP 范围 |

@@ -11,6 +11,7 @@ from tests.integration.test_public_job_progress_migration_pg import (
     _isolated_schema,
     _url,
 )
+from tests.support.migrations import step_below_asr_settlement
 
 pytestmark = pytest.mark.integration
 
@@ -38,6 +39,7 @@ def test_scan_index_is_created_with_its_predicate_and_dropped() -> None:
         assert "'voice_validation'" in definition
         assert "'succeeded'" in definition
 
+        step_below_asr_settlement(query)
         command.downgrade(config, "0047_voice_publication_evidence")
         assert _definition(query) is None
 

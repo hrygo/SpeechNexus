@@ -8,6 +8,7 @@ import pytest
 from alembic import command
 from sqlalchemy.exc import IntegrityError
 from tests.integration.test_public_job_progress_migration_pg import _isolated_schema
+from tests.support.migrations import step_below_asr_settlement
 
 pytestmark = pytest.mark.integration
 
@@ -75,6 +76,7 @@ def test_0043_backfills_revision_one_and_admits_validation() -> None:
             ("sha256:" + "b" * 64,),
         )
         query.execute("DELETE FROM speech_jobs WHERE job_id='job-validation-1'")
+        step_below_asr_settlement(query)
         command.downgrade(config, "0042_drop_superseded_job_index")
         dropped = query.execute(
             "SELECT to_regclass('speech_voice_draft_revisions') AS name"
@@ -94,6 +96,7 @@ def test_0043_downgrade_refuses_to_drop_revisions_with_validation_history() -> N
             "'voice-model', %s, 'pending', 1, 200, 200)",
             ("sha256:" + "c" * 64,),
         )
+        step_below_asr_settlement(query)
         with pytest.raises(IntegrityError) as failure:
             command.downgrade(config, "0042_drop_superseded_job_index")
         assert "speech_jobs_kind_check" in str(failure.value)

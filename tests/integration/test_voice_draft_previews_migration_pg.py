@@ -9,6 +9,7 @@ import pytest
 from alembic import command
 from tests.integration.test_public_job_progress_migration_pg import _isolated_schema
 from tests.integration.test_voice_draft_revisions_migration_pg import _kind_check, _seed_draft
+from tests.support.migrations import step_below_asr_settlement
 
 pytestmark = pytest.mark.integration
 
@@ -47,6 +48,7 @@ def test_0044_admits_voice_preview_and_round_trips() -> None:
         # Downgrade once clears the kind; a second upgrade restores it. No
         # preview row exists at this point, so the narrow CHECK is accepted.
         query.execute("DELETE FROM speech_jobs WHERE job_id='job-preview-1'")
+        step_below_asr_settlement(query)
         command.downgrade(config, "0043_voice_draft_revisions")
         assert "voice_preview" not in _kind_check(query)
         command.upgrade(config, "head")
@@ -57,6 +59,7 @@ def test_0044_downgrade_refuses_to_drop_preview_history() -> None:
     with _isolated_schema(_url()) as (config, query):
         command.upgrade(config, "head")
         _insert_preview(query, "job-preview-history")
+        step_below_asr_settlement(query)
         with pytest.raises(RuntimeError) as failure:
             command.downgrade(config, "0043_voice_draft_revisions")
         assert "voice_preview" in str(failure.value)

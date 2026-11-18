@@ -11,6 +11,7 @@ from tests.integration.test_public_job_progress_migration_pg import (
     _isolated_schema,
     _url,
 )
+from tests.support.migrations import step_below_asr_settlement
 
 pytestmark = pytest.mark.integration
 
@@ -41,6 +42,7 @@ def test_live_state_index_covers_both_probe_predicates_and_is_dropped() -> None:
         assert "'cancelling'" in definition
         assert "WHERE" in definition
 
+        step_below_asr_settlement(query)
         command.downgrade(config, _PREDECESSOR)
         assert _definition(query) is None
 

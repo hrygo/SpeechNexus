@@ -26,7 +26,7 @@ from alembic import command
 from alembic.config import Config
 from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 from tests.integration.test_coordination_foundation import seed
 from tests.integration.test_gateway_submit_ledger import seed_second_attempt
@@ -488,6 +488,16 @@ def test_migration_down_refuses_to_drop_nonempty_fences(fence_db: FenceSandbox) 
         try:
             with engine.connect() as connection:
                 config.attributes["connection"] = connection
+                connection.execute(
+                    text(f'DROP TABLE IF EXISTS "{fence_db.schema}".speech_asr_settlement')
+                )
+                connection.execute(
+                    text(
+                        f'UPDATE "{fence_db.schema}".alembic_version '
+                        "SET version_num = '0056_debt_probe_live_state_index'"
+                    )
+                )
+                connection.commit()
                 command.downgrade(config, "0033_profile_publications")
         finally:
             engine.dispose()

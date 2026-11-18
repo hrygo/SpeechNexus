@@ -534,14 +534,23 @@ def _require_capacity(cursor: _Cursor, spec: RegistrationSpec) -> None:
         )
 
 
-def _capacity_headroom(row: Row, required: PhysicalResources) -> CapacityHeadroom | None:
+def _capacity_headroom(row: Row, spec: RegistrationSpec) -> CapacityHeadroom | None:
     """Return the gap one more same-shape instance would hit, or ``None`` when it fits.
 
+    Only an undeclared capacity (still equal to this plan's default need) can be
+    the one-shot declaration that this warning is about: once the operator supplied
+    an explicit ``--host-capacity``, the run already states what the node must hold
+    and must never be told to rebuild for a value it chose.
+
     ``row`` must be read after the registration wrote its reservation: the prepare
-    step holds ``peak`` and the successful observation replaces it with ``steady``,
-    so only the post-write row says what the committed registration leaves behind.
+    step holds ``peak`` and the successful observation replaces it with ``steady``.
+    The pre-write row still has the old held vector, so it would not include this
+    registration's steady hold and would miss the shortfall.
     """
     capacity = _vector_from(row, "allocatable_")
+    if capacity != _default_capacity(spec.plan):
+        return None
+    required = _needed_capacity(spec.plan)
     occupied = _vector_from(row, "held_").add(_vector_from(row, "quarantined_"))
     if occupied.add(required).fits(capacity):
         return None
@@ -940,8 +949,9 @@ def _register_in_transaction(
         )
         rows = _snapshot(cursor, spec)
         instance = rows["engine_instances"]
-        # The host row was locked by `_require_capacity`; read it again after the
-        # writes so the warning describes the occupancy this registration leaves.
+        # `_require_capacity` locked the host row; read it again after the writes.
+        # The pre-write row does not contain the steady this registration now holds,
+        # so using it would miss the shortfall this warning exists to report.
         host = _one(
             cursor,
             "SELECT * FROM host_nodes WHERE host_node_id = %s FOR UPDATE",
@@ -966,7 +976,7 @@ def _register_in_transaction(
             evidence_document=evidence_document,
             probe=probe,
             rows=rows,
-            capacity_headroom=_capacity_headroom(host, _needed_capacity(spec.plan)),
+            capacity_headroom=_capacity_headroom(host, spec),
         )
 
 
@@ -1289,11 +1299,13 @@ def _report(result: RegistrationResult) -> None:
         )
     if result.capacity_headroom is not None:
         sys.stderr.write(
-            f"warning: host {result.target_node_id} cannot hold a second instance of this "
-            f"shape: remaining {_vector_text(result.capacity_headroom.remaining)}, "
-            f"this registration required {_vector_text(result.capacity_headroom.required)}; "
-            "to run another one here you must rebuild the data volume and pass an explicit "
-            "--host-capacity when the first registration on this node runs\n"
+            f"warning: host {result.target_node_id} cannot hold another instance of this "
+            f"shape under the current holds: remaining "
+            f"{_vector_text(result.capacity_headroom.remaining)}, one more requires "
+            f"{_vector_text(result.capacity_headroom.required)}; release held or quarantined "
+            "capacity first, otherwise raise allocatable_* in a reviewed change (the runtime "
+            "role cannot), or rebuild the data volume and pass an explicit --host-capacity "
+            "at the first registration\n"
         )
     print(_result_json(result))
 

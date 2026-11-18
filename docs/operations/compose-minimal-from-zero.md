@@ -763,7 +763,7 @@ http=202
 | --- | --- | --- | --- |
 | D12 | 实例已 `ready` 后 `GET /v1/models` 仍报 `"engine_ready":false,"admission_state":"unavailable"`：目录的 readiness 是静态投影，从未接入实例事实 | `backend/src/speechnexus_backend/speech/infrastructure/model_catalog_postgres.py:35`（`readiness or ReadinessFacts()` 恒为空），`public_job_admission` 才是真判据 | 本轮只记录：不要用 `/v1/models` 的 readiness 判断能否创建 Job；runbook §7.1 第 4 步「未注册实例时是 unavailable」暗示它会变，需要订正措辞 |
 | D13 | `api` 的 `/readyz` 现在有四项检查（多 `cancellation_debt`、`stop_evidence_debt`） | `compose-minimal.md:2218` 起写两项 | 文档漂移，记录于此 |
-| D14 | 发布新 revision 后实例身份失效：直接重跑注册被 `instance_config_conflict` 拒绝；创建变成 `429 job_capacity_exhausted`，message 是「no engine instance is registered for model …」 | `engine_registration.py:629`、`public_job_admission.py:211`–`:253` | 记录：换 revision 需要新的 generation/实例轮换路径，本轮**未验证**该路径 |
+| D14 | 发布新 revision 后实例身份失效：直接重跑注册被 `instance_config_conflict` 拒绝；创建变成 `429 job_capacity_exhausted`，message 是「no engine instance is registered for model …」 | `engine_registration.py:638`、`public_job_admission.py:211`–`:253` | 记录：换 revision 需要新的 generation/实例轮换路径，本轮**未验证**该路径 |
 | D15 | 单个注册实例的 `max_slots=1`，一个 queued Job 就占满：同一栈上第二次创建是 `429`，message 为「Job capacity is exhausted; retry after the indicated delay.」 | 配方 `runtime_plan.max_slots`、`public_job_admission.py:253` | 不是缺陷，是容量语义：占用持续到该 Job 的租约被释放或准入截止（`retry_after`）到期；写进 §13 判定表第 4 项 |
 
 ### 14.6 未验证项

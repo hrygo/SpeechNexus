@@ -1178,6 +1178,8 @@ def test_register_in_transaction_short_circuits_an_already_ready_instance(
     monkeypatch.setattr(registration, "create_in_transaction", refuse)
     result = run_registration(spec, store)
     assert result.outcome == "already_ready"
+    # A replay/renewal neither creates a reservation nor re-advises capacity.
+    assert result.capacity_headroom is None
     assert store.writes == []
 
 
@@ -1201,9 +1203,11 @@ def test_registration_warns_when_the_host_cannot_hold_a_second_same_shape_instan
     assert result.capacity_headroom is not None
     # Per-dimension remaining = allocatable - (held + quarantined), plus this plan's need.
     assert "remaining 0,1000000000,500000000,200,0,0" in captured.err
-    assert "this registration required 0,5000000000,1500000000,1200,0,0" in captured.err
-    # The remedy: rebuild the data volume and pass --host-capacity at first registration.
-    assert "cannot hold a second instance of this shape" in captured.err
+    assert "one more requires 0,5000000000,1500000000,1200,0,0" in captured.err
+    # Three remedies in order: release holds, reviewed change, rebuild the volume.
+    assert "cannot hold another instance of this shape under the current holds" in captured.err
+    assert "release held or quarantined capacity first" in captured.err
+    assert "raise allocatable_* in a reviewed change" in captured.err
     assert "rebuild the data volume" in captured.err
     assert "--host-capacity" in captured.err
     # Exactly one warning line, and stdout stays the only machine-readable document.
@@ -1252,3 +1256,21 @@ def test_capacity_warning_leaves_stdout_byte_identical(
     assert with_warning.out == without_warning.out
     # The two results are equal apart from the warning fact, so nothing else differs.
     assert replace(warned, capacity_headroom=None) == silent
+
+
+def test_explicit_capacity_that_fits_only_one_instance_does_not_warn(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # An explicit declaration is the operator's answer already: it fits this run
+    # but not a second one, and the success path must not re-advise rebuilding.
+    declared = PhysicalResources(0, 8_000_000_000, 2_000_000_000, 2_000, 0, 0)
+    spec, store = make_spec(host_capacity=declared), Store()
+    stub_domain(monkeypatch, store, spec)
+
+    result = run_registration(spec, store)
+    _report(result)
+    captured = capsys.readouterr()
+
+    assert result.capacity_headroom is None
+    assert captured.err == ""
+    assert captured.out

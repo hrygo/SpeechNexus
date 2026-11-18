@@ -655,8 +655,8 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 | 配方 `binding_revision_id` / `--binding-revision-id` | 已发布 binding 的 `revision_id` | 准入按 `engine_instances.binding_revision_id = <已发布 revision_id>` 找 ready 实例（`public_job_admission.py:217`），并把它与 plan 比对（`:652`） |
 | 配方 `manifest_id` / `--manifest-id` | 该 binding 的 `execution_recipe.capacity_manifest_id` | 准入要求 `plan.binding.manifest_id` 与定义里的清单 ID 相等（`public_job_admission.py:655`） |
 | 配方 `policy_revision_id` / `--policy-revision` | 部署的 VAD/语音策略版本，且等于 §7.1 第 5 步 gateway 私有配置的 `config_revision` | 该值经注册写入 `workspace_quotas.policy_revision`（`engine_registration.py:490`），准入再把它作为执行的 `policy_revision_id`（`public_job_admission.py:887`）；gateway 逐字段比对（`file_asr_command.py:109`） |
-| `--node` / `--gateway` / `--instance` / `--generation` | 部署实参与 gateway 端点配置里的同名身份 | 配方模式下给出与配方不一致的值会以 `<name>_override_conflict` 退出（`engine_registration.py:1111`） |
-| `--template-id`、`--config-digest`、`--topology-digest`、`--qualification-digest`、容量向量、`--max-attempts` | 部署与镜像事实；binding 不校验这些值 | `_config_matches`（`engine_registration.py:551`）只把已有行与 plan 自身比对 |
+| `--node` / `--gateway` / `--instance` / `--generation` | 部署实参与 gateway 端点配置里的同名身份 | 配方模式下给出与配方不一致的值会以 `<name>_override_conflict` 退出（`engine_registration.py:1121`） |
+| `--template-id`、`--config-digest`、`--topology-digest`、`--qualification-digest`、容量向量、`--max-attempts` | 部署与镜像事实；binding 不校验这些值 | `_config_matches`（`engine_registration.py:560`）只把已有行与 plan 自身比对 |
 
 **注册不检查 binding 是否已发布**：整条注册路径没有对 `speech_binding_revisions` 或
 `speech_publication_heads` 的查询，`--binding-revision-id` 是调用方声明的字符串（依据
@@ -683,7 +683,7 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 | `invalid_recipe` | 配方摘要、`stage.instance_id` 或 binding plan 与实际不一致 |
 | `pool_owner_conflict` / `previous_generation_active` | 旧 owner 或旧 generation 仍 ready；先核对/停止旧实例，不要改 token 假装接管 |
 | `quota_policy_conflict` / `quota_capacity_conflict` | 该工作空间已有配额行：`policy_revision` 与本次不同，或已有 `max_attempts` 更小（`engine_registration.py:488`） |
-| `host_capacity_insufficient` | `--host-capacity`（缺省 `steady + per_slot × max_slots`，且至少覆盖 `peak`，`engine_registration.py:187`）容不下计划，或该节点已有 held/quarantined 占用。缺省值等于本次 plan 的需求，所以同一节点注册第二个实例时这条几乎是必然——`host_nodes` 只在首次插入时写，第一次注册就要传够；第一次注册成功时若该节点已放不下第二个同形状实例，命令会在 stderr 打一行 `warning:`（逐维剩余量与 `--host-capacity` 出路），不必等到第二次注册才失败，见[参考部署的宿主机容量规则](../operations/compose-minimal.md#宿主机的容量向量只在首次注册时写入且必须一次声明够) |
+| `host_capacity_insufficient` | `--host-capacity`（缺省 `steady + per_slot × max_slots`，且至少覆盖 `peak`，`engine_registration.py:187`）容不下计划，或该节点已有 held/quarantined 占用。缺省值等于本次 plan 的需求，所以同一节点注册第二个实例时这条几乎是必然——`host_nodes` 只在首次插入时写，第一次注册就要传够；缺省容量注册时若按当前占用已放不下第二个同形状实例，命令会在 stderr 提前打一行 `warning:`（逐维剩余量、再一个实例的需求与三条出路），不必等到第二次注册才失败，见[参考部署的宿主机容量规则](../operations/compose-minimal.md#宿主机的容量向量只在首次注册时写入且必须一次声明够) |
 | `host_architecture_mismatch` / `host_topology_mismatch` | 该 `host_node_id` 已登记过不同的 architecture 或 topology digest（`engine_registration.py:388`、`:393`） |
 | 创建返回 `429 job_capacity_exhausted` | 没有 `ready` 实例，或其实例的 binding revision 与请求的发布不一致 |
 | 创建返回 `503 engine_not_ready` | 实例仍 `ready`，但 readiness 收据已过期；跑续期（§7.4），不要重新注册新 generation |

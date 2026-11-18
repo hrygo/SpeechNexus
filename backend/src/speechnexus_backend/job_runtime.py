@@ -327,7 +327,9 @@ class JobRuntime:
                 )
                 try:
                     missing_grants = deletion_store.missing_privileges()
-                except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
+                except (psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests) as error:
+                    # The probe is advisory; a pool or catalog error must not stop boot.
+                    _LOG.debug("deletion preview probe skipped: %s", type(error).__name__)
                     missing_grants = ()
                 if missing_grants:
                     _LOG.warning(

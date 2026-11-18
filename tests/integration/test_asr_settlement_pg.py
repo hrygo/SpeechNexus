@@ -166,6 +166,34 @@ def test_admission_writes_the_root_in_the_same_transaction(
     assert lease[0]["lease_state"] == "reserved"
 
 
+def test_root_and_lease_share_one_commit(
+    admission_database: AdmissionDatabase, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    admission = admission_database
+    _grant_writer(admission)
+    recipe = _recipe(admission)
+    plan = _plan("request-asr-one-commit")
+    adapter, port = _adapter(admission, recipe)
+    observed: list[int] = []
+
+    def same_cursor(cursor: Any, prepared: Any) -> None:
+        lease_id = prepared.command.request.stages[0].lease_id
+        cursor.execute(
+            "SELECT count(*) AS n FROM speech_asr_settlement WHERE lease_id=%s",
+            (lease_id,),
+        )
+        observed.append(cursor.fetchall()[0]["n"])
+
+    monkeypatch.setattr(port, "_recheck_before_commit", same_cursor)
+    result = adapter.admit(plan, submit_intent_id="submit-one-commit", audio=_audio(plan))
+    assert observed == [1]
+    root = admission.runtime.foundation.database.query(
+        "SELECT lease_id, operation_id FROM speech_asr_settlement WHERE lease_id=%s",
+        (result.lease_id,),
+    )
+    assert root[0]["operation_id"] == result.operation_id
+
+
 def test_late_admission_failure_leaves_no_root(
     admission_database: AdmissionDatabase, monkeypatch: pytest.MonkeyPatch
 ) -> None:

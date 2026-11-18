@@ -514,12 +514,12 @@ def _require_capacity(cursor: _Cursor, spec: RegistrationSpec) -> None:
             "existing host allocatable vector cannot hold the requested plan; "
             f"need at least {_vector_text(required)} beyond current holds "
             f"(allocatable {_vector_text(capacity)}, held+quarantined {_vector_text(occupied)}). "
-            "host_nodes.allocatable_* is written only by the first registration on a node "
-            "(ON CONFLICT DO NOTHING) and has no later enlargement path; when that first "
-            "registration did not pass an explicit --host-capacity, the default equals its own "
-            "plan, so the node has no headroom left for another instance. To host several "
-            "instances on one node, register the first one with --host-capacity sized for all "
-            "of them; a node already registered with the default needs a rebuilt data volume",
+            "This command cannot enlarge host_nodes.allocatable_* after the first registration "
+            "on a node inserted it (ON CONFLICT DO NOTHING), and the runtime role cannot update "
+            "those columns either. First check whether the held or quarantined part can be "
+            "released; otherwise raise the allocatable vector in a reviewed change, or rebuild "
+            "the data volume and pass an explicit --host-capacity when the first registration "
+            "on this node runs",
         )
 
 

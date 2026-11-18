@@ -658,14 +658,18 @@ def test_require_capacity_names_the_remedy_instead_of_only_the_shortfall() -> No
     store.hosts["node-1"] = host_row(
         allocatable=PhysicalResources(0, 5_000_000_000, 1_500_000_000, 1_200, 0, 0),
         held=PhysicalResources(0, 100_000_000, 0, 0, 0, 0),
+        quarantined=PhysicalResources(0, 40_000_000, 0, 0, 0, 0),
     )
     error = error_of(lambda: _require_capacity(store.cursor(), spec))
     assert error.code == "host_capacity_insufficient"
     # 运维要看到「缺多少 + 当前占用 + 出路」, 不能只有一句「不够」。
     assert "allocatable 0,5000000000,1500000000,1200,0,0" in error.message
-    assert "held+quarantined 0,100000000,0,0,0,0" in error.message
+    assert "held+quarantined 0,140000000,0,0,0,0" in error.message
+    # 出路本身: 先看能否释放占用、变更评审下改行、重建数据卷并显式传容量。
+    assert "released" in error.message
+    assert "reviewed change" in error.message
+    assert "rebuild the data volume" in error.message
     assert "--host-capacity" in error.message
-    assert "first registration" in error.message
 
 
 def test_existing_result_returns_none_for_a_new_instance() -> None:

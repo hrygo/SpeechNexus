@@ -57,6 +57,12 @@ PREDECLARED_SERVICE_UNAVAILABLE = frozenset(
         "getJobAdmissionReadiness",
     }
 )
+# The frozen contract still declares the placeholder component for this one
+# implemented operation: #819 slice A replaced its handler while ``contracts/**``
+# stays untouched, so the declaration is stale until slice D replaces the 503.
+# Naming the exception keeps it from hiding a second operation that really is a
+# placeholder.
+IMPLEMENTED_WITH_FROZEN_PLACEHOLDER_503 = frozenset({"speechCreateDeletionPlan"})
 # Every placeholder answers at runtime, including the compatible-surface one.
 CASES = sorted(
     (operation, method, path) for operation, (method, path) in UNIMPLEMENTED_OPERATIONS.items()
@@ -199,17 +205,22 @@ def concrete(path: str) -> str:
 
 
 def test_contract_and_placeholder_table_agree() -> None:
-    assert len(CASES) == 10
+    assert len(CASES) == 9
     assert {operation for operation, _, _ in CASES} == set(UNIMPLEMENTED_OPERATIONS)
     declared = {operation for operation, _, _ in declared_operations()}
     # retireVoiceRevision and the six voice-draft operations now answer their
     # own 503 (ServiceUnavailable) after those routes shipped, and #484 replaced
     # the pronunciation collection pair with real routes, so only the remaining
-    # placeholders carry the dedicated component.
+    # placeholders carry the dedicated component. #819 slice A added one
+    # implemented operation whose frozen declaration still points at it.
     assert len(declared) == 6
-    # Every remaining operation points at the dedicated placeholder component;
-    # the three with an older 503 declaration keep it rather than lose a header.
-    assert declared == set(UNIMPLEMENTED_OPERATIONS) - PREDECLARED_SERVICE_UNAVAILABLE
+    # The one exception is explicit and exclusive; every other operation that
+    # points at the placeholder component is still a real placeholder.
+    assert declared >= IMPLEMENTED_WITH_FROZEN_PLACEHOLDER_503
+    assert not (IMPLEMENTED_WITH_FROZEN_PLACEHOLDER_503 & set(UNIMPLEMENTED_OPERATIONS))
+    assert declared - IMPLEMENTED_WITH_FROZEN_PLACEHOLDER_503 == (
+        set(UNIMPLEMENTED_OPERATIONS) - PREDECLARED_SERVICE_UNAVAILABLE
+    )
 
 
 @pytest.mark.parametrize("case", CASES, ids=lambda case: case[0])
@@ -631,4 +642,13 @@ def test_served_openapi_does_not_advertise_placeholders() -> None:
     advertised = {
         operation["operationId"] for item in paths.values() for operation in item.values()
     }
-    assert not {operation for operation, _, _ in declared_operations()} & advertised
+    # The one implemented operation whose frozen declaration is stale is served;
+    # every operation that is still only a placeholder stays out of the document.
+    assert advertised >= IMPLEMENTED_WITH_FROZEN_PLACEHOLDER_503
+    assert (
+        not (
+            {operation for operation, _, _ in declared_operations()}
+            - IMPLEMENTED_WITH_FROZEN_PLACEHOLDER_503
+        )
+        & advertised
+    )

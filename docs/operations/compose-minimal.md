@@ -512,7 +512,7 @@ curl -fsS http://127.0.0.1:59000/minio/health/live
 上述命令经 Compose 服务名 `postgres` 进入容器，因此不绑定容器名：项目名取自 §1 的
 `COMPOSE_PROJECT_NAME`，容器实际叫 `<项目名>-postgres-1`，直接写死它会得到
 `No such container`。用户与数据库名对应默认配置；若部署值不同，先核对实际名称再查询。
-仓库当前迁移链的 head 为 `0057_asr_settlement`；实际部署必须以所用发布制品中的唯一
+仓库当前迁移链的 head 为 `0058_speech_deletion_plans`；实际部署必须以所用发布制品中的唯一
 head 为准，查询结果须与之相符。不要把旧版 `0027_gateway_abort_intents` 或
 `0039_public_job_progress` 当作当前 head，也不要跳过检查或手工修改版本表。
 
@@ -1212,7 +1212,8 @@ statements`；语句数随授权函数变化，不要把它当固定值——以
 
 - `sn_job_writer`：`job_runtime_grants`、`job_dispatch_grants`、`public_job_grants`、
   `voice_draft_grants`、`public_job_submission_grants`、`job_cancellation_fence_grants`、
-  `cancellation_not_submitted_grants`、`cancellation_reconciliation_grants`，外加
+  `cancellation_not_submitted_grants`、`cancellation_reconciliation_grants`、
+  `deletion_plan_grants`（删除预检读取资产引用并写入不可变计划行），外加
   `speechnexus_backend.job_runtime` 启动校验需要的发布/素材基线 `SELECT` 和
   `coordination_jobs` 的四个认领列 `UPDATE`。缺任一项时 API 以
   `Public Job writer startup rejected` 退出，不会带着错误权限面上线。

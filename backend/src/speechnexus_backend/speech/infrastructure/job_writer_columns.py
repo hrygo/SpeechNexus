@@ -7,6 +7,9 @@ one source of truth instead of drifting apart.
 """
 
 from speechnexus_backend.speech.infrastructure.artifact_schema import ARTIFACT_INSERT_COLUMNS
+from speechnexus_backend.speech.infrastructure.deletion_plan_schema import (
+    DELETION_PLAN_INSERT_COLUMNS,
+)
 
 COORDINATION_JOB_INSERT_COLUMNS = (
     "job_id",
@@ -133,6 +136,7 @@ JOB_WRITER_INSERT_COLUMNS: dict[str, tuple[str, ...]] = {
     "speech_voice_drafts": VOICE_DRAFT_INSERT_COLUMNS,
     "speech_voice_draft_revisions": VOICE_DRAFT_REVISION_INSERT_COLUMNS,
     "speech_voice_metadata_commands": VOICE_METADATA_COMMAND_INSERT_COLUMNS,
+    "speech_deletion_plans": DELETION_PLAN_INSERT_COLUMNS,
 }
 
 __all__ = [
@@ -143,6 +147,7 @@ __all__ = [
     "CANCELLATION_RECONCILIATION_INSERT_COLUMNS",
     "COORDINATION_JOB_INSERT_COLUMNS",
     "COORDINATION_OUTBOX_INSERT_COLUMNS",
+    "DELETION_PLAN_INSERT_COLUMNS",
     "JOB_CANCELLATION_INSERT_COLUMNS",
     "JOB_EVENT_INSERT_COLUMNS",
     "JOB_INSERT_COLUMNS",

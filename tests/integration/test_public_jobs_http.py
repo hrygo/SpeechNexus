@@ -39,6 +39,7 @@ from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema imp
     cancellation_reconciliation_grants,
 )
 from speechnexus_backend.speech.infrastructure.job_schema import (
+    deletion_plan_grants,
     job_dispatch_grants,
     job_runtime_grants,
 )
@@ -148,6 +149,7 @@ def jobs_db() -> Iterator[JobSandbox]:
             *job_dispatch_grants(schema, role),
             *cancellation_reconciliation_grants(schema, role),
             *public_job_submission_grants(schema, role),
+            *deletion_plan_grants(schema, role),
             f'GRANT SELECT ON "{schema}".admission_operations, "{schema}".coordination_jobs '
             f'TO "{role}"',
             f"GRANT UPDATE (claim_owner_id, claim_expires_at_us, claim_version, job_state) "

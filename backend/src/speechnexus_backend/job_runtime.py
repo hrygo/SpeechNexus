@@ -7,11 +7,15 @@ import threading
 import uuid
 
 from speechnexus_backend.settings import Settings
+from speechnexus_backend.speech.application.deletions import SpeechDeletions
 from speechnexus_backend.speech.application.job_cancellation import CancellationCapacity
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
 from speechnexus_backend.speech.application.voice_drafts import VoiceDrafts
 from speechnexus_backend.speech.application.voice_publications import VoicePublications
 from speechnexus_backend.speech.domain.job_prerequisites import ADMISSION_DSN
+from speechnexus_backend.speech.infrastructure.deletion_plans_postgres import (
+    PostgresDeletionPlans,
+)
 from speechnexus_backend.speech.infrastructure.job_dispatch_postgres import PostgresLeaseSettler
 from speechnexus_backend.speech.infrastructure.job_schema_preflight import (
     JobSchemaNotMigratedError,
@@ -89,6 +93,8 @@ REQUIRED_SELECT = (
     "speech_publication_retirements",
     "speech_binding_revisions",
     "speech_assets",
+    "speech_asset_objects",
+    "speech_asset_references",
     "speech_pronunciation_revisions",
     "speech_jobs",
     "speech_job_intents",
@@ -96,6 +102,7 @@ REQUIRED_SELECT = (
     "speech_job_submissions",
     "speech_job_cancellations",
     "speech_artifacts",
+    "speech_deletion_plans",
     "speech_voice_drafts",
     "speech_voice_draft_revisions",
     # The owner-privileged projection of a published draft's facts; the evidence
@@ -112,6 +119,7 @@ REQUIRED_INSERT = (
     "speech_job_events",
     "speech_job_submissions",
     "speech_job_cancellations",
+    "speech_deletion_plans",
 )
 REQUIRED_INSERT_COLUMNS: dict[str, tuple[str, ...]] = {
     "speech_voice_draft_revisions": (
@@ -211,6 +219,7 @@ class JobRuntime:
         self._publisher_pool: SpeechPool | None = None
         self._capacity_pool: SpeechPool | None = None
         self.jobs: PublicJobs | None = None
+        self.deletion_plans: SpeechDeletions | None = None
         self.voice_drafts: VoiceDrafts | None = None
         self.voice_publications: VoicePublications | None = None
         # The single release object the immediate cancellation and the
@@ -296,6 +305,12 @@ class JobRuntime:
                     ).release_sync
                 )
                 self.jobs = PublicJobs(adapter, adapter)
+                self.deletion_plans = SpeechDeletions(
+                    PostgresDeletionPlans(
+                        pool, timeout_seconds=self._settings.job_transaction_timeout_seconds
+                    ),
+                    workspace_id=self._settings.capability_default_workspace_id,
+                )
                 self.voice_drafts = VoiceDrafts(self.jobs, PostgresVoiceDrafts(pool))
                 self.voice_publications = (
                     VoicePublications(
@@ -440,6 +455,7 @@ class JobRuntime:
     def close(self) -> None:
         with self._lifetime:
             self.jobs = None
+            self.deletion_plans = None
             self.voice_drafts = None
             self.voice_publications = None
             self.capacity_release = None

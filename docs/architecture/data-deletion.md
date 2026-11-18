@@ -8,7 +8,9 @@ date: 2026-10-25
 # 数据删除与依赖裁决
 
 本规范定义完整删除契约。Workbench 已实现项目与稿件删除路由、持久账本及启动重放，
-覆盖范围和保守阻断见下文；Speech 删除路由与跨模块停止协调仍待实现。
+覆盖范围和保守阻断见下文。Speech 已实现删除预检（`POST /v1/nexus/deletion-plans`），
+在锁定快照上固定目标版本/摘要并写入不可变计划行；Speech 删除执行、持久删除账本、
+`GET /v1/nexus/deletions/{id}` 与跨模块停止协调仍待实现。
 执行网关已实现需显式可信许可的[命令正文清理事务](../components/execution-gateway.md#10-redact_execution_command)，
 未提供默认许可签发或 HTTP 清理入口，不能据此声明完整删除闭环可用。机器定义为
 [deletion.schema.json](../../contracts/shared/deletion.schema.json)，入口分别是
@@ -24,6 +26,13 @@ Speech `/v1/nexus/deletion-plans`、`/v1/nexus/deletions` 和 Workbench
    资源不存在返回 `404 resource_not_found`。部署/工作空间仍遵循当前入口规则。
 2. 所有者在短事务中读取目标版本与完整依赖快照，建立不可变 plan。依赖按
    `(owner,kind,id,revision,relation)` 排序，不得重复同一关系。
+   Speech 侧当前支持 `asset` 与 `operation_content` 目标：`asset` 固定资产版本、
+   摘要、对象版本，并把未释放的资产引用作为 `persistent_reference / blocks` 依赖；
+   `operation_content` 固定 Job 的 `status_version` 与请求摘要，活跃 Job 以自身
+   `active_execution / blocks` 阻断，引用该 Job 的声音草稿 revision 以
+   `persistent_reference / blocks` 阻断，Artifact 与 intent 只进入私有内容快照。
+   `artifact`、`voice_revision` 目标返回 `422 deletion_target_unsupported`；遇到本
+   版本无法判定的活跃引用类型返回 `503 deletion_reference_unsupported`，不静默丢弃依赖。
    这些排序与关系唯一性要求不由 schema 单独保证；生产者须另行验证。
    `plan_digest` 为移除自身 `plan_digest` 字段后对完整 plan 做 RFC 8785 UTF-8
    canonical JSON 的 SHA-256；包括 id、revision、过期时间、eligible 和全部依赖。
@@ -119,8 +128,9 @@ writing 或 unknown 不按超时、取消或普通重试释放。对象 PUT 结�
 保留原始意图和对象摘要，项目删除维持不可接受，直到有权威完成或停止证据；当前
 没有把未知 PUT 自动判成功的恢复器。数据库发布响应丢失不产生补偿删除或新导出。
 上述项目锁和写入意图只约束 Workbench 项目删除与本模块写入；复制源 Artifact 时通过公开
-接口读取，不能据此证明 Speech 源删除与复制已具备跨模块原子屏障。Speech 删除入口和跨模块
-协调仍须实现并验证，并发删除 / 复制不能仅由已提交副本独立性推定安全。
+接口读取，不能据此证明 Speech 源删除与复制已具备跨模块原子屏障。Speech 删除执行入口和
+跨模块协调仍须实现并验证，并发删除 / 复制不能仅由已提交副本独立性推定安全；预检只固定
+快照并写计划，不删除任何内容。
 
 导出对象使用项目私有的 `{project_id}/exports/{export_id}/{artifact_id}`；项目
 接受删除后关闭新写入，且不存在未决写入时，才可清理该项目私有前缀。旧格式
@@ -161,7 +171,7 @@ retry 返回 `409 job_retry_unavailable`：
 - 只清理 legacy 列不会使 retry 不可重放：读取路径不回退到该副本。
 - 只删除新表行会留下完整业务正文副本，违反内容删除范围。
 - 两处清理使用同一预检、固定版本/摘要、持久账本和恢复屏障；不得用摘要或当前默认值重建正文。
-- 当前没有 Speech Job 删除入口，本要求由
+- 当前 Speech 只有删除预检，没有 Job 删除执行入口；本要求由
   [#540](https://github.com/hrygo/SpeechNexus/issues/540) 实施并验收。
 
 这些表由 owner 角色初始化，运行角色不执行 DDL。当前 schema revision 11 是

@@ -437,6 +437,7 @@ class JobRoleProvisioningTests(unittest.TestCase):
                 "job_cancellation_fence_grants",
                 "cancellation_not_submitted_grants",
                 "cancellation_reconciliation_grants",
+                "deletion_plan_grants",
             ),
             "dispatch": (
                 "job_runtime_grants",

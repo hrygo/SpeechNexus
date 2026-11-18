@@ -346,6 +346,30 @@ def env_gaps(env: Mapping[str, str], keys: Sequence[str]) -> list[str]:
     return [key for key in keys if not env.get(key, "").strip()]
 
 
+# The gateway has one `objects.input_bucket` per file lane and serves both Job
+# inputs and synchronous uploads from it, so these two deployment keys must name
+# the same bucket. A split pair is not a startup error: the API writes the upload
+# to its own bucket, then the gateway compares the reference with its configured
+# `input_bucket` and rejects before any engine I/O, so every synchronous request
+# answers `503 backend_unavailable` (#972/DEL-539).
+SYNC_UPLOAD_BUCKET = "SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET"
+JOB_INPUT_BUCKET = "SPEECHNEXUS_OBJECT_STORAGE_BUCKET"
+
+
+def sync_input_bucket_gap(env: Mapping[str, str]) -> str | None:
+    """Return a readable reason when the upload bucket cannot reach the gateway."""
+    upload = env.get(SYNC_UPLOAD_BUCKET, "").strip()
+    asset = env.get(JOB_INPUT_BUCKET, "").strip()
+    if not upload or not asset or upload == asset:
+        return None
+    return (
+        f"{SYNC_UPLOAD_BUCKET}={upload} 与 {JOB_INPUT_BUCKET}={asset} 不同。"
+        "网关只有一个 objects.input_bucket，同一进程既读 Job 输入资产又读同步转写上传；"
+        "两个桶名不等时，同步请求在调用引擎前就被 execution_input_scope_mismatch 隔离，"
+        "对外 100% 返回 503 backend_unavailable，而不是启动期报错。"
+    )
+
+
 def parse_dsn(raw: str) -> tuple[str, str, str] | None:
     """Return (user, password, host) or None when the DSN is unusable."""
     text = raw.strip()
@@ -911,6 +935,9 @@ def step_tools(ctx: Context) -> str:
             "环境键缺失或为空: " + ", ".join(gaps),
             inputs=[f"{key}=<非空值>" for key in gaps],
         )
+    scope_gap = sync_input_bucket_gap(ctx.env)
+    if scope_gap is not None:
+        raise StepFailureError(scope_gap, inputs=[SYNC_UPLOAD_BUCKET, JOB_INPUT_BUCKET])
     render = ctx.read((*ctx.compose_argv, "config", "--quiet"))
     if not render.ok:
         raise StepFailureError(
@@ -1453,8 +1480,9 @@ STEPS: tuple[Step, ...] = (
         "工具、版本与必需环境键",
         EXIT_TOOLS,
         "docker daemon + compose v2 + python3 ≥ 3.12 + uv；"
-        "deploy/compose.yaml 的 ${KEY:?} 键与三条 Job DSN 均非空；compose 能渲染",
-        "各工具版本行；无空白必需键；docker compose config --quiet 退出 0",
+        "deploy/compose.yaml 的 ${KEY:?} 键与三条 Job DSN 均非空；"
+        "同步上传桶与 Job 资产桶同名；compose 能渲染",
+        "各工具版本行；无空白必需键；两个桶键取值相同；docker compose config --quiet 退出 0",
         step_tools,
     ),
     Step(

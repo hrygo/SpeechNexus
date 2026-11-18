@@ -39,7 +39,7 @@ PASS/FAIL/未运行、环境（checkout commit、项目名、gate 模式、schem
 | --- | --- |
 | `deploy/compose.env` | 从 `deploy/compose.env.example` 复制并填写。必需键有两个来源：**compose 派生**——`deploy/compose.yaml` 里每个 `${KEY:?}` 展开键（入口运行时按实际展开计数，当前 14 个；本脚本不另列清单）；**入口额外要求 6 个**——`SN_ADMIN_DSN`、三条 Job DSN、`SPEECHNEXUS_OBJECT_STORAGE_BUCKET`、`SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET`。后 6 个在 compose 里是 `:-` 默认或根本不出现，入口要求显式非空 |
 | 三条 Job DSN | `SPEECHNEXUS_JOB_WRITER_DATABASE_URL`、`SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL`、`SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL`，按 §6 生成，身份互不相同 |
-| 两个桶名键 | `SPEECHNEXUS_OBJECT_STORAGE_BUCKET`（Artifact/结果桶）、`SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET`（输入桶）；`SPEECHNEXUS_EXECUTION_RESULT_BUCKET` 可省略，省略时等于 Artifact 桶 |
+| 两个桶名键 | `SPEECHNEXUS_OBJECT_STORAGE_BUCKET`（Artifact/结果桶）、`SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET`（同步上传桶）；两者**必须同名**（网关只有一个 `objects.input_bucket`），不同名时 `tools` 步骤直接以 `execution_input_scope_mismatch` / `503 backend_unavailable` 的原因失败；`SPEECHNEXUS_EXECUTION_RESULT_BUCKET` 可省略，省略时等于 Artifact 桶 |
 | `SN_ADMIN_DSN` | 迁移 owner 连接串，由 shell 导出（密钥通道），默认不进环境文件 |
 | §6 基线角色 | `sn_api`、`SN_GATEWAY_ROLE`（默认 `sn_gateway`）、`sn_gateway_query` 已预置；本入口不重做 §6 的撤权与基线角色 |
 | 私有配置目录 | `SPEECHNEXUS_PRIVATE_CONFIG_DIR` 下的 recipe、gateway lane 配置、批准的 Silero ONNX；缺任一项时 `stack` 步点名缺的是哪个文件 |
@@ -80,7 +80,7 @@ reference acceptance: FAIL step=migrate exit=20
 
 | 步骤 | 前置检查 | 预期输出 | 失败退出码 |
 | --- | --- | --- | --- |
-| `tools` | `docker version` 可用；Compose v2+；python3 ≥ 3.12；`uv` 可用；compose 的 `${KEY:?}` 派生键与入口额外 6 键非空；三条 Job DSN 互异；compose 能渲染 | 版本行；`N 个 compose 派生键 + 6 个入口额外键（共 N+6 个）非空`；`compose 渲染通过` | 10 |
+| `tools` | `docker version` 可用；Compose v2+；python3 ≥ 3.12；`uv` 可用；compose 的 `${KEY:?}` 派生键与入口额外 6 键非空；三条 Job DSN 互异；同步上传桶与 Job 资产桶同名；compose 能渲染 | 版本行；`N 个 compose 派生键 + 6 个入口额外键（共 N+6 个）非空`；`compose 渲染通过` | 10 |
 | `migrate` | `alembic.ini` 的 `script_location` 可解析；迁移目录恰好一个 head；`SPEECHNEXUS_MIGRATION_DATABASE_URL` 可用 | `postgres` healthy；`migrate` 用 `--build` 构建镜像后退出 0；`alembic_version` 单行且等于派生 head | 20 |
 | `roles` | §6 基线角色存在；三条 Job DSN 身份互异；`SN_ADMIN_DSN` 是迁移 owner | 首跑：`sn_job_writer sn_job_admission sn_job_dispatch 已创建；grants: N statements；M 项声明授权与已装 ACL 逐条核对全部在位；8 个授权探针通过`。重跑：`三个角色已存在（幂等：未重复 CREATE ROLE，未新增授权）；重渲染 N 条 GRANT、M 项授权与已装 ACL 逐条核对全部在位；8 个授权探针通过` | 30 |
 | `buckets` | `MINIO_*` 与两个桶名键非空；`minio` 可启动 | 每个不同桶名一行 `bucket ready: ... (versioning enabled)`；独立只读核对通过 | 40 |

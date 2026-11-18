@@ -7,6 +7,9 @@ gate and probes health. An entry point is only useful if these properties hold,
 so each has a test here:
 
 - a blank or missing environment key fails the tools step and *names the key*;
+- a synchronous upload bucket that differs from the Job asset bucket fails the
+  tools step with the `execution_input_scope_mismatch`/503 reason, and equal
+  names pass (#972: the gateway has one `objects.input_bucket`);
 - ``--dry-run`` performs static checks and plans only, never a write;
 - a second run over an already provisioned database is idempotent *and* compares
   the rendered GRANT set with the installed ACL, so a revoked non-probe grant is
@@ -79,7 +82,9 @@ BASE_ENV: dict[str, str] = {
         "postgresql://sn_gateway_query:pw-gwq@postgres:5432/db"
     ),
     "SPEECHNEXUS_OBJECT_STORAGE_BUCKET": "results-bucket",
-    "SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET": "inputs-bucket",
+    # The gateway has one `objects.input_bucket`, so the synchronous upload
+    # bucket and the Job asset bucket must be the same name (#972).
+    "SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET": "results-bucket",
     "SPEECHNEXUS_EXECUTION_RESULT_BUCKET": "results-bucket",
     "SPEECHNEXUS_DATABASE_SCHEMA": "speech",
     "SN_ADMIN_DSN": "postgresql://speechnexus:pw-owner@127.0.0.1:55432/speechnexus",
@@ -337,14 +342,13 @@ def standard_responder(
                 ),
             )
         if "minio-init" in text:
+            # The default deployment gives the sync upload bucket and the Job
+            # asset bucket the same name, so `minio-init` prints one line (#972).
             if "-c" in argv:
-                return command(argv, stdout="buckets verified: inputs-bucket, results-bucket\n")
+                return command(argv, stdout="buckets verified: results-bucket\n")
             return command(
                 argv,
-                stdout=(
-                    "bucket ready: inputs-bucket (versioning enabled)\n"
-                    "bucket ready: results-bucket (versioning enabled)\n"
-                ),
+                stdout="bucket ready: results-bucket (versioning enabled)\n",
             )
         if "job-startup-gate.py" in text or "job-dispatch-worker" in text:
             return command(
@@ -435,6 +439,34 @@ class ToolsPreflightTest(unittest.TestCase):
 
         self.assertEqual(code, HARNESS.EXIT_TOOLS)
         self.assertIn("互不相同", output)
+
+    def test_split_sync_upload_bucket_is_named_before_any_request(self) -> None:
+        """#972: two bucket names cannot reach the single gateway input bucket."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write_fixture_repo(root)
+            env = dict(BASE_ENV)
+            env["SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET"] = "speechnexus-inputs"
+            context, _runner = make_context(root, standard_responder(), env=env)
+            code, output = run_capture(context, (step("tools"),))
+
+        self.assertEqual(code, HARNESS.EXIT_TOOLS, output)
+        self.assertIn("FAIL step=tools", output)
+        self.assertIn("execution_input_scope_mismatch", output)
+        self.assertIn("503 backend_unavailable", output)
+        self.assertIn("SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET=speechnexus-inputs", output)
+        self.assertIn("SPEECHNEXUS_OBJECT_STORAGE_BUCKET=results-bucket", output)
+
+    def test_shared_sync_upload_bucket_passes(self) -> None:
+        """The aligned pair is accepted; the check is not a hidden precondition."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write_fixture_repo(root)
+            context, _runner = make_context(root, standard_responder())
+            code, output = run_capture(context, (step("tools"),))
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("结论: PASS", output)
 
     def test_key_sources_are_reported_separately(self) -> None:
         """D1: compose-derived keys and entry-extra keys are two different sources."""
@@ -1156,9 +1188,19 @@ class BucketAndGateParsingTest(unittest.TestCase):
             write_fixture_repo(root)
             env = dict(BASE_ENV)
             env.pop("SPEECHNEXUS_EXECUTION_RESULT_BUCKET")
+            env["SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET"] = "inputs-bucket"
             context, _runner = make_context(root, standard_responder(), env=env)
             names = HARNESS.bucket_names(context)
         self.assertEqual(names, ["inputs-bucket", "results-bucket"])
+
+    def test_shared_bucket_names_collapse_to_one_bucket(self) -> None:
+        """The default names one bucket for uploads, Jobs and staging; one create."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write_fixture_repo(root)
+            context, _runner = make_context(root, standard_responder())
+            names = HARNESS.bucket_names(context)
+        self.assertEqual(names, ["results-bucket"])
 
 
 if __name__ == "__main__":

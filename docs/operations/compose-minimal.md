@@ -272,9 +272,11 @@ PY
 - `SPEECHNEXUS_ENGINE_INSTANCE_ID` / `SPEECHNEXUS_ENGINE_GENERATION`：注册使用的实例与代次；
   实例须与 recipe 的 `stage.instance_id` 和 ASR endpoint 一致，代次须与 ASR endpoint 一致；
 - `SPEECHNEXUS_OBJECT_STORAGE_BUCKET` / `SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET`：前者是
-  Job 输入资产桶，后者是同步转写的上传桶，两者不是同一个桶；私有 JSON 里
+  Job 输入资产桶（`/v1/nexus/assets` 的落点），后者是同步转写的上传桶。两者的**角色**不同，
+  但参考部署必须给它们**同一个桶名**：网关只有一个 `objects.input_bucket`，同时服务这两条
+  路径，分开配置会让同步转写在调用引擎前失败（不变量与实测见 §3 第 4 项）。私有 JSON 里
   `objects.input_bucket` 绑定前者、`objects.result_bucket` 绑定
-  `SPEECHNEXUS_EXECUTION_RESULT_BUCKET`，分绑关系见 §3 第 4 项。
+  `SPEECHNEXUS_EXECUTION_RESULT_BUCKET`。
 - `SPEECHNEXUS_EXECUTION_RESULT_BUCKET`：gateway 私有 JSON 的 `result_bucket` 与
   `job-dispatch` profile 的 staging 读取桶；`minio-init` 会一并创建并启用版本化。
 
@@ -350,9 +352,14 @@ chmod 600 "$D/transcription-recipe.json" "$D/gateway-file-asr.json" \
    - `objects.result_bucket` 必须等于 `SPEECHNEXUS_EXECUTION_RESULT_BUCKET`，派发 worker
      按该键读回 staging 结果（参考部署取同一个 `speechnexus-results`，见 §2 的环境文件注释）。
 
-   这两处都不接受 `SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET` 的值：该桶（`speechnexus-inputs`）
-   是同步转写的上传落点（`transcription_runtime.py:111`），与 Job 资产桶是两件事，
-   同名会让人以为「都是输入桶」而照抄。
+   这两个桶的绑定都不来自 `SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET` 键；参考部署上该键
+   **必须与 `SPEECHNEXUS_OBJECT_STORAGE_BUCKET` 相同**。它是同步转写的上传落点
+   （`transcription_runtime.py:111`），而网关的 `objects.input_bucket` 只有一个：
+   同一进程既服务异步 Job 输入，也服务同步转写上传。两个桶名不相等时，同步请求在
+   **调用引擎之前**就被 `execution_input_scope_mismatch` 拒绝，对外固定
+   `503 backend_unavailable`——引擎侧完全看不到该请求，dispatch 标记后约 16 ms 即被隔离，
+   并占用一个 ASR 槽位（DEL-539 实测，2026-11-18）。默认值已对齐为同一个桶；
+   「网关单输入桶」是当前实现边界，按 lane 配置第二个输入桶属于后续工作。
 5. endpoint 的地址、端口、served model 与 bearer token 是部署网络内的受控值。
 
 把已批准的 Silero ONNX 普通文件放到私有目录，并用其真实摘要更新 ASR 配置。示例中的
@@ -449,11 +456,11 @@ recipe 时另要求当前运行 UID 拥有的普通文件，且拒绝最终路�
   run --rm minio-init
 ```
 
-预期 `minio-init` 成功退出，并对每个不同桶名输出一行；默认输入桶与 Artifact/staging 桶名不同
-（Artifact 桶与 `SPEECHNEXUS_EXECUTION_RESULT_BUCKET` 默认同为 `speechnexus-results`），输出如下：
+预期 `minio-init` 成功退出，并对每个**不同**桶名输出一行。默认三个键（同步转写输入桶、
+Artifact 桶、`SPEECHNEXUS_EXECUTION_RESULT_BUCKET`）都指向 `speechnexus-results`，
+因此只有一行：
 
 ```text
-bucket ready: speechnexus-inputs (versioning enabled)
 bucket ready: speechnexus-results (versioning enabled)
 ```
 

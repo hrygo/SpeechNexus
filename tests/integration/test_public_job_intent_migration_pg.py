@@ -68,6 +68,9 @@ def _step_below_asr_settlement(intent_db: IntentSandbox) -> None:
     intent_db.admin.execute(f'DROP TABLE IF EXISTS "{intent_db.schema}".speech_deletion_plans')
     intent_db.admin.execute(f'DROP TABLE IF EXISTS "{intent_db.schema}".speech_asr_settlement')
     intent_db.admin.execute(
+        f'DROP INDEX IF EXISTS "{intent_db.schema}".speech_job_cancellation_fence_age_scan'
+    )
+    intent_db.admin.execute(
         f'UPDATE "{intent_db.schema}".alembic_version SET version_num = %s',
         ("0056_debt_probe_live_state_index",),
     )

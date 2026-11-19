@@ -10,10 +10,11 @@ from tests.integration.test_public_job_progress_migration_pg import (
 )
 from tests.support.migrations import (
     ASR_SETTLEMENT_REVISION,
+    DELETION_LEDGER_REVISION,
     DELETION_PLAN_REVISION,
-    HEAD,
     step_below_deletion_ledger,
     step_below_deletion_plans,
+    step_below_left_cancelling_index,
 )
 
 pytestmark = pytest.mark.integration
@@ -71,6 +72,9 @@ def test_0059_downgrade_refuses_to_discard_the_ledger() -> None:
     """0059 refuses: the ledger is the only proof a deletion happened."""
     with _isolated_schema(_url()) as (config, query):
         command.upgrade(config, "head")
+        # 0060 sits above 0059 and refuses first; reach the pre-0060 head so this
+        # test observes 0059's own guard.
+        step_below_left_cancelling_index(query)
         query.execute(
             "INSERT INTO speech_deletion_plans (id, workspace_id, target_owner, target_kind, "
             "target_id, target_revision, target_digest, mode, plan_revision, plan_digest, "
@@ -102,4 +106,5 @@ def test_0059_downgrade_refuses_to_discard_the_ledger() -> None:
         retained = query.execute("SELECT count(*) AS n FROM speech_deletion_ledger").fetchone()
         assert retained is not None and retained["n"] == 1
         revision = query.execute("SELECT version_num FROM alembic_version").fetchone()
-        assert revision is not None and revision["version_num"] == HEAD
+        assert revision is not None
+        assert revision["version_num"] == DELETION_LEDGER_REVISION

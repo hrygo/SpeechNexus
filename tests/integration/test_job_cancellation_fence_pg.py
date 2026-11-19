@@ -493,6 +493,12 @@ def test_migration_down_refuses_to_drop_nonempty_fences(fence_db: FenceSandbox) 
                 )
                 connection.execute(
                     text(
+                        f'DROP INDEX IF EXISTS "{fence_db.schema}".'
+                        "speech_job_cancellation_fence_age_scan"
+                    )
+                )
+                connection.execute(
+                    text(
                         f'UPDATE "{fence_db.schema}".alembic_version '
                         "SET version_num = '0056_debt_probe_live_state_index'"
                     )

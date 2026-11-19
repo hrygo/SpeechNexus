@@ -55,7 +55,11 @@ from speechnexus_backend.speech.application.job_cancellation_reconciliation impo
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
 from speechnexus_backend.speech.application.readiness import ReadinessService
 from speechnexus_backend.speech.domain.job_dispatch import submit_intent_identity
-from speechnexus_backend.speech.domain.public_jobs import cleanup_state, retryable
+from speechnexus_backend.speech.domain.public_jobs import (
+    CANCELLATION_UNCONFIRMED,
+    cleanup_state,
+    retryable,
+)
 from speechnexus_backend.speech.infrastructure.coordination_grants import (
     coordination_runtime_grants,
 )
@@ -88,7 +92,10 @@ from speechnexus_backend.speech.infrastructure.public_jobs_postgres import (
 from speechnexus_backend.speech.infrastructure.qualified_speech_facts_postgres import (
     speech_synthesis_reader_grants,
 )
-from speechnexus_backend.speech.infrastructure.readiness import CancellationDebtProbe
+from speechnexus_backend.speech.infrastructure.readiness import (
+    _LEFT_CANCELLING_DEBT,
+    CancellationDebtProbe,
+)
 
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
@@ -683,6 +690,58 @@ def _debt_probe(box: CancelSandbox) -> CancellationDebtProbe:
     )
 
 
+def _database_now(box: CancelSandbox) -> int:
+    rows = box.query(
+        "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) AS now_us"
+    )
+    return int(rows[0]["now_us"])
+
+
+def _accept_recently(box: CancelSandbox, *, age_us: int = 2_000_000) -> int:
+    """Move the fence into the left-cancelling read's window, on the database clock.
+
+    The offline fixtures use a fixed 10 s acceptance so the reconciliation window is
+    deterministic; that instant is decades outside the polled read's lookback. This
+    helper keeps the same shape with an acceptance the probe's database clock can
+    actually judge.
+    """
+    accepted_at_us = _database_now(box) - age_us
+    box.execute(
+        "UPDATE speech_job_cancellation_fences SET accepted_at_us = %s WHERE job_id = %s",
+        (accepted_at_us, box.job_id),
+    )
+    return accepted_at_us
+
+
+def _settle_job(box: CancelSandbox, terminal: str) -> None:
+    """Send the Job out of ``cancelling`` while its lease keeps holding capacity."""
+    jobs = box.jobs()
+    current = jobs.get(box.job_id)
+    assert current is not None
+    if terminal == "cancelled":
+        settled = jobs.settle_cancelled(box.job_id, expected_version=current.status_version)
+        assert settled.state == "cancelled"
+    else:
+        failed = jobs.advance(box.job_id, "failed", error_code=CANCELLATION_UNCONFIRMED)
+        assert failed.state == "failed"
+
+
+def _left_cancelling_rows(
+    box: CancelSandbox, *, now_us: int, window_us: int, grace_us: int
+) -> list[dict[str, Any]]:
+    with box.admin.cursor() as cursor:
+        cursor.execute(
+            _LEFT_CANCELLING_DEBT,
+            {
+                "now_us": now_us,
+                "window_us": window_us,
+                "grace_us": grace_us,
+                "limit": 96,
+            },
+        )
+        return list(cursor.fetchall())
+
+
 def _add_acceptance(
     box: CancelSandbox,
     *,
@@ -953,43 +1012,114 @@ def test_the_schedule_counts_survive_detail_truncation() -> None:
     assert "never claimed: 40" in detail
 
 
-def test_a_job_already_left_cancelling_is_documented_as_a_blind_spot() -> None:
-    """#852 residual, pinned: capacity held after the Job left ``cancelling``.
+@pytest.mark.parametrize("terminal", ["cancelled", "failed"])
+def test_a_job_that_left_cancelling_is_named_with_its_own_label(terminal: str) -> None:
+    """#852 residual closed: capacity held after the Job left ``cancelling`` is polled.
 
-    Both debt reads are gated on ``state = 'cancelling'`` because that is the only
-    shape the live-state index (migration 0056) can reach; a Job that closed as
-    ``cancelled`` while its release was refused, or was failed by another owner
-    while the lease stayed reserved, is therefore *not* in the detail. This case
-    pins the current behaviour so the documented drill-down query stays the only
-    read surface for it, and states what closing it needs (a held-lease access
-    path, i.e. another migration).
+    The state-gated reads only see a Job while it is ``cancelling``. A Job that
+    closed as ``cancelled`` while its release was refused, or was failed by another
+    owner while the lease stayed reserved, kept holding capacity with no polled read
+    naming it. The fourth read starts from the unsettled acceptance and the held
+    lease instead of the Job state, so the row appears -- tagged with the Job-state
+    side label, which stays separate from the three ledger marks.
     """
     with _sandbox((LEASE, QUARANTINED_DOCUMENT_STATE)) as box:
-        jobs = box.jobs()
-        current = jobs.get(box.job_id)
-        assert current is not None
-        assert (
-            jobs.settle_cancelled(box.job_id, expected_version=current.status_version).state
-            == "cancelled"
-        )
+        _accept_recently(box)
+        _settle_job(box, terminal)
 
         after = box.rows()
-        assert after["speech_jobs"][0]["state"] == "cancelled"
+        assert after["speech_jobs"][0]["state"] == terminal
         # Capacity is still held: the release this worker would retry never ran.
         assert after["admission_leases"][0]["lease_state"] == "reserved"
         assert after["engine_instances"] == [
             {"instance_id": INSTANCE, "held_slots": 1, "quarantined_slots": 0}
         ]
-        # ... and the polled read surface does not name it (the pinned limitation).
-        assert asyncio.run(_debt_probe(box).check()) is None
 
-        named = box.query(
-            "SELECT j.job_id FROM speech_job_cancellation_fences AS f "
-            "JOIN speech_jobs AS j ON j.job_id = f.job_id "
-            "JOIN admission_leases AS l ON l.operation_id = f.job_id "
-            "WHERE l.lease_state NOT IN ('released', 'quarantined')"
+        detail = asyncio.run(_debt_probe(box).check())
+
+    assert detail is not None
+    assert detail.startswith(
+        "cancellation_debt: 1 accepted cancellation(s) still hold capacity over 1 held lease(s)"
+    )
+    assert (
+        f"{box.job_id} -> {LEASE}(lease=reserved, execution=unknown_quarantined, "
+        "subclass=execution-unknown)" in detail
+    )
+    # The ledger fact and the Job-state fact are both present; the second is its own
+    # label and was not folded into the first.
+    assert "never claimed: 1" in detail
+    assert "left-cancelling-holding-capacity: 1" in detail
+
+
+def test_a_job_still_cancelling_is_not_given_the_left_cancelling_label() -> None:
+    """The fourth scope is a Job-state fact, so a still-cancelling Job never has it.
+
+    This is the negative half of the new read: without it, dropping the
+    ``j.state <> 'cancelling'`` filter would make every ordinary debt row claim the
+    label and the distinction would disappear without any test noticing.
+    """
+    with _sandbox((LEASE, QUARANTINED_DOCUMENT_STATE)) as box:
+        detail = asyncio.run(_debt_probe(box).check())
+
+    assert detail is not None
+    assert "left-cancelling-holding-capacity" not in detail
+    assert "never claimed: 1" in detail
+
+
+def test_the_left_cancelling_read_window_is_closed_at_its_lower_edge() -> None:
+    """The window includes an acceptance exactly ``now - window``, and nothing older.
+
+    The lower edge is the only thing keeping this read off the deployment's
+    cancellation history. A ``>`` instead of ``>=`` silently loses the boundary row --
+    including with a zero window and an acceptance at ``now`` -- and a window that
+    admits older instants turns the 5 s poll into a history scan. The pinned ``now_us``
+    is the same database clock the probe reads, so the edge is testable without
+    racing ``clock_timestamp()``.
+    """
+    with _sandbox((LEASE, QUARANTINED_DOCUMENT_STATE)) as box:
+        now_us = _database_now(box)
+        _settle_job(box, "cancelled")
+
+        # The issue's zero-window example: the lower edge is closed, so an acceptance
+        # exactly at ``now`` is inside a zero-width window.
+        box.execute(
+            "UPDATE speech_job_cancellation_fences SET accepted_at_us = %s WHERE job_id = %s",
+            (now_us, box.job_id),
         )
-        assert named == [{"job_id": box.job_id}]
+        at_zero_edge = _left_cancelling_rows(box, now_us=now_us, window_us=0, grace_us=0)
+
+        # And at a real window boundary, one microsecond decides membership.
+        box.execute(
+            "UPDATE speech_job_cancellation_fences SET accepted_at_us = %s WHERE job_id = %s",
+            (now_us - 1_000, box.job_id),
+        )
+        at_edge = _left_cancelling_rows(box, now_us=now_us, window_us=1_000, grace_us=0)
+        outside = _left_cancelling_rows(box, now_us=now_us, window_us=999, grace_us=0)
+
+    assert [row["job_id"] for row in at_zero_edge] == [box.job_id]
+    assert [row["job_id"] for row in at_edge] == [box.job_id]
+    assert outside == []
+
+
+def test_the_left_cancelling_read_requires_an_unsettled_ledger() -> None:
+    """A settled or already-settled cancellation is not debt for any read.
+
+    The fourth read joins the same ledger and must keep the same settlement rule;
+    otherwise it would report capacity the ledger already accounts for.
+    """
+    with _sandbox((LEASE, QUARANTINED_DOCUMENT_STATE)) as box:
+        _accept_recently(box)
+        _settle_job(box, "cancelled")
+        box.execute(
+            f"INSERT INTO {RECONCILIATION_TABLE} (job_id, attempts, next_check_at_us, "
+            "last_outcome, settled_at_us, updated_at_us) VALUES (%s, 1, 0, 'settled', "
+            "CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT), 1)",
+            (box.job_id,),
+        )
+
+        detail = asyncio.run(_debt_probe(box).check())
+
+    assert detail is None
 
 
 def test_lease_attempts_saturate_at_64_and_stay_claimable(

@@ -27,7 +27,7 @@ migration.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 import pytest
@@ -38,11 +38,16 @@ from tests.integration.test_public_job_progress_migration_pg import (
     _url,
 )
 
-from speechnexus_backend.speech.infrastructure.readiness import _DEBT, _STOP_EVIDENCE_DEBT
+from speechnexus_backend.speech.infrastructure.readiness import (
+    _DEBT,
+    _LEFT_CANCELLING_DEBT,
+    _STOP_EVIDENCE_DEBT,
+)
 
 pytestmark = pytest.mark.integration
 
 _INDEX = "speech_jobs_live_state_scan"
+_AGE_INDEX = "speech_job_cancellation_fence_age_scan"
 _DIGEST = "sha256:" + "d" * 64
 # A held-lease backlog large enough that the pre-index plan stops driving from the leases,
 # over a Job table large enough for the sequential scan to dominate it.
@@ -160,6 +165,49 @@ def _seed(conn: Connection[dict[str, Any]]) -> None:
         " FROM generate_series(1, %s) AS i",
         (_OLD_US, _OLD_US, _OLD_US, _SETTLED),
     )
+    # Jobs that already left ``cancelling`` while their lease still holds capacity:
+    # the fourth read's shape, with an acceptance inside its window and no ledger row.
+    conn.execute(
+        "INSERT INTO speech_jobs (job_id, workspace_id, kind, model_id, request_digest, state,"
+        " status_version, error_code, created_at_us, updated_at_us)"
+        " SELECT 'left-' || lpad(i::text, 8, '0'), 'workspace-1', 'asr', 'asr-model', %s,"
+        " 'cancelled', 3, NULL, %s, %s FROM generate_series(1, 5) AS i",
+        (_DIGEST, _OLD_US, _OLD_US),
+    )
+    conn.execute(
+        "INSERT INTO admission_attempts (operation_id, attempt_id, workspace_id,"
+        " binding_revision_id, manifest_id, recipe_digest, policy_revision_id, service_class,"
+        " request_digest, required_stage_ids)"
+        " SELECT 'left-' || lpad(i::text, 8, '0'), 'attempt-1', 'workspace-1', 'binding-1',"
+        " 'manifest-1', %s, 'policy-1', 'realtime', %s, 'stage-1'"
+        " FROM generate_series(1, 5) AS i",
+        (_DIGEST, _DIGEST),
+    )
+    conn.execute(
+        "INSERT INTO admission_leases (lease_id, operation_id, attempt_id, stage_id,"
+        " host_node_id, instance_id, instance_generation, pool_id, gateway_id, fencing_token,"
+        " reserved_slots, lease_state, deadline_at_us)"
+        " SELECT 'lease-left-' || lpad(i::text, 8, '0'), 'left-' || lpad(i::text, 8, '0'),"
+        " 'attempt-1', 'stage-1', 'host-1', 'instance-1', 1, 'pool-1', 'gateway-1', 1, 1,"
+        " 'reserved', %s FROM generate_series(1, 5) AS i",
+        (_OLD_US,),
+    )
+    conn.execute(
+        "INSERT INTO submit_intents (submit_intent_id, lease_id, operation_id, attempt_id,"
+        " command_digest, request_digest, request_document, deadline_at_us, recorded_at_us,"
+        " updated_at_us, execution_state, cleanup_state, dispatched_at_us, engine_request_id)"
+        " SELECT 'intent-left-' || lpad(i::text, 8, '0'),"
+        " 'lease-left-' || lpad(i::text, 8, '0'), 'left-' || lpad(i::text, 8, '0'),"
+        " 'attempt-1', %s, %s, '{}', %s, %s, %s, 'unknown_quarantined', 'quarantined',"
+        " %s, 'engine-left-' || i FROM generate_series(1, 5) AS i",
+        (_DIGEST, _DIGEST, _OLD_US, _OLD_US, _OLD_US, _OLD_US),
+    )
+    conn.execute(
+        "INSERT INTO speech_job_cancellation_fences (job_id, accepted_at_us, request_id)"
+        " SELECT 'left-' || lpad(i::text, 8, '0'),"
+        " CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) - 3600000000,"
+        " 'request-left-' || i FROM generate_series(1, 5) AS i"
+    )
     for table in (
         "speech_jobs",
         "admission_leases",
@@ -171,11 +219,15 @@ def _seed(conn: Connection[dict[str, Any]]) -> None:
         conn.execute(f"ANALYZE {table}")
 
 
-def _plan(conn: Connection[dict[str, Any]], statement: str) -> dict[str, Any]:
-    row = conn.execute(
-        "EXPLAIN (ANALYZE, FORMAT JSON) " + statement,
-        {"grace_us": 300 * 1_000_000, "limit": 96},
-    ).fetchone()
+def _plan(
+    conn: Connection[dict[str, Any]],
+    statement: str,
+    parameters: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    values: dict[str, Any] = {"grace_us": 300 * 1_000_000, "limit": 96}
+    if parameters is not None:
+        values.update(parameters)
+    row = conn.execute("EXPLAIN (ANALYZE, FORMAT JSON) " + statement, values).fetchone()
     assert row is not None
     plan: dict[str, Any] = row["QUERY PLAN"][0]["Plan"]
     return plan
@@ -208,6 +260,12 @@ def _assert_index_serves(plan: dict[str, Any]) -> None:
     )
 
 
+def _assert_age_index_serves(plan: dict[str, Any]) -> None:
+    assert [node for node in _nodes(plan) if node.get("Index Name") == _AGE_INDEX], (
+        f"the plan must read the fence age through {_AGE_INDEX}"
+    )
+
+
 def test_debt_probes_read_the_live_set_not_the_job_or_cancellation_history() -> None:
     with _isolated_schema(_url()) as (config, query):
         command.upgrade(config, "head")
@@ -225,3 +283,20 @@ def test_debt_probes_read_the_live_set_not_the_job_or_cancellation_history() -> 
         _assert_no_sequential_scan(cancel_plan, "speech_job_cancellation_fences")
         _assert_no_sequential_scan(cancel_plan, "speech_job_cancellation_reconciliations")
         _assert_index_serves(cancel_plan)
+
+        now_us = query.execute(
+            "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) AS now_us"
+        ).fetchone()
+        assert now_us is not None
+        left_plan = _plan(
+            query,
+            _LEFT_CANCELLING_DEBT,
+            {"now_us": now_us["now_us"], "window_us": 86_400 * 1_000_000},
+        )
+        # The fourth read has no live-state access path: migration 0060's acceptance-age
+        # index is what keeps its window off the 20 000-row settled history and off the
+        # Job table. Dropping that index turns the assertions below red.
+        _assert_no_sequential_scan(left_plan, "speech_job_cancellation_fences")
+        _assert_no_sequential_scan(left_plan, "speech_job_cancellation_reconciliations")
+        _assert_no_sequential_scan(left_plan, "speech_jobs")
+        _assert_age_index_serves(left_plan)

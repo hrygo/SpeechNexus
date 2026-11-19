@@ -12,6 +12,7 @@ import pytest
 
 from speechnexus_backend.speech.application.readiness import ReadinessService
 from speechnexus_backend.speech.infrastructure.readiness import (
+    LEFT_CANCELLING_HOLDING_CAPACITY,
     CancellationDebtProbe,
     StopEvidenceDebtProbe,
     _describe_debt,
@@ -151,6 +152,81 @@ def test_an_accounted_only_job_is_not_reported_as_unreadable() -> None:
     assert detail is not None
     assert "job-1 -> no-held-lease" in detail
     assert "unavailable" not in detail
+
+
+def test_the_left_cancelling_scope_is_a_job_state_fact_beside_the_ledger_marks() -> None:
+    """#852 residual: the fourth scope is counted beside, never inside, the three marks.
+
+    The marks describe the ledger schedule; the new label describes the Job row.
+    A left-cancelling Job also has a schedule fact, so it appears once under a mark
+    and once under the label -- two different facts about one Job.
+    """
+    detail = _describe_debt(
+        [
+            (
+                "job-left",
+                "lease-left",
+                "reserved",
+                "executing",
+                None,
+                None,
+                None,
+                "never_claimed",
+                LEFT_CANCELLING_HOLDING_CAPACITY,
+            ),
+            ("job-live", "lease-live", "reserved", "executing", None, None, None, "due"),
+        ]
+    )
+
+    assert detail is not None
+    assert detail.startswith(
+        "cancellation_debt: 2 accepted cancellation(s) still hold capacity over 2 held lease(s)"
+    )
+    assert (
+        "(held leases: execution-unknown=2; never claimed: 1; due now: 1; "
+        "left-cancelling-holding-capacity: 1)" in detail
+    )
+    # The label is not reported as a fourth ledger mark: the raw state name never
+    # leaks into the sentence, only the hyphenated Job-state label does.
+    assert "never_claimed" not in detail
+
+
+def test_the_left_cancelling_label_counts_jobs_not_leases() -> None:
+    """One Job with two held leases is one left-cancelling Job, as with the marks."""
+    detail = _describe_debt(
+        [
+            (
+                "job-left",
+                "lease-a",
+                "reserved",
+                "executing",
+                None,
+                None,
+                None,
+                "exhausted",
+                LEFT_CANCELLING_HOLDING_CAPACITY,
+            ),
+            (
+                "job-left",
+                "lease-b",
+                "reserved",
+                "executing",
+                None,
+                None,
+                None,
+                "exhausted",
+                LEFT_CANCELLING_HOLDING_CAPACITY,
+            ),
+            ("job-live", "lease-c", "reserved", "executing", None, None, None, "due"),
+        ]
+    )
+
+    assert detail is not None
+    assert "over 3 held lease(s)" in detail
+    assert "never claimable (exhausted): 1" in detail
+    assert "due now: 1" in detail
+    assert "left-cancelling-holding-capacity: 1" in detail
+    assert detail.count("left-cancelling-holding-capacity") == 1
 
 
 def test_a_completed_execution_is_labelled_as_its_own_subclass() -> None:

@@ -19,9 +19,9 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
-from tests.support.migrations import head_revision
+from tests.support.migrations import DELETION_LEDGER_REVISION, head_revision
 from tests.support.profile_evidence import publication_evidence
 from tests.support.profile_examples import profile_request
 from tests.unit.test_profile_lifecycle import request
@@ -748,6 +748,16 @@ def test_repeat_upgrade_and_refused_downgrade_preserve_history(sandbox: Sandbox)
         with engine.connect() as connection:
             config.attributes["connection"] = connection
             migration.upgrade(config, "head")
+            # 0060 refuses its own downgrade first; rebuild the pre-0060 head so this
+            # test still reaches 0059's guard. The age index is 0060's only object.
+            connection.execute(
+                text(f'DROP INDEX IF EXISTS "{s.schema}".speech_job_cancellation_fence_age_scan')
+            )
+            connection.execute(
+                text(f'UPDATE "{s.schema}".alembic_version SET version_num = :revision'),
+                {"revision": DELETION_LEDGER_REVISION},
+            )
+            connection.commit()
         with (
             pytest.raises(RuntimeError, match="history requires preservation"),
             engine.connect() as connection,
@@ -756,7 +766,7 @@ def test_repeat_upgrade_and_refused_downgrade_preserve_history(sandbox: Sandbox)
             migration.downgrade(config, "0031_tts_settlement")
         assert s.snapshot() == before
         assert s.admin.execute("SELECT version_num FROM alembic_version").fetchone() == {
-            "version_num": migration_head(config)
+            "version_num": DELETION_LEDGER_REVISION
         }
     finally:
         engine.dispose()

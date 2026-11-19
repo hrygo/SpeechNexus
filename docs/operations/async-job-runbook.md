@@ -1290,6 +1290,7 @@ FAIL(配置写了但不对,任何阶段都必须修):前置 1
 | 迁移报 `alembic_version` 不存在或版本偏低 | 迁移是否执行到目标库、发布制品 head | 2 |
 | api 启动退出并打印 `FAIL: ... migration profile` | 同一数据库是否执行过迁移（预检读不到准入表即拒绝启动） | 2 |
 | 取消后 Job 停在 `cancelling`、`held_slots` 不归零 | 先看 `/readyz` 的 `cancellation_debt:` 是否带 `never claimed: N`／`never claimable (exhausted): N`／`due now: N`（见 §13.1） | 6 |
+| Job 已 `cancelled`/`failed`，但 `held_slots` 不归零 | 先看 `/readyz` 的 `cancellation_debt:` 是否带 `left-cancelling-holding-capacity: N`（受理在 24 小时回看窗口内）；窗口外的形态按[生产 Job 的钻取查询](../components/production-jobs.md#隔离不了的时候可见面与处置)核对（见 §13.1） | 6 |
 
 ### 13.1 取消没有推进时的三步判断
 
@@ -1318,6 +1319,12 @@ worker。拿不到停止证据时受理只写受理事实，Job 停在 `cancelli
      `--once` 也不会推进，这类只能按第 3 步的操作员出口处置。
    - `due now: N`：账本行此刻可领取（`next_check_at_us` 已过、未 `settled`、非 `exhausted`）。
      健康 worker 在两个轮询之间也可能短暂命中，**持续出现**才说明没人推进。
+   - `left-cancelling-holding-capacity: N`：**Job 状态侧**事实，不在上面三个账本标记之内。
+     该受理的 Job 已离开 `cancelling`（`cancelled`、`failed` 或其它终态），账本仍未 `settled`，
+     租约仍持有容量。没有这一路时，这类容量对轮询读面完全不可见。它只统计受理时间在回看
+     窗口（默认 24 小时，必须大于宽限）内的行；窗口外的旧受理不在 detail 里，但仍在账本里：
+     除 `exhausted` 外的仍会被对账 worker 按年龄领取，`exhausted` 的归操作员出口处置，
+     两者都仍完整出现在下面第二条无窗口的钻取查询中。
    - 有阻塞明细（`job -> lease(lease=…, execution=…, subclass=…)`）：只说明租约仍持有容量、
      执行处于什么状态，**不**说明 worker 在跑；`subclass=completed-without-release` 走有界
      操作员出口，其余走隔离/停止路径。
@@ -1337,8 +1344,11 @@ worker。拿不到停止证据时受理只写受理事实，Job 停在 `cancelli
    执行已 `succeeded` 且有终止证据的用 `completed_release_cli`；缺终止证据的等 #338。
    **不要**手工改 `speech_jobs.state`、租约或补写证据行。
 
-逐行核对与第二条查询（覆盖 Job 已离开 `cancelling`、租约仍持有容量的形态——轮询读面
-看不到这一类）见[生产 Job 的隔离不了的时候](../components/production-jobs.md#隔离不了的时候可见面与处置)。
+逐行核对与两条钻取查询见[生产 Job 的隔离不了的时候](../components/production-jobs.md#隔离不了的时候可见面与处置)：
+第一条覆盖仍停在 `cancelling` 的受理，第二条是无窗口的完整口径，覆盖 Job 已离开
+`cancelling`、租约仍持有容量的形态。轮询 detail 的 `left-cancelling-holding-capacity`
+只覆盖该形态最近 24 小时的受理；更早的受理按第二条查询核对，不能把 detail 缺少这个
+scope 读成「没有债」。
 
 ## 14. 本机验证记录与未验证项
 

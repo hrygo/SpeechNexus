@@ -181,6 +181,13 @@ SURFACES: tuple[Surface, ...] = (
         "RuntimeDeliverySettings",
     ),
     Surface(
+        "admission_watch",
+        "backend",
+        "the admission-watch worker entrypoint",
+        "backend/src/speechnexus_backend/admission_watch_runtime.py",
+        "AdmissionWatchSettings",
+    ),
+    Surface(
         "tts_settlement",
         "backend",
         "the TTS settlement worker entrypoint",

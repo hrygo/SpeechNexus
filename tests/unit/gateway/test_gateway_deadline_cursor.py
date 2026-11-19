@@ -300,6 +300,21 @@ def test_database_clock_refuses_after_the_budget_expires(entry: Implementation) 
     )
 
 
+@pytest.mark.parametrize("entry", IMPLEMENTATIONS, ids=cursor_id)
+def test_each_copy_exposes_a_clock_exactly_when_the_table_says_so(
+    entry: Implementation,
+) -> None:
+    """The table records whether a copy has ``clock()``; nothing else checks it.
+
+    Without this, adding ``clock()`` to ``execution_reader`` -- a copy whose callers
+    never expect one -- stays green, and the ``clock_returns`` column becomes prose.
+    """
+    cls = module(entry)._DeadlineCursor
+    assert hasattr(cls, "clock") is (entry.clock_returns is not None), (
+        f"{entry.module}._DeadlineCursor clock() presence does not match the table"
+    )
+
+
 def test_table_covers_every_deadline_cursor_declaration_in_the_gateway() -> None:
     discovered = discover_cursor_modules()
     tabled = {entry.module for entry in IMPLEMENTATIONS}

@@ -2,16 +2,27 @@
 
 ``test_deadline_cursor.py`` pins the eleven ``_Cursor`` copies and explicitly
 leaves ``_DeadlineCursor`` out of its scope. Five copies of that class live under
-``backend/src`` and repeated the same shape: read the remaining budget, refuse
-when it is gone, install a transaction-local ``statement_timeout`` in
-milliseconds, then run the query. Nothing pinned any of the five, so deleting a
-guard still left the functional suite green and a constant millisecond value
-would silently stop the server-side timeout from tracking the request budget.
+``backend/src`` and repeat the same shape: read the remaining budget, refuse when
+it is gone, install a transaction-local ``statement_timeout`` in milliseconds,
+then run the query.
+
+Four of the five were already pinned in part by their own functional suites
+(``test_production_claims.py``, ``test_production_owners.py``, ``test_runtime_postgres.py``
+cover refusing and the derived millisecond value; ``test_production_leases.py``
+covers refusing and sending nothing). ``quarantine_release_postgres`` had no
+coverage at all, and no test compared the five implementations against one
+shared contract -- a drift in one copy, or a constant millisecond value, could
+pass every existing suite.
 
 All five are behaviourally identical apart from the concrete cursor annotation,
 so one shared matrix runs against every implementation instead of five
 near-identical test files. The discovery guard keeps that table complete: a new
 ``class _DeadlineCursor`` declaration without an entry here fails the census.
+
+The census walks ``backend/src`` only. ``execution-gateway`` holds two more
+copies of the same shape (``execution_reader.py``, ``submit_postgres.py``) with
+different ``clock()`` return types; they are out of this table's scope and have
+no budget assertions of their own (tracked separately).
 """
 
 from __future__ import annotations

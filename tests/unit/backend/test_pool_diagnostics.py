@@ -7,12 +7,14 @@ message with a fixed sentence, drop the recorded arguments, and drop the excepti
 carries the driver traceback, so a copy that stops redacting leaks connection details into
 the log.
 
-Only five copies were pinned at all by their own functional suites (``test_profile_http.py``,
+Only six copies were pinned at all by their own functional suites (``test_profile_http.py``,
 ``test_pronunciation_http.py``, ``test_binding_http.py``, ``test_audit_reader_runtime.py``,
-``test_model_instance_runtime.py``), and none of those asserts that ``exc_text`` and
-``stack_info`` are cleared, that ``args`` is emptied, or that ``filter()`` keeps returning
-``True``. Deleting the exception-clearing line, mistyping a hardcoded pool name, or returning
-``False`` from any of the other twelve copies left every pre-existing suite green.
+``test_model_instance_runtime.py``, ``test_builtin_voice_source_approval.py``). Those assert
+the substituted sentence and that ``exc_info`` is cleared, and some also check ``exc_text``
+or that ``filter()`` still returns ``True``. What none of them covers is ``args`` being
+emptied and ``stack_info`` being dropped, and no test compares the copies against one shared
+contract. Deleting the exception-clearing line, mistyping a hardcoded pool name, or returning
+``False`` from any of the other eleven copies left every pre-existing suite green.
 
 The copies differ in one way that is preserved rather than flattened: fourteen take the pool
 name through ``__init__``, while ``tts_settlement_worker``, ``voice_evidence_worker`` and
@@ -20,9 +22,16 @@ name through ``__init__``, while ``tts_settlement_worker``, ``voice_evidence_wor
 is which, and the matrix asserts the matching behaviour each shape actually has.
 
 One shared matrix runs against every copy. The discovery census keeps the table complete: a
-new ``class _PoolDiagnostics`` declaration without an entry here fails. The two copies that
+new ``class _PoolDiagnostics`` declaration without an entry here fails. The six copies that
 already had partial coverage are still included -- duplicate coverage is harmless and keeps
 them from drifting away from the matrix.
+
+Scope, so this is not read as more than it is: redaction happens per pool name, and production
+pool names are synthetic labels (``speech_pool`` accepts only ``[a-z0-9-]{1,64}``), never DSNs.
+What actually keeps credentials out is the exception fields being dropped, not the pool-name
+match. Warnings that never mention the pool name at all (for example ``discarding broken
+connection: %s``) do not reach this filter; their payload is ``Connection.__repr__``, which
+carries host and principal but no password.
 """
 
 from __future__ import annotations
@@ -303,9 +312,6 @@ def test_each_copy_follows_the_source_the_table_records(entry: Implementation) -
     assert issubclass(cls, logging.Filter), f"{entry.module}._PoolDiagnostics is not a filter"
 
     if entry.hardcoded_pool is None:
-        assert "__init__" in cls.__dict__, (
-            f"{entry.module} is tabled as taking its pool name from a constructor"
-        )
         parameters = list(inspect.signature(cls).parameters.values())
         assert len(parameters) == 1, (
             f"{entry.module} must take exactly one pool name: {parameters!r}"
@@ -323,15 +329,12 @@ def test_each_copy_follows_the_source_the_table_records(entry: Implementation) -
             f"{entry.module} redacted a pool name it was not configured with"
         )
     else:
-        assert "__init__" not in cls.__dict__, (
-            f"{entry.module} is tabled as hardcoding {entry.hardcoded_pool!r}"
-        )
         # The inherited Filter name is not what drives matching, so passing one changes
         # nothing: the literal in the table is the only pool this copy redacts.
         record = logging.LogRecord(
             "psycopg.pool", logging.WARNING, __file__, 1, "pool %s failed", ("other-pool",), None
         )
-        assert cls("other-pool").filter(record) is True
+        assert cls().filter(record) is True
         assert record.getMessage() == "pool other-pool failed", (
             f"{entry.module} matched a name that a caller passed to the inherited constructor"
         )

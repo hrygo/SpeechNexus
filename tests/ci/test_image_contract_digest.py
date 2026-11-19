@@ -161,6 +161,11 @@ class MainExitCodeTests(unittest.TestCase):
         argv = [SCRIPT.name, self.IMAGE]
         with contextlib.ExitStack() as stack:
             stack.enter_context(mock.patch.object(sys, "argv", argv))
+            # The generator imports PyYAML and this lane installs no third-party
+            # package, so the value it would compute is supplied by the stand-in.
+            stack.enter_context(
+                mock.patch.object(CHECK, "load_generator", return_value=_Recomputed())
+            )
             # Intercept below `run()` so its own OSError handling produces the verdict.
             stack.enter_context(
                 mock.patch.object(CHECK.subprocess, "run", side_effect=OSError("docker missing"))

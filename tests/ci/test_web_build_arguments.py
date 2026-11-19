@@ -6,6 +6,11 @@ passes none of them produces the image this file always produced; the example ov
 `deploy/compose.build-mirror.override.yaml` passes them for a host whose registry route
 is throttled (#572/#829 measured 13.27 KiB/s on Docker Hub and an expired 900 s window).
 
+The lane that runs this file installs no third-party package, so the two Compose
+files are read by indentation rather than with a YAML library. The properties below
+are still the ones pinned: an added `environment:` block, a moved Dockerfile or a
+pinned network argument all change the significant lines and fail.
+
 Three properties make that safe, and none of them needs a second copy of the build:
 
 * the defaults stay ordinary Docker Hub references — a default that moved to a mirror
@@ -20,8 +25,6 @@ from __future__ import annotations
 import re
 import unittest
 from pathlib import Path
-
-import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 DOCKERFILE = "deploy/images/web.Dockerfile"
@@ -53,6 +56,39 @@ def read(relative: str) -> str:
 
 def defaults() -> dict[str, str]:
     return dict(DEFAULT.findall(read(DOCKERFILE)))
+
+
+def document_lines(text: str) -> list[str]:
+    """Significant lines with their indentation: what a Compose reader sees."""
+    return [
+        line.rstrip()
+        for line in text.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+
+
+def indented_block(lines: list[str], start: int, indent: int) -> list[str]:
+    """The lines nested one level below `lines[start]`."""
+    block: list[str] = []
+    for line in lines[start + 1 :]:
+        if len(line) - len(line.lstrip()) <= indent:
+            break
+        block.append(line)
+    return block
+
+
+def service_build(service: str) -> list[str]:
+    """The `services.<service>.build` block, located by indentation, not by PyYAML."""
+    lines = document_lines(read(COMPOSE))
+    for index, line in enumerate(lines):
+        if line != f"  {service}:":
+            continue
+        service_lines = indented_block(lines, index, 2)
+        for offset, item in enumerate(service_lines):
+            if item == "    build:":
+                return indented_block(service_lines, offset, 4)
+        raise AssertionError(f"{COMPOSE}: service {service!r} has no build block")
+    raise AssertionError(f"{COMPOSE} has no service {service!r}")
 
 
 def effective_lines(text: str, *, yaml_document: bool = False) -> list[str]:
@@ -89,28 +125,34 @@ class ArgumentsTests(unittest.TestCase):
                 self.assertNotIn(".", segments[0], value)
 
     def test_the_deployment_does_not_pin_the_arguments(self) -> None:
-        compose = yaml.safe_load(read(COMPOSE))
         for service in ("admin", "workbench"):
+            build = service_build(service)
             with self.subTest(service=service):
-                args = compose["services"][service]["build"].get("args") or {}
-                self.assertEqual(sorted(set(args) & set(NETWORK_ARGS)), [])
-                self.assertEqual(compose["services"][service]["build"]["dockerfile"], DOCKERFILE)
+                self.assertIn(f"      dockerfile: {DOCKERFILE}", build)
+                text = "\n".join(build)
+                for name in NETWORK_ARGS:
+                    self.assertNotIn(
+                        name,
+                        text,
+                        f"{COMPOSE} mentions {name} in {service}'s build; the deployment "
+                        "must build with the Dockerfile defaults",
+                    )
 
 
 class OverrideTests(unittest.TestCase):
     def test_the_override_changes_arguments_only(self) -> None:
-        document = yaml.safe_load(read(OVERRIDE))
-        self.assertEqual(sorted(document["services"]), ["admin", "workbench"])
-        expected = {
-            name: f"${{SPEECHNEXUS_{name}:-{value if value else ''}}}"
-            for name, value in {**BASE_IMAGE_ARGS, REGISTRY_ARG: ""}.items()
-        }
-        for name, service in document["services"].items():
-            with self.subTest(service=name):
-                self.assertEqual(list(service), ["build"])
-                self.assertEqual(list(service["build"]), ["args"])
-                self.assertEqual(sorted(service["build"]["args"]), sorted(NETWORK_ARGS))
-                self.assertEqual(service["build"]["args"], expected)
+        expected = ["services:"]
+        for service in ("admin", "workbench"):
+            expected += [f"  {service}:", "    build:", "      args:"]
+            for name in NETWORK_ARGS:
+                default = BASE_IMAGE_ARGS.get(name, "")
+                expected.append(f"        {name}: ${{SPEECHNEXUS_{name}:-{default}}}")
+        self.assertEqual(
+            document_lines(read(OVERRIDE)),
+            expected,
+            "the override must change the three build arguments and nothing else; an "
+            "added environment, volume or service would move a shipped boundary",
+        )
 
     def test_the_override_is_not_autoloaded(self) -> None:
         autoloaded = {"compose.override.yaml", "docker-compose.override.yaml"}

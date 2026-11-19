@@ -85,7 +85,7 @@ Node Controller 镜像验证由 CI 以同提交的 [reusable workflow](../../.gi
 | job ID | Actions 显示名称 | 实际职责 |
 | --- | --- | --- |
 | `routing` | `Route: scope and review boundary` | 按准确差异选择范围，并审查 PR 改动路径边界；不安装项目依赖、不跑任何测试，因此它在 checkout 后十余秒内发布 `mode`/`excluded_shards`，所有重作业随即启动 |
-| `guards` | `Guards: routing boundaries, design tokens and contract consumers` | 不筛范围的轻量守卫：`tests/ci` 路由回归、Design Token 校验、生成契约消费者绑定。只用系统 Python 与 Node，不安装项目依赖；结果被最终门禁无条件要求；与 `routing` 并行，因此不再把重作业挡在约 25 秒的串行前缀之后 |
+| `guards` | `Guards: routing boundaries, design tokens and contract consumers` | 不筛范围的轻量守卫：`tests/ci` 路由回归、Design Token 校验、生成契约消费者绑定。只装 `.python-version` 钉住的解释器与 Node，不安装项目依赖：这套守卫要解析产品源码，必须跑在产品声明的解释器上——runner 的系统 `python3` 是 3.12，读不了产品已在用的 PEP 758 `except A, B:`，会把「解释器过旧」误报成「产品语法错」（#1001）。结果被最终门禁无条件要求；与 `routing` 并行，因此不再把重作业挡在约 25 秒的串行前缀之后 |
 | `python_tests`（矩阵两腿） | `Python: tests, coverage and build (part a|b)` | Python 单元、契约、CI 测试，导出四 worker 覆盖率数据集（不判定）、媒体工具链及 Python 包构建；集成标记的 Workbench/Speech PG 模块由十二个分片执行并采集覆盖数据，此作业不重复执行 |
 | `python_static` | `Python: lint, types and contract compatibility` | Ruff、mypy、模块边界、生成漂移、协议兼容与 schema 校验 |
 | `integration_plan` | `Integration plan: one collection selects every partition's tools` | 只在展开分片的路由（`full`/`web`）执行：一次 pytest 完整收集发布十二片的 `browser`/`node_contracts` 工具需求，供各分片读取；分片自身的执行与证据校验不依赖它 |
@@ -593,7 +593,7 @@ uv run python scripts/dev-env/python-coverage.py combine \
 - 对比事件的准确 base SHA 与实际 checkout 的合并结果；路径用 NUL 分隔，不按换行拆分，也不使用 API 文件列表截断后的子集。
 - 重命名同时考虑旧/新路径。将 Python 文件移入文档目录或删除源码仍须全量。
 - 基线不可用时回退全量；路由或轻量回归失败时阻止合并。不要用 `continue-on-error` 或缺失输出兜底放行。
-- 轻量入口使用 runner 的系统 Python 3.12+，只依赖标准库；Ruff 对该脚本及 `tests/ci/` 固定 `py312`，产品代码继续遵循项目 Python 版本。
+- 轻量入口使用 runner 的系统 Python 3.12+，只依赖标准库；`guards` 是例外，它把 `tests/ci` 跑在 `.python-version` 钉住的解释器上（当前 3.14），因为这些守卫要解析产品源码，而系统 3.12 读不了 PEP 758。Ruff 对轻量入口及 `tests/ci/` 仍固定 `py312`（守卫自身保持 3.12 可解析），产品代码继续遵循项目 Python 版本。
 
 从仓库根目录验证变更：
 

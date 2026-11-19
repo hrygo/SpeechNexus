@@ -598,9 +598,17 @@ def test_required_workflow_is_never_filtered_out_and_classification_is_lightweig
     commands = "\n".join(step.get("run", "") for step in routing["steps"])
     # The routing-boundary suite owns its own unfiltered lane; the routing job keeps
     # only checkout and the scope decision, so heavy lanes start sooner.
-    guards_commands = "\n".join(step.get("run", "") for step in jobs["guards"]["steps"])
-    assert "python3 -m unittest discover -s tests/ci" in guards_commands
-    assert "python3 -m unittest discover -s tests/ci" not in commands
+    guards_steps = jobs["guards"]["steps"]
+    guards_commands = "\n".join(step.get("run", "") for step in guards_steps)
+    assert "python -m unittest discover -s tests/ci" in guards_commands
+    assert "unittest discover -s tests/ci" not in commands
+    # The suite parses product sources, so it must run on the interpreter the
+    # product pins (`.python-version` = `requires-python` floor), never the
+    # runner's system python3 (3.12 rejects the PEP 758 syntax in the tree, #1001).
+    assert any(
+        step.get("with", {}).get("python-version-file") == ".python-version"
+        for step in guards_steps
+    )
     assert "if" not in jobs["guards"] and "needs" not in jobs["guards"]
     assert "scripts/dev-env/ci-routing.py" in commands
     assert "github.event.pull_request.base.sha" in str(routing)

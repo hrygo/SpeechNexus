@@ -100,10 +100,13 @@ CATALOGUE_PROJECTION_COMMENT = (
     # keep telling the next reader that the contract still says the opposite.
     "static projection, not a live",
 )
+# Asserting clauses, not bare labels: a later correction that *mentions* the old reading
+# ("this was tracked as the contract defect", "the old text claimed it was structurally
+# unsatisfiable") must stay green, so each entry carries the assertion around it.
 STALE_PROJECTION_COMMENT_PHRASES = (
-    "contract defect #941",
-    "Structurally unsatisfiable",
-    '"current admission facts"',
+    "tracked as the contract defect",
+    "Structurally unsatisfiable, not",
+    'promises "current admission facts"',
 )
 
 

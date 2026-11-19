@@ -109,7 +109,7 @@ class ModelCatalogRuntime:
                 # no workspace (models.py:42), so this block reports the projection
                 # that the contract describes -- `unavailable` until per-workspace
                 # facts exist -- rather than a currently admissible answer it could
-                # never produce.
+                # never produce. The readiness route is still a placeholder (#863).
                 self.catalogue = PostgresModelCatalog(
                     pool, timeout_seconds=self._settings.model_catalog_read_timeout_seconds
                 )

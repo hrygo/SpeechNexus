@@ -493,7 +493,7 @@ curl -sS http://127.0.0.1:8000/v1/models
 workspace 的准入事实面，**不是某个 workspace 此刻能否被准入**）。但准入按 workspace 计
 （`backend/src/speechnexus_backend/speech/infrastructure/public_job_admission.py:695`、`:514`），
 本端点没有 workspace 维度（`backend/src/speechnexus_backend/speech/interfaces/http/models.py:42`；
-契约 `:58-67` 只有 `X-Request-ID` 与 `If-None-Match`），所以这个字段**接不进实时准入**——接入多少
+契约 `:59-68` 只有 `X-Request-ID` 与 `If-None-Match`），所以这个字段**接不进实时准入**——接入多少
 实时事实都改变不了这一点。口径已按 `#941` 订正为静态投影，**消费者不需要改**。实时准入不由该端点
 承载：判「现在能不能建 Job」看 `POST /v1/nexus/jobs` 的实际应答码（第 11 节），按 workspace 的
 实时报告是 `GET /v1/nexus/jobs/admission-readiness`（带 `workspace_id`，当前仍是占位、跟踪

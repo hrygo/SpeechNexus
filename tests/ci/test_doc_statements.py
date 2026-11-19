@@ -246,6 +246,27 @@ class DocumentedCapabilityGuardTests(unittest.TestCase):
         )
         self._assert_green()
 
+    def test_the_retired_projection_comment_wording_turns_red(self) -> None:
+        """Reinstating any of the three claims the contract no longer makes must fail (#941)."""
+        self._rewrite(
+            CATALOG_RUNTIME,
+            "                # facts exist -- rather than a currently admissible answer it could\n",
+            "                # Structurally unsatisfiable, not pending wiring.\n"
+            "                # facts exist -- rather than a currently admissible answer it could\n",
+        )
+        self._assert_red("still says 'Structurally unsatisfiable, not'")
+
+    def test_a_corrective_mention_of_the_retired_wording_stays_green(self) -> None:
+        """A later correction may name the old reading; only the assertion is forbidden."""
+        self._rewrite(
+            CATALOG_RUNTIME,
+            "                # facts exist -- rather than a currently admissible answer it could\n",
+            "                # This was once recorded as a contract defect (#941); the\n"
+            "                # contract now defines the same projection.\n"
+            "                # facts exist -- rather than a currently admissible answer it could\n",
+        )
+        self._assert_green()
+
     def test_a_negated_reference_to_the_stale_wording_stays_green(self) -> None:
         """Forbidding whole asserting clauses must not reject a negation (#939 M4)."""
         self._rewrite(

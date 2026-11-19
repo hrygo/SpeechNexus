@@ -41,17 +41,25 @@ Coverage (one case per shape the issue requires):
 
 What is real and what is injected: the database collaborator is the gate's own
 `_psycopg_connect`, the migration head is the packaged one and the migration is
-the real one, so no database input is faked. Only the object-storage collaborator
-is injected (`client_factory`) because these five shapes are database shapes: a
-versioned-bucket stub keeps MinIO out of the case instead of adding 13 unrelated
-asset errors (#1051's experience) - the bucket checks themselves are covered by
-`tests/unit/test_job_startup_gate.py`.
+the real one, so no database input is faked. The only injected *input*
+collaborator is object storage (`client_factory`), because these five shapes are
+database shapes: a versioned-bucket stub keeps MinIO out of the case instead of
+adding the asset errors it drags in (#1051's experience) - the bucket checks
+themselves are covered by `tests/unit/test_job_startup_gate.py`. `execute` is
+injected too, but only so a real `execvp` cannot replace the test process: the
+cases assert on the arguments it receives and on whether it ran at all.
 
-Each case creates its own schema and roles and drops them in `finally`, so a
-failure cannot leak a grant surface into the next run. Deleting a check from the
-gate (the claim-column probe was the one measured) or turning a refusal into a
-warning turns the matching case red; merging the two migration findings into one
-sentence turns case 4 red.
+Role provenance: the four non-owner roles are created here with the attributes
+the reference provisioning gives them (`LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+NOINHERIT`), and every `GRANT` is rendered by
+`scripts/dev-env/provision-job-roles.py: statements`, i.e. the SQL that script
+would install. No grant statement is re-stated in this module.
+
+Each case creates its own schema and roles and drops them in `finally` - including
+when the migration or the grant install fails, not only when the case body fails.
+Deleting a check from the gate (the claim-column probe was the one measured) or
+turning a refusal into a warning turns the matching case red; merging the two
+migration findings into one sentence turns case 4 red.
 """
 
 from __future__ import annotations
@@ -62,7 +70,7 @@ import json
 import os
 import sys
 import uuid
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
@@ -197,24 +205,33 @@ def _migrate(url: str, schema: str) -> None:
         engine.dispose()
 
 
-@pytest.fixture
-def gate_database() -> Iterator[GateDatabase]:
-    """A migrated schema and the reference provisioning's four roles, dropped after."""
-    url = os.environ.get(VARIABLE)
-    if not url:
-        pytest.fail("Configure an isolated PostgreSQL DSN; skip is not migration evidence")
-    suffix = uuid.uuid4().hex[:12]
-    schema = "sn_gate_" + suffix
-    writer, admission, dispatch, gateway = (
-        "sn_gate_writer_" + suffix,
-        "sn_gate_admission_" + suffix,
-        "sn_gate_dispatch_" + suffix,
-        "sn_gate_gateway_" + suffix,
-    )
-    roles = (writer, admission, dispatch, gateway)
-    _migrate(url, schema)
+def _drop_role(admin: psycopg.Connection[Any], role: str) -> None:
+    """Drop one role and its grants; absent roles are not an error during cleanup."""
+    present = admin.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)).fetchone()
+    if present is None:
+        return
+    admin.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
+    admin.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))
+
+
+def _provisioned(
+    url: str,
+    schema: str,
+    roles: tuple[str, ...],
+    migrate: Callable[[str, str], None] = _migrate,
+) -> Iterator[GateDatabase]:
+    """Create the schema, migrate it, install the reference grants, then clean up.
+
+    The admin connection is opened and the migration is run *inside* the same
+    `try` as the cleanup: a migration or grant failure must still drop the schema
+    and the roles, exactly like a case-body failure. Cleanup tolerates the
+    half-provisioned states (`DROP ROLE` of a role that was never created, a
+    schema the migration rolled back) so it never masks the original failure.
+    """
+    writer, admission, dispatch, gateway = roles
     admin = psycopg.connect(url, autocommit=True)
     try:
+        migrate(url, schema)
         for role in roles:
             admin.execute(
                 sql.SQL(
@@ -230,11 +247,76 @@ def gate_database() -> Iterator[GateDatabase]:
         yield GateDatabase(url, schema, dispatch, roles, admin)
     finally:
         for role in roles:
-            admin.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
-        for role in roles:
-            admin.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))
+            _drop_role(admin, role)
         admin.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(schema)))
         admin.close()
+
+
+@pytest.fixture
+def gate_database() -> Iterator[GateDatabase]:
+    """A migrated schema and the reference provisioning's four roles, dropped after."""
+    url = os.environ.get(VARIABLE)
+    if not url:
+        pytest.fail("Configure an isolated PostgreSQL DSN; skip is not migration evidence")
+    suffix = uuid.uuid4().hex[:12]
+    schema = "sn_gate_" + suffix
+    roles = (
+        "sn_gate_writer_" + suffix,
+        "sn_gate_admission_" + suffix,
+        "sn_gate_dispatch_" + suffix,
+        "sn_gate_gateway_" + suffix,
+    )
+    yield from _provisioned(url, schema, roles)
+
+
+def test_a_failed_migration_still_drops_its_schema() -> None:
+    """A provisioning failure leaves no schema and no role behind.
+
+    The cleanup path is the same one every case uses, so this guards the real
+    leak: a migration or grant failure after the schema exists would otherwise
+    accumulate one schema and four roles per red run.
+    """
+    url = os.environ.get(VARIABLE)
+    if not url:
+        pytest.fail("Configure an isolated PostgreSQL DSN; skip is not migration evidence")
+    suffix = uuid.uuid4().hex[:12]
+    schema = "sn_gate_leak_" + suffix
+    roles = (
+        "sn_gate_leak_writer_" + suffix,
+        "sn_gate_leak_admission_" + suffix,
+        "sn_gate_leak_dispatch_" + suffix,
+        "sn_gate_leak_gateway_" + suffix,
+    )
+    created: list[str] = []
+
+    def migrate_then_fail(url: str, schema: str) -> None:
+        # Alembic runs `CREATE SCHEMA` and the revisions in one transaction, so an
+        # unknown revision alone rolls the schema back and the assertion below
+        # would be vacuous. Fail with the schema already committed, which is the
+        # shape a failed grant install (or a post-migration step) leaves behind.
+        admin = psycopg.connect(url, autocommit=True)
+        try:
+            admin.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
+        finally:
+            admin.close()
+        created.append(schema)
+        raise RuntimeError("synthetic provisioning failure after the schema existed")
+
+    iterator = _provisioned(url, schema, roles, migrate_then_fail)
+    with pytest.raises(RuntimeError, match="synthetic provisioning failure"):
+        next(iterator)
+
+    # The failure really happened with the schema in place, so the cleanup below is
+    # what removed it - not a no-op against a schema that never existed.
+    assert created == [schema]
+    with psycopg.connect(url) as inspector:
+        assert inspector.execute("SELECT to_regnamespace(%s)", (schema,)).fetchone() == (None,)
+        assert (
+            inspector.execute(
+                "SELECT rolname FROM pg_roles WHERE rolname = ANY(%s)", (list(roles),)
+            ).fetchall()
+            == []
+        )
 
 
 class VersionedBuckets:

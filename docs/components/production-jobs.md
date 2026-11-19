@@ -1072,8 +1072,10 @@ uv run speechnexus-job-dispatch-worker
 
 `deploy/job-startup-gate.py` 是该容器的入口：它在领取任何租约之前逐条检查部署前提，
 每条缺失打印一行具名 `FAIL` 并以退出码 1 结束，全部通过后才 `exec` worker。数据库侧
-的五种形状有真库证据——真 Alembic 迁移、`scripts/dev-env/provision-job-roles.py`
-装出的非 owner 角色，只有对象存储协作者是替身，因此这些用例不需要 MinIO：
+的五种形状有真库证据——真 Alembic 迁移；四个非 owner 角色由用例按参考 provisioning
+的属性（`LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT`）创建，`GRANT` 由
+`scripts/dev-env/provision-job-roles.py` 的 `statements()` 渲染；对象存储是替身，
+`exec` 也被注入以免真 `execvp` 顶掉测试进程，因此这些用例不需要 MinIO：
 
 | 前提形状 | 闸门行为 |
 | --- | --- |

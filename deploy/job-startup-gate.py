@@ -40,16 +40,19 @@ publisher and the bindings own, and the migration head is resolved from the
 packaged migrations instead of being written down here. The dispatch transition,
 the event append and the cancellation-not-submitted insert are stated in
 `DISPATCH_WRITE_SURFACE`; `tests/unit/test_job_startup_gate.py` compares that
-copy with the worker's own SQL, the read-only self-check and the grant
-declarations that confer those privileges, so a drifted copy is red instead of
+copy's table set with the worker's own SQL, its exact surface with the read-only
+self-check in `scripts/dev-env/check-async-job-prereqs.py`, and every column with
+the grant declaration that must confer it, so a drifted copy is red instead of
 being accepted at startup. `main()` takes its `env`, `connect`, `client`, `head`
 and `execute` collaborators as parameters, which is how the unit test proves the
 wiring, the exit code and the "no `exec` after a failure" ordering without
 PostgreSQL or MinIO; `tests/integration/test_job_startup_gate_pg.py` runs the same
-`main()` against a real migrated schema and the roles
-`scripts/dev-env/provision-job-roles.py` installs, with only the bucket
-collaborator stubbed, and `tests/ci/test_reference_deploy_job_prereqs.py` guards
-the text-level wiring.
+`main()` against a real migrated schema, creating the four non-owner roles with
+the attributes the reference provisioning gives them and installing the grants
+that `scripts/dev-env/provision-job-roles.py: statements` renders; only the object
+storage input is stubbed (`execute` is injected as well, so a real `execvp` cannot
+replace the test process), and
+`tests/ci/test_reference_deploy_job_prereqs.py` guards the text-level wiring.
 """
 
 from __future__ import annotations

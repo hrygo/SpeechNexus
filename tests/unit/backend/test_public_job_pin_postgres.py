@@ -19,6 +19,7 @@ from speechnexus_backend.speech.domain.publications import Publication
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.public_jobs_postgres import (
     PostgresPublicJobs,
+    _lock_validation_target,
     _validate_pinned_create,
 )
 from tests.unit.backend.test_public_jobs import BINDING, NOW, _pin_facts, _pinned_body, _service
@@ -273,3 +274,71 @@ def test_a_preview_on_a_design_draft_needs_the_design_task() -> None:
     connection = _PinnedRows("design", ["voice_clone"])
     with pytest.raises(ModelBindingError, match="model_binding_task_not_supported"):
         _validate_pinned_create(cast(Any, connection), _preview_job())
+
+
+def _validation_job() -> NewPublicJob:
+    """A validation create; its draft task comes from the target revision."""
+    document: dict[str, Any] = {
+        "kind": "voice_validation",
+        "model": "voice-model",
+        "input": {
+            "voice_draft_id": "voice-draft",
+            "draft_revision": "1",
+            "validation_set_revision": "1",
+        },
+        "workspace_id": "workspace-default",
+    }
+    return NewPublicJob(
+        job_id="job-validation",
+        workspace_id="workspace-default",
+        kind="voice_validation",
+        model_id="voice-model",
+        request_digest=canonical_digest(document),
+        request_document=rfc8785.dumps(document).decode(),
+        initial_event_digest="sha256:" + "b" * 64,
+        idempotency_key_digest=None,
+        submission=JobSubmission(
+            request_id="req-validation",
+            client_reference=None,
+            effective_configuration_json=json.dumps(
+                {"models": {"voice": {"id": "voice-model", "revision": "1"}}}
+            ),
+            execution_revision=1,
+            progress_unit="items",
+            progress_total=None,
+            submitted_at_us=NOW,
+        ),
+        expected_binding=None,
+    )
+
+
+class _ValidationRows:
+    def __init__(self, draft_kind: str) -> None:
+        self.draft_kind = draft_kind
+        self.calls: list[str] = []
+
+    def execute(self, query: str, parameters: tuple[object, ...] = ()) -> Rows:
+        self.calls.append(query)
+        return Rows(
+            [
+                {
+                    "head_revision": "1",
+                    "status": "generating",
+                    "draft_kind": self.draft_kind,
+                    "generation_state": "succeeded",
+                    "generation_result": "{}",
+                    "generation_workspace": "workspace-default",
+                }
+            ]
+        )
+
+
+def test_a_preview_target_outside_the_vocabulary_is_a_binding_refusal() -> None:
+    connection = _PinnedRows("sketch", [])
+    with pytest.raises(ModelBindingError, match="model_binding_not_current"):
+        _validate_pinned_create(cast(Any, connection), _preview_job())
+
+
+def test_a_validation_target_outside_the_vocabulary_is_unavailable() -> None:
+    connection = _ValidationRows("sketch")
+    assert _lock_validation_target(cast(Any, connection), _validation_job()) == "job_unavailable"

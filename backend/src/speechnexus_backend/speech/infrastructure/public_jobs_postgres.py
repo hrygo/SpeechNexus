@@ -1351,10 +1351,17 @@ def _lock_validation_target(connection: _Executor, job: NewPublicJob) -> str | N
         return "draft_not_generatable"
     if row["generation_state"] != "succeeded":
         return "not_candidate"
+    draft_job_kind = VOICE_DRAFT_JOB_KINDS.get(row["draft_kind"])
+    if draft_job_kind is None:
+        # The revision's stored draft kind is outside the vocabulary. The CHECK
+        # constraint is the last line, not the only one: a history without it
+        # must answer storage-unavailable like the application's validation
+        # guard, not raise KeyError into a 500.
+        return "job_unavailable"
     try:
         resolve_voice_previews(
             workspace_id=job.workspace_id,
-            kind=VOICE_DRAFT_JOB_KINDS[row["draft_kind"]],
+            kind=draft_job_kind,
             state=row["generation_state"],
             result_json=row["generation_result"],
             artifact=_locked_artifact_reader(connection),
@@ -1427,7 +1434,13 @@ def _validate_pinned_create(connection: _Executor, job: NewPublicJob) -> None:
         ).fetchone()
         if row is None:
             raise ModelBindingError("model_binding_not_current")
-        task = VOICE_DRAFT_JOB_KINDS[row["kind"]]
+        task = VOICE_DRAFT_JOB_KINDS.get(row["kind"])
+        if task is None:
+            # Same store-consistency class as the missing row above: the
+            # target's stored kind is outside the vocabulary, so the pinned
+            # binding is no longer resolvable. A schema without the CHECK
+            # must answer a request-shape refusal, not a KeyError.
+            raise ModelBindingError("model_binding_not_current")
     binding = require_pinned_binding(
         _pinned_binding(
             connection.execute(_PINNED_BINDING_QUERY, (reference[0], str(reference[1]))).fetchall()

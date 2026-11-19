@@ -15,6 +15,7 @@ from speechnexus_backend.speech.application.voice_drafts import (
     VoiceDraftNotFoundError,
 )
 from speechnexus_backend.speech.domain.public_jobs import (
+    VOICE_DRAFT_JOB_KINDS,
     JobArtifactFact,
     PublicJobUnavailableError,
     canonical_digest,
@@ -79,10 +80,14 @@ def _resolved_previews(row: dict[str, Any]) -> list[str]:
         raise PublicJobUnavailableError from None
     if not isinstance(result, dict):
         raise PublicJobUnavailableError
+    # The result kind is the Job kind the draft's kind drafts, not a prefix
+    # concatenation: a row outside the vocabulary is an unreadable stored fact.
+    draft_job_kind = VOICE_DRAFT_JOB_KINDS.get(row["kind"])
     if (
-        result.get("voice_draft_id") != row["draft_id"]
+        draft_job_kind is None
+        or result.get("voice_draft_id") != row["draft_id"]
         or result.get("draft_revision") != row.get("revision", row["head_revision"])
-        or result.get("kind") != "voice_" + row["kind"]
+        or result.get("kind") != draft_job_kind
     ):
         raise PublicJobUnavailableError
     previews = result.get("preview_artifact_ids")
@@ -186,9 +191,12 @@ def _require_candidate(connection: SpeechConnection, row: dict[str, Any]) -> Non
     """
     if row["status"] != "generating" or row["job_state"] != "succeeded":
         return
+    draft_job_kind = VOICE_DRAFT_JOB_KINDS.get(row["kind"])
+    if draft_job_kind is None:
+        raise PublicJobUnavailableError
     previews = resolve_voice_previews(
         workspace_id=row["job_workspace_id"],
-        kind="voice_" + row["kind"],
+        kind=draft_job_kind,
         state=row["job_state"],
         result_json=row["result_json"],
         artifact=lambda workspace_id, artifact_id: _artifact_fact(

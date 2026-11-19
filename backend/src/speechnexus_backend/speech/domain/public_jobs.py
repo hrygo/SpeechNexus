@@ -24,14 +24,19 @@ JobKind = Literal["asr", "tts", "voice_design", "voice_clone", "voice_preview", 
 ProgressUnit = Literal["audio_ms", "text_codepoints", "items"]
 
 # The closed public Job vocabulary, in contract declaration order. Every kind
-# list in the runtime is a view of this tuple or of ``JOB_KIND_PROFILES`` below,
-# so a kind cannot be added to one reader only.
+# view in this module is derived from this tuple or from ``JOB_KIND_PROFILES``
+# below, so a kind cannot be added to one reader here only. The dispatch side is
+# a separate vocabulary with a different axis: ``domain/job_dispatch.py`` still
+# owns ``DispatchJobKind`` and its ``DISPATCHABLE_JOB_KINDS`` /
+# ``VOICE_GENERATION_JOB_KINDS`` / ``VOICE_VALIDATION_JOB_KINDS`` tuples. Those
+# are not projections of this table and are not derived from it here (#1040
+# follow-up).
 JOB_KINDS: tuple[JobKind, ...] = get_args(JobKind)
 
 
 @dataclass(frozen=True, slots=True)
 class JobKindProfile:
-    """One Job kind's runtime derivations; each reader consults this row only.
+    """One Job kind's public-Job derivations; the readers in this module read it.
 
     ``task`` is the binding task the kind itself declares. It is ``None`` for
     ``voice_preview`` on purpose: a preview runs on its target draft's task, and

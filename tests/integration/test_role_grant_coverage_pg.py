@@ -34,9 +34,10 @@ Coverage -- face, identity, grant function to re-run:
 * ``dispatch.claim``: ``PostgresDispatchQueue.claim_due`` -- dispatch /
   ``job_runtime_grants``, ``job_dispatch_grants``, ``public_job_grants``,
   ``coordination_runtime_grants``;
-* ``writer.claim_and_outbox``: ``claim_in_transaction`` and the outbox read -- Job
-  writer / ``job_runtime_grants`` plus the writer baseline in
-  ``provision-job-roles.py``;
+* ``writer.claim_and_outbox``: ``create_in_transaction`` on an existing Job (the
+  replay branch reads the coordination row and the outbox row) plus
+  ``claim_in_transaction`` -- Job writer / ``job_runtime_grants`` plus the writer
+  baseline in ``provision-job-roles.py``;
 * ``binding_disable.coordinator``: the coordinator's intent, target and lease reads --
   binding-disable coordinator / ``disable_coordinator_grants``;
 * ``asset.inspection``: ``PostgresAssetMetadata.get`` and ``.object`` -- asset runtime /
@@ -57,6 +58,19 @@ model here. It proves the face the production code runs today reads successfully
 identity the deployment provisions today; it does not prove that a future edit to a
 statement was also reflected in the declaration -- the declaration case is what reddens
 when it was not.
+
+The declaration is a **lower bound** on the read set, not an equality with the
+deployment's grant: it proves the face needs no more than this, so it catches a
+production grant narrower than the statement (``#1038``, ``#1041``) and cannot catch a
+grant wider than the declaration. That asymmetry is deliberate -- one identity serves a
+whole creation path, so asserting equality would be brittle and wrong -- and the
+``asset``/``admission`` rows deliberately declare less than their identities hold.
+
+Two things this module cannot answer, both of which stay with deployment: whether a live
+role ever re-ran its grant function (the roles here are built and provisioned in the
+test), and whether some relation is granted to ``PUBLIC`` (a per-role ``REVOKE`` cannot
+remove that, so ``test_the_schema_grants_nothing_to_public`` asserts the schema has no
+``PUBLIC`` ACL entry at all).
 """
 
 from __future__ import annotations
@@ -90,6 +104,7 @@ from speechnexus_backend.admission_watch_runtime import (
 )
 from speechnexus_backend.speech.domain.assets import digest
 from speechnexus_backend.speech.domain.claims import ClaimJob
+from speechnexus_backend.speech.domain.jobs import CreateJob, JobFact
 from speechnexus_backend.speech.infrastructure.asset_schema import asset_runtime_grants
 from speechnexus_backend.speech.infrastructure.assets_postgres import PostgresAssetMetadata
 from speechnexus_backend.speech.infrastructure.binding_disable_coordinator_postgres import (
@@ -107,6 +122,7 @@ from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema imp
     cancellation_debt_reader_grants,
 )
 from speechnexus_backend.speech.infrastructure.job_dispatch_postgres import PostgresDispatchQueue
+from speechnexus_backend.speech.infrastructure.jobs_sql import create_in_transaction
 from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
 from speechnexus_backend.speech.infrastructure.public_job_admission import (
     load_admission_readiness,
@@ -229,11 +245,17 @@ def _columns(db: JobDatabase, table: str) -> tuple[str, ...]:
     return tuple(str(row["column_name"]) for row in rows)
 
 
-def _revoke_relation(db: JobDatabase, table: str, role: str) -> None:
-    """Remove every privilege this role holds on one relation, table and column level."""
-    db.admin.execute(f'REVOKE ALL ON "{db.schema}"."{table}" FROM "{role}"')
+def _revoke_relation(db: JobDatabase, table: str, role: str | None = None) -> None:
+    """Remove every privilege one grantee holds on a relation, table and column level.
+
+    ``role is None`` means ``PUBLIC``, which PostgreSQL only accepts unquoted; the
+    keyword form is what lets the per-face cases stay closed when a migration granted
+    the relation to everyone.
+    """
+    grantee = "PUBLIC" if role is None else f'"{role}"'
+    db.admin.execute(f'REVOKE ALL ON "{db.schema}"."{table}" FROM {grantee}')
     for column in _columns(db, table):
-        db.admin.execute(f'REVOKE SELECT ("{column}") ON "{db.schema}"."{table}" FROM "{role}"')
+        db.admin.execute(f'REVOKE SELECT ("{column}") ON "{db.schema}"."{table}" FROM {grantee}')
 
 
 def _missing_privileges(coverage: Coverage, surface: Surface) -> list[str]:
@@ -259,15 +281,25 @@ def _missing_privileges(coverage: Coverage, surface: Surface) -> list[str]:
     return missing
 
 
+#: The one grant group whose identity arguments are keyword-only, so a naive
+#: ``function(schema, role)`` suggestion cannot be pasted without a ``TypeError``.
+KEYWORD_GRANTS = frozenset({"coordination_runtime_grants"})
+
+
 def _repair(surface: Surface, coverage: Coverage) -> str:
-    """The exact provisioning step to replay for this face."""
+    """The exact provisioning step to replay for this face, copy-pasteable."""
     role = coverage.role(surface.role)
-    steps = [
-        f'{name}("{coverage.db.schema}", "{role}")'
-        if name.endswith("_grants")
-        else f"{name} (with this identity's DSN)"
-        for name in surface.grants
-    ]
+    steps: list[str] = []
+    for name in surface.grants:
+        if name in KEYWORD_GRANTS:
+            steps.append(
+                f'{name}("{coverage.db.schema}", speech_role="{role}", '
+                f'gateway_role="{coverage.role("gateway")}")'
+            )
+        elif name.endswith("_grants"):
+            steps.append(f'{name}("{coverage.db.schema}", "{role}")')
+        else:
+            steps.append(f"{name} (with this identity's DSN)")
     return "re-run as the migration owner: " + ", ".join(steps)
 
 
@@ -666,28 +698,37 @@ def _run_dispatch_claim(coverage: Coverage) -> str:
 
 
 def _run_writer_claim(coverage: Coverage) -> str:
-    """The Job writer's coordination claim plus its outbox read."""
+    """The writer's create replay (which reads the outbox) plus its coordination claim."""
+    request = CreateJob(
+        job_id=COORDINATION_JOB,
+        operation_id=COORDINATION_JOB,
+        attempt_id="attempt-coordination",
+        event_id=COORDINATION_EVENT,
+        event_digest=DIGEST,
+        request_digest=DIGEST,
+    )
     connection = _connect(coverage, "writer")
     try:
         now_us = _now_us(connection)
         with connection.cursor() as cursor:
+            # ``create_in_transaction`` on an existing Job takes the replay branch:
+            # it reads the coordination row and then the outbox row it published. No
+            # statement here is copied from the adapter, so a change to the production
+            # SELECT reddens this face instead of passing on a stale copy.
+            created = create_in_transaction(cursor, request)
             current = read_claim(cursor, COORDINATION_JOB, lock=True)
             result = claim_in_transaction(
                 cursor,
                 ClaimJob(COORDINATION_JOB, "worker-grant-coverage", current.claim_version, 30_000),
                 clock=lambda: now_us,
             )
-            cursor.execute(
-                "SELECT job_id, event_digest FROM coordination_outbox WHERE event_id = %s",
-                (COORDINATION_EVENT,),
-            )
-            event = cursor.fetchone()
         connection.rollback()
     finally:
         connection.close()
+    assert created.outcome == "replayed", created
+    assert created.fact == JobFact(COORDINATION_JOB, DIGEST), created
     assert result.outcome == "committed", result
-    assert event == {"job_id": COORDINATION_JOB, "event_digest": DIGEST}, event
-    return f"claim={result.outcome} version={current.claim_version}"
+    return f"create={created.outcome} claim={result.outcome} version={current.claim_version}"
 
 
 def _run_binding_disable(coverage: Coverage) -> str:
@@ -967,6 +1008,28 @@ def test_a_four_column_ledger_grant_names_the_missing_attempts(coverage: Coverag
         _restore(coverage, "debt")
 
 
+def _public_acl(db: JobDatabase) -> list[str]:
+    """Every relation, column or schema ACL entry whose grantee is PUBLIC (oid 0)."""
+    rows = db.query(
+        "SELECT 'relation ' || c.relname AS entry FROM pg_class AS c "
+        "JOIN pg_namespace AS n ON n.oid = c.relnamespace WHERE n.nspname = %s "
+        "AND c.relacl IS NOT NULL AND EXISTS ("
+        "SELECT 1 FROM aclexplode(c.relacl) AS a WHERE a.grantee = 0) "
+        "UNION ALL "
+        "SELECT 'column ' || c.relname || '.' || attr.attname FROM pg_attribute AS attr "
+        "JOIN pg_class AS c ON c.oid = attr.attrelid "
+        "JOIN pg_namespace AS n ON n.oid = c.relnamespace WHERE n.nspname = %s "
+        "AND attr.attnum > 0 AND NOT attr.attisdropped AND attr.attacl IS NOT NULL AND EXISTS ("
+        "SELECT 1 FROM aclexplode(attr.attacl) AS a WHERE a.grantee = 0) "
+        "UNION ALL "
+        "SELECT 'schema ' || n.nspname FROM pg_namespace AS n WHERE n.nspname = %s "
+        "AND n.nspacl IS NOT NULL AND EXISTS ("
+        "SELECT 1 FROM aclexplode(n.nspacl) AS a WHERE a.grantee = 0)",
+        (db.schema, db.schema, db.schema),
+    )
+    return [str(row["entry"]) for row in rows]
+
+
 def _granted_relations(coverage: Coverage, role: str) -> tuple[str, ...]:
     """Every relation this identity can touch at table or column level, right now."""
     rows = coverage.db.query(
@@ -997,6 +1060,8 @@ def _grant_only_declared(coverage: Coverage, surface: Surface) -> None:
     role = coverage.role(surface.role)
     for table in _granted_relations(coverage, role):
         _revoke_relation(coverage.db, table, role)
+        # A PUBLIC grant survives every per-role REVOKE and would green the face.
+        _revoke_relation(coverage.db, table)
     for read in surface.reads:
         if read.columns is None:
             statement = f'GRANT {read.privilege} ON "{coverage.db.schema}"."{read.table}"'
@@ -1006,6 +1071,23 @@ def _grant_only_declared(coverage: Coverage, surface: Surface) -> None:
                 f'GRANT {read.privilege} ({columns}) ON "{coverage.db.schema}"."{read.table}"'
             )
         coverage.db.admin.execute(f'{statement} TO "{role}"')
+
+
+def test_the_schema_grants_nothing_to_public(coverage: Coverage) -> None:
+    """PUBLIC is not a role a face's DSN can be narrowed away from.
+
+    ``REVOKE ... FROM <role>`` cannot take back a privilege the migration granted to
+    ``PUBLIC``, so a future ``GRANT SELECT ... TO PUBLIC`` would let every negative
+    case pass while the per-identity grants stayed narrow. Assert the schema has no
+    such entry, so the coverage cases above are not greened by a shared grantee.
+    """
+    entries = _public_acl(coverage.db)
+    assert not entries, (
+        "schema grants privileges to PUBLIC: "
+        + ", ".join(entries)
+        + " -- a per-role REVOKE cannot remove it, so the per-face cases would pass on"
+        " the PUBLIC grant; grant the relation to the face's own role instead"
+    )
 
 
 def test_the_declaration_is_enough_to_run_each_face(coverage: Coverage) -> None:

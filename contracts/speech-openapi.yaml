@@ -1235,22 +1235,29 @@ paths:
         route is whether a create is admitted.
 
         The verdict is one value, never a set. `cause` is the single refusal class a
-        create would answer right now for the first admissible binding in revision
-        order, or null when a create for every admissible binding would be admitted;
-        `status` is `admitting` if and only if `cause` is null, and `admitting`
-        holds if and only if a create for every admissible binding sent now would be
-        admitted. "Admissible" is a property of the binding, not of this response: a
-        published, unretired binding whose execution defaults validate for at least
-        one declared kind is admissible, and a binding whose defaults validate for
-        none is not -- a create naming that one is refused by request validation
-        (`job_binding_incomplete`) before admission runs, so it is neither a cause
-        nor an `instances` row here. The create
-        path answers one code, so a report naming several could only invent a
-        precedence the API does not have -- which of the observed refusals a create
-        reached first -- and would let the report describe a class the create never
-        returns. Naming one makes "this is the code a create would answer at this
-        instant" the only shape the response can take, and the two fields cannot
-        disagree; the schema rejects a body that does.
+        create would answer right now for the first admissible binding in ascending
+        `binding_revision_id` order, or null when a create for every admissible
+        binding would be admitted; `status` is `admitting`
+        if and only if `cause` is null, and `admitting` holds if and only if a
+        create for every admissible binding sent now would be admitted. "Admissible"
+        is a property of the binding, not of this response: the current publication
+        head of a published, unretired binding that a create could actually name --
+        one whose `execution_defaults` validate for a declared `asr`/`tts` kind, or
+        one that declares `voice_validation`, which carries no execution block. A
+        create naming a binding outside that set is refused before admission runs (a
+        superseded revision is `model_binding_not_current`; defaults that validate
+        for none of the declared kinds are `job_binding_incomplete`), so those
+        bindings are neither a cause nor an `instances` row here. The create path
+        answers one code, so a report naming several could only invent a precedence
+        the API does not have -- which of the observed refusals a create reached
+        first -- and would let the report describe a class the create never returns.
+        Naming one makes "this is the code a create would answer at this instant" the
+        only shape the response can take, and the two fields cannot disagree; the
+        schema rejects a body that does.
+
+        With no admissible binding the report answers `capacity_exhausted` rather
+        than `admitting`: the universal would be vacuously true, but a deployment
+        that can admit no create must not read as admitting.
 
         Every public code that means "this deployment refuses every create" has
         exactly one cause here, and every cause names exactly one of those codes, so
@@ -6929,7 +6936,7 @@ components:
           enum: [admitting, degraded]
           description: |
             `admitting` if and only if `cause` is null, and if and only if a create
-            for every published binding sent at this instant would be admitted;
+            for every admissible published binding would be admitted at this instant;
             `degraded` otherwise. This is the
             one field a poller has to assert on. The two conditions are not a second
             verdict beside `cause`: the schema below constrains them together, so a
@@ -6949,8 +6956,9 @@ components:
                 - workspace_not_configured
                 - storage_unavailable
           description: |
-            One value, never a set: the refusal class a create for a published
-            binding would answer at this instant, or null when every published
+            One value, never a set: the refusal class a create would answer at this
+            instant for the first admissible published binding in ascending
+            `binding_revision_id` order, or null when every admissible published
             binding would admit a create. The create path answers one code and the
             report repeats that one code. `storage_unavailable` is the only member
             reported for an unreadable store, because no other fact could have been
@@ -6971,15 +6979,17 @@ components:
         instances:
           type: array
           description: |
-            One row per published binding that has a pin target: the one instance a
-            create for that binding would select, under the same rule a create
-            applies, in ascending `(binding_revision_id, instance_id,
-            instance_generation)` order. A published binding with no `ready` instance
+            One row per admissible published binding that has a pin target: the one
+            instance a create for that binding would select, under the same rule a
+            create applies, in ascending `(binding_revision_id, instance_id,
+            instance_generation)` order. A binding with no `ready` instance
             contributes the `capacity_exhausted` cause but no row, because there is no
-            instance whose receipt to report. Empty when the store could not be read.
-            An instance reachable only through a second generation of the same
-            binding, or through a binding that is not published, is not listed: a
-            create cannot name it.
+            instance whose receipt to report. Empty when the store could not be read,
+            and empty when no binding is admissible -- that body still carries the
+            `capacity_exhausted` cause rather than `admitting`. An instance reachable
+            only through a second generation of the same binding, through a binding
+            that is not published, or through a superseded revision of a published
+            binding is not listed: a create cannot name it.
           items:
             $ref: "#/components/schemas/AdmissionReadinessInstance"
         capacity:

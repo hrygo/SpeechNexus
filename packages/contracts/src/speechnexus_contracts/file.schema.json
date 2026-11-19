@@ -3806,7 +3806,7 @@
         "status": {
           "type": "string",
           "enum": ["admitting", "degraded"],
-          "description": "`admitting` if and only if `cause` is null, and if and only if a create\nfor every published binding sent at this instant would be admitted;\n`degraded` otherwise. This is the\none field a poller has to assert on. The two conditions are not a second\nverdict beside `cause`: the schema below constrains them together, so a\nbody cannot claim a cause while admitting or be degraded without naming\none.\n"
+          "description": "`admitting` if and only if `cause` is null, and if and only if a create\nfor every admissible published binding would be admitted at this instant;\n`degraded` otherwise. This is the\none field a poller has to assert on. The two conditions are not a second\nverdict beside `cause`: the schema below constrains them together, so a\nbody cannot claim a cause while admitting or be degraded without naming\none.\n"
         },
         "cause": {
           "oneOf": [
@@ -3827,7 +3827,7 @@
               ]
             }
           ],
-          "description": "One value, never a set: the refusal class a create for a published\nbinding would answer at this instant, or null when every published\nbinding would admit a create. The create path answers one code and the\nreport repeats that one code. `storage_unavailable` is the only member\nreported for an unreadable store, because no other fact could have been\nread.\n"
+          "description": "One value, never a set: the refusal class a create would answer at this\ninstant for the first admissible published binding in ascending\n`binding_revision_id` order, or null when every admissible published\nbinding would admit a create. The create path answers one code and the\nreport repeats that one code. `storage_unavailable` is the only member\nreported for an unreadable store, because no other fact could have been\nread.\n"
         },
         "workspace_id": {
           "$ref": "#/$defs/Identifier"
@@ -3844,7 +3844,7 @@
         },
         "instances": {
           "type": "array",
-          "description": "One row per published binding that has a pin target: the one instance a\ncreate for that binding would select, under the same rule a create\napplies, in ascending `(binding_revision_id, instance_id,\ninstance_generation)` order. A published binding with no `ready` instance\ncontributes the `capacity_exhausted` cause but no row, because there is no\ninstance whose receipt to report. Empty when the store could not be read.\nAn instance reachable only through a second generation of the same\nbinding, or through a binding that is not published, is not listed: a\ncreate cannot name it.\n",
+          "description": "One row per admissible published binding that has a pin target: the one\ninstance a create for that binding would select, under the same rule a\ncreate applies, in ascending `(binding_revision_id, instance_id,\ninstance_generation)` order. A binding with no `ready` instance\ncontributes the `capacity_exhausted` cause but no row, because there is no\ninstance whose receipt to report. Empty when the store could not be read,\nand empty when no binding is admissible -- that body still carries the\n`capacity_exhausted` cause rather than `admitting`. An instance reachable\nonly through a second generation of the same binding, through a binding\nthat is not published, or through a superseded revision of a published\nbinding is not listed: a create cannot name it.\n",
           "items": {
             "$ref": "#/$defs/AdmissionReadinessInstance"
           }

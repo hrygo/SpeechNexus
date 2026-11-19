@@ -50,6 +50,8 @@ from speechnexus_backend.speech.domain.job_dispatch import submit_intent_identit
 from speechnexus_backend.speech.domain.jobs import CreateJob
 from speechnexus_backend.speech.domain.owners import OwnerAuthority
 from speechnexus_backend.speech.domain.public_jobs import (
+    ADMITTED_JOB_KINDS,
+    JOB_KIND_TASK,
     NewPublicJob,
     canonical_digest,
     identifier,
@@ -210,11 +212,18 @@ def _admission_block(definition: dict[str, Any], kind: str) -> dict[str, Any]:
 def _binding_reaches_admission(definition_json: Any) -> bool:
     """Whether a create naming this binding can reach admission for some kind.
 
-    A binding whose execution defaults are incomplete for every supported kind
-    answers the request-shaped ``job_binding_incomplete`` before admission runs; that
-    is not a deployment-state refusal, so the report must not turn it into
-    ``capacity_exhausted``. A binding that is valid for at least one kind stays: a
-    create naming that kind does reach admission, and its pin target decides.
+    The kinds come from ``ADMITTED_JOB_KINDS`` and the binding declares one when its
+    ``tasks`` carries that kind's ``JOB_KIND_TASK`` entry -- the same check
+    ``require_pinned_binding`` and ``latest_binding`` apply, so the report cannot
+    invent a "supported kind" the create path does not have.
+
+    ``voice_validation`` carries no ``execution_defaults`` block (the schema does not
+    require one), so a binding that declares it is admissible on the strength of the
+    published binding alone. For every other admitted kind the create validates the
+    block before admission runs; a binding whose defaults validate for none of its
+    declared kinds answers the request-shaped ``job_binding_incomplete`` and is not a
+    deployment-state refusal, so the report must not turn it into
+    ``capacity_exhausted``.
     """
     try:
         definition = json.loads(definition_json)
@@ -222,16 +231,14 @@ def _binding_reaches_admission(definition_json: Any) -> bool:
         return False
     if not isinstance(definition, dict):
         return False
-    defaults = definition.get("execution_defaults")
-    if not isinstance(defaults, dict):
+    tasks = definition.get("tasks")
+    if not isinstance(tasks, list):
         return False
-    # Every kind the binding declares, not a hardcoded pair: a binding valid only
-    # for a kind this list forgot would leave the candidate universe silently, which
-    # is the same "a create is refused while the report stays green" failure in a
-    # narrower form.
-    for kind in defaults:
-        if not isinstance(kind, str):
+    for kind in ADMITTED_JOB_KINDS:
+        if JOB_KIND_TASK[kind] not in tasks:
             continue
+        if kind == "voice_validation":
+            return True
         try:
             _admission_block(definition, kind)
         except PublicJobAdmissionRejectedError:
@@ -764,7 +771,7 @@ def build_public_job_admission(
     revision is not a candidate and raises ``voice_draft_not_candidate``; it
     never returns ``None`` or a half-admitted Job.
     """
-    if job.kind not in ("asr", "tts", "voice_validation"):
+    if job.kind not in ADMITTED_JOB_KINDS:
         return None
     intent = _intent(job)
     try:
@@ -1222,26 +1229,27 @@ def _readiness_workspace_state(cursor: _Cursor, workspace_id: str) -> str | None
 
 
 def _readiness_candidates(cursor: _Cursor) -> list[dict[str, Any]]:
-    """One row per published binding, carrying the instance a create would pin.
+    """One row per nameable binding, carrying the instance a create would pin.
 
-    The question is about creates, and a create can only name a published, un-retired
-    binding revision -- the predicate ``_binding`` applies. Starting the read from
-    ``engine_instances`` answered a different question in both directions: a published
-    binding with no ready instance disappeared from the report (``admitting`` while
-    every create for it answered ``job_capacity_exhausted``), and a ready instance
-    behind an unpublished binding entered it (a refusal no create could reach). So
-    every published revision is the left side and its pin target -- the first
-    ``ready`` instance of that binding by ``(instance_id, instance_generation)``,
-    exactly as ``_instance`` selects it -- is the right side.
+    The question is about creates, and a create can only name the *current head* of a
+    published, un-retired binding: ``require_pinned_binding`` answers
+    ``model_binding_not_current`` for a superseded revision and an unpinned create
+    resolves ``latest_binding`` (see the head join below). Every such head is the left
+    side and its pin target -- the first ``ready`` instance of that binding by
+    ``(instance_id, instance_generation)``, exactly as ``_instance`` selects it -- is
+    the right side. Starting from ``engine_instances`` instead answered a different
+    question in both directions: a nameable binding with no ready instance
+    disappeared (``admitting`` while every create for it answered
+    ``job_capacity_exhausted``), and a ready instance behind an unpublished binding
+    entered it (a refusal no create could reach).
 
-    A published binding with no pin target stays in the result as a row whose
-    instance columns are NULL: the caller records its capacity refusal instead of
-    letting the binding vanish. A published binding that cannot reach admission for
-    any kind (an incomplete definition) is not a candidate: a create naming it is
-    refused with the request-shaped ``job_binding_incomplete`` before admission, and
-    reporting that as ``capacity_exhausted`` would name a class no create returns.
-    The rows come back in ``binding_revision_id`` order so the reported cause is
-    deterministic.
+    A head with no pin target stays in the result as a row whose instance columns are
+    NULL: the caller records its capacity refusal instead of letting the binding
+    vanish. A head that cannot reach admission for any declared kind (an incomplete
+    definition) is not a candidate: a create naming it is refused with the
+    request-shaped ``job_binding_incomplete`` before admission, and reporting that as
+    ``capacity_exhausted`` would name a class no create returns. The rows come back in
+    ``binding_revision_id`` order so the reported cause is deterministic.
     """
     cursor.execute(
         "SELECT DISTINCT ON (p.revision_id) p.revision_id AS binding_revision_id, "
@@ -1261,7 +1269,18 @@ def _readiness_candidates(cursor: _Cursor) -> list[dict[str, Any]]:
         "AND NOT EXISTS ("
         f"SELECT 1 FROM {RETIREMENT_TABLE} AS retired WHERE retired.kind = p.kind "
         "AND retired.object_id = p.object_id AND retired.revision = p.revision "
-        "AND retired.revision_id = p.revision_id)"
+        "AND retired.revision_id = p.revision_id) "
+        # Only the current publication head is nameable, and this EXISTS is the
+        # create side's own predicate: ``_PINNED_BINDING_QUERY`` computes
+        # ``is_current`` with the identical EXISTS
+        # (``public_jobs_postgres.py:102-105``), ``require_pinned_binding`` answers
+        # ``model_binding_not_current`` when it is false (``public_jobs.py:288``), and
+        # an unpinned create resolves ``latest_binding`` (``public_jobs.py:856``),
+        # which is the head.
+        "AND EXISTS ("
+        "SELECT 1 FROM speech_publication_heads AS head "
+        "WHERE head.kind = p.kind AND head.object_id = p.object_id "
+        "AND head.revision = p.revision AND head.revision_id = p.revision_id)"
         "ORDER BY p.revision_id, i.instance_id, i.instance_generation"
     )
     return [row for row in cursor.fetchall() if _binding_reaches_admission(row["definition_json"])]
@@ -1370,9 +1389,11 @@ def _probe_command(
     )
     owner_id = pool.ownership.owner_id
     if owner_id is None:
-        # A pool with no live owner identity cannot produce an authority; the caller
-        # reports it as the state the deployment must reconcile.
-        raise ValueError("pool ownership has no owner identity")
+        # A pool with no owner identity cannot produce an authority, and
+        # ``build_public_job_admission`` answers ``engine_resource_disabled`` for the
+        # same row; the report repeats that class instead of naming a state mismatch
+        # for a condition the contract calls disabled.
+        raise PublicJobAdmissionRejectedError("engine_resource_disabled")
     authority = OwnerAuthority(pool.ownership.pool_id, owner_id, pool.ownership.fencing_token)
     business = OriginalBusinessCommand(
         _PROBE_BUSINESS,
@@ -1526,6 +1547,12 @@ def load_admission_readiness(
             command = _probe_command(
                 workspace_id=workspace_id, runtime=runtime, pool=pool, quota=quota, now_us=now_us
             )
+        except PublicJobAdmissionRejectedError as refused:
+            # The probe names the class the create path answers for the same row (a
+            # pool without an owner is ``engine_resource_disabled``); a later
+            # candidate cannot override the first refusal in binding order.
+            refusal = refusal or refused.code
+            continue
         except ValueError:
             refusal = refusal or "reconciliation_required"
             continue

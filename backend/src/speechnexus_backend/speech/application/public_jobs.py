@@ -27,6 +27,7 @@ from speechnexus_backend.speech.domain.admission import (
 from speechnexus_backend.speech.domain.job_admission_readiness import AdmissionReadiness
 from speechnexus_backend.speech.domain.public_jobs import (
     CANCELLATION_UNCONFIRMED,
+    JOB_KIND_TASK,
     JobArtifactFact,
     JobCancellationReceipt,
     JobCancellationResult,
@@ -51,15 +52,6 @@ from speechnexus_backend.speech.domain.publications import Publication, Publicat
 
 DEFAULT_WORKSPACE = "workspace-default"
 _REVISION = re.compile(r"[1-9][0-9]{0,18}\Z")
-
-
-_REQUIRED_TASK: dict[JobKind, str] = {
-    "asr": "asr_file",
-    "tts": "tts_file",
-    "voice_design": "voice_design",
-    "voice_clone": "voice_clone",
-    "voice_validation": "voice_validation",
-}
 
 
 def _encode_list_cursor(created_at_us: int, job_id: str, scope: str) -> str:
@@ -816,7 +808,7 @@ class PublicJobs:
         raw_model = payload.get("model")
         model_id: str
         pin: tuple[str, int] | None
-        required_task = _REQUIRED_TASK.get(typed_kind)
+        required_task = JOB_KIND_TASK.get(typed_kind)
         if typed_kind == "voice_validation":
             pin, derived_model = self._validation_binding(payload, workspace_id)
             if raw_model is None:
@@ -858,7 +850,7 @@ class PublicJobs:
                 raise self._unpublished_binding(model_id)
             binding = latest
             tasks = binding.definition.get("tasks")
-            if not isinstance(tasks, list) or _REQUIRED_TASK[typed_kind] not in tasks:
+            if not isinstance(tasks, list) or JOB_KIND_TASK[typed_kind] not in tasks:
                 raise ModelNotPublishedError
 
         voice = self._reference(payload.get("voice"))

@@ -18,11 +18,13 @@ runs -- so a row cannot pass by agreeing with a second copy of the rules. The pr
 set is the create path's own scope: every published binding a create could name,
 carrying the one instance a create for it would pin. The cases after the rows build
 the deployment shapes the single-instance fixture cannot express -- two ready
-instances behind one binding, two bindings, a published binding with no instance,
-and a ready instance behind an unpublished binding -- because the report used to
-start from ``engine_instances`` and answer ``admitting`` from a healthy sibling of
-the instance a create would pin (#857 third round, #863), from a binding that had
-no instance at all, or refuse on an instance no create could name.
+instances behind one binding, two bindings, a published binding with no instance, a
+ready instance behind an unpublished binding, a superseded second revision whose
+engine is stopped, and a ``voice_validation`` binding with no execution defaults --
+because the report used to start from ``engine_instances`` and answer ``admitting``
+from a healthy sibling of the instance a create would pin (#857 third round, #863),
+from a binding that had no instance at all, from a revision no create can name, or
+from dropping a nameable binding whose kind needs no execution block.
 
 Boundaries: PostgreSQL with the shipped schema and roles. The rows that need a
 second instance or a second binding build them through the product's own
@@ -134,6 +136,18 @@ ROWS: tuple[tuple[str, Callable[[Any, int], None] | None, str | None], ...] = (
         "engine_resource_disabled",
     ),
     (
+        # An unowned pool is a valid row only in this shape (``PoolOwnership``
+        # rejects None with any fencing/expiry/active state), and admission answers
+        # the disabled class for it on the create path.
+        "missing-pool-owner",
+        lambda db, now: _query(
+            db,
+            "UPDATE resource_pools SET owner_id = NULL, fencing_token = 0, "
+            "owner_expires_at_us = 0, owner_state = 'reconciling_takeover'",
+        ),
+        "engine_resource_disabled",
+    ),
+    (
         "undecodable-intent",
         lambda db, now: _query(
             db,
@@ -179,6 +193,16 @@ OTHER_DIGEST = "sha256:" + "c" * 64
 # A binding the catalog never published (or retired): a create cannot name it, so a
 # ready instance carrying this revision is a ghost the report must ignore.
 GHOST_BINDING = "binding-unpublished"
+# The current head of the fixture's binding after a real second publication. A create
+# can name this revision and cannot name the superseded first one.
+HEAD_REVISION_ID = "binding-test-r2"
+HEAD_INSTANCE = ("instance-new2", 1)
+HEAD_HOST = "host-new2"
+HEAD_GATEWAY = "gateway-new2"
+# A binding whose only declared kind is `voice_validation`: a create for it needs no
+# `execution_defaults` block, so it is admissible with no execution block at all.
+VOICE_VALIDATION_BINDING = "binding-voice-validation"
+VOICE_VALIDATION_DIGEST = "sha256:" + "d" * 64
 
 
 def _register_ready_instance(
@@ -315,6 +339,114 @@ def _quarantine(admission: AdmissionDatabase, host_node_id: str) -> None:
         "UPDATE host_nodes SET node_state = 'quarantined' WHERE host_node_id = %s",
         (host_node_id,),
     )
+
+
+def _pinned_job(model: str, revision: str, *, key: str) -> Any:
+    """The fixture's TTS Job with an explicitly pinned model revision."""
+    job = _job(model=model, key=key)
+    configuration = json.loads(job.submission.effective_configuration_json)
+    configuration["models"]["tts"]["revision"] = revision
+    return replace(
+        job,
+        submission=replace(job.submission, effective_configuration_json=json.dumps(configuration)),
+    )
+
+
+def _publish_second_revision(admission: AdmissionDatabase) -> None:
+    """Publish revision 2 of the fixture's binding through ``append_publication``.
+
+    ``_seed`` leaves ``binding-test`` at revision 1, so the shape that separates
+    "superseded" from "current head" has to be a real second publication: the head
+    pointer moves, the old revision stays published, and a create can name only the
+    new one.
+    """
+    db = admission.runtime.foundation.database
+    definition = json.loads(
+        db.query(
+            "SELECT definition_json FROM speech_binding_revisions "
+            "WHERE binding_id = %s AND revision = '1'",
+            (BINDING,),
+        )[0]["definition_json"]
+    )
+    definition["revision"] = "2"
+    definition["revision_id"] = HEAD_REVISION_ID
+    db.query(
+        "INSERT INTO speech_binding_commands "
+        "(key_digest, binding_id, document_version, intent_json, request_digest) "
+        "VALUES (%s, %s, 1, '{}', %s)",
+        (OTHER_DIGEST, BINDING, OTHER_DIGEST),
+    )
+    db.query(
+        "INSERT INTO speech_binding_revisions "
+        "(binding_id, revision, revision_id, key_digest, document_version, definition_json, "
+        "definition_digest, request_digest, created_at_us) "
+        "VALUES (%s, '2', %s, %s, 1, %s, %s, %s, 1)",
+        (
+            BINDING,
+            HEAD_REVISION_ID,
+            OTHER_DIGEST,
+            json.dumps(definition),
+            OTHER_DIGEST,
+            OTHER_DIGEST,
+        ),
+    )
+    with db.admin.transaction(), db.admin.cursor() as cursor:
+        assert append_publication(
+            cursor,
+            Publication("binding", BINDING, 2, HEAD_REVISION_ID, 2),
+            expected_current_revision="1",
+            # ``_seed`` publishes three objects, so the catalogue sits at revision 4
+            # before this insert appends the fourth.
+            expected_catalog_revision=4,
+        )
+
+
+def _publish_voice_validation_binding(admission: AdmissionDatabase) -> None:
+    """Publish a binding a voice-validation create can name, with no defaults.
+
+    ``execution_defaults`` is optional in the binding schema and a
+    ``voice_validation`` create never reads it, so a binding that declares only that
+    task is admissible on the strength of the publication alone. Filtering the
+    universe on "has a valid execution block" would drop it and answer ``admitting``
+    while every create for it is refused.
+    """
+    db = admission.runtime.foundation.database
+    definition = {
+        "binding_id": VOICE_VALIDATION_BINDING,
+        "tasks": ["voice_validation"],
+        "release_tier": "production",
+    }
+    db.query(
+        "INSERT INTO speech_binding_families (binding_id, latest_revision) VALUES (%s, '1')",
+        (VOICE_VALIDATION_BINDING,),
+    )
+    db.query(
+        "INSERT INTO speech_binding_commands "
+        "(key_digest, binding_id, document_version, intent_json, request_digest) "
+        "VALUES (%s, %s, 1, '{}', %s)",
+        (VOICE_VALIDATION_DIGEST, VOICE_VALIDATION_BINDING, VOICE_VALIDATION_DIGEST),
+    )
+    db.query(
+        "INSERT INTO speech_binding_revisions "
+        "(binding_id, revision, revision_id, key_digest, document_version, definition_json, "
+        "definition_digest, request_digest, created_at_us) "
+        "VALUES (%s, '1', %s, %s, 1, %s, %s, %s, 1)",
+        (
+            VOICE_VALIDATION_BINDING,
+            VOICE_VALIDATION_BINDING,
+            VOICE_VALIDATION_DIGEST,
+            json.dumps(definition),
+            VOICE_VALIDATION_DIGEST,
+            VOICE_VALIDATION_DIGEST,
+        ),
+    )
+    with db.admin.transaction(), db.admin.cursor() as cursor:
+        assert append_publication(
+            cursor,
+            Publication("binding", VOICE_VALIDATION_BINDING, 1, VOICE_VALIDATION_BINDING, 1),
+            expected_current_revision=None,
+            expected_catalog_revision=4,
+        )
 
 
 @pytest.mark.parametrize(
@@ -523,6 +655,104 @@ def test_an_unpublished_binding_with_a_ready_instance_is_not_reported(
     assert created.outcome == "created", created.error_code
     assert report.status == "admitting" and report.cause is None
     assert report.detail is None
+    assert [row.instance_id for row in report.instances] == ["instance-new"]
+
+
+def test_a_superseded_revision_is_not_in_the_reports_universe(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """A second publication moves the head; only the head is nameable.
+
+    Revision 1 stays published and keeps its healthy instance, but a create pinned to
+    it answers ``model_binding_not_current``. If the report looks at every published
+    revision it lists that instance as a second row, describing an instance no create
+    can select and a revision no create can name.
+    """
+    _seed(admission_database)
+    _publish_second_revision(admission_database)
+    _register_ready_instance(
+        admission_database,
+        binding_id=HEAD_REVISION_ID,
+        instance_id=HEAD_INSTANCE[0],
+        host_node_id=HEAD_HOST,
+        pool_id=OTHER_POOL,
+        gateway_id=HEAD_GATEWAY,
+    )
+    # Premise: both revisions have a ready pin target; only revision 2 is the head.
+    assert _ready_pins(admission_database, BINDING) == ["instance-new"]
+    assert _ready_pins(admission_database, HEAD_REVISION_ID) == ["instance-new2"]
+
+    store = _store(admission_database)
+    report = store.admission_readiness(WORKSPACE)
+    head = store.create(_pinned_job(BINDING, "2", key="synthetic-idem-0101"))
+    superseded = store.create(_pinned_job(BINDING, "1", key="synthetic-idem-0102"))
+    print(
+        f"ROW {'superseded-revision':<20} head={head.error_code or head.outcome:<26} "
+        f"old={superseded.error_code or superseded.outcome:<26} "
+        f"status={report.status.value:<9} cause={report.cause.value if report.cause else None}"
+    )
+    assert head.outcome == "created", head.error_code
+    # The pinned create is the ground truth for "revision 1 is not nameable".
+    assert superseded.outcome == "rejected"
+    assert report.status == "admitting" and report.cause is None
+    assert [row.instance_id for row in report.instances] == ["instance-new2"]
+
+
+def test_the_report_ignores_a_stopped_superseded_revision(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """The head is healthy while the superseded revision's engine is stopped.
+
+    The create that can be sent (revision 2) succeeds. A report that still puts the
+    superseded revision in its universe records that stopped engine and answers
+    ``degraded`` for a deployment that is admitting every create it can name.
+    """
+    _seed(admission_database)
+    _publish_second_revision(admission_database)
+    _register_ready_instance(
+        admission_database,
+        binding_id=HEAD_REVISION_ID,
+        instance_id=HEAD_INSTANCE[0],
+        host_node_id=HEAD_HOST,
+        pool_id=OTHER_POOL,
+        gateway_id=HEAD_GATEWAY,
+    )
+    _quarantine(admission_database, HOST_NODE)
+    store = _store(admission_database)
+    report = store.admission_readiness(WORKSPACE)
+    head = store.create(_pinned_job(BINDING, "2", key="synthetic-idem-0103"))
+    print(
+        f"ROW {'current-head-healthy':<20} create={head.error_code or head.outcome:<26} "
+        f"status={report.status.value:<9} cause={report.cause.value if report.cause else None}"
+    )
+    assert head.outcome == "created", head.error_code
+    assert report.status == "admitting" and report.cause is None
+    assert report.detail is None
+    assert [row.instance_id for row in report.instances] == ["instance-new2"]
+
+
+def test_a_voice_validation_binding_without_defaults_stays_in_the_universe(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """A published binding a voice-validation create can name is admissible.
+
+    ``execution_defaults`` is optional and a ``voice_validation`` create never reads
+    it, so this binding carries no execution block. It has no ready instance, so the
+    deployment answers ``job_capacity_exhausted`` to a create for it; a report that
+    filtered the universe on "has a valid execution block" would drop the binding and
+    answer ``admitting`` from the healthy binding beside it.
+    """
+    _seed(admission_database)
+    _publish_voice_validation_binding(admission_database)
+    store = _store(admission_database)
+    report = store.admission_readiness(WORKSPACE)
+    print(
+        f"ROW {'voice-validation-no-defaults':<20} "
+        f"status={report.status.value:<9} cause={report.cause.value if report.cause else None}"
+    )
+    assert report.status == "degraded", report.cause
+    assert report.cause is not None and report.cause.value == "capacity_exhausted"
+    # It contributes the verdict, not a row: there is no instance to report.
     assert [row.instance_id for row in report.instances] == ["instance-new"]
 
 

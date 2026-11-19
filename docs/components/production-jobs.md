@@ -322,9 +322,19 @@ request ID，不覆盖他人事实。
   `/v1/nexus/...` 的操作员证词（`operator_verified_instance_terminated`）显式解除隔离，
   或等网关补上可证明的停止事实后走既有释放路径。
 
-判定幂等：Job 已是 `cancelled` 时只补做隔离并返回成功，不把 `cancelled` 倒改写；
-Job 已是本错误码的 `failed` 时只补做隔离；他人写入的终态不覆盖，其租约仍按同一规则
-隔离，避免无人记账的占用。
+判定幂等：Job 已是本错误码的 `failed` 时只补做隔离；他人写入的终态不覆盖，其租约仍按
+同一规则隔离，避免无人记账的占用。
+
+Job 已是 `cancelled` 是另一条分支，判定它的是**容量结论而不是 Job 状态**：停止已经证明
+（Job 正是以此进入 `cancelled`），唯一未落地的就是租约归还，而归还属于释放路径。判定
+因此重放同一个幂等的 `LeaseService.release`（与确认端口共用一条规则，见
+`CancellationCapacity`），只有释放真的返回才写账本终态；释放被拒（执行缺清理/停止证据、
+多 stage 未收口等）时不写 `exhausted`，该行保持可领取并按同一有界退避继续重试，`held_slots`
+与 `cancellation_debt` 继续如实点名。这条分支不做隔离：隔离一条已 `cancelled` 的租约会与
+释放路径竞争。早期实现在这里只读 Job 状态就返回「已判定」，于是 `cancelled` + `reserved` +
+`exhausted` 三件事同时成立：领取谓词永久排除该行，容量再无人归还，而账本/批次对外仍说
+受理已完成（#1033）。旧版本写入的这类行属于既有债务，由 `abandoned-holding-capacity`
+读法继续点名。
 
 执行已 `succeeded` 而后到的取消仍按同一判定尝试收口，但领域规则会拒绝隔离一个已完成的
 执行，因此这类受理会停在 `cancelling` 并反复进入「无法隔离」的可见面（见下一节），

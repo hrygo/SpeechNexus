@@ -42,6 +42,7 @@ from speechnexus_backend.speech.application.public_jobs import (
     JobOutcomeUnknownError,
     PublicJobs,
 )
+from speechnexus_backend.speech.domain.job_dispatch import DispatchUnavailableError
 from speechnexus_backend.speech.domain.public_jobs import (
     CANCELLATION_UNCONFIRMED,
     JobCancellationReceipt,
@@ -258,6 +259,19 @@ class UnconfirmedCancellationSettlement:
     anyway would report ``cleanup_state=quarantined`` for capacity that is still
     held, which is exactly the lie the review rejected, and it would leave the
     lease with no supported way out.
+
+    The same "the capacity answer must be real" rule governs a Job that is
+    already ``cancelled`` (#1033). Its stop was proven -- that is how it reached
+    ``cancelled`` -- so the only outstanding fact is the admission lease, and
+    the release path owns it. Reporting such a Job settled without asking the
+    release again turned a persistently refused release into a ledger record
+    that said "judged" while the slot stayed reserved: ``claim_due`` excludes an
+    exhausted row, so nothing retried the release and the capacity never came
+    back. This method now retries the idempotent release itself, which is the
+    only retry reachable for a submitted execution whose gateway fact keeps the
+    confirmation port away from its settlement step. A refused release keeps the
+    fence claimable on the reconciler's bounded backoff; a storage failure stays
+    retryable and is never recorded as settled.
     """
 
     def __init__(
@@ -275,9 +289,10 @@ class UnconfirmedCancellationSettlement:
         except PublicJobNotFoundError, PublicJobUnavailableError:
             return Judgment(settled=False, outcome="unavailable", detail="job unreadable")
         if job.state == "cancelled":
-            # Capacity of a cancelled Job belongs to the release path; isolating
-            # it here would race the release this worker already scheduled.
-            return Judgment(settled=True, outcome="exhausted", detail="already cancelled")
+            # The stop is already proven; the release is the outstanding fact.
+            # Isolating the lease here would race the release path, so the only
+            # honest test of "settled" is asking that same idempotent release.
+            return self._capacity_judgment(job.job_id)
         if job.state not in ("cancelling", "failed"):
             return Judgment(
                 settled=False,
@@ -316,6 +331,35 @@ class UnconfirmedCancellationSettlement:
             settled=False,
             outcome="unavailable",
             detail=f"job settled as {current.state}/{current.error_code}",
+        )
+
+    def _capacity_judgment(self, job_id: str) -> Judgment:
+        """Judge an already-cancelled Job by its capacity, not by its state.
+
+        ``release_sync`` is the same idempotent ``LeaseService`` release the
+        confirmation port performs, so replaying it after the Job committed
+        ``cancelled`` is safe even when both owners run. ``True`` means every
+        admission lease of the Job returned; ``False`` means the domain refused
+        or could not prove the release, and the answer must stay retryable.
+
+        The refused branch reports ``stop_unconfirmed`` rather than inventing a
+        ledger value: the stored outcome vocabulary is bounded and the Job row
+        already says ``cancelled``. What matters for the operator is that the
+        ledger stays claimable -- an exhausted row is never claimed again -- and
+        that the batch counts the pass as blocked instead of settled.
+        """
+        try:
+            released = self._capacity.release_sync(job_id)
+        except DispatchUnavailableError:
+            return Judgment(
+                settled=False, outcome="unavailable", detail="lease storage unavailable"
+            )
+        if released:
+            return Judgment(settled=True, outcome="exhausted", detail="already cancelled")
+        return Judgment(
+            settled=False,
+            outcome="stop_unconfirmed",
+            detail="job cancelled; a refused release still holds its capacity",
         )
 
 

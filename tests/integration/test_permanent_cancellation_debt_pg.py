@@ -32,20 +32,16 @@ import os
 import pytest
 from psycopg.conninfo import make_conninfo
 from tests.integration.test_cancel_failure_slot_pg import (
-    ACCEPTED_AT_US,
     LEASE,
     LEASE_SECOND,
     PASSWORD,
     QUARANTINED_DOCUMENT_STATE,
     VARIABLE,
-    WINDOW_US,
     CancelSandbox,
     _add_acceptance,
     _database_now,
     _debt_probe,
-    _install_client,
     _left_cancelling_rows,
-    _reconciler,
     _sandbox,
     _settle_job,
 )
@@ -77,24 +73,24 @@ def _accepted_before(box: CancelSandbox, *, age_us: int) -> int:
     return accepted_at_us
 
 
-def _record_exhausted(box: CancelSandbox, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The production chain: settle the cancelled Job, then let the worker judge it.
+def _record_exhausted(box: CancelSandbox) -> None:
+    """The permanent shape, seeded as the durable state an earlier build left.
 
-    ``UnconfirmedCancellationSettlement.settle`` returns ``settled=True``/``exhausted``
-    for a Job that is already ``cancelled`` -- it deliberately does not isolate the
-    leases, because their release belongs to the release path -- and the reconciler
-    records that verdict in its private ledger. The ledger row then reads
-    ``last_outcome='exhausted'`` with ``settled_at_us=NULL``, which is the permanent
-    state this module is about.
+    Before #1033 the worker itself wrote it: ``settle()`` returned
+    ``settled=True``/``exhausted`` for a Job that was already ``cancelled`` --
+    without releasing its lease, because the release belongs to the release path
+    -- and the reconciler stored that verdict. A judgement whose release is still
+    refused now stays claimable instead, so the production chain no longer
+    produces this row; a deployment upgraded from an earlier build, or one whose
+    worker stopped while the row was exhausted, still stores it. The read face
+    must keep naming that debt, which is what this fixture preserves.
     """
     _settle_job(box, "cancelled")
-    _install_client(monkeypatch, box.job_id)
-    result = asyncio.run(
-        _reconciler(box, confirm_timeout_seconds=WINDOW_US / 1_000_000).run_once(
-            now_us=ACCEPTED_AT_US + WINDOW_US + 1
-        )
+    box.execute(
+        f"INSERT INTO {RECONCILIATION_TABLE} (job_id, attempts, next_check_at_us, "
+        "last_outcome, settled_at_us, updated_at_us) VALUES (%s, 1, 0, 'exhausted', NULL, 1)",
+        (box.job_id,),
     )
-    assert (result.claimed, result.exhausted) == (1, 1)
 
 
 def _probe_with_grace(box: CancelSandbox, *, grace_seconds: float) -> CancellationDebtProbe:
@@ -117,9 +113,7 @@ def _left_read(box: CancelSandbox, *, window_us: int = WINDOW_24H_US) -> list[di
 
 
 @pytest.mark.parametrize("age_us", [25 * HOUR_US, 100 * 24 * HOUR_US])
-def test_the_permanent_shape_is_named_by_the_unbounded_read(
-    monkeypatch: pytest.MonkeyPatch, age_us: int
-) -> None:
+def test_the_permanent_shape_is_named_by_the_unbounded_read(age_us: int) -> None:
     """#1008: the shape is named again, however old the acceptance is.
 
     The two ages are the issue's 25 h (one hour past the window) and a 100-day debt:
@@ -128,7 +122,7 @@ def test_the_permanent_shape_is_named_by_the_unbounded_read(
     rather than a claim.
     """
     with _sandbox((LEASE, QUARANTINED_DOCUMENT_STATE)) as box:
-        _record_exhausted(box, monkeypatch)
+        _record_exhausted(box)
         _accepted_before(box, age_us=age_us)
 
         rows = box.rows()
@@ -171,9 +165,7 @@ def test_the_permanent_shape_is_named_by_the_unbounded_read(
     assert detail.count(box.job_id) == 1
 
 
-def test_an_acceptance_inside_the_window_stays_with_the_bounded_read(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_an_acceptance_inside_the_window_stays_with_the_bounded_read() -> None:
     """The two labels hand the Job over; they never both describe it.
 
     The fifth read overlaps the fourth by construction -- no Job-state gate, no age
@@ -183,7 +175,7 @@ def test_an_acceptance_inside_the_window_stays_with_the_bounded_read(
     and the Job count is not inflated.
     """
     with _sandbox((LEASE, QUARANTINED_DOCUMENT_STATE)) as box:
-        _record_exhausted(box, monkeypatch)
+        _record_exhausted(box)
         _accepted_before(box, age_us=2 * HOUR_US)
 
         assert [row["job_id"] for row in _left_read(box)] == [box.job_id]
@@ -199,16 +191,14 @@ def test_an_acceptance_inside_the_window_stays_with_the_bounded_read(
     assert detail.count(LEASE) == 1
 
 
-def test_an_acceptance_inside_the_grace_is_not_abandoned(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_an_acceptance_inside_the_grace_is_not_abandoned() -> None:
     """The fifth read keeps the premise every cancellation read shares: past the grace.
 
     Without it the read would name every in-flight cancellation as abandoned for the
     900 s the grace exists for -- capacity that is about to be returned is not debt.
     """
     with _sandbox((LEASE, QUARANTINED_DOCUMENT_STATE)) as box:
-        _record_exhausted(box, monkeypatch)
+        _record_exhausted(box)
         # The acceptance is "now": a 900 s grace has not elapsed. The Job is already
         # ``cancelled``, so only the fifth read could name it -- and it must not.
         _accepted_before(box, age_us=0)
@@ -291,9 +281,7 @@ def test_a_cancelling_job_is_not_tagged_abandoned() -> None:
     assert LEFT_CANCELLING_HOLDING_CAPACITY not in detail
 
 
-def test_a_settled_ledger_is_not_debt_for_the_unbounded_read(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_a_settled_ledger_is_not_debt_for_the_unbounded_read() -> None:
     """The fifth read keeps the ledger's settlement rule; it does not widen the debt.
 
     A settled ledger says the acceptance is closed. Capacity still held in that shape
@@ -301,7 +289,7 @@ def test_a_settled_ledger_is_not_debt_for_the_unbounded_read(
     report ordinary successful cancellations as permanent debt.
     """
     with _sandbox((LEASE, QUARANTINED_DOCUMENT_STATE)) as box:
-        _record_exhausted(box, monkeypatch)
+        _record_exhausted(box)
         _accepted_before(box, age_us=25 * HOUR_US)
         box.execute(
             f"UPDATE {RECONCILIATION_TABLE} SET last_outcome = 'settled', settled_at_us = %s "
@@ -313,9 +301,7 @@ def test_a_settled_ledger_is_not_debt_for_the_unbounded_read(
         assert asyncio.run(_debt_probe(box).check()) is None
 
 
-def test_the_unbounded_read_requires_capacity_that_is_still_held(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_the_unbounded_read_requires_capacity_that_is_still_held() -> None:
     """A released or quarantined lease returned its capacity, so it is not this debt.
 
     Without the capacity rule the read would report every old exhausted ledger row --
@@ -323,7 +309,7 @@ def test_the_unbounded_read_requires_capacity_that_is_still_held(
     pointing at held slots.
     """
     with _sandbox((LEASE, QUARANTINED_DOCUMENT_STATE)) as box:
-        _record_exhausted(box, monkeypatch)
+        _record_exhausted(box)
         _accepted_before(box, age_us=25 * HOUR_US)
 
         for accounted in ("released", "quarantined"):
@@ -334,14 +320,12 @@ def test_the_unbounded_read_requires_capacity_that_is_still_held(
             assert asyncio.run(_debt_probe(box).check()) is None
 
 
-def test_both_leases_of_one_abandoned_job_are_one_job(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_both_leases_of_one_abandoned_job_are_one_job() -> None:
     """A multi-stage Job holds two slots but is one accepted cancellation."""
     with _sandbox(
         (LEASE, QUARANTINED_DOCUMENT_STATE), (LEASE_SECOND, QUARANTINED_DOCUMENT_STATE)
     ) as box:
-        _record_exhausted(box, monkeypatch)
+        _record_exhausted(box)
         _accepted_before(box, age_us=25 * HOUR_US)
 
         detail = asyncio.run(_debt_probe(box).check())
@@ -358,16 +342,14 @@ def test_both_leases_of_one_abandoned_job_are_one_job(
     assert detail.count(LEASE_SECOND) == 1
 
 
-def test_the_unbounded_read_does_not_widen_the_job_count(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_the_unbounded_read_does_not_widen_the_job_count() -> None:
     """A permanent Job and a live one stay two Jobs, two leases, two marks.
 
     The other reads must keep working unchanged beside the new one: this is the
     zero-regression check for the existing scopes in the presence of the fifth.
     """
     with _sandbox((LEASE, QUARANTINED_DOCUMENT_STATE)) as box:
-        _record_exhausted(box, monkeypatch)
+        _record_exhausted(box)
         _accepted_before(box, age_us=25 * HOUR_US)
         # A second, ordinary accepted cancellation with no lease: `no-held-lease`.
         _add_acceptance(box, ledger=("pending", 1, 0))
@@ -464,10 +446,10 @@ def test_the_optional_reader_identity_sees_the_fifth_scope_without_new_grants() 
     assert f"{ABANDONED_HOLDING_CAPACITY}: 1" in detail
 
 
-def test_the_unbounded_read_is_read_only(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_unbounded_read_is_read_only() -> None:
     """The probe still only reads: no ledger, lease or capacity row may move."""
     with _sandbox((LEASE, QUARANTINED_DOCUMENT_STATE)) as box:
-        _record_exhausted(box, monkeypatch)
+        _record_exhausted(box)
         _accepted_before(box, age_us=25 * HOUR_US)
         before = box.rows()
 

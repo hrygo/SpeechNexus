@@ -1321,7 +1321,14 @@ worker。拿不到停止证据时受理只写受理事实，Job 停在 `cancelli
      `--once` 也不会推进，这类只能按第 3 步的操作员出口处置。
    - `due now: N`：账本行此刻可领取（`next_check_at_us` 已过、未 `settled`、非 `exhausted`）。
      健康 worker 在两个轮询之间也可能短暂命中，**持续出现**才说明没人推进。
-   - `left-cancelling-holding-capacity: N`：**Job 状态侧**事实，不在上面三个账本标记之内。
+   - `retrying on schedule: R`：账本上有未来的领取时刻（`next_check_at_us` 在未来），即有一段
+     有界退避正按计划重试，不是放弃；它不证明会有进程按时来领取，退避到期后转为 `due now`。
+     逐 Job 明细另附 `[retrying: attempts=N, next in Ts]`。
+   - `retrying at attempt ceiling: C`：**并列**的重试预算事实，不是第五个时刻——账本 `attempts`
+     已达存储上界 64、仍未 `settled` 且仍持有容量。`LEAST(attempts+1,64)` 让它永远可领取，
+     C>0 说明重试还在继续但不可能改变答案；该行同时还是 `due now` 或 `retrying on schedule`。
+   - `left-cancelling-holding-capacity: N`：**Job 状态侧**事实，不在上面四个账本标记与并列的
+     重试预算 scope 之内。
      该受理的 Job 已离开 `cancelling`（`cancelled`、`failed` 或其它终态），账本仍未 `settled`，
      租约仍持有容量。没有这一路时，这类容量对轮询读面完全不可见。它只统计受理时间在回看
      窗口（默认 24 小时，必须大于宽限）内的行。

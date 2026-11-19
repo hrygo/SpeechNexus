@@ -1272,11 +1272,13 @@ Artifact 桶与 gateway staging 结果桶的存在和版本化，全部通过后
 声明面因此新增 `speech_jobs`、`speech_job_cancellation_fences`、
 `speech_job_cancellation_reconciliations` 三张关系的列级只读；可选的取消债务探针身份
 （`SPEECHNEXUS_READINESS_CANCELLATION_DSN`）同时新增 `execution_stop_evidence` 与
-`submit_intents.submit_intent_id`，账本授权从两列（`job_id`、`settled_at_us`）扩到四列
-（再加 `last_outcome`、`next_check_at_us`）。配置了
+`submit_intents.submit_intent_id`，账本授权现为五列（`job_id`、`settled_at_us`、
+`last_outcome`、`next_check_at_us`、`attempts`）。配置了
 `SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL` 的环境，升级时必须以 owner 重跑
 `quarantine_release_grants`；配置了 `SPEECHNEXUS_READINESS_CANCELLATION_DSN` 的环境还必须
-重跑 `cancellation_debt_reader_grants`。漏跑的可自查信号有四类（③ 与 ④ 互斥：④ 是账本
+重跑 `cancellation_debt_reader_grants`。停在旧四列授权上的部署**必须**重跑它：缺 `attempts`
+会让整条读面查询失败、detail 退化为 `unavailable (permission)`；这只影响读面 detail，不影响
+`/readyz` 的其余部分，也不影响 Job 创建。漏跑的可自查信号有四类（③ 与 ④ 互斥：④ 是账本
 授权已生效时正常的 Job 级降级）：
 
 1. 隔离释放角色：API 启动被拒并点名被拒的表/列（`Quarantine release startup rejected
@@ -1284,17 +1286,18 @@ Artifact 桶与 gateway staging 结果桶的存在和版本化，全部通过后
 2. 隔离释放角色：只跑操作员 CLI 时退出码 3、输出
    `unavailable: quarantine_release_privilege_missing`；只配了探针 DSN、没有隔离释放角色
    的部署不适用这一条；
-3. 取消债务探针身份仍是旧的两列账本授权：探针整体是
+3. 取消债务探针身份停在旧的两列或四列账本授权：探针整体是
    `cancellation_debt: unavailable (permission)`，而不是 Job 级降级形态；
-4. 账本四列已授权、仍读不到租约/执行/终止证据表：这是正常的 Job 级降级，detail 按账本
-   事实打印**命中的**标记（`never claimed` / `never claimable (exhausted)` / `due now`），
-   三者按行互斥、只打印非零项。能看到这些标记就说明账本列授权已生效；整个 detail 退化为
-   第 3 类则说明还没生效。
+4. 账本五列已授权、仍读不到租约/执行/终止证据表：这是正常的 Job 级降级，detail 按账本
+   事实打印**命中的**标记（`never claimed` / `never claimable (exhausted)` / `due now` /
+   `retrying on schedule`），四者按行互斥、只打印非零项；`attempts` 到 64 时另有**并列**
+   计数 `retrying at attempt ceiling`（不替代上面任何一个时刻标记）。能看到这些标记就说
+   明账本列授权已生效；整个 detail 退化为第 3 类则说明还没生效。
 
 这些信号都**不会**让 `/readyz` 失败。`GRANT` 对下一次查询即生效：同一 DSN/角色的探针在
 下一轮轮询就恢复，不需要重启 API；只有更换 DSN 指向新角色时才要重启重新装配。隔离释放
 角色的结论来自启动期逐列校验，重跑授权后必须重新启动（或首次启动）API 才会通过。降级
-形态与三个标记的语义见
+形态、四个账本标记与并列的 `retrying at attempt ceiling` 的语义见
 [production-jobs.md 的可见面](../components/production-jobs.md#隔离不了的时候可见面与处置)，
 此处不重复定义。
 
@@ -2031,11 +2034,12 @@ PY
 
 可选的取消债务/派发债务探针身份不在上面的重放列表内：它没有服务启动校验，也没有独立
 端点。配置了 `SPEECHNEXUS_READINESS_CANCELLATION_DSN` 的部署要另以 owner 对该探针角色
-重跑 `cancellation_debt_reader_grants`，账本授权为四列（`job_id`、`settled_at_us`、
-`last_outcome`、`next_check_at_us`）。漏跑时探针整体退化为
-`cancellation_debt: unavailable (permission)`，`/readyz` 不会因此失败；`GRANT` 对下一次
-查询即生效，同一 DSN/角色的探针下一轮轮询就恢复，不需要重启 API。降级形态与三个账本
-标记见
+重跑 `cancellation_debt_reader_grants`，账本授权为五列（`job_id`、`settled_at_us`、
+`last_outcome`、`next_check_at_us`、`attempts`）；停在旧四列授权上的部署缺 `attempts`，
+读面会退化为 `unavailable (permission)`。漏跑时探针整体退化为
+`cancellation_debt: unavailable (permission)`，`/readyz` 不会因此失败，Job 创建也不受
+影响；`GRANT` 对下一次查询即生效，同一 DSN/角色的探针下一轮轮询就恢复，不需要重启
+API。降级形态、四个账本标记与并列的 `retrying at attempt ceiling` 见
 [production-jobs.md 的可见面](../components/production-jobs.md#隔离不了的时候可见面与处置)，
 此处不重复定义。
 

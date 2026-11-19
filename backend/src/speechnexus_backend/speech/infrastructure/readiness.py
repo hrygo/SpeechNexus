@@ -96,6 +96,13 @@ EXECUTION_UNKNOWN = "execution-unknown"
 _LEASE_CLASSES = (COMPLETED_WITHOUT_RELEASE, EXECUTION_UNKNOWN)
 #: The Job-level labels, used when the lease itself cannot be read.
 _JOB_CLASSES = ("lease-unread", "no-held-lease")
+#: The Job-state side fact reported in addition to the three ledger marks: the
+#: cancellation is still unsettled and the Job has *left* ``cancelling`` while one of
+#: its leases still holds capacity. It is a fact about the Job row, not about the
+#: ledger's schedule, so it is a fourth scope and never joins the three marks above --
+#: a Job may carry both a ledger mark and this label (#852 residual, read-face blind
+#: spot).
+LEFT_CANCELLING_HOLDING_CAPACITY = "left-cancelling-holding-capacity"
 #: Fixed report order and wording for the ledger-side schedule facts. The three are
 #: mutually exclusive on one acceptance, and each states a fact about the durable
 #: ledger as of this read -- never about a process: the probe cannot see whether a
@@ -112,6 +119,17 @@ _NOW_CLOCK = (
     "CROSS JOIN (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) "
     "AS now_us) AS now_clock"
 )
+#: Default lookback of the left-cancelling read, in seconds. That read cannot use
+#: ``speech_jobs_live_state_scan`` -- the partial index holds only ``running`` and
+#: ``cancelling`` Jobs (migration 0056), which is exactly the state this class has
+#: left -- so migration 0060 indexes the fence's acceptance age and this window is
+#: the range the 5 s poll touches. It must exceed ``grace_seconds`` (a window no
+#: longer than the grace could never contain an acceptance old enough to report) and
+#: is deliberately far past both the confirmation window and the retry backoff: at
+#: the probe's default 900 s grace, 24 h is 96x the grace, 288x the default 300 s
+#: confirmation window and 288x the 300 s backoff ceiling. What happens to debt
+#: older than the window is stated with ``_LEFT_CANCELLING_DEBT``.
+_DEFAULT_LEFT_CANCELLING_WINDOW_SECONDS = 86_400
 #: One computed schedule state per acceptance, shared verbatim by both debt reads so
 #: the full and the Job-level view cannot classify the same row differently. The
 #: branches mirror the reconciliation store's ``_CLAIM`` predicate: no ledger row means
@@ -169,6 +187,19 @@ class CancellationDebtProbe:
     The three counts are part of the counted scopes, ahead of the per-Job detail, so
     detail truncation cannot drop them; each counts Jobs, not leases.
 
+    A fourth scope names the Job-state side fact, not a ledger fact:
+    ``left-cancelling-holding-capacity: N`` counts Jobs that already left
+    ``cancelling`` while a lease they own still holds capacity and the ledger is
+    unsettled. The state-gated read cannot see that shape, so this read starts from
+    the unsettled acceptance and the held lease instead of the Job state. The label
+    is reported *beside* the three marks and never folded into them: one Job can be
+    both ``never claimed`` and ``left-cancelling-holding-capacity``, and the label
+    counts Jobs whose Job row, not whose schedule, is the fact. The read is bounded
+    by acceptance age (``left_cancelling_window_seconds``, default 24 h); debt older
+    than the window stays with the reconciliation worker while the ledger still allows
+    a claim (its claim has no lower age bound; ``exhausted`` rows belong to the
+    operator exit), and with the unbounded operator drill-down query.
+
     The detail degrades instead of failing, in three observable shapes:
 
     * ``cancellation_debt: N accepted cancellation(s) ... (completed-without-release=1,
@@ -192,6 +223,11 @@ class CancellationDebtProbe:
 
     ``grace_seconds`` is deliberately larger than the default confirmation window
     plus backoff so an in-flight judgement is not reported as debt.
+    ``left_cancelling_window_seconds`` bounds only the fourth, age-indexed read. It
+    must exceed ``grace_seconds``: every reported acceptance is already older than
+    the grace, so a window no larger than that would always select nothing. The
+    default (24 h) is far past the confirmation window plus backoff, so an
+    acceptance is never reported before its judgement can complete.
     """
 
     def __init__(
@@ -201,12 +237,15 @@ class CancellationDebtProbe:
         schema: str,
         timeout_seconds: float,
         grace_seconds: float = 900,
+        left_cancelling_window_seconds: float = _DEFAULT_LEFT_CANCELLING_WINDOW_SECONDS,
         limit: int = 96,
     ) -> None:
         if not re.fullmatch(r"[a-z][a-z0-9_]{2,62}", schema):
             raise ValueError("Invalid readiness schema")
         if not 0 < grace_seconds <= 86_400:
             raise ValueError("Cancellation debt grace must be bounded")
+        if not grace_seconds < left_cancelling_window_seconds <= 7 * 86_400:
+            raise ValueError("Left-cancelling read window must exceed the grace and stay bounded")
         if type(limit) is not int or not 1 <= limit <= 512:
             raise ValueError("Cancellation debt report must be bounded")
         self._dsn = dsn
@@ -217,6 +256,7 @@ class CancellationDebtProbe:
         self._timeout_seconds = timeout_seconds * _PROBE_BUDGET_FRACTION
         self._connect_timeout_seconds = max(1, math.ceil(timeout_seconds) + 1)
         self._grace_us = int(grace_seconds * 1_000_000)
+        self._window_us = int(left_cancelling_window_seconds * 1_000_000)
         self._limit = limit
         self._connection: psycopg.AsyncConnection[Any] | None = None
         self._lock = asyncio.Lock()
@@ -246,18 +286,41 @@ class CancellationDebtProbe:
         async with connection.cursor() as cursor:
             try:
                 await cursor.execute(_DEBT, {"grace_us": self._grace_us, "limit": self._limit})
+                rows = list(await cursor.fetchall())
+                # The database clock is read once and passed to the age-indexed read so
+                # its window, grace and ``due`` branches all measure the same instant and
+                # a test can pin the window boundary. It never comes from the process.
+                now_us = await self._database_now(cursor)
+                await cursor.execute(
+                    _LEFT_CANCELLING_DEBT,
+                    {
+                        "now_us": now_us,
+                        "window_us": self._window_us,
+                        "grace_us": self._grace_us,
+                        "limit": self._limit,
+                    },
+                )
+                rows.extend(await cursor.fetchall())
             except _UNREADABLE_TABLES as error:
                 # The role is not granted the execution/lease tables (or the schema
                 # never dispatched): Job names are still the actionable part, so
-                # report them and say which detail is missing.
+                # report them and say which detail is missing. The left-cancelling
+                # read needs the same grants, so it degrades with this one.
                 await connection.rollback()
                 rows = await self._job_level(cursor)
                 await connection.rollback()
                 return _describe_debt(rows, missing=_failure_category(error))
-            rows = await cursor.fetchall()
         # End the read transaction so the reused session stays idle between polls.
         await connection.rollback()
         return _describe_debt(rows)
+
+    async def _database_now(self, cursor: psycopg.AsyncCursor[Any]) -> int:
+        await cursor.execute(
+            "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT)"
+        )
+        row = await cursor.fetchone()
+        assert row is not None  # a clock read always returns one row
+        return int(row[0])
 
     async def _connection_or_connect(self) -> psycopg.AsyncConnection[Any]:
         connection = self._connection
@@ -363,6 +426,12 @@ def _describe_debt(rows: Sequence[tuple[Any, ...]], *, missing: str | None = Non
     facts that say what can still advance each Job. Naming the units is what stops a
     multi-stage Job from making "3 cancellations" sit next to four subclass counts,
     and what stops "still holds capacity" from reading as progress (#852).
+
+    A row whose ninth column is :data:`LEFT_CANCELLING_HOLDING_CAPACITY` also
+    contributes to the ``left-cancelling-holding-capacity`` scope. That scope is
+    counted per Job from the Job row, appended after the three ledger marks, and is
+    never one of them: the marks describe the ledger's schedule, the label describes
+    the Job's state, and a Job may carry both.
     """
     if not rows:
         return None
@@ -370,6 +439,7 @@ def _describe_debt(rows: Sequence[tuple[Any, ...]], *, missing: str | None = Non
     lease_counts: dict[str, int] = {}
     job_counts: dict[str, int] = {}
     schedule_jobs: dict[str, set[str]] = {state: set() for state, _ in _SCHEDULE_SCOPES}
+    left_cancelling_jobs: set[str] = set()
     for row in rows:
         job_id, lease_id, lease_state, execution_state = row[0], row[1], row[2], row[3]
         # The state decides what can advance this acceptance, so it is counted per Job:
@@ -378,6 +448,10 @@ def _describe_debt(rows: Sequence[tuple[Any, ...]], *, missing: str | None = Non
         schedule = row[7] if len(row) > 7 else None
         if isinstance(schedule, str) and schedule in schedule_jobs:
             schedule_jobs[schedule].add(job_id)
+        # The fourth read tags its own rows: this is the Job-state side fact, kept out
+        # of ``schedule_jobs`` so it can never be counted as a ledger mark.
+        if len(row) > 8 and row[8] == LEFT_CANCELLING_HOLDING_CAPACITY:
+            left_cancelling_jobs.add(job_id)
         if lease_id is None:
             # Job-level rows carry no lease identity: say so instead of inventing one.
             label = "no-held-lease" if missing is None else "lease-unread"
@@ -424,6 +498,11 @@ def _describe_debt(rows: Sequence[tuple[Any, ...]], *, missing: str | None = Non
         # split of the same Job count, so it may not depend on which rows came back first.
         if schedule_jobs[state]:
             scopes.append(f"{name}: {len(schedule_jobs[state])}")
+    if left_cancelling_jobs:
+        # The Job-state fact is its own labelled scope, after the three ledger marks:
+        # it answers "did this Job leave cancelling while still holding capacity", not
+        # "what can the ledger advance", so it never appears as a fourth mark.
+        scopes.append(f"{LEFT_CANCELLING_HOLDING_CAPACITY}: {len(left_cancelling_jobs)}")
     return _bounded_detail(f"{head} ({'; '.join(scopes)}): {detail}{suffix}{note}")
 
 
@@ -471,6 +550,61 @@ LEFT JOIN execution_stop_evidence AS e ON e.submit_intent_id = i.submit_intent_i
 WHERE j.state = 'cancelling'
   -- A fence with no ledger row is unclaimed debt; the schedule state above names it.
   AND (r.job_id IS NULL OR r.settled_at_us IS NULL)
+  AND f.accepted_at_us <= now_clock.now_us - %(grace_us)s
+ORDER BY f.accepted_at_us, f.job_id, l.lease_id
+LIMIT %(limit)s
+"""
+
+# The fourth read: the same accepted cancellation and held-lease facts, with **no**
+# Job-state gate. `_DEBT` above is gated on `state = 'cancelling'` because that is the
+# only shape `speech_jobs_live_state_scan` (migration 0056) can reach; a Job that closed
+# as `cancelled` after a refused release, or was failed by another owner while its
+# lease stayed reserved, therefore held capacity without appearing in the detail -- the
+# #852 residual blind spot. Removing the gate from the state-indexed reads would walk
+# the whole Job table and the deployment's entire fence history on every 5 s poll, so
+# this read gets its own bounded path instead:
+#
+#   * migration 0060 adds `speech_job_cancellation_fence_age_scan`, so the predicate
+#     below is an index range on `accepted_at_us` and the cost follows the acceptances
+#     accepted inside the window, never the settled history before it;
+#   * the window's lower edge is `now - window` and its upper edge is `now - grace`,
+#     i.e. the same "old enough to judge" rule as `_DEBT`. Its default (24 h) is far
+#     past the confirmation window plus backoff and must exceed `grace_seconds`, so it
+#     can never report an acceptance whose judgement is still in flight.
+#
+# Why the lower edge is safe: a row older than the window is not advanced by this read
+# in any case -- the probe is read-only. The actors that own that older debt do not use
+# this window: the reconciliation worker's claim has an upper age bound only, so it
+# keeps claiming old unsettled fences while the ledger still allows a claim (not
+# `settled`, not `exhausted`); an `exhausted` row is the operator exit's. The operator
+# drill-down query in `docs/components/production-jobs.md` is unbounded by
+# construction. What the window costs is *alarm coverage*: after 24 h a still-held slot
+# leaves this detail, so the operator procedure says the drill-down query is the
+# authority for older rows rather than treating a missing label as "no debt".
+_LEFT_CANCELLING_DEBT = f"""
+SELECT j.job_id, l.lease_id, l.lease_state, i.execution_state,
+       e.evidence_kind, e.execution_stopped, e.resources_released,
+       -- The ledger facts stay attached: they are facts about the same acceptance and
+       -- the detail counts them per Job alongside the existing marks. The last column
+       -- is the Job-state side fact, and is what `_describe_debt` counts separately.
+       {_SCHEDULE_STATE_SQL} AS schedule_state,
+       '{LEFT_CANCELLING_HOLDING_CAPACITY}' AS debt_class
+FROM {job_cancellation_fence_schema.TABLE} AS f
+JOIN {public_job_schema.JOBS} AS j ON j.job_id = f.job_id
+LEFT JOIN {job_cancellation_fence_schema.RECONCILIATION_TABLE} AS r ON r.job_id = f.job_id
+-- The database clock is read once by the probe and passed here, so the window, the
+-- grace filter and the `due` branch above all measure the same instant.
+CROSS JOIN (SELECT %(now_us)s::BIGINT AS now_us) AS now_clock
+-- Same capacity rule as `_DEBT`: a lease that still holds capacity is the blocker.
+JOIN admission_leases AS l
+  ON l.operation_id = f.job_id
+ AND l.lease_state NOT IN ('released', 'quarantined')
+LEFT JOIN submit_intents AS i ON i.lease_id = l.lease_id
+LEFT JOIN execution_stop_evidence AS e ON e.submit_intent_id = i.submit_intent_id
+-- Disjoint from `_DEBT` by construction: a Job still `cancelling` is that read's row.
+WHERE j.state <> 'cancelling'
+  AND (r.job_id IS NULL OR r.settled_at_us IS NULL)
+  AND f.accepted_at_us >= now_clock.now_us - %(window_us)s
   AND f.accepted_at_us <= now_clock.now_us - %(grace_us)s
 ORDER BY f.accepted_at_us, f.job_id, l.lease_id
 LIMIT %(limit)s

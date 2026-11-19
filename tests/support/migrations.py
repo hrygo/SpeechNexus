@@ -35,6 +35,8 @@ HEAD = head_revision()
 
 
 DELETION_LEDGER_REVISION = "0059_speech_deletion_ledger"
+LEFT_CANCELLING_INDEX_REVISION = "0060_left_cancelling_debt_index"
+LEFT_CANCELLING_INDEX = "speech_job_cancellation_fence_age_scan"
 DELETION_PLAN_REVISION = "0058_speech_deletion_plans"
 ASR_SETTLEMENT_REVISION = "0057_asr_settlement"
 PRE_ASR_SETTLEMENT_REVISION = "0056_debt_probe_live_state_index"
@@ -52,6 +54,9 @@ def step_below_deletion_plans(connection: Any) -> None:
     # 0059's ledger references the plan rows, so it goes before them.
     execute("DROP TABLE IF EXISTS speech_deletion_ledger")
     execute("DROP TABLE IF EXISTS speech_deletion_plans")
+    # 0060 (the left-cancelling read's index) also sits above this revision and
+    # would otherwise be created a second time when the schema advances back.
+    execute(f"DROP INDEX IF EXISTS {LEFT_CANCELLING_INDEX}")
     execute(
         "UPDATE alembic_version SET version_num = %s",
         (ASR_SETTLEMENT_REVISION,),
@@ -68,6 +73,8 @@ def step_below_deletion_ledger(connection: Any) -> None:
     """
     execute = connection.execute
     execute("DROP TABLE IF EXISTS speech_deletion_ledger")
+    # 0060 also sits above 0059; it only adds the age index.
+    execute(f"DROP INDEX IF EXISTS {LEFT_CANCELLING_INDEX}")
     execute(
         "ALTER TABLE speech_content_deletions "
         "DROP CONSTRAINT IF EXISTS speech_content_deletions_reason_check"
@@ -79,6 +86,22 @@ def step_below_deletion_ledger(connection: Any) -> None:
     execute(
         "UPDATE alembic_version SET version_num = %s",
         (DELETION_PLAN_REVISION,),
+    )
+
+
+def step_below_left_cancelling_index(connection: Any) -> None:
+    """Start a downgrade from the pre-0060 head.
+
+    0060 refuses to drop its index, so a test that exercises an earlier
+    revision's own refusal must first reconstruct the database a pre-0060
+    deployment has: remove the index (0060's only object) and stamp the
+    predecessor. This mirrors the production refusal instead of weakening it.
+    """
+    execute = connection.execute
+    execute(f"DROP INDEX IF EXISTS {LEFT_CANCELLING_INDEX}")
+    execute(
+        "UPDATE alembic_version SET version_num = %s",
+        (DELETION_LEDGER_REVISION,),
     )
 
 
@@ -97,6 +120,9 @@ def step_below_asr_settlement(connection: Any) -> None:
     execute("DROP TABLE IF EXISTS speech_deletion_ledger")
     execute("DROP TABLE IF EXISTS speech_deletion_plans")
     execute("DROP TABLE IF EXISTS speech_asr_settlement")
+    # 0060 also sits above 0057 and only adds an index; leave it behind and the
+    # next upgrade to head would try to create the same index twice.
+    execute(f"DROP INDEX IF EXISTS {LEFT_CANCELLING_INDEX}")
     execute(
         "UPDATE alembic_version SET version_num = %s",
         (PRE_ASR_SETTLEMENT_REVISION,),

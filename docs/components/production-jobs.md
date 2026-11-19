@@ -342,8 +342,15 @@ Job 已是本错误码的 `failed` 时只补做隔离；他人写入的终态不
 1. **就绪与诊断 detail**：`create_app` 装配的 `CancellationDebtProbe`
    （名字 `cancellation_debt`）在每次 `/readyz` 与
    `GET /v1/nexus/admin/diagnostics` 中报告「已受理但仍在持有容量的取消」。判定标准是：
-   围栏已受理、账本未 `settled`（或根本没有账本行，即从未领取过这条受理）、Job 仍是
-   `cancelling`、且受理时间距数据库当前时间超过宽限（默认 900 秒，大于默认确认窗口加退避）。
+   围栏已受理、账本未 `settled`（或根本没有账本行，即从未领取过这条受理）、租约仍持有
+   容量，且受理时间距数据库当前时间超过宽限（默认 900 秒，大于默认确认窗口加退避）。
+   在这个共同前提上有两路读法：
+   - **Job 仍是 `cancelling`**：由迁移 `0056` 的 `speech_jobs_live_state_scan` 提供访问路径；
+   - **Job 已离开 `cancelling`**（`cancelled`、`failed` 或其它终态）而租约仍持有容量：
+     由迁移 `0060` 的围栏受理年龄索引提供访问路径，只看受理时间落在回看窗口
+     （默认 24 小时，必须大于宽限）内的受理。窗口外的旧受理不再进入本 detail：
+     账本仍允许领取的仍由对账 worker 按年龄领取，`exhausted` 的归操作员出口，
+     两者都完整出现在下文第二条无窗口钻取查询里。
    它**不**改变聚合状态：`/readyz` 是 `deploy/compose.yaml` 的健康检查，一个 Job 占着
    它无法归还的槽位，不应该让整个 API 退出服务。告警口径因此是这个固定前缀，
    不是 HTTP 状态：`cancellation_debt:`。
@@ -356,14 +363,16 @@ Job 已是本错误码的 `failed` 时只补做隔离；他人写入的终态不
    它**不**使用 API 自己的 DSN，而是读取可选的专用只读 DSN
    `SPEECHNEXUS_READINESS_CANCELLATION_DSN`：为填充一个诊断就去给 `sn_api` 加取消账本、
    围栏、租约或执行表的 SELECT，是拿安全边界换一个字符串。没配这个 DSN 时 detail 是
-   `cancellation_debt: unavailable (not configured)`，其余一切照常。
+   `cancellation_debt: unavailable (not configured)`，其余一切照常。第四路读法不扩大
+   授权面：它只读 `cancellation_debt_reader_grants` 已授予的列，迁移 `0060` 只新增索引
+   （DDL），不新增表或列权限。
 
    detail 的形态对应探针能读到多少：
 
    | 形态 | 何时出现 |
    |---|---|
-   | `cancellation_debt: N accepted cancellation(s) still hold capacity over M held lease(s) (held leases: completed-without-release=X, execution-unknown=Y; never claimed: Z; never claimable (exhausted): W; due now: V): job-… -> lease-…(lease=reserved, execution=executing, subclass=execution-unknown)` | DSN 指向被授予 `cancellation_debt_reader_grants`（或更宽）的只读身份 |
-   | `cancellation_debt: N accepted cancellation(s) still hold capacity (jobs: lease-unread=X; never claimed: Z; never claimable (exhausted): W; due now: V): job-… -> lease-unread [lease detail unavailable: permission]` | 该身份能读 Job、围栏与账本，但读不到租约/执行/终止证据表 |
+   | `cancellation_debt: N accepted cancellation(s) still hold capacity over M held lease(s) (held leases: completed-without-release=X, execution-unknown=Y; never claimed: Z; never claimable (exhausted): W; due now: V; left-cancelling-holding-capacity: L): job-… -> lease-…(lease=reserved, execution=executing, subclass=execution-unknown)` | DSN 指向被授予 `cancellation_debt_reader_grants`（或更宽）的只读身份 |
+   | `cancellation_debt: N accepted cancellation(s) still hold capacity (jobs: lease-unread=X; never claimed: Z; never claimable (exhausted): W; due now: V): job-… -> lease-unread [lease detail unavailable: permission]` | 该身份能读 Job、围栏与账本，但读不到租约/执行/终止证据表；此时也无法判断「Job 已离开 `cancelling` 且仍持有容量」，该 scope 不出现 |
    | `cancellation_debt: unavailable (not configured)` | 未配置专用 DSN（默认部署） |
    | `cancellation_debt: unavailable (permission｜relation｜connection｜timeout｜error)` | 探针什么都读不到；分类保证真实故障仍然可见，而不是被吞掉 |
 
@@ -374,6 +383,19 @@ Job 已是本错误码的 `failed` 时只补做隔离；他人写入的终态不
    | `never claimed: N` | 账本无行 | 自围栏写入以来没有任何进程领取过这条受理 | 不证明「现在没有进程在跑」；它描述历史，首次领取后就不再出现 |
    | `never claimable (exhausted): N` | 账本行 `settled_at_us IS NULL AND last_outcome = 'exhausted'` | 不会再被自动领取：领取谓词的 `last_outcome IS DISTINCT FROM 'exhausted'` 永远排除它，只有操作员出口能处置 | 不证明 Job 已终态，也不证明容量已归还 |
    | `due now: N` | 账本行 `settled_at_us IS NULL AND last_outcome IS DISTINCT FROM 'exhausted' AND next_check_at_us <= now` | 此刻处于可领取状态（下一轮领取会选中它） | 不证明没有推进者：健康 worker 在两个轮询之间也会让该值为真，**持续出现**才说明没人推进 |
+
+   第四个 scope `left-cancelling-holding-capacity: L` **不是账本标记**，而是 Job 状态侧
+   事实：该受理的 Job 已不在 `cancelling`，租约仍持有容量，账本仍未 `settled`。它与上面
+   三个标记并列出现，但不混入它们——同一个 Job 可以同时被 `never claimed` 和
+   `left-cancelling-holding-capacity` 计数，前者说账本没有领取记录，后者说 Job 状态已经
+   离开取消。`L` 按 Job 计，不按租约计，也不因租约条数重复。
+   这条读法只看受理时间不早于 `now - 回看窗口` 的围栏（默认 24 小时；必须大于宽限，
+   否则窗口里不可能有已超过宽限的受理）。窗口的用途是给 5 秒轮询一个有界访问路径
+   （迁移 `0060` 的 `speech_job_cancellation_fence_age_scan`），不是宣称窗口外的旧债不存在：
+   超过窗口的未结算受理仍在账本里；领取谓词只有上界、没有下界，所以除 `exhausted`
+   之外的旧受理仍会被对账 worker 按年龄领取，`exhausted` 的归操作员出口处置；两者都
+   完整出现在下文第二条无窗口的钻取查询里。窗口只影响**告警覆盖**，所以运维对超过
+   一天的陈旧形态用钻取查询核对，不把 detail 里缺少该 scope 读成「没有债」。
 
    `now` 取数据库时钟，与宽限判定使用同一个值。**探针看不到进程是否在跑，也看不到
    `SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_ENABLED` 等部署配置**——它只读台账，
@@ -478,15 +500,20 @@ WHERE j.state = 'cancelling'
 ORDER BY f.accepted_at_us, f.job_id, l.lease_id;
 ```
 
-同一条查询只覆盖 **Job 仍是 `cancelling`** 的形态：它是轮询读面（`cancellation_debt`）
-能覆盖的全部，因为二者的判据都由迁移 `0056` 的 `state = 'cancelling'` 访问路径给出。
-**Job 已经离开 `cancelling` 而租约仍持有容量**的形态（`cancelled` 后释放被拒、或被他人写成
-`failed` 而租约仍 `reserved`）不在该读面上——轮询探针看不到它。这是当前实现的**已知
-盲区**：解除它需要一条「仍持有容量的租约」访问路径（新迁移），在那之前这条形态只能靠
-逐行核对。下面第二条只读查询是这类形态目前**唯一**的读面：
+同一条查询只覆盖 **Job 仍是 `cancelling`** 的形态，它对应迁移 `0056` 的
+`state = 'cancelling'` 访问路径。**Job 已经离开 `cancelling` 而租约仍持有容量**的形态
+（`cancelled` 后释放被拒、或被他人写成 `failed` 而租约仍 `reserved`）由轮询读面的
+第四路覆盖：以未结算受理与仍持有容量的租约为起点、不设 Job 状态条件、只看受理时间落在
+回看窗口（默认 24 小时）内的行，访问路径是迁移 `0060` 的
+`speech_job_cancellation_fence_age_scan`。detail 里的
+`left-cancelling-holding-capacity: N` 就是这一路的计数。窗口外的旧受理不再进入轮询
+detail；账本仍允许领取的旧受理仍由对账 worker 按年龄领取，`exhausted` 的归操作员
+出口，两者都完整出现在下面第二条**无窗口**的只读钻取查询里。超过一天的形态按这条
+查询核对。
 
 ```sql
--- 取消已受理、Job 已不在 cancelling，但租约仍持有容量（轮询读面看不到的形态）
+-- 取消已受理、Job 已不在 cancelling，但租约仍持有容量
+-- （轮询读面只覆盖 24 小时窗口；这条查询是无窗口的完整口径）
 SELECT j.job_id, j.state AS job_state, j.error_code,
        l.lease_id, l.lease_state, l.cleanup_state AS lease_cleanup_state,
        i.execution_state, i.cleanup_state AS execution_cleanup_state,

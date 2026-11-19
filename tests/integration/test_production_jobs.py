@@ -23,11 +23,11 @@ from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 from pymysql.cursors import DictCursor
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 from tests.support.cancellation_fence_schema import ensure_cancellation_fence_schema
 from tests.support.job_database import MySQLJobTransactions
-from tests.support.migrations import HEAD
+from tests.support.migrations import DELETION_LEDGER_REVISION
 
 from speechnexus_backend.speech.application.jobs import CreateJobService, JobTransactions
 from speechnexus_backend.speech.domain.jobs import CreateJob
@@ -447,11 +447,28 @@ def test_versioned_migration_cli_is_idempotent_and_downgrade_preserves_history(
     try:
         with engine.connect() as connection:
             config.attributes["connection"] = connection
+            # 0060 refuses its own downgrade first; step below it so this test
+            # observes the deletion-ledger guard it was written for. The index is
+            # 0060's only object, so removing it reconstructs a pre-0060 database
+            # without weakening the production refusal.
+            connection.execute(
+                text(
+                    f'DROP INDEX IF EXISTS "{database.schema}".'
+                    "speech_job_cancellation_fence_age_scan"
+                )
+            )
+            connection.execute(
+                text(f'UPDATE "{database.schema}".alembic_version SET version_num = :revision'),
+                {"revision": DELETION_LEDGER_REVISION},
+            )
+            connection.commit()
             with pytest.raises(RuntimeError, match="history requires preservation"):
                 command.downgrade(config, "base")
     finally:
         engine.dispose()
-    assert database.query("SELECT version_num FROM alembic_version") == [{"version_num": HEAD}]
+    assert database.query("SELECT version_num FROM alembic_version") == [
+        {"version_num": DELETION_LEDGER_REVISION}
+    ]
     assert database.counts() == (1, 1)
 
 

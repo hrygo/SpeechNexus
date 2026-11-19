@@ -1383,7 +1383,12 @@ def test_a_verdict_once_written_is_never_claimed_again(
 def test_judgment_does_not_rewrite_a_job_that_was_cancelled_first(
     sandbox: CancelSandbox, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A verified stop that lands first keeps the Job cancelled, not failed."""
+    """A verified stop that lands first keeps the Job cancelled, not failed.
+
+    The cancelled Job is not rewritten, but it is not reported settled either
+    while the release is still refused: #1033 made "judged" mean the capacity
+    answer is real, so the fence stays claimable and the pass blocks.
+    """
     jobs = sandbox.jobs()
     current = jobs.get(sandbox.job_id)
     assert current is not None
@@ -1399,12 +1404,28 @@ def test_judgment_does_not_rewrite_a_job_that_was_cancelled_first(
         )
     )
 
-    assert (result.claimed, result.exhausted) == (1, 1)
-    assert sandbox.rows()["speech_jobs"] == [
+    assert (result.claimed, result.exhausted, result.retried) == (1, 0, 1)
+    assert [blocked.job_id for blocked in result.blocked] == [sandbox.job_id]
+    after = sandbox.rows()
+    assert after["speech_jobs"] == [
         {
             "job_id": sandbox.job_id,
             "state": "cancelled",
             "error_code": None,
             "status_version": 3,
         }
+    ]
+    # The release is the outstanding fact: the ledger records a retryable
+    # outcome, not the "never claim again" marker.
+    assert after["ledger"] == [
+        {
+            "job_id": sandbox.job_id,
+            "attempts": 1,
+            "last_outcome": "stop_unconfirmed",
+            "settled_at_us": None,
+        }
+    ]
+    assert after["admission_leases"][0]["lease_state"] == "reserved"
+    assert after["engine_instances"] == [
+        {"instance_id": INSTANCE, "held_slots": 1, "quarantined_slots": 0}
     ]

@@ -326,7 +326,10 @@ class JobCancellationReconciler:
 
         After this change it means "the acceptance was judged", not "this worker
         gave up"; the reason itself lives on the Job row, and the isolation on
-        the leases, where operators read it.
+        the leases, where operators read it. The judgement behind it must have
+        answered the capacity (#1033): a Job that is already ``cancelled`` is
+        only settled after its release returned, so this marker can never be the
+        last word on a lease that still holds its slot.
         """
         await asyncio.to_thread(
             self._store.record_exhausted,

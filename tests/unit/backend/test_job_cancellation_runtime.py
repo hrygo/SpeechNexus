@@ -21,6 +21,7 @@ from speechnexus_backend.speech.application.job_cancellation import (
     StopObservation,
 )
 from speechnexus_backend.speech.application.leases import LeaseIsolation, LeaseIsolationGap
+from speechnexus_backend.speech.domain.job_dispatch import DispatchUnavailableError
 
 
 def _settings(**changes: Any) -> JobCancellationSettings:
@@ -260,15 +261,25 @@ class _SettleableJobs:
 
 
 class _Isolation:
-    """Records every isolation attempt and returns a scripted answer."""
+    """Records every isolation/release attempt and returns a scripted answer."""
 
-    def __init__(self, *answers: LeaseIsolation | None) -> None:
+    def __init__(
+        self, *answers: LeaseIsolation | None, released: bool = True, release_error: bool = False
+    ) -> None:
         self.answers = list(answers)
         self.calls: list[tuple[str, str]] = []
+        self.releases: list[str] = []
+        self.released, self.release_error = released, release_error
 
     def isolate_sync(self, operation_id: str, *, reason_code: str) -> LeaseIsolation | None:
         self.calls.append((operation_id, reason_code))
         return self.answers.pop(0) if len(self.answers) > 1 else self.answers[0]
+
+    def release_sync(self, operation_id: str) -> bool:
+        self.releases.append(operation_id)
+        if self.release_error:
+            raise DispatchUnavailableError("lease settlement storage is unavailable")
+        return self.released
 
 
 def _isolated(*lease_ids: str) -> LeaseIsolation:
@@ -393,15 +404,48 @@ def test_a_judged_job_only_retries_its_outstanding_isolation() -> None:
     assert jobs.advances == []
 
 
-def test_a_cancelled_job_needs_no_judgment() -> None:
+def test_a_cancelled_job_is_judged_by_the_release_not_by_its_state() -> None:
+    """#1033: settled requires the capacity to be back, never the state alone."""
     jobs = _SettleableJobs(_SettleableJob("cancelled"))
     capacity = _Isolation(_isolated("lease-1"))
     settlement = UnconfirmedCancellationSettlement(cast(Any, jobs), cast(Any, capacity))
 
     judgment = settlement.settle("job-1")
+
     assert (judgment.settled, judgment.outcome) == (True, "exhausted")
     assert jobs.advances == []
+    assert capacity.releases == ["job-1"]
+    # The cancelled branch never isolates: that would race the release path.
     assert capacity.calls == []
+
+
+def test_a_refused_release_of_a_cancelled_job_is_not_settled() -> None:
+    """The exhausted branch must stay claimable while the lease still holds.
+
+    Recording ``exhausted`` here is what made the capacity permanent: the claim
+    predicate excludes that value, so the release would never be retried again.
+    """
+    jobs = _SettleableJobs(_SettleableJob("cancelled"))
+    capacity = _Isolation(_isolated("lease-1"), released=False)
+    settlement = UnconfirmedCancellationSettlement(cast(Any, jobs), cast(Any, capacity))
+
+    judgment = settlement.settle("job-1")
+
+    assert (judgment.settled, judgment.outcome) == (False, "stop_unconfirmed")
+    assert "refused release" in judgment.detail
+    assert capacity.releases == ["job-1"]
+    assert jobs.advances == []
+
+
+def test_an_unreadable_lease_storage_keeps_the_judgment_retryable() -> None:
+    jobs = _SettleableJobs(_SettleableJob("cancelled"))
+    capacity = _Isolation(_isolated("lease-1"), release_error=True)
+    settlement = UnconfirmedCancellationSettlement(cast(Any, jobs), cast(Any, capacity))
+
+    judgment = settlement.settle("job-1")
+
+    assert (judgment.settled, judgment.outcome) == (False, "unavailable")
+    assert jobs.advances == []
 
 
 def test_another_terminal_failure_is_not_overwritten() -> None:

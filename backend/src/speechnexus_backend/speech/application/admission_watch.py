@@ -113,7 +113,8 @@ def _verdict(
     return {"status": status.value, "cause": None if cause is None else cause.value}
 
 
-def _deployment_refusal(report: AdmissionReadiness) -> bool:
+def is_deployment_refusal(report: AdmissionReadiness) -> bool:
+    """True when this report is both ``degraded`` and the deployment's own fault."""
     return report.status is AdmissionReadinessStatus.DEGRADED and report.cause in DEPLOYMENT_CAUSES
 
 
@@ -121,7 +122,7 @@ def _next_state(
     previous: _WatchedWorkspace | None, report: AdmissionReadiness, *, alert_after: int
 ) -> _WatchedWorkspace:
     """Advance one workspace's streak and alert latch from one verdict."""
-    if not _deployment_refusal(report):
+    if not is_deployment_refusal(report):
         # Either a create would be admitted, or the refusal is the workspace's own
         # administrative state: neither is a deployment-level streak, so the
         # counter starts over and an outstanding alert is considered cleared.
@@ -287,4 +288,5 @@ __all__ = [
     "AdmissionReadinessService",
     "AdmissionWatchObservation",
     "AdmissionWatcher",
+    "is_deployment_refusal",
 ]

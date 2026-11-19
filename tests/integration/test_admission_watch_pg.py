@@ -21,11 +21,17 @@ The interval and the alert threshold are constructor values here; their deployme
 wiring is ``admission_watch_runtime`` and its unit suite. A real scheduler, a
 restarted process (whose first observation is a ``started`` line, not a change) and
 a long-running alert streak are not exercised here.
+
+**This case raises the root logger's level itself** (``caplog.set_level(logging.INFO)``),
+so it proves the watcher *emits* the right records and says nothing about whether a
+deployed process would print them: a worker that never configured ``logging`` drops
+every ``INFO`` line in a container while this file still passes. That question
+belongs to ``tests/integration/test_admission_watch_process_pg.py``, which runs the
+installed console script in a subprocess and reads its actual stderr.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
@@ -40,6 +46,7 @@ from tests.integration.test_production_runtime_intents import (
 from tests.integration.test_public_job_admission_http_pg import HOST_NODE, WORKSPACE
 from tests.integration.test_public_job_atomic_admission_pg import _seed, _store
 
+from speechnexus_backend.json_logging import JsonLogFormatter
 from speechnexus_backend.speech.application.admission_watch import (
     EVENT_CHANGED,
     EVENT_STARTED,
@@ -54,51 +61,10 @@ pytestmark = [
 
 LOGGER = "speechnexus_backend.speech.application.admission_watch"
 
-#: Attributes ``logging`` puts on every record; everything else a record carries was
-#: supplied by the watch as ``extra`` and is what a JSON log formatter writes.
-_STANDARD_ATTRIBUTES = frozenset(
-    {
-        "args",
-        "asctime",
-        "created",
-        "exc_info",
-        "exc_text",
-        "filename",
-        "funcName",
-        "levelname",
-        "levelno",
-        "lineno",
-        "message",
-        "module",
-        "msecs",
-        "msg",
-        "name",
-        "pathname",
-        "process",
-        "processName",
-        "relativeCreated",
-        "stack_info",
-        "taskName",
-        "thread",
-        "threadName",
-    }
-)
-
 
 def _line(record: logging.LogRecord) -> str:
-    payload = {
-        key: value for key, value in record.__dict__.items() if key not in _STANDARD_ATTRIBUTES
-    }
-    return json.dumps(
-        {
-            "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-            **payload,
-        },
-        sort_keys=True,
-        default=str,
-    )
+    """The line the deployed entrypoint writes: the shared formatter, unmodified."""
+    return JsonLogFormatter().format(record)
 
 
 def test_a_flip_logs_one_line_a_repeat_logs_none_and_a_flip_back_logs_one(

@@ -17,7 +17,11 @@
 
 ## 开了会看到什么
 
-日志使用 `logging` 的 `extra`，JSON 日志格式化器会把它展开成顶层字段。logger 名是 `speechnexus_backend.speech.application.admission_watch`，一共四种事件：
+入口在启动时（`SPEECHNEXUS_ADMISSION_WATCH_ENABLED=true` 之后）用仓库共享的
+[`json_logging.use_json_logging()`](../../backend/src/speechnexus_backend/json_logging.py)
+把 root logger 配成 stderr 上的一行一个 JSON 对象，级别 `INFO`，`extra` 的键成为顶层字段。
+也就是说**不装任何格式化器、不做额外配置，容器日志里就是下面这些行**；其它进程若已配置 root logger，
+该函数不覆盖。logger 名是 `speechnexus_backend.speech.application.admission_watch`，一共四种事件：
 
 | `event` | 级别 | 写入时机 | 主要字段 |
 | --- | --- | --- | --- |
@@ -26,10 +30,11 @@
 | `admission_watch_alerted` | WARNING | 连续计数第一次达到阈值时，一行（不是每个间隔一行） | `workspace_id`、`cause`、`consecutive_degraded`、`alert_after`、`interval_seconds`、`since_us`、`detail` |
 | `admission_watch_cleared` | INFO | 曾经告警、现在不再满足判据时，一行 | `workspace_id`、`status`、`cause`、`alert_after` |
 
-同一状态重复轮询不产生新行。真实的翻转、重复轮询与翻回（`tests/integration/test_admission_watch_pg.py`，真 PostgreSQL）分别输出：
+同一状态重复轮询不产生新行。下面是 `tests/integration/test_admission_watch_pg.py`（真 PostgreSQL）用
+本进程同一个格式化器打印的实测输出——翻转、重复轮询、翻回三段依次是：
 
 ```json
-{"detail": null, "event": "admission_watch_changed", "from": {"cause": null, "status": "admitting"}, "level": "INFO", "message": "admission readiness changed", "to": {"cause": "engine_resource_disabled", "status": "degraded"}, "workspace_id": "workspace-test"}
+{"event": "admission_watch_changed", "workspace_id": "workspace-test", "from": {"status": "admitting", "cause": null}, "to": {"status": "degraded", "cause": "engine_resource_disabled"}, "detail": "The pinned instance, its pool, its node or the approved recipe is not active, so a create answers engine_resource_disabled until it is re-enabled or re-approved.", "message": "admission readiness changed", "time": "2026-11-19T19:48:44.067096+00:00", "level": "INFO", "logger": "speechnexus_backend.speech.application.admission_watch"}
 ```
 
 ```text
@@ -37,7 +42,7 @@
 ```
 
 ```json
-{"detail": null, "event": "admission_watch_changed", "from": {"cause": "engine_resource_disabled", "status": "degraded"}, "level": "INFO", "message": "admission readiness changed", "to": {"cause": null, "status": "admitting"}, "workspace_id": "workspace-test"}
+{"event": "admission_watch_changed", "workspace_id": "workspace-test", "from": {"status": "degraded", "cause": "engine_resource_disabled"}, "to": {"status": "admitting", "cause": null}, "detail": null, "message": "admission readiness changed", "time": "2026-11-19T19:48:44.078939+00:00", "level": "INFO", "logger": "speechnexus_backend.speech.application.admission_watch"}
 ```
 
 `detail` 来自报告本身，写明该 cause 的人话原因和恢复命令（例如重新签收据要用 `speechnexus-register-engine --renew-readiness`）。
@@ -94,10 +99,18 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 SPEECHNEXUS_ADMISSION_WATCH_ENABLED=true \
 SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL=... SPEECHNEXUS_DATABASE_SCHEMA=speech \
 speechnexus-admission-watch            # 常驻循环
-speechnexus-admission-watch --once     # 单次；exit 0 admitting，1 degraded，2 未配置/不可读
+speechnexus-admission-watch --once     # 单次；见下方退出码口径
 ```
 
-`--once` 的退出码可以直接挂到 cron/systemd timer：判定与日志格式与常驻循环相同，只是不再等待下一个间隔（也因此不会累计到告警阈值）。
+`--once` 的退出码与告警判据**同一分类**：`0` = 没有任何 workspace 处于部署级拒绝；`1` = 至少一个
+workspace 是部署级拒绝（`engine_*`、`capacity_exhausted`、`storage_unavailable`）；`2` = 巡检没能启动
+（配置缺失、DSN 为空、报表关系不可读）。workspace 级拒绝（`workspace_not_found` 等）报告虽是
+`degraded`，`--once` 仍返回 `0`——它们是该 workspace 自己的管理员状态，不会叫醒人，变化行照写。
+报告层的读失败会被折叠成 `storage_unavailable`，因此是 `1` 而不是 `2`。它与常驻循环的判定和日志格式
+相同，只是不再等待下一个间隔（也因此不会累计到告警阈值）。
+
+**它不是健康检查。**`--once` 的退出码只回答「此刻有没有部署级拒绝」，不回答「巡检进程是否活着」；
+把非零当容器不健康或让编排重启，会把「业务拒绝」错误地变成「进程故障」，重启也修不好过期收据。
 
 ## 关掉时
 
@@ -109,3 +122,8 @@ speechnexus-admission-watch --once     # 单次；exit 0 admitting，1 degraded�
 - 判据看的是报告的即时结论，不看进程是否活着：巡检进程自己停了就没有日志，这一点需要由部署侧的容器状态/日志新鲜度覆盖，而不是本进程自证。
 - 读权限用的是准入身份（与 API 的 `SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL` 同值）。本切片没有新增只读角色，因此它的权限面与准入相同。
 - 阈值与间隔没有在真实负载下标定；上面的默认值是按「秒级抖动不该叫醒人 + 20 分钟盲区」两个约束倒推的。
+- `capacity_exhausted` 同时覆盖「workspace 配额满」：长期配额饱和会让判据持续成立、告警锁存后一直不
+  解除。阈值只能把首次告警推迟 `(N-1)` 个间隔，压不住这种持续状态；真正的开关是把该 workspace 从
+  `SPEECHNEXUS_ADMISSION_WATCH_WORKSPACES` 移除，或先释放它的配额。
+- `--once` 一次只读一轮，不保留任何跨进程状态：cron 每次都会先写 `started` 行，永远不会写 `alerted`。
+  需要告警锁存就必须跑常驻循环。

@@ -15,7 +15,11 @@ from speechnexus_backend.admission_watch_runtime import (
     AdmissionWatchUnavailableError,
     build_admission_watch,
 )
-from speechnexus_backend.speech.application.admission_watch import AdmissionWatchObservation
+from speechnexus_backend.json_logging import use_json_logging
+from speechnexus_backend.speech.application.admission_watch import (
+    AdmissionWatchObservation,
+    is_deployment_refusal,
+)
 
 EXIT_ADMITTING = 0
 EXIT_DEGRADED = 1
@@ -23,12 +27,15 @@ EXIT_UNAVAILABLE = 2
 
 
 def exit_code(observations: tuple[AdmissionWatchObservation, ...]) -> int:
-    """Non-zero while any watched workspace refuses every create.
+    """Non-zero while any watched workspace is refused at the deployment level.
 
-    A one-shot poll is the whole surface a timer needs: the verdict is printed as the
-    structured log line the loop writes, and this code lets cron/systemd act on it.
+    The same classification the alert uses, so ``--once`` answers the question a
+    timer wants to ask: would anybody be woken by this? A workspace-scoped
+    refusal (missing catalog row, disabled workspace, missing quota row) is that
+    workspace's own administrative state and exits 0 here even though the report
+    is ``degraded``; the change line for it is still written.
     """
-    if any(not observation.report.admitting for observation in observations):
+    if any(is_deployment_refusal(observation.report) for observation in observations):
         return EXIT_DEGRADED
     return EXIT_ADMITTING
 
@@ -59,7 +66,10 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument(
         "--once",
         action="store_true",
-        help="Poll once, then exit (0 admitting, 1 degraded, 2 not configured or unreadable)",
+        help=(
+            "Poll once, then exit: 0 no deployment-level refusal, 1 at least one "
+            "deployment-level refusal, 2 the watch could not be configured"
+        ),
     )
     options = parser.parse_args(argv)
     try:
@@ -72,6 +82,10 @@ def main(argv: Sequence[str] | None = None) -> None:
     if runtime is None:
         print("admission watch disabled", flush=True)
         return
+    # The product here is the log line, so the file must be readable without the
+    # deployment installing a formatter. `use_json_logging` is shared with other
+    # entrypoints and leaves a pre-configured root logger alone.
+    use_json_logging()
     try:
         code = asyncio.run(_main(runtime, once=options.once))
     except AdmissionWatchUnavailableError as error:

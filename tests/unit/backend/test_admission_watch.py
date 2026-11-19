@@ -315,10 +315,90 @@ def test_the_entrypoint_names_the_missing_key_when_enabled(
     assert "SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL" in capsys.readouterr().err
 
 
-def test_the_one_shot_exit_code_follows_the_verdict() -> None:
+def test_the_one_shot_exit_code_follows_the_deployment_level_refusal() -> None:
     admitting = AdmissionWatchObservation(WORKSPACE, _report(None), False, 0, False)
-    degraded = AdmissionWatchObservation(
+    workspace_scoped = AdmissionWatchObservation(
         WORKSPACE, _report(AdmissionReadinessCause.WORKSPACE_DISABLED), True, 0, False
     )
+    deployment = AdmissionWatchObservation(
+        WORKSPACE, _report(AdmissionReadinessCause.ENGINE_RECEIPT_EXPIRED), True, 1, False
+    )
     assert exit_code((admitting,)) == EXIT_ADMITTING
-    assert exit_code((admitting, degraded)) == EXIT_DEGRADED
+    # The same classification the alert uses: a workspace-scoped refusal is that
+    # workspace's own administrative state, so a timer must not read it as "wake".
+    assert exit_code((workspace_scoped,)) == EXIT_ADMITTING
+    assert exit_code((admitting, workspace_scoped, deployment)) == EXIT_DEGRADED
+
+
+class _PerWorkspaceService:
+    """Answer each workspace from its own script; the last entry repeats forever.
+
+    Two workspaces in one watcher are the shape most likely to leak state: a single
+    counter shared by both would attribute one workspace's streak to the other, and
+    a single "last verdict" would log the wrong ``workspace_id``.
+    """
+
+    def __init__(self, scripts: dict[str, list[AdmissionReadiness]]) -> None:
+        self.scripts = scripts
+        self.calls = dict.fromkeys(scripts, 0)
+
+    def admission_readiness(self, workspace_id: str) -> AdmissionReadiness:
+        script = self.scripts[workspace_id]
+        item = script[min(self.calls[workspace_id], len(script) - 1)]
+        self.calls[workspace_id] += 1
+        return item
+
+
+def test_two_workspaces_keep_their_own_streaks_and_their_own_ids(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    other = "workspace-other"
+    service = _PerWorkspaceService(
+        {
+            WORKSPACE: [
+                refused_readiness(
+                    AdmissionReadinessCause.ENGINE_RECEIPT_EXPIRED,
+                    workspace_id=WORKSPACE,
+                    now_us=1_000,
+                )
+            ],
+            other: [
+                refused_readiness(
+                    AdmissionReadinessCause.WORKSPACE_DISABLED,
+                    workspace_id=other,
+                    now_us=1_000,
+                )
+            ],
+        }
+    )
+    watcher = AdmissionWatcher(
+        service, workspaces=(WORKSPACE, other), interval_seconds=30, alert_after=2
+    )
+    caplog.set_level(logging.INFO, logger=LOGGER)
+    polls = [watcher.poll() for _ in range(4)]
+
+    # The deployment-level streak advances for one workspace only; the
+    # workspace-scoped refusal never counts, however many times it repeats.
+    assert [[item.consecutive_degraded for item in poll] for poll in polls] == [
+        [1, 0],
+        [2, 0],
+        [3, 0],
+        [4, 0],
+    ]
+    assert [[item.alerted for item in poll] for poll in polls] == [
+        [False, False],
+        [True, False],
+        [True, False],
+        [True, False],
+    ]
+    records = _records(caplog)
+    assert [(_extra(record, "event"), _extra(record, "workspace_id")) for record in records] == [
+        (EVENT_STARTED, WORKSPACE),
+        (EVENT_STARTED, other),
+        (EVENT_ALERTED, WORKSPACE),
+    ]
+    alerted = records[2]
+    assert _extra(alerted, "consecutive_degraded") == 2
+    assert _extra(alerted, "cause") == "engine_receipt_expired"
+    for record in records:
+        assert _extra(record, "workspace_id") in {WORKSPACE, other}

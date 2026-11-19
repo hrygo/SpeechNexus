@@ -81,9 +81,6 @@ def indented_block(lines: list[str], start: int, indent: int) -> list[str]:
 #: (`dockerfile : x`), so the reader must tolerate it or the same key written with a
 #: space slips past every check below.
 KEY = re.compile(r"^( *)([A-Za-z_][\w.-]*)[ \t]*:(.*)$")
-#: A key written with quotes. YAML treats `"build"` and `build` as the same key, so a
-#: quoted key would be invisible to KEY while still steering the document.
-QUOTED_KEY = re.compile(r"""^( *)["']([^"']+)["'][ \t]*:""")
 #: A trailing comment on an otherwise plain line; YAML discards it.
 TRAILING_COMMENT = re.compile(r"[ \t]+#.*$")
 #: A YAML alias/merge at the start of a value. Deliberately anchored: a quoted scalar
@@ -155,16 +152,28 @@ def _reject_duplicate_keys(service: str, pairs: list[tuple[str, str]]) -> None:
         )
 
 
-def _reject_quoted_keys(service: str, lines: list[str], where: str) -> None:
-    """A quoted key steers the document but is invisible to KEY; refuse it outright."""
+def _reject_unreadable(service: str, lines: list[str], indent: int, where: str) -> None:
+    """Refuse a mapping line this reader cannot name, instead of skipping it.
+
+    A quoted key, an explicit `?` key and an anchored or tagged key are all valid YAML
+    that KEY does not match, and YAML treats each as the same key as the bare form --
+    so skipping one hides the mapping the deployment actually used. Checking the
+    indentation level the reader is navigating (rather than every line) keeps block
+    scalars, which may contain JSON, out of scope.
+    """
     for line in lines:
-        match = QUOTED_KEY.match(line)
-        if match:
-            raise AssertionError(
-                f"{COMPOSE}: {service}'s {where} uses a quoted key "
-                f"({line.strip()!r}); this reader only understands bare keys, and YAML "
-                "treats the quoted form as the same key"
-            )
+        if len(line) - len(line.lstrip()) != indent:
+            continue
+        if KEY.match(line) is not None:
+            continue
+        # A flow collection's closing line carries no mapping colon, so it is not a key.
+        if re.search(r"(^|[^:])[:](\s|$)", line.strip()) is None:
+            continue
+        raise AssertionError(
+            f"{COMPOSE}: {service}'s {where} has a line at indentation {indent} this "
+            f"reader cannot follow ({line.strip()!r}); write a bare `key:` so the guard "
+            "can see which key the deployment uses"
+        )
 
 
 def _line_index(lines: list[str], key: str, indent: int) -> int:
@@ -178,13 +187,15 @@ def _line_index(lines: list[str], key: str, indent: int) -> int:
 def service_build(service: str) -> list[str]:
     """The `services.<service>.build` keys, located by indentation, not by PyYAML."""
     lines = document_lines(read(COMPOSE))
-    _reject_quoted_keys(service, lines, "document")
+    _reject_unreadable(service, lines, 0, "document")
     # One `services:` and one definition per service, or the reader cannot say which
     # mapping the deployment actually uses -- YAML silently keeps the last one.
     _require_single(service, keys_at(lines, 0), "services", "the document")
     services = indented_block(lines, _line_index(lines, "services", 0), 0)
+    _reject_unreadable(service, services, 2, "services mapping")
     _require_single(service, keys_at(services, 2), service, "the services mapping")
     service_lines = indented_block(services, _line_index(services, service, 2), 2)
+    _reject_unreadable(service, service_lines, 4, f"{service}'s definition")
     build_keys = keys_at(service_lines, 4)
     build_at = _line_index(service_lines, "build", 4)
     _require_single(service, build_keys, "build", f"{service}'s definition")
@@ -194,7 +205,7 @@ def service_build(service: str) -> list[str]:
             "reader cannot follow; write the `build:` mapping out"
         )
     build_lines = indented_block(service_lines, build_at, 4)
-    _reject_quoted_keys(service, build_lines, "build")
+    _reject_unreadable(service, build_lines, 6, "build")
     pairs = keys_at(build_lines, 6)
     _reject_indirection(service, pairs, build_lines)
     _reject_duplicate_keys(service, pairs)

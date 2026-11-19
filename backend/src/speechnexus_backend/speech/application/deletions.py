@@ -1,9 +1,11 @@
-"""Deletion preview and execution over one owner-scoped workspace.
+"""Deletion preview, execution and read over one owner-scoped workspace.
 
 ``preview`` writes the immutable plan before returning it. ``execute`` re-validates
 that plan, removes the confirmed content and returns the durable ledger record; the
 only step outside a database transaction is the asset object purge, which the
-ledger's queued row makes resumable under the same ``Idempotency-Key``.
+ledger's queued row makes resumable under the same ``Idempotency-Key``. ``read`` is
+a pure projection of that ledger: it never re-runs the plan, re-claims the purge or
+writes a row, so a read is safe to repeat after any process restart.
 """
 
 from __future__ import annotations
@@ -102,6 +104,8 @@ class DeletionExecutionStore(Protocol):
         self, deletion_id: str, *, key_digest: str, workspace_id: str
     ) -> DeletionRecord: ...
 
+    def read(self, deletion_id: str, *, workspace_id: str) -> DeletionRecord | None: ...
+
 
 class DeletionObjectPurge(Protocol):
     """The asset object-store step; object I/O never runs inside a transaction."""
@@ -113,6 +117,8 @@ class DeletionPlanner(Protocol):
     def preview(self, target: DeletionTarget, mode: str, idempotency_key: str) -> DeletionPlan: ...
 
     def execute(self, request: DeletionRequest, idempotency_key: str) -> DeletionRecord: ...
+
+    def read(self, deletion_id: str) -> DeletionRecord: ...
 
 
 class SpeechDeletions:
@@ -213,6 +219,21 @@ class SpeechDeletions:
             # crash-recovery lease, then let the caller see the real failure.
             self._release(executions, record.id, key_digest)
             raise
+
+    def read(self, deletion_id: str) -> DeletionRecord:
+        """Project the durable row; a read never resumes, claims or deletes.
+
+        The ledger is the answer, not a cache of it: recomputing the plan or
+        replaying the purge would make a repeated read an execution attempt. The
+        store scopes the lookup to this workspace, so another workspace's deletion
+        is indistinguishable from a missing one.
+        """
+        if self._executions is None:
+            raise DeletionLedgerUnavailableError("deletion ledger is not configured")
+        record = self._executions.read(deletion_id, workspace_id=self._workspace_id)
+        if record is None:
+            raise DeletionTargetNotFoundError
+        return record
 
     def _release(
         self,

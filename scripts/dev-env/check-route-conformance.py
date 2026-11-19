@@ -87,8 +87,8 @@ ENVELOPE_KEYS = frozenset({"code", "type", "message", "param", "request_id", "re
 # implements revision generation and validation: 15 -> 13; #495 implements
 # fixed-revision preview: 13 -> 12; #484 implements the pronunciation-set
 # collection read and draft creation: 12 -> 10; #519 implements voice draft
-# publication: 10 -> 9; #819 slice A implements the deletion plan preview, and
-# only deletion execution and its read remain placeholders.
+# publication: 10 -> 9; #819 implements speech deletion preview, execution and
+# read in slices A-C: 9 -> 7 with no deletion placeholder left.
 KNOWN_UNIMPLEMENTED_OPERATIONS: dict[str, str] = {
     # Operation coordination is declared but has no producer.
     "getOperation": "operation read route is not implemented",
@@ -98,8 +98,6 @@ KNOWN_UNIMPLEMENTED_OPERATIONS: dict[str, str] = {
     "getRealtimeSession": "realtime session read is not implemented",
     "cancelRealtimeSession": "realtime session cancellation is not implemented",
     "connectRealtime": "the /v1/realtime WebSocket route is not implemented",
-    # Deletion execution and its plan preview are implemented; only the read is not.
-    "speechGetDeletion": "speech deletion read route is not implemented",
     # Declared and frozen by the #845 contract slice; the report is not assembled.
     "getJobAdmissionReadiness": "the admission readiness report is not implemented",
 }

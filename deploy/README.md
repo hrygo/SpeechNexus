@@ -1118,7 +1118,8 @@ FROM <job-writer-role>;
 -- deletion_plan_grants / deletion_execution_grants 都不属于启动硬门：缺任一组时
 -- Job writer 仍启动，只有对应路由分别返回 503 deletion_plans_not_configured /
 -- 503 deletion_not_configured（retryable=false）。deletion_execution_grants 含
--- 删除账本与资产内容删除账本的列级 INSERT/UPDATE、speech_asset_events 的列级
+-- 删除账本的 SELECT（读取删除记录只投影这一行）与列级 INSERT/UPDATE、资产内容删除
+-- 账本的列级 INSERT/UPDATE、speech_asset_events 的列级
 -- INSERT（其 ON CONFLICT 另需 SELECT）、speech_assets 与 admission_operations 的
 -- 列级 UPDATE，以及唯一一条 DELETE ON speech_job_intents。
 -- public_job_admission_grants 属于独立的 admission 角色，不要应用到 Job writer：

@@ -46,11 +46,11 @@ A second collision shape is invisible to template comparison: a parameter on one
 side matches the other side's literal segment, so the pair competes for one
 request path while the templates differ. Nothing there is a duplicate and no
 request errors: the earlier route answers and the later route's path is
-unreachable. Mounting the placeholder ``GET /v1/nexus/deletions/{deletion_id}``
-before a real ``GET /v1/nexus/deletions/plan-literal`` loses the real route;
-registering the real route first leaves the placeholder dead. The assembly is
-therefore read in registration order as well: each route's concrete path must
-not be answered by a route registered before it, so either arrangement fails.
+unreachable. Mounting the placeholder ``GET /v1/nexus/jobs/{job_id}`` before a
+real ``GET /v1/nexus/jobs/admission-readiness`` loses the real route; registering
+the real route first leaves the placeholder dead. The assembly is therefore read
+in registration order as well: each route's concrete path must not be answered by
+a route registered before it, so either arrangement fails.
 """
 
 from __future__ import annotations
@@ -79,7 +79,6 @@ UNIMPLEMENTED_OPERATIONS: dict[str, tuple[str, str]] = {
         "/v1/nexus/realtime/sessions/{session_id}/cancellations",
     ),
     "connectRealtime": ("GET", "/v1/realtime"),
-    "speechGetDeletion": ("GET", "/v1/nexus/deletions/{deletion_id}"),
     # Declared by #845 and frozen by its contract slice; the report itself is not
     # assembled yet. The literal segment shares the `/v1/nexus/jobs/` prefix with the
     # dynamic `{job_id}` route, so this placeholder is mounted before that router

@@ -61,8 +61,10 @@ PREDECLARED_SERVICE_UNAVAILABLE = frozenset(
 # operations: #819 replaced the handlers while ``contracts/**`` stays untouched, so
 # the declaration is stale until a later slice replaces the 503. Naming the
 # exceptions keeps them from hiding a second operation that really is a placeholder.
+# ``speechGetDeletion`` joins them with slice C; its route now reads the ledger and
+# answers ``404``/``503 deletion_unavailable``, never ``operation_not_implemented``.
 IMPLEMENTED_WITH_FROZEN_PLACEHOLDER_503 = frozenset(
-    {"speechCreateDeletionPlan", "speechCreateDeletion"}
+    {"speechCreateDeletionPlan", "speechCreateDeletion", "speechGetDeletion"}
 )
 # Every placeholder answers at runtime, including the compatible-surface one.
 CASES = sorted(
@@ -206,13 +208,13 @@ def concrete(path: str) -> str:
 
 
 def test_contract_and_placeholder_table_agree() -> None:
-    assert len(CASES) == 8
+    assert len(CASES) == 7
     assert {operation for operation, _, _ in CASES} == set(UNIMPLEMENTED_OPERATIONS)
     declared = {operation for operation, _, _ in declared_operations()}
     # retireVoiceRevision and the six voice-draft operations now answer their
     # own 503 (ServiceUnavailable) after those routes shipped, and #484 replaced
     # the pronunciation collection pair with real routes, so only the remaining
-    # placeholders carry the dedicated component. #819 added two implemented
+    # placeholders carry the dedicated component. #819 added three implemented
     # deletion operations whose frozen declarations still point at it.
     assert len(declared) == 6
     # The one exception is explicit and exclusive; every other operation that
@@ -494,10 +496,11 @@ async def test_a_trailing_slash_route_is_shadowed_at_runtime() -> None:
 async def test_a_parameter_shadows_a_literal_route_registered_after_it() -> None:
     """A parameter and a literal segment compete without sharing a template.
 
-    ``{deletion_id}`` matches ``/v1/nexus/deletions/plan-literal``, so a placeholder
-    registered first answers that path and the real route is unreachable. Nothing in
-    the templates is equal, so the method+template comparison cannot see it; the
-    assembly is checked against the concrete path instead.
+    ``{deletion_id}`` matches ``/v1/nexus/deletions/plan-literal``, so the read
+    route registered first answers that path and the literal route is unreachable.
+    Nothing in the templates is equal, so the method+template comparison cannot see
+    it; the assembly is checked against the concrete path instead. The read was a
+    placeholder before slice C; the collision is the same once it is a real route.
     """
     app = create_app(settings=_settings())
 
@@ -508,10 +511,12 @@ async def test_a_parameter_shadows_a_literal_route_registered_after_it() -> None
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://localhost"
     ) as http:
-        # Measured: the placeholder answers, and the real route never runs.
+        # Measured: the dynamic read route answers, and the literal route never runs.
+        # The service is not assembled in this test, so the read reports its storage
+        # as unavailable instead of the old placeholder code.
         response = await http.get("/v1/nexus/deletions/plan-literal")
     assert response.status_code == 503
-    assert response.json()["error"]["code"] == OPERATION_NOT_IMPLEMENTED
+    assert response.json()["error"]["code"] == "deletion_unavailable"
     with pytest.raises(RuntimeError) as raised:
         assert_placeholder_ownership(app.routes)
     message = raised.value.args[0]

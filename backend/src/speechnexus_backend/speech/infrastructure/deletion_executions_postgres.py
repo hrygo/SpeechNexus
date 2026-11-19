@@ -116,6 +116,12 @@ _PRIVILEGES: tuple[tuple[str, str, str | None], ...] = (
     *(("DELETE", table, None) for table in JOB_INTENT_DELETE_TABLES),
 )
 
+# The read surface projects this one row; it needs no cache, plan or content table
+# and no write privilege. Probing the executor's full surface here would answer 503
+# for a deployment that granted the read exactly what it needs, and would let the
+# read inherit write authority it never uses.
+_READ_PRIVILEGES: tuple[tuple[str, str, str | None], ...] = (("SELECT", DELETION_LEDGER, None),)
+
 
 def _unavailable() -> DeletionLedgerUnavailableError:
     return DeletionLedgerUnavailableError("deletion execution storage is unavailable")
@@ -220,8 +226,10 @@ class _Transaction:
         )
         return rows[0] if rows else None
 
-    def missing_privileges(self) -> tuple[str, ...]:
-        placeholders = ", ".join(["(%s, %s, %s)"] * len(_PRIVILEGES))
+    def missing_privileges(
+        self, probes: tuple[tuple[str, str, str | None], ...] = _PRIVILEGES
+    ) -> tuple[str, ...]:
+        placeholders = ", ".join(["(%s, %s, %s)"] * len(probes))
         rows = self.rows(
             "SELECT v.privilege, v.table_name, v.column_name, "
             "CASE WHEN v.column_name IS NULL "
@@ -231,7 +239,7 @@ class _Transaction:
             "ELSE pg_catalog.has_column_privilege("
             "current_user, v.table_name, v.column_name, v.privilege) END AS ok "
             f"FROM (VALUES {placeholders}) AS v(privilege, table_name, column_name)",
-            tuple(item for probe in _PRIVILEGES for item in probe),
+            tuple(item for probe in probes for item in probe),
         )
         return tuple(
             f"{row['privilege']} on {row['table_name']}"
@@ -594,6 +602,43 @@ class PostgresDeletionExecutions:
             )
             return transaction.missing_privileges()
 
+    def read(self, deletion_id: str, *, workspace_id: str) -> DeletionRecord | None:
+        """Project one ledger row under a read-only transaction.
+
+        The transaction is declared ``READ ONLY`` on purpose: the read may not
+        claim a purge, advance a status or write a row, so a future edit that
+        resumes the execution fails at the database instead of becoming a second
+        executor. ``None`` is both "no such deletion" and "another workspace's
+        deletion"; the caller turns it into the same public 404.
+        """
+        try:
+            with (
+                self._pool.connection(timeout=self._timeout) as connection,
+                connection.transaction(),
+            ):
+                transaction = _Transaction(
+                    connection, time.monotonic() + self._timeout, workspace_id
+                )
+                transaction.rows("SET TRANSACTION READ ONLY")
+                self._require_privileges(transaction, _READ_PRIVILEGES)
+                rows = transaction.rows(
+                    f"SELECT {_LEDGER_ROW_COLUMNS} FROM {DELETION_LEDGER} "
+                    "WHERE workspace_id = %s AND id = %s",
+                    (workspace_id, deletion_id),
+                )
+                if not rows:
+                    return None
+                try:
+                    return _LedgerRow(rows[0]).record()
+                except KeyError, TypeError, ValueError:
+                    # A ledger row this projection cannot state is not a 500: it
+                    # is storage this deployment cannot answer from.
+                    raise _unavailable() from None
+        except DeletionError:
+            raise
+        except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
+            raise _unavailable() from None
+
     def accept(
         self,
         request: DeletionRequest,
@@ -715,8 +760,12 @@ class PostgresDeletionExecutions:
                 raise _unavailable()
             time.sleep(0.02)
 
-    def _require_privileges(self, transaction: _Transaction) -> None:
-        missing = transaction.missing_privileges()
+    def _require_privileges(
+        self,
+        transaction: _Transaction,
+        probes: tuple[tuple[str, str, str | None], ...] = _PRIVILEGES,
+    ) -> None:
+        missing = transaction.missing_privileges(probes)
         if missing:
             raise DeletionLedgerConfigurationError("deletion execution lacks " + ", ".join(missing))
 

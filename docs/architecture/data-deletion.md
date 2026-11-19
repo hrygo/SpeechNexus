@@ -1,17 +1,18 @@
 ---
 title: 数据删除、依赖裁决与恢复屏障
 status: active
-version: "1.3.0"
+version: "1.4.0"
 date: 2026-11-19
 ---
 
 # 数据删除与依赖裁决
 
 本规范定义完整删除契约。Workbench 已实现项目与稿件删除路由、持久账本及启动重放，
-覆盖范围和保守阻断见下文。Speech 已实现删除预检（`POST /v1/nexus/deletion-plans`）与
-已确认删除执行（`POST /v1/nexus/deletions`）：预检在锁定快照上固定目标版本/摘要并写入
-不可变计划行，执行在同一事务边界内复核计划、删除已确认内容并写入持久删除账本（0059）；
-`GET /v1/nexus/deletions/{id}` 与跨模块停止协调仍待实现。
+覆盖范围和保守阻断见下文。Speech 已实现删除预检（`POST /v1/nexus/deletion-plans`）、
+已确认删除执行（`POST /v1/nexus/deletions`）与删除记录读取
+（`GET /v1/nexus/deletions/{deletion_id}`）：预检在锁定快照上固定目标版本/摘要并写入
+不可变计划行，执行在同一事务边界内复核计划、删除已确认内容并写入持久删除账本（0059），
+读取只投影该账本、不重算计划也不重放副作用。跨模块停止协调仍待实现。
 执行网关已实现需显式可信许可的[命令正文清理事务](../components/execution-gateway.md#10-redact_execution_command)，
 未提供默认许可签发或 HTTP 清理入口，不能据此声明完整删除闭环可用。机器定义为
 [deletion.schema.json](../../contracts/shared/deletion.schema.json)，入口分别是
@@ -145,6 +146,35 @@ Speech 的执行路由只接受 `asset` 与 `operation_content` 两类目标（`
 删除账本是"确实删除过"的唯一证据，丢弃它会让恢复重新暴露已清除内容并让旧计划重新
 成为可用的删除凭据。
 
+### Speech 读面
+
+`GET /v1/nexus/deletions/{deletion_id}` 是 0059 账本的只读投影：它在 `READ ONLY`
+事务里按 `(workspace_id, id)` 读取一行，`status`、`cleanup_state`、`result` 与
+`error` 直接来自该行，不重算计划、不校验计划摘要、不领取对象清除认领、不写任何行，
+也不执行对象清除。因此同一 `deletion_id` 的重复读取不会改变账本，进程重启后由新连接池
+读同一行即得到与重启前逐字节一致的 body（时间戳来自 PostgreSQL，不是进程时钟）。
+当前账本只产生 `queued`（`cleanup_state=pending`、`result=null`）与 `succeeded`
+（`cleanup_state=complete`、带 result）；契约的 `running`/`blocked`/`failed` 不由这个
+读面产生，`error` 因此恒为 `null`。
+
+路由只需要 `SELECT speech_deletion_ledger`；执行授权组（`deletion_execution_grants`）
+本就包含这条 `SELECT`，读面不需要额外列、额外迁移或写入权限。缺少该 `SELECT` 时进程
+照常启动，路由返回不可重试的 `503 deletion_not_configured`，不会以空 `200` 或 `404`
+掩盖部署缺口。
+
+不存在的 `deletion_id`、无法匹配契约标识符的路径段，以及属于其他 workspace 的删除
+记录，统一返回 `404 resource_not_found`：查询按本部署的 workspace 过滤，因此"别的
+workspace 有一行"与"根本没有这一行"的状态码、错误码与信封正文完全相同，不泄露存在性；
+读面从不返回 `403`。0059 账本没有保留期到期或被清理的读状态——它本身就是删除证据，
+downgrade 明确拒绝丢弃——读取方不会把已删除内容当作过期资源重新暴露，因此也没有
+`410` 或"页面已清理"分支。
+
+认领细节不进入公开读面。对象清除的唯一执行权记录在账本行的 `purge_claimed_at`，读面
+不暴露该列：已认领未完成与未认领的 `queued` 行都投影为 `queued`/`pending`，
+`cleanup_state` 是读面唯一上报的清理进度，且必须与账本一致。区分二者需要给冻结的
+`Deletion` 增加字段，本版本不这样做；同一键的 `POST` 仍是执行与恢复入口，读面只回答
+已提交状态。
+
 删除只移除业务内容与允许删除的配置投影；执行/计量/租约/fencing 的不变量证据
 不在级联范围。`operation_content` 删除正文/制品，不删除执行身份、状态、脱敏
 receipt、幂等摘要或计量事实。保留 tombstone 和最低 fencing 水位的审计归档由
@@ -186,8 +216,8 @@ writing 或 unknown 不按超时、取消或普通重试释放。对象 PUT 结�
 保留原始意图和对象摘要，项目删除维持不可接受，直到有权威完成或停止证据；当前
 没有把未知 PUT 自动判成功的恢复器。数据库发布响应丢失不产生补偿删除或新导出。
 上述项目锁和写入意图只约束 Workbench 项目删除与本模块写入；复制源 Artifact 时通过公开
-接口读取，不能据此证明 Speech 源删除与复制已具备跨模块原子屏障。Speech 删除执行入口和
-跨模块协调仍须实现并验证，并发删除 / 复制不能仅由已提交副本独立性推定安全；预检只固定
+接口读取，不能据此证明 Speech 源删除与复制已具备跨模块原子屏障。Speech 删除执行已实现，
+但跨模块协调仍须实现并验证，并发删除 / 复制不能仅由已提交副本独立性推定安全；预检只固定
 快照并写计划，不删除任何内容。
 
 导出对象使用项目私有的 `{project_id}/exports/{export_id}/{artifact_id}`；项目

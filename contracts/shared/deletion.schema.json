@@ -502,14 +502,29 @@
       ]
     }
   },
+  "$comment": "x-speechnexus-errors is the exhaustive catalogue of stable error.code values the three Speech deletion operations (speechCreateDeletionPlan, speechCreateDeletion, speechGetDeletion) can answer with, mapped to their HTTP status; x-speechnexus-retryable-errors names the subset answered with error.retryable=true. A code omitted from the first map is not reachable, and a code listed without an emitting handler is stale. scripts/dev-env/check-route-conformance.py compares both maps against the emitting modules (deletion_errors.py, deletions.py, domain/deletion.py) in both directions and reports each drift with its file:line.",
   "x-speechnexus-errors": {
-    "deletion_owner_mismatch": 422,
     "resource_not_found": 404,
-    "deletion_confirmation_mismatch": 422,
-    "deletion_plan_expired": 409,
     "deletion_plan_changed": 409,
+    "deletion_plan_expired": 409,
     "deletion_dependency_conflict": 409,
     "idempotency_conflict": 409,
-    "deletion_stop_unconfirmed": 409
-  }
+    "deletion_owner_mismatch": 422,
+    "deletion_target_unsupported": 422,
+    "invalid_deletion_request": 422,
+    "invalid_idempotency_key": 422,
+    "deletion_confirmation_mismatch": 422,
+    "deletion_plans_unavailable": 503,
+    "deletion_plans_not_configured": 503,
+    "deletion_unavailable": 503,
+    "deletion_not_configured": 503,
+    "deletion_object_storage_unconfigured": 503,
+    "deletion_reference_unsupported": 503
+  },
+  "x-speechnexus-retryable-errors": [
+    "deletion_plans_unavailable",
+    "deletion_unavailable",
+    "deletion_object_storage_unconfigured",
+    "deletion_reference_unsupported"
+  ]
 }

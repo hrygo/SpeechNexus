@@ -12,6 +12,15 @@ checker also sends a request with a method the path does not register and
 requires the public error envelope, so a route added without envelope
 handling fails instead of passing on the status alone.
 
+The same run guards the deletion error catalogues. ``x-speechnexus-errors`` and
+``x-speechnexus-retryable-errors`` are exhaustive declarations, so both are
+compared with the code that answers: the Speech maps against the error table,
+the route literals and the domain subclasses, and the Workbench per-operation
+maps against the workbench error table and the literal refusals in
+``http_management.py``. A code the code emits but the contract omits, a code the
+contract lists but nothing emits, a status disagreement and a retryability
+disagreement each fail with a ``file:line``.
+
 The probe must never run business code. Shapes the simplified matcher cannot
 model faithfully fail closed before a request is sent (Starlette converters,
 non-whole-segment parameters, lazy include prefixes and any mount that is not a
@@ -115,6 +124,33 @@ UNIMPLEMENTED_ERROR_MODULE = "speechnexus_backend.speech.interfaces.http.unimple
 UNIMPLEMENTED_OPERATION_CODE = "operation_not_implemented"
 UNIMPLEMENTED_OPERATION_STATUS = 503
 
+# The deletion error catalogue: every stable error.code a deletion surface can
+# answer with, plus the subset answered retryable. A catalogue that reads as
+# exhaustive while the code emits more is how a retryable refusal gets
+# documented as a permanent one, so both directions are checked against the
+# emitting modules and every drift names a file:line.
+DELETION_SCHEMA = Path("contracts/shared/deletion.schema.json")
+WORKBENCH_CONTRACT = Path("contracts/workbench-openapi.yaml")
+SPEECH_DELETION_ERRORS = Path(
+    "backend/src/speechnexus_backend/speech/interfaces/http/deletion_errors.py"
+)
+SPEECH_DELETION_ROUTES = Path("backend/src/speechnexus_backend/speech/interfaces/http/deletions.py")
+SPEECH_DELETION_DOMAIN = Path("backend/src/speechnexus_backend/speech/domain/deletion.py")
+WORKBENCH_ERROR_TABLE = Path(
+    "backend/src/speechnexus_backend/workbench/interfaces/http_versions.py"
+)
+WORKBENCH_DELETION_ROUTES = Path(
+    "backend/src/speechnexus_backend/workbench/interfaces/http_management.py"
+)
+DELETION_CODE_PREFIX = "deletion"
+WORKBENCH_DELETION_OPERATIONS = (
+    "workbenchCreateDeletionPlan",
+    "workbenchCreateDeletion",
+    "workbenchGetDeletion",
+)
+ERROR_CATALOGUE_KEY = "x-speechnexus-errors"
+RETRYABLE_CATALOGUE_KEY = "x-speechnexus-retryable-errors"
+
 
 type LiteralValue = str | int | bool
 type ValueSet = frozenset[LiteralValue] | None
@@ -175,6 +211,30 @@ class UnimplementedSurface:
 
 
 @dataclass(frozen=True)
+class EmittedCode:
+    """One error code an emitter can answer, with where it is written."""
+
+    location: str
+    status: int | None = None
+    retryable: bool = False
+
+
+@dataclass(frozen=True)
+class CatalogueRow:
+    surface: str
+    contract: str
+    declared: int
+    emitted: int
+    retryable: int
+
+
+@dataclass(frozen=True)
+class ErrorCatalogue:
+    rows: tuple[CatalogueRow, ...] = ()
+    findings: tuple[Finding, ...] = ()
+
+
+@dataclass(frozen=True)
 class Report:
     contract_path: str
     contract_version: str
@@ -187,6 +247,7 @@ class Report:
     known_status_gaps: tuple[tuple[str, tuple[int, ...]], ...]
     undetermined: tuple[Undetermined, ...]
     unimplemented: tuple[tuple[str, str, str], ...] = ()
+    error_catalogue: ErrorCatalogue = field(default_factory=ErrorCatalogue)
 
 
 @dataclass
@@ -2110,6 +2171,445 @@ def require_envelope_coverage(
         )
 
 
+def _source(root: Path, path: Path) -> str:
+    return (root / path).read_text(encoding="utf-8")
+
+
+def _location(path: Path, line: int) -> str:
+    return f"{path.as_posix()}:{line}"
+
+
+def _module_tree(root: Path, path: Path) -> ast.Module:
+    return ast.parse(_source(root, path), filename=path.as_posix())
+
+
+def _assigned_dict(tree: ast.Module, path: Path, name: str) -> ast.Dict:
+    for statement in tree.body:
+        targets: list[ast.expr] = []
+        value: ast.expr | None = None
+        if isinstance(statement, ast.AnnAssign):
+            targets = [statement.target]
+            value = statement.value
+        elif isinstance(statement, ast.Assign):
+            targets = list(statement.targets)
+            value = statement.value
+        if isinstance(value, ast.Dict) and any(
+            isinstance(target, ast.Name) and target.id == name for target in targets
+        ):
+            return value
+    raise RuntimeError(f"{path}: the module-level {name} table is missing")
+
+
+def _error_table(root: Path, path: Path, name: str) -> dict[str, EmittedCode]:
+    """The ``code -> (status, ...)`` table a handler module answers from."""
+    table = _assigned_dict(_module_tree(root, path), path, name)
+    codes: dict[str, EmittedCode] = {}
+    for key, entry in zip(table.keys, table.values, strict=True):
+        if not isinstance(key, ast.Constant) or not isinstance(key.value, str):
+            raise RuntimeError(f"{path}: {name} has a non-literal error code key")
+        key_line = key.lineno
+        try:
+            value = ast.literal_eval(entry)
+        except (ValueError, TypeError) as error:
+            raise RuntimeError(
+                f"{path}:{key_line}: {name}[{key.value!r}] is not a literal entry"
+            ) from error
+        if not isinstance(value, tuple) or not value or not isinstance(value[0], int):
+            raise RuntimeError(
+                f"{path}:{key_line}: {name}[{key.value!r}] must start with an integer status"
+            )
+        codes[key.value] = EmittedCode(status=int(value[0]), location=_location(path, key_line))
+    return codes
+
+
+def _retryable_rule(root: Path) -> tuple[int, frozenset[str]]:
+    """Derive which 503 codes are retryable from ``deletion_error``'s expression.
+
+    The handler writes ``retryable = status == N and code not in (...)``; reading
+    that shape statically keeps the guard honest without importing the module.
+    An unrecognized shape is a hard failure, never a silent pass.
+    """
+    for node in ast.walk(_module_tree(root, SPEECH_DELETION_ERRORS)):
+        if not isinstance(node, ast.FunctionDef) or node.name != "deletion_error":
+            continue
+        for call in ast.walk(node):
+            if not isinstance(call, ast.Call):
+                continue
+            function = call.func
+            if not (
+                isinstance(function, ast.Name) and function.id == "parse" and len(call.args) == 2
+            ):
+                continue
+            payload = call.args[1]
+            for nested in ast.walk(payload):
+                if not isinstance(nested, ast.Dict):
+                    continue
+                for key, value in zip(nested.keys, nested.values, strict=True):
+                    if isinstance(key, ast.Constant) and key.value == "retryable":
+                        return _retryable_expression(value)
+    raise RuntimeError(
+        f"{SPEECH_DELETION_ERRORS}: cannot find the retryable expression; "
+        "update this guard when deletion_error() changes shape"
+    )
+
+
+def _retryable_expression(value: ast.expr) -> tuple[int, frozenset[str]]:
+    if not (
+        isinstance(value, ast.BoolOp) and isinstance(value.op, ast.And) and len(value.values) == 2
+    ):
+        raise RuntimeError(
+            f"{SPEECH_DELETION_ERRORS}: retryable must be `status == N and code not in (...)`"
+        )
+    status_node, exclusion = value.values
+    if not (
+        isinstance(status_node, ast.Compare)
+        and len(status_node.ops) == 1
+        and isinstance(status_node.ops[0], ast.Eq)
+        and len(status_node.comparators) == 1
+        and isinstance(status_node.left, ast.Name)
+        and status_node.left.id == "status"
+    ):
+        raise RuntimeError(
+            f"{SPEECH_DELETION_ERRORS}: the retryable status comparison is not `status == N`"
+        )
+    compared = status_node.comparators[0]
+    if not isinstance(compared, ast.Constant) or not isinstance(compared.value, int):
+        raise RuntimeError(f"{SPEECH_DELETION_ERRORS}: the retryable status is not an integer")
+    if not (
+        isinstance(exclusion, ast.Compare)
+        and len(exclusion.ops) == 1
+        and isinstance(exclusion.ops[0], ast.NotIn)
+        and len(exclusion.comparators) == 1
+        and isinstance(exclusion.left, ast.Name)
+        and exclusion.left.id == "code"
+    ):
+        raise RuntimeError(
+            f"{SPEECH_DELETION_ERRORS}: the retryable exclusion is not `code not in (...)`"
+        )
+    container = exclusion.comparators[0]
+    if not isinstance(container, (ast.Tuple, ast.List, ast.Set)):
+        raise RuntimeError(
+            f"{SPEECH_DELETION_ERRORS}: the excluded retryable codes are not a literal"
+        )
+    excluded: set[str] = set()
+    for element in container.elts:
+        if not isinstance(element, ast.Constant) or not isinstance(element.value, str):
+            raise RuntimeError(
+                f"{SPEECH_DELETION_ERRORS}: an excluded retryable code is not a string"
+            )
+        excluded.add(element.value)
+    return int(compared.value), frozenset(excluded)
+
+
+def _domain_error_codes(root: Path) -> dict[str, str]:
+    """Codes declared by ``DeletionError`` subclasses, which the route forwards."""
+    tree = _module_tree(root, SPEECH_DELETION_DOMAIN)
+    classes = [node for node in tree.body if isinstance(node, ast.ClassDef)]
+    known = {"DeletionError"}
+    changed = True
+    while changed:
+        changed = False
+        for node in classes:
+            if node.name in known:
+                continue
+            if any(isinstance(base, ast.Name) and base.id in known for base in node.bases):
+                known.add(node.name)
+                changed = True
+    codes: dict[str, str] = {}
+    for node in classes:
+        if node.name == "DeletionError" or node.name not in known:
+            continue
+        for statement in node.body:
+            if not isinstance(statement, ast.Assign) or len(statement.targets) != 1:
+                continue
+            target = statement.targets[0]
+            if not (isinstance(target, ast.Name) and target.id == "code"):
+                continue
+            value = statement.value
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                codes.setdefault(value.value, _location(SPEECH_DELETION_DOMAIN, statement.lineno))
+    return codes
+
+
+def _call_retryable(call: ast.Call) -> bool:
+    for keyword in call.keywords:
+        if keyword.arg == "retryable" and isinstance(keyword.value, ast.Constant):
+            return keyword.value.value is True
+    return False
+
+
+def _handler_literals(root: Path, path: Path, functions: tuple[str, ...]) -> dict[str, EmittedCode]:
+    """Codes a handler module writes literally into one of ``functions(...)``."""
+    codes: dict[str, EmittedCode] = {}
+    for node in ast.walk(_module_tree(root, path)):
+        if not isinstance(node, ast.Call) or not node.args:
+            continue
+        function = node.func
+        if not (isinstance(function, ast.Name) and function.id in functions):
+            continue
+        first = node.args[0]
+        if not (isinstance(first, ast.Constant) and isinstance(first.value, str)):
+            continue
+        codes.setdefault(
+            first.value,
+            EmittedCode(location=_location(path, node.lineno), retryable=_call_retryable(node)),
+        )
+    return codes
+
+
+def _catalogue_map(value: object, path: Path) -> dict[str, int]:
+    if not isinstance(value, dict):
+        raise RuntimeError(f"{path}: {ERROR_CATALOGUE_KEY} must map every code to its HTTP status")
+    codes: dict[str, int] = {}
+    for key, status in value.items():
+        if not isinstance(key, str) or not isinstance(status, int) or isinstance(status, bool):
+            raise RuntimeError(
+                f"{path}: {ERROR_CATALOGUE_KEY} entry {key!r} must be a code to integer status"
+            )
+        codes[key] = status
+    return codes
+
+
+def _retryable_entries(value: object, path: Path) -> set[str]:
+    if not isinstance(value, list):
+        raise RuntimeError(f"{path}: {RETRYABLE_CATALOGUE_KEY} must be an array of codes")
+    codes: set[str] = set()
+    for item in value:
+        if not isinstance(item, str):
+            raise RuntimeError(f"{path}: {RETRYABLE_CATALOGUE_KEY} must contain only codes")
+        codes.add(item)
+    return codes
+
+
+def _contract_line(root: Path, path: Path, code: str) -> str:
+    """Best-effort ``file:line`` for one declared code, for the drift report."""
+    pattern = re.compile(rf'^\s*"?{re.escape(code)}"?\s*[:,\]]')
+    for number, line in enumerate(_source(root, path).splitlines(), start=1):
+        if pattern.match(line):
+            return _location(path, number)
+    return path.as_posix()
+
+
+def _speech_catalogue(root: Path) -> tuple[dict[str, int], set[str], dict[str, str]]:
+    document = json.loads(_source(root, DELETION_SCHEMA))
+    if not isinstance(document, dict):
+        raise RuntimeError(f"{DELETION_SCHEMA}: the schema must be a JSON object")
+    codes = _catalogue_map(document.get(ERROR_CATALOGUE_KEY), DELETION_SCHEMA)
+    retryable = _retryable_entries(document.get(RETRYABLE_CATALOGUE_KEY), DELETION_SCHEMA)
+    locations = {code: _contract_line(root, DELETION_SCHEMA, code) for code in codes}
+    return codes, retryable, locations
+
+
+def _workbench_catalogue(root: Path) -> tuple[dict[str, int], set[str], dict[str, str]]:
+    document = yaml.safe_load(_source(root, WORKBENCH_CONTRACT))
+    if not isinstance(document, dict):
+        raise RuntimeError(f"{WORKBENCH_CONTRACT}: the contract must be an object")
+    paths = document.get("paths")
+    if not isinstance(paths, dict):
+        raise RuntimeError(f"{WORKBENCH_CONTRACT}: the contract has no paths object")
+    codes: dict[str, int] = {}
+    retryable: set[str] = set()
+    locations: dict[str, str] = {}
+    seen: set[str] = set()
+    for item in paths.values():
+        if not isinstance(item, dict):
+            continue
+        for operation in item.values():
+            if not isinstance(operation, dict):
+                continue
+            operation_id = operation.get("operationId")
+            if (
+                not isinstance(operation_id, str)
+                or operation_id not in WORKBENCH_DELETION_OPERATIONS
+            ):
+                continue
+            seen.add(operation_id)
+            declared = _catalogue_map(operation.get(ERROR_CATALOGUE_KEY), WORKBENCH_CONTRACT)
+            for code, status in declared.items():
+                previous = codes.get(code)
+                if previous is not None and previous != status:
+                    raise RuntimeError(
+                        f"{WORKBENCH_CONTRACT}: {code} is declared with both {previous} and "
+                        f"{status} across the deletion operations"
+                    )
+                codes[code] = status
+                locations.setdefault(code, _contract_line(root, WORKBENCH_CONTRACT, code))
+            retryable |= _retryable_entries(
+                operation.get(RETRYABLE_CATALOGUE_KEY), WORKBENCH_CONTRACT
+            )
+    missing = sorted(set(WORKBENCH_DELETION_OPERATIONS) - seen)
+    if missing:
+        raise RuntimeError(
+            f"{WORKBENCH_CONTRACT}: deletion operation(s) {', '.join(missing)} are missing, "
+            "so their error catalogue cannot be checked"
+        )
+    return codes, retryable, locations
+
+
+def _speech_emitters(root: Path) -> tuple[dict[str, EmittedCode], tuple[Finding, ...]]:
+    table = _error_table(root, SPEECH_DELETION_ERRORS, "_ERRORS")
+    retry_status, excluded = _retryable_rule(root)
+    emitted = {
+        code: replace(entry, retryable=entry.status == retry_status and code not in excluded)
+        for code, entry in table.items()
+    }
+    findings: list[Finding] = []
+    for code, entry in _handler_literals(root, SPEECH_DELETION_ROUTES, ("deletion_error",)).items():
+        if code not in emitted:
+            findings.append(
+                Finding(
+                    "deletion_error_collapsed",
+                    f"{entry.location} answers {code}, which {SPEECH_DELETION_ERRORS} does not "
+                    "map; deletion_error() answers deletion_plans_unavailable instead",
+                )
+            )
+    for code, location in _domain_error_codes(root).items():
+        if code not in emitted:
+            findings.append(
+                Finding(
+                    "deletion_error_collapsed",
+                    f"{location} declares {code}, which {SPEECH_DELETION_ERRORS} does not map; "
+                    "the route would answer deletion_plans_unavailable instead",
+                )
+            )
+    return emitted, tuple(findings)
+
+
+def _workbench_emitters(root: Path) -> dict[str, EmittedCode]:
+    table = _error_table(root, WORKBENCH_ERROR_TABLE, "ERRORS")
+    emitted = {
+        code: entry for code, entry in table.items() if code.startswith(DELETION_CODE_PREFIX)
+    }
+    for code, entry in _handler_literals(
+        root, WORKBENCH_DELETION_ROUTES, ("_error", "IngressError")
+    ).items():
+        if not code.startswith(DELETION_CODE_PREFIX):
+            continue
+        existing = emitted.get(code)
+        if existing is None:
+            emitted[code] = entry
+        elif entry.retryable:
+            # A literal call site can grant retry permission the table does not.
+            emitted[code] = replace(existing, retryable=True)
+    return emitted
+
+
+def _catalogue_findings(
+    surface: str,
+    contract: Path,
+    declared: dict[str, int],
+    contract_locations: dict[str, str],
+    declared_retryable: set[str],
+    emitted: dict[str, EmittedCode],
+) -> tuple[Finding, ...]:
+    findings: list[Finding] = []
+    for code in sorted(emitted):
+        entry = emitted[code]
+        if code not in declared:
+            findings.append(
+                Finding(
+                    "deletion_error_undeclared",
+                    f"{surface} can answer {code} at {entry.location} but {contract} does not "
+                    f"declare it in {ERROR_CATALOGUE_KEY}",
+                )
+            )
+        elif entry.status is not None and entry.status != declared[code]:
+            findings.append(
+                Finding(
+                    "deletion_error_status_mismatch",
+                    f"{surface} answer {code} with {entry.status} at {entry.location} but "
+                    f"{contract} declares {declared[code]}",
+                )
+            )
+    for code in sorted(set(declared) - set(emitted)):
+        findings.append(
+            Finding(
+                "deletion_error_unused",
+                f"{contract} declares {code} at "
+                f"{contract_locations.get(code, contract.as_posix())} but no emitter exists; "
+                "remove the stale code",
+            )
+        )
+    for code in sorted(declared_retryable - set(declared)):
+        findings.append(
+            Finding(
+                "deletion_error_retryable_unknown",
+                f"{contract} lists {code} in {RETRYABLE_CATALOGUE_KEY} but "
+                f"{ERROR_CATALOGUE_KEY} does not declare it",
+            )
+        )
+    actual_retryable = {code for code, entry in emitted.items() if entry.retryable}
+    for code in sorted(declared_retryable - actual_retryable):
+        emitted_entry = emitted.get(code)
+        where = (
+            emitted_entry.location
+            if emitted_entry is not None
+            else contract_locations.get(code, contract.as_posix())
+        )
+        findings.append(
+            Finding(
+                "deletion_error_retryable_mismatch",
+                f"{contract} lists {code} as retryable but {surface} answer retryable=false "
+                f"({where})",
+            )
+        )
+    for code in sorted(actual_retryable - declared_retryable):
+        findings.append(
+            Finding(
+                "deletion_error_retryable_mismatch",
+                f"{surface} answer {code} with retryable=true at {emitted[code].location} but "
+                f"{contract} does not list it in {RETRYABLE_CATALOGUE_KEY}",
+            )
+        )
+    return tuple(findings)
+
+
+def check_deletion_error_catalogue(root: Path) -> ErrorCatalogue:
+    """Guard both deletion error catalogues against the code that answers them."""
+    speech_codes, speech_retryable, speech_locations = _speech_catalogue(root)
+    speech_emitted, collapse_findings = _speech_emitters(root)
+    workbench_codes, workbench_retryable, workbench_locations = _workbench_catalogue(root)
+    workbench_emitted = _workbench_emitters(root)
+    findings = list(collapse_findings)
+    findings.extend(
+        _catalogue_findings(
+            "the Speech deletion routes",
+            DELETION_SCHEMA,
+            speech_codes,
+            speech_locations,
+            speech_retryable,
+            speech_emitted,
+        )
+    )
+    findings.extend(
+        _catalogue_findings(
+            "the Workbench deletion operations",
+            WORKBENCH_CONTRACT,
+            workbench_codes,
+            workbench_locations,
+            workbench_retryable,
+            workbench_emitted,
+        )
+    )
+    rows = (
+        CatalogueRow(
+            "Speech deletion routes",
+            DELETION_SCHEMA.as_posix(),
+            len(speech_codes),
+            len(speech_emitted),
+            sum(1 for entry in speech_emitted.values() if entry.retryable),
+        ),
+        CatalogueRow(
+            "Workbench deletion operations",
+            WORKBENCH_CONTRACT.as_posix(),
+            len(workbench_codes),
+            len(workbench_emitted),
+            sum(1 for entry in workbench_emitted.values() if entry.retryable),
+        ),
+    )
+    return ErrorCatalogue(rows=rows, findings=tuple(findings))
+
+
 def build_report(root: Path = ROOT) -> Report:
     contract_version, contract_operations = load_contract(root)
     other_contract_ids = load_other_operation_ids(root)
@@ -2129,7 +2629,13 @@ def build_report(root: Path = ROOT) -> Report:
         unimplemented=load_unimplemented_surface(root),
         method_not_allowed_envelopes=envelopes,
     )
-    return replace(report, contract_version=contract_version)
+    catalogue = check_deletion_error_catalogue(root)
+    return replace(
+        report,
+        contract_version=contract_version,
+        findings=report.findings + catalogue.findings,
+        error_catalogue=catalogue,
+    )
 
 
 def format_statuses(statuses: Iterable[int]) -> str:
@@ -2201,6 +2707,14 @@ def format_report(report: Report) -> str:
             suffix = f"; possible={possible}" if item.possible_statuses else ""
             lines.append(f"  {item.operation} @ {item.location}: {item.detail}{suffix}")
     lines.append("")
+    lines.append("DELETION ERROR CATALOGUE (代码 <-> 契约，双向)")
+    for catalogue_row in report.error_catalogue.rows:
+        lines.append(
+            f"  {catalogue_row.surface}: {catalogue_row.declared} declared, "
+            f"{catalogue_row.emitted} emitted, {catalogue_row.retryable} retryable "
+            f"[{catalogue_row.contract}]"
+        )
+    lines.append("")
     if report.findings:
         lines.append(f"FAILURES ({len(report.findings)})")
         for finding in report.findings:
@@ -2269,6 +2783,16 @@ def report_payload(report: Report) -> dict[str, Any]:
                 "possible_statuses": list(item.possible_statuses),
             }
             for item in report.undetermined
+        ],
+        "deletion_error_catalogue": [
+            {
+                "surface": row.surface,
+                "contract": row.contract,
+                "declared": row.declared,
+                "emitted": row.emitted,
+                "retryable": row.retryable,
+            }
+            for row in report.error_catalogue.rows
         ],
         "findings": [
             {"kind": finding.kind, "operationId": finding.operation_id, "detail": finding.detail}

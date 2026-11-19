@@ -1,7 +1,7 @@
 ---
 title: 数据删除、依赖裁决与恢复屏障
 status: active
-version: "1.4.0"
+version: "1.5.0"
 date: 2026-11-19
 ---
 
@@ -20,6 +20,23 @@ Speech `/v1/nexus/deletion-plans`、`/v1/nexus/deletions` 和 Workbench
 `/v1/workbench/deletion-plans`、`/v1/workbench/deletions`；查询使用对应的
 `GET .../deletions/{deletion_id}`。两个模块只写自己的表和对象；跨模块通过公开
 协议协调，不读取或删除对方业务表。接口不引入身份、私有空间或 ACL。
+
+## 稳定错误目录
+
+删除入口的稳定 HTTP 错误码、状态与可重试性以机器契约为准。Speech 三个删除操作由
+[`shared/deletion.schema.json`](../../contracts/shared/deletion.schema.json) 的
+`x-speechnexus-errors`（`code` → HTTP 状态）与 `x-speechnexus-retryable-errors`
+（回答 `error.retryable=true` 的 `code` 子集）穷举声明；Workbench 三个删除操作由
+[`workbench-openapi.yaml`](../../contracts/workbench-openapi.yaml) 各操作上的同名扩展声明。
+两处目录都是穷举声明，不是示例：`scripts/dev-env/check-route-conformance.py` 与发射代码
+双向比对，代码多出的、目录多出的、状态不符和可重试性不符的条目都会失败并定位到来源行。
+
+调用方读 `error.retryable` 决定是否用同一请求重试，不以状态码推断。`503
+deletion_unavailable` 表示同键并发清除的有界等待超时或执行存储暂不可用，账本保持
+`queued`，同一请求稍后可以重试；`503 deletion_plans_not_configured` 与 `503
+deletion_not_configured` 是部署权限缺口（`retryable=false`），须先应用对应的
+`deletion_plan_grants` / `deletion_execution_grants`。目标、参数、幂等键或确认范围的
+拒绝是 404/409/422，重试同一请求不会改变结果，收紧请求后才能继续。
 
 ## 预检和确认
 

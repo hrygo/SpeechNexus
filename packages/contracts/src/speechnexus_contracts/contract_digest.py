@@ -1,3 +1,3 @@
 """Generated digest of the canonical contract sources; do not edit."""
 
-CONTRACT_DIGEST = "sha256:ad581b4691e104fea9fad79d28fe3b0a5b08faace31156bdb7b2fe7d5c9c7863"
+CONTRACT_DIGEST = "sha256:718a58155bb47e515e732bf95b87faabb0b7cb90a093369ae2f4011ae6e7b4ca"

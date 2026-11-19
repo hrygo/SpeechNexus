@@ -27,6 +27,21 @@ from speechnexus_backend.speech.infrastructure.job_writer_columns import (
 TABLE = CANCELLATION_FENCE_TABLE
 RECONCILIATION_TABLE = "speech_job_cancellation_reconciliations"
 NOT_SUBMITTED_TABLE = "speech_job_cancellation_not_submitted"
+#: Storage bound on the ledger's ``attempts`` counter, single-sourced from the CHECK
+#: below so the DDL and the readiness read cannot disagree. A row at the bound is not a
+#: failed write: the claim's ``LEAST(attempts + 1, ceiling)`` keeps it claimable forever,
+#: which is what makes a permanently refused release a bounded-but-endless retry rather
+#: than an error. The read face names that shape (#1038).
+#:
+#: KNOWN DEBT: the claim side still hard-codes the same bound as
+#: ``_MAX_ATTEMPTS = 64`` in ``job_cancellation_reconciliation_postgres.py``, and the two
+#: literals must stay equal. A claim ceiling below this one saturates ``attempts`` early,
+#: so the read face never says "at attempt ceiling" while the row is already spent -- the
+#: silent state #1038 removed. A claim ceiling above it makes ``LEAST(attempts + 1, N)``
+#: emit 65+, which the CHECK below rejects: the claim UPDATE fails and the row stops
+#: being retried at all. Changing one means changing both; importing this constant there
+#: is deferred only because that module belongs to another slice of this change.
+ATTEMPT_CEILING = 64
 
 JOB_CANCELLATION_FENCE_DDL = (
     f"""CREATE TABLE {TABLE} (
@@ -49,7 +64,7 @@ JOB_CANCELLATION_FENCE_DDL = (
         job_id VARCHAR(128) COLLATE "C" PRIMARY KEY
             REFERENCES {TABLE} (job_id) ON DELETE RESTRICT,
         attempts INTEGER NOT NULL DEFAULT 0
-            CHECK (attempts BETWEEN 0 AND 64),
+            CHECK (attempts BETWEEN 0 AND {ATTEMPT_CEILING}),
         next_check_at_us BIGINT NOT NULL
             CHECK (next_check_at_us BETWEEN 0 AND 253402300799999999),
         last_outcome VARCHAR(24) COLLATE "C"
@@ -127,17 +142,19 @@ def cancellation_debt_reader_grants(schema: str, role: str) -> tuple[str, ...]:
     engine was never asked" from "the engine was asked and nothing proved it
     stopped" -- the two shapes the dispatch gate settles and holds respectively.
 
-    The cancellation-debt probe reads the ledger's ``last_outcome`` and
-    ``next_check_at_us`` as well: they are what tell "permanently unclaimable"
-    (``exhausted``) and "claimable right now" from "never claimed". Those two
-    columns are schedule state, not request content, so the identity stays the
+    The cancellation-debt probe reads the ledger's ``last_outcome``,
+    ``next_check_at_us`` and ``attempts`` as well: they are what tell "permanently
+    unclaimable" (``exhausted``), "claimable right now" and "on a backoff until T"
+    from "never claimed", and what tell a bounded retry from one whose attempt
+    counter already reached :data:`ATTEMPT_CEILING` (#1038). Those three columns are
+    schedule and retry bookkeeping, not request content, so the identity stays the
     read-only diagnostic it was.
     """
     schema, role = checked_sql_name(schema), checked_sql_name(role)
     return (
         f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"',
         f'GRANT SELECT (job_id, accepted_at_us) ON "{schema}".{TABLE} TO "{role}"',
-        f"GRANT SELECT (job_id, settled_at_us, last_outcome, next_check_at_us) "
+        f"GRANT SELECT (job_id, settled_at_us, last_outcome, next_check_at_us, attempts) "
         f'ON "{schema}".{RECONCILIATION_TABLE} TO "{role}"',
         f'GRANT SELECT (job_id, state, updated_at_us) ON "{schema}".speech_jobs TO "{role}"',
         f"GRANT SELECT (lease_id, operation_id, lease_state) "
@@ -166,6 +183,7 @@ def gateway_cancellation_fence_grants(schema: str, role: str) -> tuple[str, ...]
 
 
 __all__ = [
+    "ATTEMPT_CEILING",
     "JOB_CANCELLATION_FENCE_DDL",
     "NOT_SUBMITTED_TABLE",
     "RECONCILIATION_TABLE",

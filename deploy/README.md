@@ -1089,11 +1089,13 @@ SELECT 且拒绝任何写权限，未配置时列表返回 `503 model_binding_se
 **升级必做**：该出口现在自己核验「围栏已受理、账本未 `settled`、Job 仍 `cancelling`」，
 声明面因此新增三张关系的列级只读（`speech_jobs`、`speech_job_cancellation_fences`、
 `speech_job_cancellation_reconciliations`）；可选的取消债务探针身份同时新增
-`execution_stop_evidence` 与 `submit_intents.submit_intent_id`，其账本授权从两列
-（`job_id`、`settled_at_us`）扩到四列（再加 `last_outcome`、`next_check_at_us`）。配置了
+`execution_stop_evidence` 与 `submit_intents.submit_intent_id`，账本授权现为五列
+（`job_id`、`settled_at_us`、`last_outcome`、`next_check_at_us`、`attempts`）。配置了
 `SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL` 的环境，升级时必须以 owner 重跑
 `quarantine_release_grants`；配置了 `SPEECHNEXUS_READINESS_CANCELLATION_DSN` 的环境还必须
-重跑 `cancellation_debt_reader_grants`。漏跑的可自查信号有四类，都**不会**让
+重跑 `cancellation_debt_reader_grants`。停在旧四列授权上的部署**必须**重跑它：缺 `attempts`
+会让整条读面查询失败、detail 退化为 `unavailable (permission)`；这只影响读面 detail，不影响
+`/readyz` 的其余部分，也不影响 Job 创建。漏跑的可自查信号有四类，都**不会**让
 `/readyz` 失败（③ 与 ④ 互斥：④ 是账本授权已生效时正常的 Job 级降级）：
 
 1. 隔离释放角色：API 启动被拒并点名被拒的表/列
@@ -1103,21 +1105,22 @@ SELECT 且拒绝任何写权限，未配置时列表返回 `503 model_binding_se
 2. 隔离释放角色：只跑操作员 CLI 时退出码 3、输出
    `unavailable: quarantine_release_privilege_missing`。只配置了
    `SPEECHNEXUS_READINESS_CANCELLATION_DSN`、没有隔离释放角色的部署不适用这一条；
-3. 取消债务探针身份仍是旧的两列账本授权：探针整体报
-   `cancellation_debt: unavailable (permission)`。Job 级降级查询与完整查询读同一批账本列，
-   因此也不会退化成下面第 4 类的 Job 级明细；
-4. 账本四列已授权、但该身份仍读不到租约/执行/终止证据表：这是正常的 Job 级降级，detail
+3. 取消债务探针身份停在旧的两列或四列账本授权：探针整体报
+   `cancellation_debt: unavailable (permission)`；Job 级降级查询读同一批账本列，不会退化成
+   下面第 4 类；
+4. 账本五列已授权、但该身份仍读不到租约/执行/终止证据表：这是正常的 Job 级降级，detail
    按账本事实打印**命中的**标记（`never claimed` / `never claimable (exhausted)` /
-   `due now`），三者按行互斥、只打印非零项。能看到这些标记就说明账本列授权已生效；整个
-   detail 退化为第 3 类则说明还没生效。
+   `due now` / `retrying on schedule`），四者按行互斥、只打印非零项；`attempts` 到 64 时
+   另有**并列**计数 `retrying at attempt ceiling`。能看到这些标记就说明账本列授权已生效；
+   整个 detail 退化为第 3 类则说明还没生效。
 
 `GRANT` 对下一次查询即生效：同一 `SPEECHNEXUS_READINESS_CANCELLATION_DSN`/角色的探针在
 下一轮 `/readyz` 轮询就能读到新授权，**不需要**重启 API；只有把该 DSN 换成新角色才需要
 重启，让组合根重新装配探针。隔离释放角色的结论来自启动期逐列校验
 （`backend/src/speechnexus_backend/quarantine_release_runtime.py`），重跑授权后必须重新
 启动（或首次启动）API 才会通过，运行中的进程不会重新校验 ACL。同族的
-`stop_evidence_debt` 不读账本这两列，旧账本授权下仍可执行，不因这次扩列降级。降级形态与
-三个标记的语义见
+`stop_evidence_debt` 不读账本这几列，旧账本授权下仍可执行，不因这次扩列降级。降级形态、
+四个账本标记与并列的 `retrying at attempt ceiling` 的语义见
 [production-jobs.md 的可见面](../docs/components/production-jobs.md#隔离不了的时候可见面与处置)，
 此处不重复定义。
 

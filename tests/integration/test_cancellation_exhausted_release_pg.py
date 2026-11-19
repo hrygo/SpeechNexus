@@ -50,6 +50,7 @@ from speechnexus_backend.speech.application.job_cancellation_reconciliation impo
 )
 from speechnexus_backend.speech.domain.job_dispatch import submit_intent_identity
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
+    ATTEMPT_CEILING,
     RECONCILIATION_TABLE,
 )
 
@@ -62,8 +63,6 @@ MAX_ATTEMPTS = 3
 STEP_US = 10_000_000
 BASE_BACKOFF_US = 1_000_000
 MAX_BACKOFF_US = 4_000_000
-# The claim's CHECK-bound saturation point (``LEAST(attempts + 1, 64)``).
-ATTEMPT_CEILING = 64
 
 
 def _ledger(box: CancelSandbox) -> dict[str, Any] | None:

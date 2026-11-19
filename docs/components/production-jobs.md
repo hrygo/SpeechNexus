@@ -283,8 +283,9 @@ request ID，不覆盖他人事实。
 
 **这个目标有一类已知例外，实现确实会停在 `cancelling`**：执行已经是 `succeeded`/`aborted`
 等终态、但拿不到停止证据时，领域规则拒绝隔离一个已完成的执行，Job 因此停在 `cancelling`、
-租约停在 `reserved`、`held_slots` 不归零，账本 `attempts` 饱和在 64（见本节末「执行已
-`succeeded` 而后到的取消」）。公开状态机不允许 `cancelling → succeeded`，所以这条路径没有
+租约停在 `reserved`、`held_slots` 不归零，账本 `attempts` 饱和在 64（读面上是
+`retrying at attempt ceiling`；见本节末「执行已 `succeeded` 而后到的取消」）。公开状态机
+不允许 `cancelling → succeeded`，所以这条路径没有
 自动收口：带网关终止证据的走下一节的有界操作员出口，缺该证据的等 #338 的停止确认协议。
 这是**已知限制而非保证**，已列入发布说明候选。
 
@@ -340,7 +341,8 @@ Job 已是 `cancelled` 是另一条分支，判定它的是**容量结论而不�
 执行，因此这类受理会停在 `cancelling` 并反复进入「无法隔离」的可见面（见下一节），
 判定路径从不把 `succeeded` 改写成 `cancelled`。实测当前行为：Job 恒为 `cancelling`、
 租约恒为 `reserved`、`held_slots` 不归零、账本 `attempts` 涨到 64 后饱和并继续以最大
-退避领取；数据库触发器拒绝 `cancelling → succeeded`，所以不存在「自动变成成功」的分支。
+退避领取（此时轮询读面同时给出 `retrying on schedule` 与 `retrying at attempt ceiling`）；
+数据库触发器拒绝 `cancelling → succeeded`，所以不存在「自动变成成功」的分支。
 带网关 `engine_terminal_response` 证据的这类受理由下一节的有界操作员出口收口（仍不改
 状态机与触发器）；缺该证据的等 #338 的停止确认协议。竞争方案见
 [`docs/plans/2026-11-16-succeeded-then-cancelled.md`](../plans/2026-11-16-succeeded-then-cancelled.md)。
@@ -378,38 +380,61 @@ Job 已是 `cancelled` 是另一条分支，判定它的是**容量结论而不�
    它**不**使用 API 自己的 DSN，而是读取可选的专用只读 DSN
    `SPEECHNEXUS_READINESS_CANCELLATION_DSN`：为填充一个诊断就去给 `sn_api` 加取消账本、
    围栏、租约或执行表的 SELECT，是拿安全边界换一个字符串。没配这个 DSN 时 detail 是
-   `cancellation_debt: unavailable (not configured)`，其余一切照常。第四、第五路读法都不扩大
-   授权面：它们只读 `cancellation_debt_reader_grants` 已授予的列，迁移 `0060`、`0061` 与
-   `0062` 都只新增或替换索引（DDL），不新增表或列权限，也不会顺手给 `sn_api` 加表权限。
+   `cancellation_debt: unavailable (not configured)`，其余一切照常。四路读取（含 Job 级
+   降级形态）都只读 `cancellation_debt_reader_grants` 声明的列：迁移 `0060`、`0061` 与
+   `0062` 只新增或替换索引（DDL），不新增表权限，也不会顺手给 `sn_api` 加表权限。该函数
+   授予的账本列是五列：`job_id`、`settled_at_us`、`last_outcome`、`next_check_at_us` 与
+   `attempts`——最后两列是「下一次领取在何时」与「已经重试过几次」，属于调度与重试记账，
+   不含请求内容。**升级后必须重跑该函数**：旧的四列授权读不到 `attempts`，探针会退化为
+   `unavailable (permission)`（与其它漏授权形态相同，不影响 `/readyz`）。
 
    detail 的形态对应探针能读到多少：
 
    | 形态 | 何时出现 |
    |---|---|
-   | `cancellation_debt: N accepted cancellation(s) still hold capacity over M held lease(s) (held leases: completed-without-release=X, execution-unknown=Y; never claimed: Z; never claimable (exhausted): W; due now: V; left-cancelling-holding-capacity: L; abandoned-holding-capacity: A): job-… -> lease-…(lease=reserved, execution=executing, subclass=execution-unknown)` | DSN 指向被授予 `cancellation_debt_reader_grants`（或更宽）的只读身份 |
-   | `cancellation_debt: N accepted cancellation(s) still hold capacity (jobs: lease-unread=X; never claimed: Z; never claimable (exhausted): W; due now: V): job-… -> lease-unread [lease detail unavailable: permission]` | 该身份能读 Job、围栏与账本，但读不到租约/执行/终止证据表；此时也无法判断「Job 已离开 `cancelling` 且仍持有容量」或「账本开放行仍持有容量」，两个标签都不出现 |
+   | `cancellation_debt: N accepted cancellation(s) still hold capacity over M held lease(s) (held leases: completed-without-release=X, execution-unknown=Y; never claimed: Z; never claimable (exhausted): W; due now: V; retrying on schedule: R; retrying at attempt ceiling: C; left-cancelling-holding-capacity: L; abandoned-holding-capacity: A): job-… -> lease-…(lease=reserved, execution=executing, subclass=execution-unknown) [retrying: attempts=N, next in Ts]` | DSN 指向被授予 `cancellation_debt_reader_grants`（或更宽）的只读身份 |
+   | `cancellation_debt: N accepted cancellation(s) still hold capacity (jobs: lease-unread=X; never claimed: Z; never claimable (exhausted): W; due now: V; retrying on schedule: R): job-… -> lease-unread [lease detail unavailable: permission]` | 该身份能读 Job、围栏与账本，但读不到租约/执行/终止证据表；此时也无法判断「Job 已离开 `cancelling` 且仍持有容量」或「账本开放行仍持有容量」，两个标签都不出现 |
    | `cancellation_debt: unavailable (not configured)` | 未配置专用 DSN（默认部署） |
    | `cancellation_debt: unavailable (permission｜relation｜connection｜timeout｜error)` | 探针什么都读不到；分类保证真实故障仍然可见，而不是被吞掉 |
 
-   括号里的三对**账本时刻**事实互斥、按固定顺序出现，`N` 都数 **Job（受理）**，不按租约：
+   括号里的四对**账本时刻**事实互斥、按固定顺序出现，`N` 都数 **Job（受理）**，不按租约：
 
    | 标记 | 判定（与 worker 的领取谓词逐条一致） | 证明什么 | 不证明什么 |
    |---|---|---|---|
    | `never claimed: N` | 账本无行 | 自围栏写入以来没有任何进程领取过这条受理 | 不证明「现在没有进程在跑」；它描述历史，首次领取后就不再出现 |
    | `never claimable (exhausted): N` | 账本行 `settled_at_us IS NULL AND last_outcome = 'exhausted'` | 不会再被自动领取：领取谓词的 `last_outcome IS DISTINCT FROM 'exhausted'` 永远排除它，只有操作员出口能处置 | 不证明 Job 已终态，也不证明容量已归还 |
    | `due now: N` | 账本行 `settled_at_us IS NULL AND last_outcome IS DISTINCT FROM 'exhausted' AND next_check_at_us <= now` | 此刻处于可领取状态（下一轮领取会选中它） | 不证明没有推进者：健康 worker 在两个轮询之间也会让该值为真，**持续出现**才说明没人推进 |
+   | `retrying on schedule: R` | 账本行未结算、非 `exhausted`，且 `next_check_at_us > now` | 账本上存在一个**未来的领取时刻**：这是一次有界退避，不是放弃 | 不证明会有进程按时来领取（探针看不到 worker）；它与 `due now` 是同一行的两个时刻，持续停在 `due now` 才说明没人推进 |
 
-   第四个 scope `left-cancelling-holding-capacity: L` **不是账本标记**，而是 Job 状态侧
+   第四个账本标记 `retrying on schedule: R` 是 #1038 补上的那一格：查询一直会算出
+   `scheduled`，但 detail 此前把它丢掉，于是「按计划退避中」与「永远失败」在轮询读面上
+   是同一句话。它只陈述账本上存在未来领取时刻，不推测 worker 是否在跑；退避在到期后
+   自然变成 `due now`，因此这两个标记描述同一条行的两个时刻，而不是两种故障。
+
+   另有一个 scope 是**重试预算**的事实而不是时刻：`retrying at attempt ceiling: C` 数的是
+   未结算、仍持有容量、且账本 `attempts` 已达存储上界（`ATTEMPT_CEILING`，`CHECK` 约束为
+   64）的 Job。这种行的领取**不会失败**——`LEAST(attempts + 1, 64)` 把计数夹在上界，所以
+   它永远可领取、永远按同一退避重领，同时每一次领取都只是把同一次失败再记一遍。它就是
+   `never claimable (exhausted)` 在读面上的镜像：后者说「不会再有自动领取」，前者说
+   「自动领取还在继续，但不可能改变答案」。因此它与四个标记**并列**计数、绝不替代其中
+   任何一个——饱和行同时还是 `due now` 或 `retrying on schedule`——并且和它们一样按 Job
+   计、不按租约计（同一账本行被多条租约重复读到也只记一次）。
+   配置了 worker 时，`C` 只说明「已经失败过 64 次」；它**不**证明 worker 停了（持续
+   `due now` 才说明没人推进），也**不**说明容量能回来：处置仍是按本节末尾把 worker 跑起来
+   让释放重试，或按网关停止/证词路径处理，`attempts` 本身不是处置入口。
+
+   `left-cancelling-holding-capacity: L` 这个 scope **不是账本标记**，而是 Job 状态侧
    事实：该受理的 Job 已不在 `cancelling`，租约仍持有容量，账本仍未 `settled`。它与上面
-   三个标记并列出现，但不混入它们——同一个 Job 可以同时被 `never claimed` 和
+   四个标记并列出现，但不混入它们——同一个 Job 可以同时被 `never claimed` 和
    `left-cancelling-holding-capacity` 计数，前者说账本没有领取记录，后者说 Job 状态已经
    离开取消。`L` 按 Job 计，不按租约计，也不因租约条数重复。
    这条读法只看受理时间不早于 `now - 回看窗口` 的围栏（默认 24 小时；必须大于宽限，
    否则窗口里不可能有已超过宽限的受理）。窗口的用途只是给 5 秒轮询一个有界访问路径
    （迁移 `0060` 的 `speech_job_cancellation_fence_age_scan`；租约侧已被 `0062` 索引时，规划器也可能从那里出发连回围栏，两者都是索引）；它不决定旧债是否可见，
-   因为窗口外的形态由下面的第五个 scope 命名。
+   因为窗口外的形态由下面的 `abandoned-holding-capacity` 命名。
 
-   第五个 scope `abandoned-holding-capacity: A` 是第四路的**无回看窗口**版本，与它并列
+   `abandoned-holding-capacity: A` 是
+   `left-cancelling-holding-capacity` 那一路的**无回看窗口**版本，与它并列
    出现、互不混入：租约仍持有容量，该受理已超过宽限（与前三路相同的共同前提），但
    **不受回看窗口限制**——受理多老都会被点名；它也不做 Job 状态门禁。它覆盖三类形态：
    账本已 `exhausted`（自动化永不重领）、账本未结算但已过期（worker 尚未领取或尚未重试）、
@@ -468,19 +493,28 @@ Job 已是 `cancelled` 是另一条分支，判定它的是**容量结论而不�
    `SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_ENABLED` 等部署配置**——它只读台账，
    因此任何「有阻塞明细 = worker 在跑」的推断都不成立。配置了
    `SPEECHNEXUS_READINESS_CANCELLATION_DSN`、但没有常驻 worker 的部署，读面会在
-   `never claimed`（从未领取）与 `due now`（领取过、`next_check_at_us` 又已到期）之间变化；
+   `never claimed`（从未领取）、`retrying on schedule`（领取过并留下了未来领取时刻）与
+   `due now`（领取过、`next_check_at_us` 又已到期）之间变化；一条**没有推进者**的债务
+   通常停在 `due now`，而不是 `retrying on schedule`——后者说明有人刚写过退避计划。
    未配置该 DSN 时是 `unavailable (not configured)`，看不到这些标记。
 
    带这些标记时**不要**按「正在取消」处置：先按本节末尾「取消对账 worker 与开关」把 worker
    跑起来。一轮之后 `never claimed` 消失，该受理按其 `next_check_at_us` 变成 `due now`
-   （到期后）或先进入阻塞明细；这只证明它被领取过，不证明有常驻 worker。
+   （到期后）或先进入阻塞明细（并留下 `retrying on schedule` 与那一段
+   `[retrying: attempts=N, next in Ts]`）；这只证明它被领取过，不证明有常驻 worker。
    `never claimable (exhausted)` 不受「再跑一轮」影响：重跑多少轮都不会领取它。
-   三个计数都在 detail 的括号里、位于逐 Job 明细之前，`_bounded_detail` 的截断只丢弃明细，
-   丢不掉它们。
+   `retrying at attempt ceiling: C` 同样不受影响：C>0 说明这条债务已经用满 64 次自动重试，
+   跑更多轮只会继续记同样的失败——它的处置是让释放真的成功，不是再加一次重试。
+   四个标记与 `retrying at attempt ceiling` 的计数都在 detail 的括号里、位于逐 Job 明细
+   之前，`_bounded_detail` 的截断只丢弃明细，丢不掉它们。`retrying on schedule` 的 Job
+   还在明细里多带一段 `[retrying: attempts=N, next in Ts]`：那是同一条账本行的重试次数与
+   距下次领取的整秒数（向上取整），回答「还要等多久、已经试过几次」，不需要再钻取 SQL。
+   它按 Job 出现一次，多租约不会重复；`N` 与计数 `C` 用的是同一个 `attempts`。
 
    前缀后面紧跟的计数是**分类**，不是装饰：同一个前缀下面的两种债处置完全不同，
    报告必须让人一眼看出该走哪条路。**句子的数字各带单位**——`N` 是 Job（受理），
-   `over M held lease(s)` 与 `held leases` 分类是租约行，`jobs` 分类与三个账本标记是 Job；
+   `over M held lease(s)` 与 `held leases` 分类是租约行，`jobs` 分类、四个账本标记与
+   `retrying at attempt ceiling` 都是 Job；
    多阶段 Job 因此不会出现「3 个受理」旁边挂 4 个计数。分类由事实决定，不看意图：
 
    | `subclass` | 判定（与出口的判据逐条一致） | 处置 |
@@ -497,21 +531,23 @@ Job 已是 `cancelled` 是另一条分支，判定它的是**容量结论而不�
 
    完整的 `Job → 租约 → 两侧状态` 明细需要一个单独的只读身份，最小授权集合由
    `cancellation_debt_reader_grants(schema, role)` 生成（列级：围栏的 `job_id/accepted_at_us`、
-   账本的 `job_id/settled_at_us/last_outcome/next_check_at_us`、`speech_jobs.job_id/state`、
+   账本的 `job_id/settled_at_us/last_outcome/next_check_at_us/attempts`、`speech_jobs.job_id/state`、
    `admission_leases.lease_id/operation_id/lease_state`、
    `submit_intents.submit_intent_id/lease_id/execution_state`、终止证据的
    `submit_intent_id/evidence_kind/execution_stopped/resources_released`；
-   不含规范请求正文、不含对账写权限）。账本的这两列（`last_outcome`/`next_check_at_us`）是
-   调度状态，不是请求内容——三个账本标记全部由它们算出，缺授权时两条查询都会整体降级为
+   不含规范请求正文、不含对账写权限）。账本的这三列（`last_outcome`/`next_check_at_us`/
+   `attempts`）是调度与重试记账，不是请求内容——四个账本标记与 `retrying at attempt ceiling`
+   全部由它们算出，缺任一列授权时两条查询都会整体降级为
    `unavailable (permission)`。
    把这个角色的 DSN 配进 `SPEECHNEXUS_READINESS_CANCELLATION_DSN` 即可；不配就只有上面
    第二/第四种形态，逐条明细改用本节下面的只读钻取查询（由迁移/运维身份执行）。
 
-   **升级必做**：既有部署的该身份若还是旧的两列授权（账本只有 `job_id/settled_at_us`），
-   升级后必须以 owner 重跑 `cancellation_debt_reader_grants`，否则 `cancellation_debt`
-   的两条查询（完整形态与 Job 级降级形态）都读不到新列，读面变成
+   **升级必做**：既有部署的该身份若还是旧的两列或四列授权（账本没有 `next_check_at_us`
+   或没有 `attempts`），升级后必须以 owner 重跑 `cancellation_debt_reader_grants`，否则
+   `cancellation_debt` 的两条查询（完整形态与 Job 级降级形态）都读不到新列，读面变成
    `cancellation_debt: unavailable (permission)`（不会让 `/readyz` 失败，但会失去 Job 级
-   明细与三个账本标记）；同族的 `stop_evidence_debt` 不读这两列，不受影响。
+   明细、四个账本标记与 `retrying at attempt ceiling`）；同族的 `stop_evidence_debt` 不读
+   这两列，不受影响。
 
    探针复用一条连接（`application_name=speechnexus-readiness-debt`），不随每次 `/readyz`
    轮询新建会话；查询后回滚以保持会话空闲。

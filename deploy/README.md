@@ -582,11 +582,17 @@ workflow and has no published images.
 | `ghcr.io/hrygo/speechnexus-node-controller` | `deploy/images/node-controller.Dockerfile` | `node-controller` (outside this compose file) |
 | `ghcr.io/hrygo/speechnexus-asset-inspector` | `asset-inspector/Dockerfile` | `asset-inspector` |
 
-`minio` is not built here: compose consumes the third-party composition by tag.
+`minio` is deliberately not published here: the compose `minio` service carries both
+`image:` and `build: deploy/images/minio.Dockerfile`, so a deployment still builds it
+locally from GitHub Releases, `api.github.com` and `raw.githubusercontent.com` — the
+download path [#900](https://github.com/hrygo/SpeechNexus/issues/900) records failing on a
+throttled host. Pinning every other service by digest therefore does not remove that local
+build, and the failure it can hit.
 
 Each image is an `amd64` and an `arm64` build made natively on GitHub's `ubuntu-24.04` and
-`ubuntu-24.04-arm` runners and merged into one manifest list, so a plain `docker pull`
-resolves the architecture of the pulling host. The reference deployment is aarch64; no
+`ubuntu-24.04-arm` runners and merged into one manifest list, so `docker pull` resolves the
+architecture of the pulling host once the package is public (see the visibility boundary
+below). The reference deployment is aarch64; no
 step publishes an amd64-only image while calling it multi-architecture. The published tags
 are `v<version>` (the release tag verbatim), `<version>` and `sha-<12-char commit>`; all
 three point at the same manifest list, and the per-architecture build tags
@@ -599,6 +605,19 @@ Starting a publication:
 gh release view v0.1.0
 gh workflow run release-images.yml -f ref=v0.1.0
 ```
+
+A published record is treated as immutable. If the tag's release already carries any of the
+three assets, the run stops in the metadata job — before a single image is built — and asks
+for an explicit re-publication:
+
+```bash
+gh workflow run release-images.yml -f ref=v0.1.0 -f republish=true
+```
+
+Re-publication additionally needs approval of the `release` environment that the manifest
+job declares; without reviewers configured on that environment there is no prompt and the
+run proceeds. Replacing the assets is otherwise indistinguishable from publishing them for
+the first time, because the new `SHA256SUMS` verifies against the new files.
 
 A `push` of a `v*` tag starts the same run. Every image carries
 `org.opencontainers.image.source`, `.revision` and `.version`, plus
@@ -635,12 +654,17 @@ services:
     image: ghcr.io/hrygo/speechnexus-python@sha256:<digest from images.txt>
 ```
 
-Two boundaries this workflow does not cover. The images are unsigned: no provenance or SBOM
-attestations are attached, and `id-token` is not granted, so a digest proves what was
-published rather than who published it. And GHCR packages created by `GITHUB_TOKEN` are
+Three boundaries this workflow does not cover. The images are unsigned: no provenance or
+SBOM attestations are attached, and `id-token` is not granted, so a digest proves what was
+published rather than who published it. GHCR packages created by `GITHUB_TOKEN` are
 private by default, so an anonymous `docker pull` fails until the package's visibility is
 set to public and it is linked to this repository in the package settings; the publication
 run itself reads its own images back with the same token, so it cannot detect that gap.
+And the `release` environment is only a gate once reviewers are configured on it — the
+workflow names the environment, but the protection rule is a repository setting. Queue time
+is not part of any job's `timeout-minutes`: a mistyped runner label waits for a runner for
+up to 24 hours, and because a publication is never cancelled in flight, the next dispatch
+queues behind it until that run is cancelled by hand.
 
 ## Configuration authority
 

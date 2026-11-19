@@ -95,7 +95,7 @@ Node Controller 镜像验证由 CI 以同提交的 [reusable workflow](../../.gi
 | `controller_image` | `Node Controller: image evidence` | 调用镜像 scope、双架构构建与内部证据门禁，按输入差异决定是否构建 |
 | `docs_format` | `Docs: markdown code block formatting` | 以与 `uv.lock` 一致的锁定 Ruff 复跑 `ruff format --check .`（含 Markdown 内 Python 代码块）；只在 `docs` 范围执行，只装 Ruff 自身，不安装项目依赖 |
 | `docs_matrix` | `Docs: delivery matrix freshness` | 从提交快照离线重渲染矩阵并比对；仅矩阵、关联源、快照或生成器变化时执行渲染 |
-| `docs_refs` | `Docs: path:line references` | 校验 `docs/` 内 `路径:行号` 引用；终态文档全量门禁、过程记录只计数（按基线报增量）；无范围过滤，只用系统 Python 与标准库 |
+| `docs_refs` | `Docs: path:line references` | 校验 `docs/` 内 `路径:行号` 引用；终态文档全量门禁、过程记录只计数（按基线报增量）；并在同一次检出上跑未发布变更清单门禁（`docs/releases/unreleased.md` 必须点名新迁移与新授权函数）。两条都无范围过滤，只用系统 Python 与标准库；`fetch-depth: 0` 供标签解析 |
 | `required_checks` | `Gate: required checks for this change` | 按已验证范围核对全部适用结果，阻止失败、取消与意外跳过 |
 | `web` | `Web: lint, types, tests, build and accessibility` | 格式、lint、TypeScript、SDK 契约、workspace 测试和构建、Web 镜像构建上下文完整性、真实浏览器无障碍与对比度 |
 | `compose` | `Compose: configuration validation` | 执行 `docker compose config --quiet`，不启动服务或发布部署 |
@@ -702,7 +702,7 @@ RESULT PASS                                    # exit=0，new=0
 
 ### 作业与门禁
 
-`docs_refs`（`Docs: path:line references`）只检出仓库，用 runner 的系统 Python 3.12+ 与标准库执行 `python3 scripts/dev-env/check-doc-refs.py --baseline scripts/dev-env/doc-refs-baseline.json`，不安装项目依赖；超时 3 min 是预算，本机实测脚本本身约 0.25 s（接入时 385 份 Markdown、1427 条 `路径:行号` 文本）。它没有范围过滤，和 `routing`、`docs_matrix` 一样每个 PR 都执行：源码 PR 删改被引用文件同样会让终态文档的引用失效，按范围过滤就会恰好在最需要它的地方跳过。`Gate: required checks for this change` 要求该作业 success，不按范围映射——`docs` 与全量范围都执行，失败、取消或跳过都使门禁失败。
+`docs_refs`（`Docs: path:line references`）只检出仓库，用 runner 的系统 Python 3.12+ 与标准库执行 `python3 scripts/dev-env/check-doc-refs.py --baseline scripts/dev-env/doc-refs-baseline.json`，不安装项目依赖；同一次检出上的第二步跑未发布变更清单门禁（见[未发布变更清单门禁](#未发布变更清单门禁)），它要解析发布标签，所以检出用 `fetch-depth: 0` 而不是浅检出；超时 3 min 是预算，本机实测脚本本身约 0.25 s（接入时 385 份 Markdown、1427 条 `路径:行号` 文本）。它没有范围过滤，和 `routing`、`docs_matrix` 一样每个 PR 都执行：源码 PR 删改被引用文件同样会让终态文档的引用失效，按范围过滤就会恰好在最需要它的地方跳过。`Gate: required checks for this change` 要求该作业 success，不按范围映射——`docs` 与全量范围都执行，失败、取消或跳过都使门禁失败。
 
 ### 实测反例
 
@@ -758,6 +758,38 @@ RESULT FAIL
 - 过程记录的计数不是门禁：增长不阻塞合并，这是「保留原时点事实」的取舍，不是遗漏。
 
 调度证据等级：**已实测**（2026-11-16 的两次运行，见上）。**限定**：反例提交同时让 `routing` 里的 `tests/ci` 用例（「检出必须与提交的基线一致」）变红，门禁按所见先报 `routing=failure` 后退出。所以那次运行里**直接因本门禁而红的只有 `Docs: path:line references` 作业本身**；`Gate` 的红是同一次运行里另一个作业的红，其日志归因是 `routing`，不能当作「门禁的 `docs_refs` 分支被观测到」的证据。`DOCS_REFS_RESULT != success` 这一分支由 `tests/contract/test_ci_workflow.py` 与 `tests/ci/test_doc_refs_ratchet.py` 的真值表覆盖。
+
+## 未发布变更清单门禁
+
+`docs_refs` 作业的第二步执行 [check-unreleased-notes.py](../../scripts/dev-env/check-unreleased-notes.py)：
+以 `git describe --tags --abbrev=0` 取最近发布标签，断言 `docs/releases/unreleased.md` 里
+有自该标签以来**新增或修改的每个迁移文件**（名字去掉 `versions/` 前缀与 `.py`）与
+**每个被改动文件里的每个 `*_grants` 函数**。这条门禁是「照 `v0.1.0` 部署的人换镜像后会
+在无提示的情况下踩到权限退化」的反向约束：清单漏一条，合并就红。
+
+判据是「一行归属」而不是「出现过」：名字必须以表格行或列表项开头（允许前置的 `|`、`-`、
+`>`、反引号与强调符号），正文里顺带提一次不算。否则删掉运维真正会读的那一行，检查仍会因
+别处一句引用而变绿。删除的迁移不计：它没有要运维执行的动作。空集通过，标签之后没有任何
+迁移与授权变动时不要求清单新增条目。
+
+授权定义文件按内容判定：产品源码（`src` 下的 Python）中定义了 `<name>_grants(` 的文件都在
+范围内，所以 `job_cancellation_fence_schema.py` 这类 schema 模块与名字以 `_grants` 结尾的
+模块同等对待；同一文件里的函数全部要求点名，哪个函数真的变了由清单自己标注。
+
+全历史是前提：检出用 `fetch-depth: 0` 并显式 `fetch-tags: true`。浅检出解析不到标签时脚本
+以 2 退出并说明原因，不会把「没有变化」当成通过。放在已存在的 `docs_refs` 作业里而不是新开
+作业，是因为它同样要求每个 PR 都执行，而该作业已经为一条文档门禁检出仓库；受保护检查的
+作业集合与结果映射因此不变。
+
+覆盖边界：只做名字存在性断言。它不判断清单里的命令能否执行、签名与授权列是否仍与代码一致，
+也不发现「授权函数没变、但它引用的列元组在另一个模块里被改宽」——那种模块不定义
+`*_grants` 函数，不在判据内。清单本身的正确性仍要人读，门禁只防漏项。
+
+实测（2026-11-20，本机）：当前 `main` 相对 `v0.1.0` 的 6 个迁移与 2 个文件里的 9 个函数全部
+被点名时 `RESULT OK`；新增一条未登记的迁移文件、或删掉 `0063_deletion_targets_blocked` 的
+清单行，均为 `RESULT FAIL 1 problem(s)`；最近标签之后没有迁移与授权变化的临时仓库为
+`RESULT OK`（`empty set passes`）。`tests/ci/test_unreleased_notes_gate.py` 用临时 git 仓库
+钉住这三条，另加「无标签退出 2」与「删除的迁移不计」。
 
 ## 公开语音路由一致性门禁
 

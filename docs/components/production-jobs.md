@@ -151,6 +151,13 @@ attempt/lease，因此不会被该通道领取，也不会对既有锚点再次�
 `SPEECHNEXUS_JOB_DISPATCH_KINDS` 选择本进程的 kind 列表（默认 `asr,tts`，逗号分隔、
 去重且必须属于可派发并集）。
 
+派发泳道归属只在 `speech/domain/public_jobs.py` 的 `JOB_KIND_PROFILES` 里声明：`lane`
+列取 `default`/`voice_generation`/`voice_validation`，`job_dispatch.py` 的
+`DISPATCHABLE_JOB_KINDS`、`VOICE_GENERATION_JOB_KINDS`、`VOICE_VALIDATION_JOB_KINDS`、
+`VOICE_JOB_KINDS` 与可派发并集都是该列的投影，不再持有 kind 字面量。三条泳道互斥，
+新增 kind 必须声明泳道，否则它不会进入任何队列；`voice_preview` 的 `lane` 为 `None`，
+它可提交、可回读，但没有队列领取，因此不在可派发并集内。
+
 `PostgresDispatchQueue.require_admission` 的默认值是 `False`，因为这个类也服务
 voice 生成 lanes 与历史调用方，它们需要领取仅含 operation 锚点的行；生产 Job runtime
 是唯一把它设为 `True` 的装配点，并在启动时断言该过滤确实生效，回退即拒绝启动。

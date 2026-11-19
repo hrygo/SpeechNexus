@@ -110,9 +110,9 @@ ready preview Artifact 匹配（否则 422 `voice_draft_not_candidate` 或 503
 省略 `model` 时从绑定 `logical_model` 推导，显式不一致返回 422
 `voice_draft_input_unavailable`。
 
-`voice_preview` Job 停在 `pending`，本切片不派发、不产音频；`DISPATCHABLE_JOB_KINDS`
-仍为 `("asr", "tts")`，kind 过滤让预览行不占批次也不毒化同批 ASR/TTS。预览执行消费者
-仍待后续切片。读取按单数
+`voice_preview` Job 停在 `pending`，本切片不派发、不产音频；它在 `JOB_KIND_PROFILES`
+里的 `lane` 为 `None`，因此不在可派发并集内，默认队列仍是 `("asr", "tts")`，
+kind 过滤让预览行不占批次也不毒化同批 ASR/TTS。预览执行消费者仍待后续切片。读取按单数
 `preview_artifact_id` 权威回读：Job 必须 succeeded，Artifact 必须同 workspace、ready、
 `preview` kind 且 receipt 匹配；缺失或非 ready 时 `GET /v1/nexus/jobs/{job_id}` 与列表
 返回 503，不把伪造结果投影成成功。生成结果的复数 `preview_artifact_ids` 规则不变，
@@ -228,7 +228,10 @@ voice generation lane 是可选消费者，调用方显式传 `kinds=VOICE_GENER
 领取 `voice_design`/`voice_clone`；`voice_validation` 是独立 lane
 `VOICE_VALIDATION_JOB_KINDS`，生产消费者必须同时传 `require_admission=True`，只领取
 已有完整 admission attempt/lease 的校验 Job。kind 过滤在同一条 claim SQL 内完成，不占
-默认批次上限，也不会在行转换时抛 `DispatchProtocolError` 毒化同批 ASR/TTS。生产装配
+默认批次上限，也不会在行转换时抛 `DispatchProtocolError` 毒化同批 ASR/TTS。这些 kind
+元组都是 `speech/domain/public_jobs.py` 中 `JOB_KIND_PROFILES.lane` 的投影，
+`job_dispatch.py` 不再另存 kind 列表；`voice_preview` 没有泳道（`lane=None`），既不
+进默认队列也不进 voice 泳道。生产装配
 （planner、引擎适配器、资源准入与超时结算）归
 [#528](https://github.com/hrygo/SpeechNexus/issues/528)（原生父
 [#340](https://github.com/hrygo/SpeechNexus/issues/340)）；当前没有默认启动的 voice 消费者。

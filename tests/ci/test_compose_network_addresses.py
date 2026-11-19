@@ -94,8 +94,8 @@ class ComposeDefaultTest(unittest.TestCase):
 
     def test_each_variable_is_interpolated_exactly_once(self) -> None:
         interpolations = compose_interpolations()
-        self.assertEqual(interpolations.get(SUBNET_VARIABLE), [850])
-        self.assertEqual(interpolations.get(MINIO_VARIABLE), [90])
+        self.assertEqual(interpolations.get(SUBNET_VARIABLE), [899])
+        self.assertEqual(interpolations.get(MINIO_VARIABLE), [91])
 
     def test_no_other_network_literal_is_pinned_in_compose(self) -> None:
         for number, line in enumerate(COMPOSE.read_text(encoding="utf-8").splitlines(), start=1):

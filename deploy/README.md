@@ -54,6 +54,12 @@ Additional profiles are opt-in:
   that acts on the `expires_at_us` every published Result Artifact records. It is
   absent from the base topology: without it, publication records a deadline but
   nothing removes content. See [Artifact retention](#artifact-retention-artifact-retention-profile).
+- `admission-watch`: explicitly starts `admission-watch`, which polls the Job
+  admission report on an interval and logs one line per change of its verdict plus
+  one alert line after consecutive deployment-level refusals. It is absent from the
+  base topology and the process itself is off unless enabled; without it nothing
+  notices a deployment whose every create answers 503 while `/readyz` stays green.
+  See [Admission watch](#admission-watch-admission-watch-profile).
 - `asset-inspection`: explicitly starts the private audio inspection container
   `asset-inspector`; it is absent from the base topology, publishes no host port
   and joins only a dedicated `internal: true` network. Enabling it requires
@@ -576,7 +582,7 @@ workflow and has no published images.
 
 | Image | Build input | Services |
 | --- | --- | --- |
-| `ghcr.io/hrygo/speechnexus-python` | `deploy/images/python.Dockerfile` | the 12 `build: *python-build` units, including `gateway` — `execution-gateway` has no image of its own |
+| `ghcr.io/hrygo/speechnexus-python` | `deploy/images/python.Dockerfile` | the 13 `build: *python-build` units, including `gateway` — `execution-gateway` has no image of its own |
 | `ghcr.io/hrygo/speechnexus-web-admin` | `deploy/images/web.Dockerfile`, `APP_NAME=admin` | `admin` |
 | `ghcr.io/hrygo/speechnexus-web-workbench` | `deploy/images/web.Dockerfile`, `APP_NAME=workbench` | `workbench` |
 | `ghcr.io/hrygo/speechnexus-node-controller` | `deploy/images/node-controller.Dockerfile` | `node-controller` (outside this compose file) |
@@ -1282,6 +1288,44 @@ execution gateway，再升级 backend/worker；回退时先停用自定义声音
 Release preflight C9 checks only the parsed Compose service set and the presence
 of the gateway's private ASR/TTS configuration keys. It does not start these
 containers; runtime and business evidence remain separate.
+
+## Admission watch (`admission-watch` profile)
+
+`GET /v1/nexus/jobs/admission-readiness` answers one instant and only when somebody
+asks it. A deployment that answers `503` to every create — an elapsed readiness
+receipt, a pinned instance outside `active`, a full quota — therefore used to look
+healthy from outside: `/readyz` `200`, container healthcheck green, `docker ps`
+clean (#845). `admission-watch` asks on an interval:
+
+```bash
+docker compose --env-file deploy/compose.env \
+  -f deploy/compose.yaml --profile admission-watch up -d
+docker compose --env-file deploy/compose.env \
+  -f deploy/compose.yaml logs -f admission-watch
+```
+
+It calls the same service object the route calls
+(`PublicJobs.admission_readiness`), which calls the same predicate a create calls, so
+it holds no second copy of the admission rules. Each poll is one `REPEATABLE READ,
+READ ONLY` transaction: it never reserves, writes, probes an engine or opens an HTTP
+client against our own endpoint.
+
+Log volume is bounded by state changes, not by the interval. One
+`admission_watch_started` line per workspace when the process starts, one
+`admission_watch_changed` line per change of `status`/`cause` (carrying `from` and
+`to`), and the alert latch: `admission_watch_alerted` once after
+`SPEECHNEXUS_ADMISSION_WATCH_ALERT_AFTER` consecutive refusals whose cause is
+deployment-level, then `admission_watch_cleared` when the streak ends. A
+workspace-scoped refusal (`workspace_not_found`, `workspace_disabled`,
+`workspace_not_configured`) still logs its change line but never raises the alert.
+
+It runs as the admission identity — `SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL`,
+forwarded unchanged — because the Job writer role cannot see the reservation
+counters the report reads; a blank DSN fails at startup. The process has its own off
+switch (`SPEECHNEXUS_ADMISSION_WATCH_ENABLED`, default `false`) and does nothing at
+all without it: no pool, no connection, no log line. The profile is the deployment
+side of that switch, so the Compose service supplies `true`. Thresholds, intervals
+and the criteria are in [docs/operations/admission-watch.md](../docs/operations/admission-watch.md).
 
 ## Independent Workbench API (`workbench-api` profile)
 

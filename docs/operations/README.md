@@ -17,6 +17,7 @@
 - [服务前缀环境变量的启动校验](environment-key-prefixes.md)：拼错或配错入口的前缀变量在启动时点名拒绝/告警。
 - [启动闸门的失败输出形态](startup-gate-output.md)：每个单元的闸门阶段、实测是一行 `FAIL:` 还是 traceback、退出码几、文档承诺与处置。
 - [参考部署异步 Job 的六项前置与自检](async-job-runbook.md) · 只读自检 `scripts/dev-env/check-async-job-prereqs.py`。
+- [准入就绪巡检](admission-watch.md)：`admission-watch` profile 定期读准入报告、只在结论变化时记一行日志，并用「连续 N 次部署级拒绝」叫醒人。
 - [从空库按文档起参考部署的执行记录](compose-minimal-from-zero.md)：§13 是从空库到第一个 `202` 的步骤清单（判定顺序、可复跑脚本 `scripts/dev-env/check-from-empty-first-job.sh`），§14 是 2026-11-17 的实跑输出与 D12–D15 偏差。
 - [参考部署一条命令验收](reference-acceptance.md) · `scripts/dev-env/reference-acceptance.py`（工具/迁移/角色/桶/栈/启动闸门/健康）。
 - [容量清单](capacity-manifest.md) · [资格报告](qualification-report.md) · [内建声音资格](builtin-voice-qualification.md)。

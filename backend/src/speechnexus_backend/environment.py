@@ -141,6 +141,11 @@ PLANES: tuple[NonSettingPlane, ...] = (
         runtime=True,
     ),
     NonSettingPlane(
+        prefixes=("SPEECHNEXUS_ADMISSION_WATCH_",),
+        owner="the admission-watch worker entrypoint",
+        runtime=True,
+    ),
+    NonSettingPlane(
         prefixes=("SPEECHNEXUS_VOICE_EVIDENCE_",),
         owner="the voice-evidence worker entrypoint",
         runtime=True,

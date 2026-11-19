@@ -13,7 +13,8 @@ name: speechnexus
 #     report object storage, which this bootstrap surface does not assemble.
 # Adding any of them here would incorrectly claim those capabilities are assembled.
 # `migrate`, `engine-register`, `engine-readiness` (readiness renewal and its
-# read-only report), `binding-disable-worker`, `job-dispatch-worker`, `admin`,
+# read-only report), `binding-disable-worker`, `job-dispatch-worker`,
+# `admission-watch`, `admin`,
 # `workbench` and `asset-inspector` are opt-in profiles and therefore do not
 # appear in the base service list. The `job-dispatch` profile assembles the
 # public Job dispatcher process behind a startup gate that names a missing dispatch
@@ -555,6 +556,54 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  # Opt-in Job admission watch. The report at `GET
+  # /v1/nexus/jobs/admission-readiness` answers one instant and only when somebody
+  # asks, so a deployment that refuses every create -- an elapsed readiness receipt,
+  # a pinned instance outside `active`, a full quota -- used to stay green on
+  # `/readyz`, on the container healthcheck and in `docker ps`. This process asks on
+  # an interval and logs one line per change of `status`/`cause`, plus a single
+  # alert line after `ALERT_AFTER` consecutive deployment-level refusals.
+  #
+  # It writes nothing and never restarts anything: the answer is a read-only
+  # projection over the rows admission reads, taken through the same service object
+  # the route calls, over its own single-connection pool. It needs the admission
+  # identity (`SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL`) because the Job writer role
+  # cannot see the reservation counters; a blank DSN fails at startup.
+  #
+  # Disabled by default, like the cancellation reconciliation worker: the `up` of
+  # the base topology never includes it, and the process itself does nothing at all
+  # without `SPEECHNEXUS_ADMISSION_WATCH_ENABLED`. See
+  # docs/operations/admission-watch.md.
+  admission-watch:
+    profiles: ["admission-watch"]
+    build: *python-build
+    command: ["speechnexus-admission-watch"]
+    user: "${SPEECHNEXUS_RUNTIME_UID:?set SPEECHNEXUS_RUNTIME_UID from id -u}:${SPEECHNEXUS_RUNTIME_GID:?set SPEECHNEXUS_RUNTIME_GID from id -g}"
+    environment:
+      SPEECHNEXUS_PROCESS_ROLE: scheduler
+      # The profile is the deployment-side switch; the process keeps its own
+      # off-by-default flag for a non-Compose timer, so a profile start opts in here.
+      SPEECHNEXUS_ADMISSION_WATCH_ENABLED: ${SPEECHNEXUS_ADMISSION_WATCH_ENABLED:-true}
+      SPEECHNEXUS_ADMISSION_WATCH_INTERVAL_SECONDS: ${SPEECHNEXUS_ADMISSION_WATCH_INTERVAL_SECONDS:-60}
+      SPEECHNEXUS_ADMISSION_WATCH_ALERT_AFTER: ${SPEECHNEXUS_ADMISSION_WATCH_ALERT_AFTER:-3}
+      SPEECHNEXUS_ADMISSION_WATCH_WORKSPACES: ${SPEECHNEXUS_ADMISSION_WATCH_WORKSPACES:-workspace-default}
+      SPEECHNEXUS_ADMISSION_WATCH_TRANSACTION_TIMEOUT_SECONDS: ${SPEECHNEXUS_ADMISSION_WATCH_TRANSACTION_TIMEOUT_SECONDS:-3}
+      # The report reads the admission role's rows, so it reuses that key instead of
+      # a second credential for the same database.
+      SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL: ${SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL:-}
+      SPEECHNEXUS_DATABASE_SCHEMA: speech
+    depends_on:
+      postgres:
+        condition: service_healthy
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=1777

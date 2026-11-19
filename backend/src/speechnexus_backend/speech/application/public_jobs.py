@@ -24,8 +24,10 @@ from speechnexus_backend.speech.domain.admission import (
     CAPACITY_REJECTION_CODES,
     PUBLIC_ADMISSION_CODES,
 )
+from speechnexus_backend.speech.domain.job_admission_readiness import AdmissionReadiness
 from speechnexus_backend.speech.domain.public_jobs import (
     CANCELLATION_UNCONFIRMED,
+    JOB_KIND_TASK,
     JobArtifactFact,
     JobCancellationReceipt,
     JobCancellationResult,
@@ -50,15 +52,6 @@ from speechnexus_backend.speech.domain.publications import Publication, Publicat
 
 DEFAULT_WORKSPACE = "workspace-default"
 _REVISION = re.compile(r"[1-9][0-9]{0,18}\Z")
-
-
-_REQUIRED_TASK: dict[JobKind, str] = {
-    "asr": "asr_file",
-    "tts": "tts_file",
-    "voice_design": "voice_design",
-    "voice_clone": "voice_clone",
-    "voice_validation": "voice_validation",
-}
 
 
 def _encode_list_cursor(created_at_us: int, job_id: str, scope: str) -> str:
@@ -326,6 +319,20 @@ class JobFacts(Protocol):
     def catalog_revision(self) -> int: ...
 
     def now_us(self) -> int: ...
+
+
+@runtime_checkable
+class AdmissionReadinessStore(Protocol):
+    """The one read-only capability the readiness report needs from a store.
+
+    It is declared separately from ``PublicJobStore`` because the report is a
+    projection over admission rows: every store that writes Jobs would otherwise
+    have to grow a method only the admission adapter can implement. A store that
+    does not offer the read fails the report instead of it answering ``admitting``
+    by omission.
+    """
+
+    def admission_readiness(self, workspace_id: str) -> AdmissionReadiness: ...
 
 
 class PublicJobStore(Protocol):
@@ -605,6 +612,18 @@ class PublicJobs:
         )
         self._now_us = now_us or facts.now_us
 
+    def admission_readiness(self, workspace_id: str) -> AdmissionReadiness:
+        """Ask the store for one readiness verdict, never a second opinion.
+
+        The service holds no admission rule: the store calls the predicate the
+        create path calls, so this method only forwards the question. A store
+        without the read port fails the report rather than being reported as
+        admitting by omission.
+        """
+        if not isinstance(self._store, AdmissionReadinessStore):
+            raise PublicJobUnavailableError
+        return self._store.admission_readiness(workspace_id)
+
     def submit(
         self,
         payload: Mapping[str, Any],
@@ -789,7 +808,7 @@ class PublicJobs:
         raw_model = payload.get("model")
         model_id: str
         pin: tuple[str, int] | None
-        required_task = _REQUIRED_TASK.get(typed_kind)
+        required_task = JOB_KIND_TASK.get(typed_kind)
         if typed_kind == "voice_validation":
             pin, derived_model = self._validation_binding(payload, workspace_id)
             if raw_model is None:
@@ -831,7 +850,7 @@ class PublicJobs:
                 raise self._unpublished_binding(model_id)
             binding = latest
             tasks = binding.definition.get("tasks")
-            if not isinstance(tasks, list) or _REQUIRED_TASK[typed_kind] not in tasks:
+            if not isinstance(tasks, list) or JOB_KIND_TASK[typed_kind] not in tasks:
                 raise ModelNotPublishedError
 
         voice = self._reference(payload.get("voice"))
@@ -1656,6 +1675,7 @@ def _canonical_intent(payload: Mapping[str, Any], kind: JobKind) -> dict[str, An
 
 
 __all__ = [
+    "AdmissionReadinessStore",
     "AssetNotReadyError",
     "CancellationView",
     "DisabledWorkspaceError",

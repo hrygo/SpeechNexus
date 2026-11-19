@@ -135,12 +135,13 @@ class DocumentedCapabilityGuardTests(unittest.TestCase):
         self._rewrite(
             PRD,
             (
-                "公开 Job 路由已装配六个操作：创建（`POST /v1/nexus/jobs`）、"
+                "公开 Job 路由已装配七个操作：创建（`POST /v1/nexus/jobs`）、"
                 "列表（`GET /v1/nexus/jobs`）、读取（`GET /v1/nexus/jobs/{job_id}`）、"
                 "取消（`POST /v1/nexus/jobs/{job_id}/cancellations`）、"
-                "重试（`POST /v1/nexus/jobs/{job_id}/retries`）与 SSE 事件流"
-                "（`GET /v1/nexus/jobs/{job_id}/events`），注册在 "
-                "`backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:819` 起，"
+                "重试（`POST /v1/nexus/jobs/{job_id}/retries`）、SSE 事件流"
+                "（`GET /v1/nexus/jobs/{job_id}/events`）与准入就绪报告"
+                "（`GET /v1/nexus/jobs/admission-readiness`，字面量段注册在 `{job_id}` 之前），"
+                "注册在 `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:867` 起，"
                 "并由 `backend/src/speechnexus_backend/app.py:837` 装配进应用；"
                 "取消、重试与事件流另有隔离 PG 与真实 TCP 测试，这些路由尚未在参考部署上实际调用。"
             ),

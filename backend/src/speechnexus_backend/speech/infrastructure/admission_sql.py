@@ -13,7 +13,8 @@ from speechnexus_backend.speech.domain.admission import (
     AdmissionRejectedError,
     AdmissionResult,
     AdmissionRuntime,
-    decide_admission,
+    Admitted,
+    decide_create_admission,
     require_live_authority,
 )
 from speechnexus_backend.speech.domain.owners import PoolOwnership
@@ -257,9 +258,14 @@ def admit_in_transaction(
         ),
     )
     # An absent operation row can still wait on a concurrent unique insertion.
-    decision = decide_admission(
+    # One converged call: the readiness report runs this same predicate over the
+    # same stored facts, so neither side can answer for the other (#863).
+    verdict = decide_create_admission(
         command, quota=quota, pools=pools, hosts=hosts, runtimes=runtimes, now_us=clock()
     )
+    if not isinstance(verdict, Admitted):
+        raise AdmissionRejectedError(verdict.code)
+    decision = verdict.decision
     changed(
         cursor,
         "INSERT INTO admission_attempts (operation_id, attempt_id, workspace_id, "

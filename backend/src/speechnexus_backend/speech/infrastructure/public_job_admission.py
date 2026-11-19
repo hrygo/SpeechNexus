@@ -10,9 +10,10 @@ never reads deployment settings for a value the binding must declare.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import asdict, dataclass
-from typing import Any, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 
 from speechnexus_backend.speech.application.transcription import AdmittedExecution, StagedAudio
 from speechnexus_backend.speech.application.voice_validation_report import (
@@ -22,17 +23,44 @@ from speechnexus_backend.speech.domain.admission import (
     CAPACITY_REJECTION_CODES,
     PUBLIC_ADMISSION_CODES,
     AdmissionIdentity,
+    AdmissionPool,
+    AdmissionQuota,
     AdmissionRequest,
+    AdmissionRuntime,
     AdmitRecipe,
     ApprovedAdmissionRecipe,
     ApprovedStage,
+    OriginalBusinessCommand,
+    Refused,
     StageAllocation,
+    decide_create_admission,
+)
+from speechnexus_backend.speech.domain.job_admission_readiness import (
+    DEFAULT_READINESS_WARNING_SECONDS,
+    READINESS_INVALID,
+    READINESS_MISSING,
+    AdmissionReadiness,
+    AdmissionReadinessCause,
+    ReadinessInstanceReport,
+    admitted_readiness,
+    cause_for_refusal,
+    refused_readiness,
 )
 from speechnexus_backend.speech.domain.job_dispatch import submit_intent_identity
 from speechnexus_backend.speech.domain.jobs import CreateJob
 from speechnexus_backend.speech.domain.owners import OwnerAuthority
-from speechnexus_backend.speech.domain.public_jobs import NewPublicJob, canonical_digest
-from speechnexus_backend.speech.domain.runtime_intents import ApprovedRuntimePlan
+from speechnexus_backend.speech.domain.public_jobs import (
+    ADMITTED_JOB_KINDS,
+    JOB_KIND_TASK,
+    NewPublicJob,
+    canonical_digest,
+    identifier,
+)
+from speechnexus_backend.speech.domain.runtime_intents import (
+    ApprovedRuntimePlan,
+    RuntimeHost,
+    RuntimeRejectedError,
+)
 from speechnexus_backend.speech.domain.speech_synthesis import SpeechFormat, SpeechPlan
 from speechnexus_backend.speech.domain.transcription import TranscriptFormat
 from speechnexus_backend.speech.domain.voice_capability_evidence import VoiceMaterial
@@ -41,6 +69,12 @@ from speechnexus_backend.speech.infrastructure.admission_codec import (
     business_command_from_value,
     prepare_admission,
 )
+from speechnexus_backend.speech.infrastructure.admission_sql import (
+    _pool as _admission_pool_row,
+)
+from speechnexus_backend.speech.infrastructure.admission_sql import (
+    _quota as _admission_quota_row,
+)
 from speechnexus_backend.speech.infrastructure.catalog_revision_schema import RETIREMENT_TABLE
 from speechnexus_backend.speech.infrastructure.qualification_source_evidence import (
     STATE_EVIDENCED,
@@ -48,6 +82,18 @@ from speechnexus_backend.speech.infrastructure.qualification_source_evidence imp
     source_refusal_detail,
 )
 from speechnexus_backend.speech.infrastructure.runtime_codec import decode_record
+from speechnexus_backend.speech.infrastructure.runtime_observation_codec import (
+    decode_observation,
+    validate_stored_readiness,
+)
+from speechnexus_backend.speech.infrastructure.runtime_sql import (
+    _head,
+    _host,
+    _record,
+)
+from speechnexus_backend.speech.infrastructure.runtime_sql import (
+    _instance as _runtime_instance,
+)
 from speechnexus_backend.speech.infrastructure.transcription_submit import build_asr_submit
 from speechnexus_backend.speech.infrastructure.tts_submit import build_tts_submit_from_parameters
 from speechnexus_backend.speech.infrastructure.voice_validation_submit import (
@@ -149,6 +195,86 @@ def _execution_block(definition: dict[str, Any], kind: str) -> dict[str, Any]:
     return block
 
 
+def _admission_block(definition: dict[str, Any], kind: str) -> dict[str, Any]:
+    """The execution block a create would admit with, or the refusal it answers.
+
+    The create validates the block of the kind it names before it asks admission.
+    The report's binding filter calls this same function, so "this binding can
+    reach admission" cannot mean one thing to the create and another to the report.
+    """
+    block = _execution_block(definition, kind)
+    timeout = block["timeout_seconds"]
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 600:
+        raise PublicJobAdmissionRejectedError("job_binding_incomplete")
+    return block
+
+
+BindingGateStage = Literal["definition", "plan", "request"]
+
+
+def binding_gate(
+    *,
+    stage: BindingGateStage,
+    definition: dict[str, Any],
+    kind: str,
+    binding_revision_id: str = "",
+    plan: ApprovedRuntimePlan | None = None,
+    instance: dict[str, Any] | None = None,
+    effective: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """The create path's binding gates, at the point a create applies each one.
+
+    ``_binding`` resolves the publication/retirement half and returns the definition;
+    the report's candidate read mirrors that lookup. A create then applies three
+    gates to what it got back, each at its own position in the transaction:
+
+    * ``definition`` -- the declared execution block exists and carries a usable
+      timeout; ``voice_validation`` has no block and passes without one.
+    * ``plan`` -- the stored runtime plan and the binding agree on revision,
+      manifest, pool, gateway and node. A disagreement is
+      ``job_binding_incomplete``, not an engine state, exactly as the create
+      answers it.
+    * ``request`` -- the file-TTS request semantics. ``effective`` is the block a
+      create would use (binding block plus request overrides); the report passes
+      the binding block alone, which is the same value for every request the
+      public contract allows, because it cannot override these two fields.
+
+    They stay three calls because non-binding refusals sit between them (the
+    workspace quota before the plan is read, the approved plan before its
+    consistency check, the voice lookup before the request semantics); collapsing
+    them into one call would change which refusal a request with several defects
+    receives. The readiness report calls the same stages for every kind a binding
+    declares, so "admissible" cannot mean one thing to a create and another to the
+    report.
+    """
+    if stage == "definition":
+        if kind == "voice_validation":
+            return None
+        return _admission_block(definition, kind)
+    if stage == "plan":
+        assert plan is not None and instance is not None
+        if (
+            plan.binding.binding_revision_id != binding_revision_id
+            or plan.binding.manifest_id
+            != definition.get("execution_recipe", {}).get("capacity_manifest_id")
+            or plan.binding.pool_id != instance["pool_id"]
+            or plan.binding.gateway_id != instance["gateway_id"]
+            or plan.binding.target_node_id != instance["host_node_id"]
+            or instance["manifest_id"] != plan.binding.manifest_id
+        ):
+            raise PublicJobAdmissionRejectedError("job_binding_incomplete")
+        return None
+    if kind != "tts":
+        return None
+    parameters = effective if effective is not None else _admission_block(definition, kind)
+    if (
+        parameters.get("text_commit_mode") != "explicit"
+        or parameters.get("audio_delivery") != "complete"
+    ):
+        raise PublicJobAdmissionRejectedError("job_binding_incomplete")
+    return None
+
+
 def _binding(cursor: _Cursor, model_id: str, revision: str) -> tuple[str, int, dict[str, Any]]:
     row = _one(
         cursor,
@@ -190,7 +316,8 @@ def _quota(cursor: _Cursor, workspace_id: str) -> dict[str, Any]:
     before admission.
     """
     cursor.execute(
-        "SELECT q.policy_revision, q.version, q.held_attempts, q.quarantined_attempts, "
+        "SELECT q.workspace_id, q.policy_revision, q.version, q.held_attempts, "
+        "q.quarantined_attempts, q.max_attempts, "
         "w.policy_revision AS workspace_policy_revision "
         "FROM workspace_quotas AS q JOIN speech_workspaces AS w "
         "ON w.workspace_id=q.workspace_id WHERE q.workspace_id=%s",
@@ -265,7 +392,11 @@ def _runtime_plan(cursor: _Cursor, instance: dict[str, Any]) -> ApprovedRuntimeP
     try:
         _, plan, _ = decode_record(row["request_document"])
     except Exception:  # The codec has already validated every stored immutable fact.
-        raise PublicJobAdmissionRejectedError("job_unavailable") from None
+        # A stored intent admission cannot decode is a state it must reconcile, not a
+        # store that refused the read: the transaction already answers
+        # ``reconciliation_required`` for the same row, and the readiness report names
+        # that refusal. A storage code here would make the two surfaces disagree (#863).
+        raise PublicJobAdmissionRejectedError("engine_state_mismatch") from None
     return plan
 
 
@@ -668,7 +799,7 @@ def build_public_job_admission(
     revision is not a candidate and raises ``voice_draft_not_candidate``; it
     never returns ``None`` or a half-admitted Job.
     """
-    if job.kind not in ("asr", "tts", "voice_validation"):
+    if job.kind not in ADMITTED_JOB_KINDS:
         return None
     intent = _intent(job)
     try:
@@ -690,34 +821,32 @@ def build_public_job_admission(
             "timeout_seconds": timeout,
         }
     else:
-        block = _execution_block(definition, job.kind)
+        block = binding_gate(
+            stage="definition",
+            binding_revision_id=binding_revision_id,
+            definition=definition,
+            kind=job.kind,
+        )
+        assert block is not None
         timeout = block["timeout_seconds"]
-        if (
-            isinstance(timeout, bool)
-            or not isinstance(timeout, (int, float))
-            or not 0 < timeout <= 600
-        ):
-            raise PublicJobAdmissionRejectedError("job_binding_incomplete")
         execution = block
     quota = _quota(cursor, job.workspace_id)
     instance = _instance(cursor, binding_revision_id, model_id)
     plan = _runtime_plan(cursor, instance)
-    if (
-        plan.binding.binding_revision_id != binding_revision_id
-        or plan.binding.manifest_id
-        != definition.get("execution_recipe", {}).get("capacity_manifest_id")
-        or plan.binding.pool_id != instance["pool_id"]
-        or plan.binding.gateway_id != instance["gateway_id"]
-        or plan.binding.target_node_id != instance["host_node_id"]
-        or instance["manifest_id"] != plan.binding.manifest_id
-    ):
-        raise PublicJobAdmissionRejectedError("job_binding_incomplete")
-    if (
-        instance["pool_state"] != "active"
-        or not isinstance(instance["owner_id"], str)
-        or int(instance["fencing_token"]) < 1
-    ):
-        raise PublicJobAdmissionRejectedError("job_capacity_exhausted")
+    binding_gate(
+        stage="plan",
+        binding_revision_id=binding_revision_id,
+        definition=definition,
+        kind=job.kind,
+        plan=plan,
+        instance=instance,
+    )
+    # A pool without a live owner identity cannot even become an OwnerAuthority; that
+    # is the disabled class, not capacity. ``pool_state`` is decided by the converged
+    # predicate, which the report runs too, so a draining pool answers one code on
+    # both surfaces instead of the loader's old 429 (#863).
+    if not isinstance(instance["owner_id"], str) or int(instance["fencing_token"]) < 1:
+        raise PublicJobAdmissionRejectedError("engine_resource_disabled")
     deadline_at_us = now_us + max(1, round(timeout * 1_000_000))
     # A1/A3 join admission_operations.operation_id = speech_jobs.job_id.
     identity = AdmissionIdentity(job.job_id, "attempt-" + job.job_id.removeprefix("job-"))
@@ -773,11 +902,13 @@ def build_public_job_admission(
         voice = _voice(cursor, intent)
         pronunciation, pronunciation_source = _pronunciation(cursor, intent, block)
         merged = {**block, **_overrides(intent, "tts")}
-        if (
-            merged.get("text_commit_mode") != "explicit"
-            or merged.get("audio_delivery") != "complete"
-        ):
-            raise PublicJobAdmissionRejectedError("job_binding_incomplete")
+        binding_gate(
+            stage="request",
+            binding_revision_id=binding_revision_id,
+            definition=definition,
+            kind=job.kind,
+            effective=merged,
+        )
         planner = merged.get("planner")
         if not isinstance(planner, dict):
             planner = block["planner"]
@@ -1097,9 +1228,488 @@ def rejection_code(code: str) -> str:
         raise PublicJobAdmissionRejectedError("admission_state_invalid") from None
 
 
+# The probe command a readiness read builds carries only deployment facts: the
+# binding, plan, pool, node and quota are the stored rows a create would read, and
+# the identities below are constant so no request-shaped fact can enter the
+# verdict. The report never commits it.
+_PROBE_WORKSPACE_DEFAULT = "workspace-default"
+_PROBE_OPERATION = "probe-admission-readiness-op"
+_PROBE_ATTEMPT = "probe-admission-readiness-attempt"
+_PROBE_JOB = "probe-admission-readiness-job"
+_PROBE_EVENT = "probe-admission-readiness-event"
+_PROBE_STAGE = "probe-admission-readiness-stage"
+_PROBE_LEASE = "probe-admission-readiness-lease"
+_PROBE_BUSINESS = '{"probe":"admission-readiness"}'
+
+# A probe command is built from the rows admission itself reads, so a stored
+# disagreement it surfaces is a state mismatch rather than a request-shaped
+# ``recipe_not_admitted``: nothing about the caller's body can produce it.
+_PROBE_STATE_CODES: dict[str, AdmissionReadinessCause] = {
+    "recipe_mismatch": AdmissionReadinessCause.ENGINE_STATE_MISMATCH,
+}
+
+
+def _readiness_workspace_state(cursor: _Cursor, workspace_id: str) -> str | None:
+    cursor.execute(
+        "SELECT workspace_state FROM speech_workspaces WHERE workspace_id=%s",
+        (workspace_id,),
+    )
+    rows = cursor.fetchall()
+    if not rows:
+        return None
+    if len(rows) != 1:
+        raise PublicJobAdmissionRejectedError("job_unavailable")
+    return str(rows[0]["workspace_state"])
+
+
+def _readiness_candidates(cursor: _Cursor) -> list[dict[str, Any]]:
+    """One row per nameable binding, carrying the instance a create would pin.
+
+    The question is about creates, and a create can only name the *current head* of a
+    published, un-retired binding: ``require_pinned_binding`` answers
+    ``model_binding_not_current`` for a superseded revision and an unpinned create
+    resolves ``latest_binding`` (see the head join below). Every such head is the left
+    side and its pin target -- the first ``ready`` instance of that binding by
+    ``(instance_id, instance_generation)``, exactly as ``_instance`` selects it -- is
+    the right side. Starting from ``engine_instances`` instead answered a different
+    question in both directions: a nameable binding with no ready instance
+    disappeared (``admitting`` while every create for it answered
+    ``job_capacity_exhausted``), and a ready instance behind an unpublished binding
+    entered it (a refusal no create could reach).
+
+    A head with no pin target stays in the result as a row whose instance columns are
+    NULL: the caller records its capacity refusal instead of letting the binding
+    vanish. A head that cannot reach admission for any declared kind (an incomplete
+    definition, or a stored plan the binding disagrees with) is dropped by the caller
+    through ``binding_gate``: a create naming it is refused with the request-shaped
+    ``job_binding_incomplete`` before admission, and reporting that as
+    ``capacity_exhausted`` would name a class no create returns. The rows come back in
+    ``binding_revision_id`` order so the reported cause is deterministic.
+    """
+    cursor.execute(
+        "SELECT DISTINCT ON (p.revision_id) p.revision_id AS binding_revision_id, "
+        "r.definition_json, i.instance_id, i.instance_generation, i.host_node_id, i.pool_id "
+        "FROM speech_publications AS p "
+        "JOIN speech_binding_revisions AS r ON r.binding_id = p.object_id "
+        "AND r.revision = p.revision AND r.revision_id = p.revision_id "
+        "LEFT JOIN ("
+        "SELECT i.binding_revision_id, i.instance_id, i.instance_generation, "
+        "i.host_node_id, i.pool_id FROM engine_instances AS i "
+        "JOIN runtime_instance_heads AS h ON h.instance_id = i.instance_id "
+        "AND h.current_generation = i.instance_generation "
+        "WHERE i.instance_state='ready' AND i.instance_generation IS NOT NULL "
+        "AND h.current_prepare_intent_id IS NOT NULL"
+        ") AS i ON i.binding_revision_id = p.revision_id "
+        "WHERE p.kind = 'binding' "
+        "AND NOT EXISTS ("
+        f"SELECT 1 FROM {RETIREMENT_TABLE} AS retired WHERE retired.kind = p.kind "
+        "AND retired.object_id = p.object_id AND retired.revision = p.revision "
+        "AND retired.revision_id = p.revision_id) "
+        # Only the current publication head is nameable, and this EXISTS is the
+        # create side's own predicate: ``_PINNED_BINDING_QUERY`` computes
+        # ``is_current`` with the identical EXISTS
+        # (``public_jobs_postgres.py:102-105``), ``require_pinned_binding`` answers
+        # ``model_binding_not_current`` when it is false (``public_jobs.py:288``), and
+        # an unpinned create resolves ``latest_binding`` (``public_jobs.py:856``),
+        # which is the head.
+        "AND EXISTS ("
+        "SELECT 1 FROM speech_publication_heads AS head "
+        "WHERE head.kind = p.kind AND head.object_id = p.object_id "
+        "AND head.revision = p.revision AND head.revision_id = p.revision_id)"
+        "ORDER BY p.revision_id, i.instance_id, i.instance_generation"
+    )
+    return list(cursor.fetchall())
+
+
+def _parse_definition(definition_json: Any) -> dict[str, Any] | None:
+    try:
+        definition = json.loads(definition_json)
+    except ValueError, TypeError, RecursionError:
+        return None
+    return definition if isinstance(definition, dict) else None
+
+
+def _declared_kinds(definition: dict[str, Any]) -> tuple[str, ...]:
+    """The admitted kinds this binding declares, in ``ADMITTED_JOB_KINDS`` order."""
+    tasks = definition.get("tasks")
+    if not isinstance(tasks, list):
+        return ()
+    return tuple(kind for kind in ADMITTED_JOB_KINDS if JOB_KIND_TASK[kind] in tasks)
+
+
+def _definition_admits(definition: dict[str, Any], kind: str) -> bool:
+    """Whether the create gates that read only the definition accept this kind."""
+    try:
+        block = binding_gate(stage="definition", definition=definition, kind=kind)
+        if kind == "tts":
+            binding_gate(stage="request", definition=definition, kind=kind, effective=block)
+    except PublicJobAdmissionRejectedError:
+        return False
+    return True
+
+
+def _readiness_one(cursor: _Cursor, query: str, parameters: tuple[object, ...]) -> dict[str, Any]:
+    cursor.execute(query, parameters)
+    rows = cursor.fetchall()
+    if len(rows) != 1:
+        raise PublicJobAdmissionRejectedError("job_unavailable")
+    return rows[0]
+
+
+def _readiness_runtime(
+    cursor: _Cursor, candidate: dict[str, Any], *, now_us: int
+) -> tuple[AdmissionRuntime, RuntimeHost | None, str, dict[str, Any]]:
+    """Decode one candidate exactly as the admission transaction decodes it.
+
+    Returns the admission facts, the host row (``None`` when it is missing, which
+    a create answers as a reconciliation refusal), the readiness window state the
+    public per-instance row reports, and the raw instance row the binding's plan
+    gate compares against. ``missing``/``invalid`` are reported
+    rather than raised: a stored intent admission cannot decode is a fact about
+    the deployment, and dropping it would let the report answer ``admitting``
+    while every create for that instance is refused (#857).
+    """
+    instance_row = _readiness_one(
+        cursor,
+        "SELECT * FROM engine_instances WHERE instance_id=%s AND instance_generation=%s",
+        (candidate["instance_id"], candidate["instance_generation"]),
+    )
+    head = _readiness_one(
+        cursor,
+        "SELECT * FROM runtime_instance_heads WHERE instance_id=%s AND current_generation=%s",
+        (candidate["instance_id"], candidate["instance_generation"]),
+    )
+    prepare_id = head["current_prepare_intent_id"]
+    if prepare_id is None:
+        raise PublicJobAdmissionRejectedError("job_capacity_exhausted")
+    intent = _readiness_one(
+        cursor,
+        "SELECT * FROM runtime_instance_intents WHERE target_node_id=%s AND intent_id=%s",
+        (instance_row["host_node_id"], prepare_id),
+    )
+    record = _record(intent)
+    instance = _runtime_instance(instance_row, record)
+    if record.observation_document is None:
+        raise PublicJobAdmissionRejectedError("job_unavailable")
+    observation = decode_observation(record.observation_document).observation
+    if record.readiness_document is None:
+        readiness_state = READINESS_MISSING
+        readiness = None
+    else:
+        readiness = validate_stored_readiness(
+            record.readiness_document, record.request, record.approved_plan
+        )
+        readiness_state = readiness.expiry_state(
+            now_us, warning_us=DEFAULT_READINESS_WARNING_SECONDS * 1_000_000
+        )
+    cursor.execute(
+        "SELECT COALESCE(SUM(l.reserved_slots), 0) AS slots FROM admission_leases AS l "
+        "JOIN admission_attempts AS a ON a.operation_id = l.operation_id "
+        "AND a.attempt_id = l.attempt_id WHERE l.instance_id = %s "
+        "AND l.instance_generation = %s AND l.lease_state <> 'released' "
+        "AND a.service_class <> 'realtime'",
+        (instance.instance_id, instance.instance_generation),
+    )
+    batch = int(cursor.fetchall()[0]["slots"])
+    if readiness is None:
+        raise PublicJobAdmissionRejectedError("job_unavailable")
+    cursor.execute(
+        "SELECT * FROM host_nodes WHERE host_node_id=%s",
+        (instance_row["host_node_id"],),
+    )
+    host_rows = cursor.fetchall()
+    host = _host(host_rows[0]) if host_rows else None
+    return (
+        AdmissionRuntime(instance, _head(head), observation, readiness, batch),
+        host,
+        readiness_state,
+        instance_row,
+    )
+
+
+def _probe_command(
+    *,
+    workspace_id: str,
+    runtime: AdmissionRuntime,
+    pool: AdmissionPool,
+    quota: AdmissionQuota,
+    now_us: int,
+) -> AdmitRecipe:
+    """Build the command a create would hand admission, from stored rows only."""
+    instance, plan = runtime.instance, runtime.instance.plan
+    binding = plan.binding
+    duration_us = 1
+    deadline_at_us = now_us + duration_us
+    stage = StageAllocation(
+        _PROBE_STAGE,
+        _PROBE_LEASE,
+        binding.pool_id,
+        binding.target_node_id,
+        binding.gateway_id,
+        instance.instance_id,
+        instance.instance_generation,
+        instance.version,
+        1,
+    )
+    owner_id = pool.ownership.owner_id
+    if owner_id is None:
+        # A pool with no owner identity cannot produce an authority, and
+        # ``build_public_job_admission`` answers ``engine_resource_disabled`` for the
+        # same row; the report repeats that class instead of naming a state mismatch
+        # for a condition the contract calls disabled.
+        raise PublicJobAdmissionRejectedError("engine_resource_disabled")
+    authority = OwnerAuthority(pool.ownership.pool_id, owner_id, pool.ownership.fencing_token)
+    business = OriginalBusinessCommand(
+        _PROBE_BUSINESS,
+        "sha256:" + hashlib.sha256(_PROBE_BUSINESS.encode()).hexdigest(),
+    )
+    request = AdmissionRequest(
+        identity=AdmissionIdentity(_PROBE_OPERATION, _PROBE_ATTEMPT),
+        workspace_id=workspace_id,
+        binding_revision_id=binding.binding_revision_id,
+        manifest_id=binding.manifest_id,
+        recipe_digest=canonical_digest(
+            {
+                "binding_revision_id": binding.binding_revision_id,
+                "manifest_id": binding.manifest_id,
+                "probe": True,
+            }
+        ),
+        policy_revision_id=quota.policy_revision_id,
+        expected_quota_version=quota.version,
+        service_class=plan.service_class,
+        authorities=(authority,),
+        stages=(stage,),
+        deadline_at_us=deadline_at_us,
+        job=CreateJob(
+            _PROBE_JOB,
+            _PROBE_OPERATION,
+            _PROBE_ATTEMPT,
+            _PROBE_EVENT,
+            canonical_digest({"probe": "admission-readiness-event"}),
+            business.request_digest,
+        ),
+    )
+    approved = ApprovedAdmissionRecipe(
+        binding.binding_revision_id,
+        binding.manifest_id,
+        request.recipe_digest,
+        quota.policy_revision_id,
+        plan.service_class,
+        (ApprovedStage(stage.stage_id, 1, plan),),
+        deadline_at_us,
+        frozenset({"concurrent_attempts"}),
+    )
+    return AdmitRecipe(request, business, approved)
+
+
+def _instance_report(
+    runtime: AdmissionRuntime, readiness_state: str, now_us: int
+) -> ReadinessInstanceReport:
+    instance = runtime.instance
+    return ReadinessInstanceReport(
+        instance.instance_id,
+        instance.instance_generation,
+        readiness_state,
+        runtime.readiness.expires_at_us,
+        (runtime.readiness.expires_at_us - now_us) // 1_000_000,
+        instance.plan.max_slots,
+        instance.held_slots,
+        instance.quarantined_slots,
+    )
+
+
+def load_admission_readiness(
+    cursor: _Cursor, workspace_id: str, *, now_us: int
+) -> AdmissionReadiness:
+    """Classify one instant by calling the create path's own predicate.
+
+    Every comparison lives in ``decide_create_admission``: this function only reads
+    the rows admission reads, builds the same command and names the one refusal it
+    returned. A condition that refuses a create therefore cannot be reported as
+    ``admitting``, and the report never recomputes a window or a counter (#863).
+
+    The probe set is every published binding a create could reach admission through:
+    the current head, whose declared kinds pass the same ``binding_gate`` stages the
+    create runs, carrying the one instance a create for it would pin
+    (``_readiness_candidates``). The report answers ``admitting`` only when the
+    predicate admits a create for every one of them; a published binding with no pin
+    target contributes ``job_capacity_exhausted`` instead of disappearing, a binding
+    whose declared kinds all fail the create's binding gates is outside the universe
+    (a create naming it is refused with the request-shaped ``job_binding_incomplete``
+    before admission), and the first refusal in binding order is the reported cause.
+    ``instances[]`` lists only the bindings that have a pin target and pass those
+    gates.
+    """
+    identifier(workspace_id)
+    state = _readiness_workspace_state(cursor, workspace_id)
+    if state is None:
+        return refused_readiness(
+            AdmissionReadinessCause.WORKSPACE_NOT_FOUND,
+            workspace_id=workspace_id,
+            now_us=now_us,
+        )
+    if state != "active":
+        return refused_readiness(
+            AdmissionReadinessCause.WORKSPACE_DISABLED,
+            workspace_id=workspace_id,
+            now_us=now_us,
+            workspace_state=state,
+        )
+    try:
+        quota_row = _quota(cursor, workspace_id)
+    except PublicJobAdmissionRejectedError as error:
+        if error.code != "workspace_not_configured":
+            raise
+        return refused_readiness(
+            AdmissionReadinessCause.WORKSPACE_NOT_CONFIGURED,
+            workspace_id=workspace_id,
+            now_us=now_us,
+        )
+    quota = _admission_quota_row(quota_row)
+    candidates = _readiness_candidates(cursor)
+    reports: list[ReadinessInstanceReport] = []
+    refusal: str | None = None
+    admitted = 0
+    # A published binding that no create can reach admission through is a deployment
+    # state, not a capacity state: answering ``job_capacity_exhausted`` there would
+    # tell a client to retry something that never becomes retryable.
+    unreachable_binding = False
+    for candidate in candidates:
+        definition = _parse_definition(candidate["definition_json"])
+        if definition is None:
+            continue
+        kinds = tuple(
+            kind for kind in _declared_kinds(definition) if _definition_admits(definition, kind)
+        )
+        if not kinds:
+            # No declared kind passes the create's definition gates, so a create
+            # naming this binding is refused with the request-shaped
+            # ``job_binding_incomplete`` before admission. The binding is outside the
+            # universe, and it must not contribute capacity either.
+            unreachable_binding = True
+            continue
+        if candidate["instance_id"] is None:
+            # The binding is published but has no pin target: a create naming it
+            # answers the capacity refusal, and the binding must not vanish from the
+            # verdict just because there is no instance row to report.
+            refusal = refusal or "job_capacity_exhausted"
+            continue
+        try:
+            runtime, host, readiness_state, instance_row = _readiness_runtime(
+                cursor, candidate, now_us=now_us
+            )
+        except (
+            PublicJobAdmissionRejectedError,
+            RuntimeRejectedError,
+            ValueError,
+            TypeError,
+            KeyError,
+        ):
+            # A stored intent admission cannot decode is an engine-side state the
+            # create path refuses; the per-instance row still reports what was seen.
+            reports.append(
+                ReadinessInstanceReport(
+                    str(candidate["instance_id"]),
+                    int(candidate["instance_generation"]),
+                    READINESS_INVALID,
+                    None,
+                    None,
+                    0,
+                    0,
+                    0,
+                )
+            )
+            refusal = refusal or "reconciliation_required"
+            continue
+        try:
+            binding_gate(
+                stage="plan",
+                binding_revision_id=str(candidate["binding_revision_id"]),
+                definition=definition,
+                kind=kinds[0],
+                plan=runtime.instance.plan,
+                instance=instance_row,
+            )
+        except PublicJobAdmissionRejectedError:
+            # The binding and the stored plan disagree, which a create answers with
+            # the same request-shaped ``job_binding_incomplete`` before admission;
+            # the binding is outside the universe and contributes no row.
+            unreachable_binding = True
+            continue
+        admitted += 1
+        reports.append(_instance_report(runtime, readiness_state, now_us))
+        if host is None:
+            refusal = refusal or "reconciliation_required"
+            continue
+        pool_row = _readiness_one(
+            cursor,
+            "SELECT * FROM resource_pools WHERE pool_id=%s",
+            (runtime.instance.plan.binding.pool_id,),
+        )
+        if not isinstance(pool_row["owner_id"], str) or int(pool_row["fencing_token"]) < 1:
+            # The create's own disabled predicate: a pool without a live owner
+            # identity cannot become an ``OwnerAuthority``. Checked before building
+            # the pool row, because an owner with a zero fencing token is not even a
+            # constructible ``PoolOwnership``.
+            refusal = refusal or "engine_resource_disabled"
+            continue
+        pool = _admission_pool_row(pool_row)
+        try:
+            command = _probe_command(
+                workspace_id=workspace_id, runtime=runtime, pool=pool, quota=quota, now_us=now_us
+            )
+        except PublicJobAdmissionRejectedError as refused:
+            # The probe names the class the create path answers for the same row (a
+            # pool without an owner is ``engine_resource_disabled``); a later
+            # candidate cannot override the first refusal in binding order.
+            refusal = refusal or refused.code
+            continue
+        except ValueError:
+            refusal = refusal or "reconciliation_required"
+            continue
+        verdict = decide_create_admission(
+            command,
+            quota=quota,
+            pools=(pool,),
+            hosts=(host,),
+            runtimes=(runtime,),
+            now_us=now_us,
+        )
+        if isinstance(verdict, Refused) and refusal is None:
+            # The candidates are in binding order, so the first refusal seen is the
+            # cause the report names; a later refusal cannot override it.
+            refusal = verdict.code
+    if refusal is None:
+        if admitted:
+            return admitted_readiness(
+                workspace_id=workspace_id,
+                now_us=now_us,
+                instances=tuple(reports),
+                quota=quota,
+            )
+        # Nothing was admitted. Two deployment states look alike from here and must
+        # not be conflated: every published binding is unusable (a create naming any
+        # of them answers the request-shaped ``job_binding_incomplete``), or the
+        # bindings are usable but none has a pin target (a create answers the
+        # capacity refusal). Naming capacity for the first case would hand a client a
+        # retryable 429 for a state retrying cannot change.
+        refusal = "engine_state_mismatch" if unreachable_binding else "job_capacity_exhausted"
+    cause = _PROBE_STATE_CODES.get(refusal) or cause_for_refusal(refusal)
+    return refused_readiness(
+        cause,
+        workspace_id=workspace_id,
+        now_us=now_us,
+        instances=tuple(reports),
+        quota=quota,
+        workspace_state=state,
+    )
+
+
 __all__ = [
     "PublicJobAdmission",
     "PublicJobAdmissionRejectedError",
     "build_public_job_admission",
+    "load_admission_readiness",
     "rejection_code",
 ]

@@ -17,8 +17,8 @@ export interface paths {
      *     readiness projection: the readiness block reports only the facts this
      *     catalogue has established, never a live verdict for a workspace. This
      *     endpoint never exposes model paths or endpoints. The per-workspace surface
-     *     is `GET /v1/nexus/jobs/admission-readiness`, which this deployment still
-     *     answers with `503 operation_not_implemented`.
+     *     is `GET /v1/nexus/jobs/admission-readiness`, which returns the live verdict
+     *     for one workspace by running the same predicate a create runs.
      */
     get: operations["listModels"];
     put?: never;
@@ -540,15 +540,32 @@ export interface paths {
      *     route is whether a create is admitted.
      *
      *     The verdict is one value, never a set. `cause` is the single refusal class a
-     *     create would answer right now, or null when it would be admitted; `status`
-     *     is `admitting` if and only if `cause` is null, and `admitting` holds if and
-     *     only if a create sent now would be admitted. The create path answers one
-     *     code, so a report naming several could only invent a precedence the API does
-     *     not have -- which of the observed refusals a create reached first -- and
-     *     would let the report describe a class the create never returns. Naming one
-     *     makes "this is the code a create would answer at this instant" the only
-     *     shape the response can take, and the two fields cannot disagree; the schema
-     *     rejects a body that does.
+     *     create would answer right now for the first admissible binding in ascending
+     *     `binding_revision_id` order, or null when a create for every admissible
+     *     binding would be admitted; `status` is `admitting`
+     *     if and only if `cause` is null, and `admitting` holds if and only if a
+     *     create for every admissible binding sent now would be admitted. "Admissible"
+     *     is a property of the binding, not of this response: the current publication
+     *     head of a published, unretired binding that a create could actually name --
+     *     one whose declared kinds pass every binding gate the create applies before
+     *     admission: the execution block and its timeout, the file-TTS request
+     *     semantics, and the stored plan's agreement with the binding on revision,
+     *     manifest, pool, gateway and node. `voice_validation` needs no execution
+     *     block, so it is admissible on the published binding alone. A create naming a
+     *     binding outside that set is refused before admission runs (a superseded
+     *     revision is `model_binding_not_current`; a binding whose declared kinds all
+     *     fail those gates is `job_binding_incomplete`), so those bindings are neither
+     *     a cause nor an `instances` row here. The create path
+     *     answers one code, so a report naming several could only invent a precedence
+     *     the API does not have -- which of the observed refusals a create reached
+     *     first -- and would let the report describe a class the create never returns.
+     *     Naming one makes "this is the code a create would answer at this instant" the
+     *     only shape the response can take, and the two fields cannot disagree; the
+     *     schema rejects a body that does.
+     *
+     *     With no admissible binding the report answers `capacity_exhausted` rather
+     *     than `admitting`: the universal would be vacuously true, but a deployment
+     *     that can admit no create must not read as admitting.
      *
      *     Every public code that means "this deployment refuses every create" has
      *     exactly one cause here, and every cause names exactly one of those codes, so
@@ -572,8 +589,8 @@ export interface paths {
      *     | --- | --- |
      *     | `engine_receipt_expired` | 503 `engine_not_ready`, `retryable: false`. The ready instance the create would pin holds a readiness receipt outside its window. Re-sign it with `speechnexus-register-engine --renew-readiness`; `speechnexus-engine-readiness` prints the remaining window. |
      *     | `engine_state_mismatch` | 503 `engine_state_mismatch`, `retryable: false`. The pinned instance's stored intent no longer decodes or no longer matches admission's expectation, its generation moved, or the pool owner lease is being reconciled or transferred, so the pin cannot be trusted. Reconcile or re-register the instance. |
-     *     | `engine_resource_disabled` | 503 `engine_resource_disabled`, `retryable: false`. The instance's runtime service state, the host node it runs on, the approved recipe (including its approval window) or the runtime template approval is not active. Re-enable the instance or re-approve the recipe. |
-     *     | `capacity_exhausted` | 429 `job_capacity_exhausted` with `Retry-After`. The workspace quota holds every attempt, an instance is at its slot bound, or no ready instance can serve a create: none is registered, the pool that would own it does not admit work, or its lease identity is absent. A released attempt or slot clears it; the missing-instance arms only clear when an instance becomes ready or a pool becomes active, which is an operator action, so a client that retries forever sees the same 429. |
+     *     | `engine_resource_disabled` | 503 `engine_resource_disabled`, `retryable: false`. The instance's runtime service state, the host node it runs on, the pool that owns it (its state, its owner identity or its fencing token), the approved recipe (including its approval window) or the runtime template approval is not active. Re-enable the instance, restore the pool owner, or re-approve the recipe. |
+     *     | `capacity_exhausted` | 429 `job_capacity_exhausted` with `Retry-After`. The workspace quota holds every attempt, an instance is at its slot bound, or no ready instance can serve a create: none is registered for the pinned binding, or every registered one is not ready. A released attempt or slot clears it; the missing-instance arms only clear when an instance becomes ready, which is an operator action, so a client that retries forever sees the same 429. A pool that does not admit work or a missing pool-owner identity is `engine_resource_disabled`, not this code. |
      *     | `workspace_not_found` | 422 `workspace_not_found`. No workspace catalog row exists for the reported workspace. |
      *     | `workspace_disabled` | 422 `workspace_disabled`. The workspace row exists but is not active. Enable the workspace. |
      *     | `workspace_not_configured` | 422 `workspace_not_configured`. The workspace exists but has no quota row, so admission has nothing to charge. Registering an engine for the workspace writes one. |
@@ -1273,10 +1290,9 @@ export interface components {
        *     admission report answers with its own vocabulary (`status` plus a
        *     single `cause`), never with these three values. The per-workspace
        *     surface is `GET /v1/nexus/jobs/admission-readiness` (it takes
-       *     `workspace_id`); it is declared here and this deployment still answers
-       *     `503 operation_not_implemented` for it until that report is
-       *     implemented. An actual create answer is `POST /v1/nexus/jobs`. None
-       *     of these fields implies quality.
+       *     `workspace_id`); it returns the live verdict, so an actual create
+       *     answer is either that report or `POST /v1/nexus/jobs`. None of these
+       *     fields implies quality.
        * @enum {string}
        */
       admission_state: "available" | "queueable" | "capacity_full" | "unavailable";
@@ -2564,7 +2580,8 @@ export interface components {
     AdmissionReadiness: {
       /**
        * @description `admitting` if and only if `cause` is null, and if and only if a create
-       *     sent at this instant would be admitted; `degraded` otherwise. This is the
+       *     for every admissible published binding would be admitted at this instant;
+       *     `degraded` otherwise. This is the
        *     one field a poller has to assert on. The two conditions are not a second
        *     verdict beside `cause`: the schema below constrains them together, so a
        *     body cannot claim a cause while admitting or be degraded without naming
@@ -2573,11 +2590,13 @@ export interface components {
        */
       status: "admitting" | "degraded";
       /**
-       * @description The refusal class a create sent at this instant would answer, or null when
-       *     it would be admitted. One value, never a set: the create path answers one
-       *     code and the report repeats that one code. `storage_unavailable` is the
-       *     only member reported for an unreadable store, because no other fact could
-       *     have been read.
+       * @description One value, never a set: the refusal class a create would answer at this
+       *     instant for the first admissible published binding in ascending
+       *     `binding_revision_id` order, or null when every admissible published
+       *     binding would admit a create. The create path answers one code and the
+       *     report repeats that one code. `storage_unavailable` is the only member
+       *     reported for an unreadable store, because no other fact could have been
+       *     read.
        */
       cause:
         | null
@@ -2604,9 +2623,17 @@ export interface components {
        */
       detail: string | null;
       /**
-       * @description Every `ready` engine instance with the receipt admission would check, in
-       *     ascending `(instance_id, instance_generation)` order. Empty when the
-       *     store could not be read.
+       * @description One row per admissible published binding that has a pin target: the one
+       *     instance a create for that binding would select, under the same rule a
+       *     create applies, in ascending `(binding_revision_id, instance_id,
+       *     instance_generation)` order. A binding with no `ready` instance
+       *     contributes the `capacity_exhausted` cause but no row, because there is no
+       *     instance whose receipt to report. Empty when the store could not be read,
+       *     and empty when no binding is admissible -- that body still carries the
+       *     `capacity_exhausted` cause rather than `admitting`. An instance reachable
+       *     only through a second generation of the same binding, through a binding
+       *     that is not published, or through a superseded revision of a published
+       *     binding is not listed: a create cannot name it.
        */
       instances: components["schemas"]["AdmissionReadinessInstance"][];
       /**

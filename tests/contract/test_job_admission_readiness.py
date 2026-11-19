@@ -49,9 +49,7 @@ from speechnexus_backend.speech.interfaces.http.unimplemented import (
     UNIMPLEMENTED_OPERATIONS,
     assert_placeholder_ownership,
     create_unimplemented_router,
-)
-from speechnexus_backend.speech.interfaces.http.unimplemented_errors import (
-    OPERATION_NOT_IMPLEMENTED,
+    iter_routes,
 )
 from tests.contract.test_speech_http_statuses import response_contract
 from tests.support.contracts import validator
@@ -356,37 +354,51 @@ def test_the_report_path_is_a_literal_sibling_of_the_identifier_route() -> None:
     paths = cast(dict[str, Any], DOCUMENT["paths"])
     assert PATH in paths
     assert "/v1/nexus/jobs/{job_id}" in paths
-    assert UNIMPLEMENTED_OPERATIONS["getJobAdmissionReadiness"] == ("GET", PATH)
+    # The operation ships its own handler now, so it must not be left in the
+    # placeholder table: a placeholder that owned this template would answer 503 for
+    # an operation the assembly really serves.
+    assert "getJobAdmissionReadiness" not in UNIMPLEMENTED_OPERATIONS
 
 
 async def test_the_report_path_is_answered_by_its_own_route_not_by_get_job() -> None:
-    # Measured on the assembled application: the report path answers the
-    # unimplemented-operation placeholder while a real Job id still reaches `getJob`,
-    # which answers `job_unavailable` because no job service is injected here. The two
-    # different codes are what make this an assertion about routing rather than about
-    # a status a shared error would also produce.
+    # Measured on the assembled application rather than argued: the literal report
+    # route is registered before the identifier route, and the handler that answers
+    # this path is the report's own. A real Job id still reaches `getJob`, which
+    # answers `job_unavailable` because no job service is injected here.
     app = create_app(settings=_settings())
+    flat = list(iter_routes(app.routes))
+    routes = [getattr(route, "path", None) for route in flat]
+    report_index = routes.index(PATH)
+    job_index = routes.index("/v1/nexus/jobs/{job_id}")
+    assert report_index < job_index
+    handler = flat[report_index]
+    assert getattr(handler.endpoint, "__name__", "") == "get_admission_readiness"
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://localhost"
     ) as http:
         report = await http.get(PATH, headers={"X-Request-ID": REQUEST_ID})
         job = await http.get("/v1/nexus/jobs/job-0123456789ab")
-    assert report.status_code == 503
-    assert report.json()["error"]["code"] == OPERATION_NOT_IMPLEMENTED
+    # Without the admission role the report cannot be produced, and it says so with
+    # the same declared storage answer a create uses -- never `admitting` by default.
+    assert (report.status_code, report.json()["error"]["code"]) == (503, "job_unavailable")
     assert (job.status_code, job.json()["error"]["code"]) == (503, "job_unavailable")
 
 
 def test_the_identifier_route_registered_first_swallows_the_report_path() -> None:
-    # The control, and the reason the ordering matters beyond this slice: a parameter
-    # matches any single segment, so with `{job_id}` registered first the report path is
-    # read as a Job id. Two consequences, both asserted: the request is answered by
-    # `getJob`, and the assembly guard rejects that order. Whoever registers the real
-    # report handler (#863) has to place it before the `{job_id}` route.
+    # The control, and the reason the ordering matters: a parameter matches any single
+    # segment, so with `{job_id}` registered first the report path is read as a Job id.
+    # Both consequences are asserted: the request is answered by `getJob`, and the
+    # assembly guard rejects that order. The real handler is registered before the
+    # identifier route for exactly this reason.
     app = FastAPI()
 
     @app.get("/v1/nexus/jobs/{job_id}")
     async def get_job(job_id: str) -> dict[str, str]:
         return {"job_id": job_id}
+
+    @app.get(PATH)
+    async def get_admission_readiness() -> dict[str, str]:
+        return {"status": "admitting"}
 
     app.include_router(create_unimplemented_router())
     response = asyncio.run(_request(app, "GET", PATH))

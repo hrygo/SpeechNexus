@@ -49,6 +49,10 @@ from speechnexus_backend.speech.application.public_jobs import (
     VoiceDraftStaleRevisionError,
     VoiceNotPublishedError,
 )
+from speechnexus_backend.speech.domain.job_admission_readiness import (
+    AdmissionReadiness,
+    ReadinessInstanceReport,
+)
 from speechnexus_backend.speech.domain.public_jobs import (
     TERMINAL_STATES,
     JobArtifactFact,
@@ -599,6 +603,50 @@ def _read(service: PublicJobs, job_id: str, request_id: str) -> Response:
         return job_storage_error(request_id, error)
 
 
+def _readiness_timestamp(us: int) -> str:
+    moment = datetime(1970, 1, 1, tzinfo=UTC) + timedelta(microseconds=us)
+    return moment.isoformat().replace("+00:00", "Z")
+
+
+def _readiness_instance(instance: ReadinessInstanceReport) -> dict[str, Any]:
+    return {
+        "instance_id": instance.instance_id,
+        "instance_generation": instance.instance_generation,
+        "readiness_state": instance.readiness_state,
+        "readiness_expires_at": (
+            None
+            if instance.readiness_expires_at_us is None
+            else _readiness_timestamp(instance.readiness_expires_at_us)
+        ),
+        "remaining_seconds": instance.remaining_seconds,
+        "max_slots": instance.max_slots,
+        "held_slots": instance.held_slots,
+        "quarantined_slots": instance.quarantined_slots,
+    }
+
+
+def public_admission_readiness(report: AdmissionReadiness) -> dict[str, Any]:
+    """Project one verdict onto the declared response document."""
+    quota = report.quota
+    return {
+        "status": report.status.value,
+        "cause": None if report.cause is None else report.cause.value,
+        "workspace_id": report.workspace_id,
+        "checked_at": _readiness_timestamp(report.now_us),
+        "detail": report.detail,
+        "instances": [_readiness_instance(instance) for instance in report.instances],
+        "capacity": (
+            None
+            if quota is None
+            else {
+                "max_attempts": quota.max_attempts,
+                "held_attempts": quota.held_attempts,
+                "quarantined_attempts": quota.quarantined_attempts,
+            }
+        ),
+    }
+
+
 def _cancellation_response(view: CancellationView) -> Response:
     wire = public_cancellation(view)
     terminal = view.job.state in TERMINAL_STATES
@@ -830,6 +878,40 @@ def create_job_router(
         if service is None:
             return _unavailable(request_id, unavailable_detail)
         return await run_in_threadpool(_list, service, request, request_id)
+
+    @router.get(PREFIX + "/admission-readiness", operation_id="getJobAdmissionReadiness")
+    async def get_admission_readiness(request: Request) -> Response:
+        """One verdict on whether a create sent now would be admitted.
+
+        The route is registered before ``/{job_id}`` because Starlette matches in
+        registration order: the literal segment must win. It stays mounted in both
+        assemblies -- an unassembled Job surface answers the same 503
+        ``job_unavailable`` every other Job route answers in that state.
+        """
+        service = get_service()
+        request_id = str(request.state.request_id)
+        if service is None:
+            return _unavailable(request_id, unavailable_detail)
+        workspace_id = request.query_params.get("workspace_id", DEFAULT_WORKSPACE)
+        try:
+            identifier(workspace_id)
+        except ValueError:
+            return job_error("invalid_job_request", request_id)
+        try:
+            report = await run_in_threadpool(service.admission_readiness, workspace_id)
+        except PublicJobUnavailableError as error:
+            return job_storage_error(request_id, error)
+        return Response(
+            json.dumps(
+                public_admission_readiness(report),
+                sort_keys=False,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ),
+            status_code=200,
+            media_type="application/json",
+            headers={"Cache-Control": "no-store"},
+        )
 
     @router.get(PREFIX + "/{job_id}", operation_id="getJob")
     async def get_job(request: Request, job_id: str) -> Response:

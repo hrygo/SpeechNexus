@@ -22,6 +22,23 @@ JobState = Literal[
 ]
 JobKind = Literal["asr", "tts", "voice_design", "voice_clone", "voice_preview", "voice_validation"]
 ProgressUnit = Literal["audio_ms", "text_codepoints", "items"]
+
+# The task a binding must declare for each Job kind. ``require_pinned_binding`` and
+# the unpinned ``latest_binding`` resolution both check it, and the readiness
+# report's admissible-binding filter reads this same map instead of a second copy.
+JOB_KIND_TASK: dict[JobKind, str] = {
+    "asr": "asr_file",
+    "tts": "tts_file",
+    "voice_design": "voice_design",
+    "voice_clone": "voice_clone",
+    "voice_validation": "voice_validation",
+}
+
+# The kinds ``build_public_job_admission`` turns into a complete command. The other
+# Job kinds keep the legacy path and are therefore outside the readiness verdict's
+# universe: no admission transaction reads them.
+ADMITTED_JOB_KINDS: tuple[JobKind, ...] = ("asr", "tts", "voice_validation")
+
 CleanupState = Literal["not_required", "pending", "complete", "quarantined"]
 
 JOB_STATES: tuple[JobState, ...] = (

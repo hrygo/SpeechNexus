@@ -26,6 +26,10 @@ from speechnexus_backend.speech.application.voice_drafts import (
     voice_input_shape,
 )
 from speechnexus_backend.speech.domain.admission import AdmissionRejectedError
+from speechnexus_backend.speech.domain.job_admission_readiness import (
+    AdmissionReadiness,
+    UnclassifiedRefusalError,
+)
 from speechnexus_backend.speech.domain.job_prerequisites import prerequisite_detail
 from speechnexus_backend.speech.domain.public_jobs import (
     CANCELLATION_UNCONFIRMED,
@@ -72,6 +76,7 @@ from speechnexus_backend.speech.infrastructure.postgres_pool import (
 from speechnexus_backend.speech.infrastructure.public_job_admission import (
     PublicJobAdmissionRejectedError,
     build_public_job_admission,
+    load_admission_readiness,
     rejection_code,
 )
 
@@ -168,6 +173,21 @@ class _DeadlineConnection:
         rows = self.raw.execute(query, parameters)
         _remaining(self.deadline)
         return _DeadlineRows(rows, self.deadline)
+
+    def read_only_snapshot(self) -> None:
+        """Pin one repeatable-read, read-only snapshot before any query runs.
+
+        ``SET TRANSACTION`` is only legal as a transaction's first statement, so
+        this cannot go through ``execute``: ``arm`` writes ``statement_timeout``
+        with a query first and would turn the set into an ``ActiveSqlTransaction``.
+        The raw round trip is therefore the only one in this transaction without a
+        server-side ``statement_timeout``; it scans no table, so the risk is bounded
+        to a hung connection, which the deadline checks on both sides and the pool's
+        ``connect_timeout`` still bound.
+        """
+        _remaining(self.deadline)
+        self.raw.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        _remaining(self.deadline)
 
     @contextmanager
     def admission_cursor(self) -> Iterator[_DeadlineCursor]:
@@ -552,6 +572,35 @@ class PostgresPublicJobs:
             return rejection_code(code)
         except PublicJobAdmissionRejectedError:
             return "admission_state_invalid"
+
+    def admission_readiness(self, workspace_id: str) -> AdmissionReadiness:
+        """Report one instant by calling the create path's own predicate.
+
+        The read uses the admission role because the same rows admission reads
+        must be the ones reported: the Job writer DSN cannot see the reservation
+        counters. A store that refuses the read answers the declared storage
+        outage instead of a fabricated verdict.
+        """
+        deadline = time.monotonic() + self._timeout
+        try:
+            with self._admission_transaction(deadline) as connection:
+                # One verdict, one snapshot: the report issues a separate SELECT per
+                # fact (workspace, quota, each candidate, its pool and host), and
+                # under READ COMMITTED each would see a different committed state --
+                # e.g. a create's reservation visible to the slot read but not to the
+                # quota read. REPEATABLE READ pins all of them to one instant, and the
+                # transaction never writes, so READ ONLY also states that.
+                connection.read_only_snapshot()
+                now_us = _database_now_us(connection)
+                with connection.admission_cursor() as cursor:
+                    return load_admission_readiness(cursor, workspace_id, now_us=now_us)
+        except (UnclassifiedRefusalError, ValueError) as error:
+            # The cause stays chained: an unclassified probe refusal is a defect an
+            # operator must be able to read, and the answer is still the declared
+            # storage outage rather than a fabricated verdict.
+            raise PublicJobUnavailableError from error
+        except psycopg.Error:
+            raise PublicJobUnavailableError from None
 
     def create(self, job: NewPublicJob) -> JobCreateResult:
         if self._require_admission and self._admission_pool is None:

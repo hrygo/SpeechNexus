@@ -1,0 +1,1019 @@
+"""The readiness report and a create answer one refusal from the same stored rows.
+
+The failure this module exists to catch is not a wrong message: it is a report that
+says ``admitting`` while every create is refused. ``#857`` proved that defect cannot
+be caught by hand-built facts -- its equivalence test compared two models that were
+missing the whole selection layer, and the real database answered differently -- so
+every row below drives the production adapter and the real coordination rows, then
+compares both surfaces on the same instant.
+
+Each row mutates one deployment fact, asks for a create and reads the report:
+
+* the create answer must be the row's declared public code (or a created Job);
+* ``report.cause`` must be that same code's cause, and
+  ``report.status == "admitting"`` exactly when the create succeeded.
+
+The report runs ``decide_create_admission`` -- the predicate the create transaction
+runs -- so a row cannot pass by agreeing with a second copy of the rules. The probe
+set is the create path's own scope: every published binding a create could name,
+carrying the one instance a create for it would pin. The cases after the rows build
+the deployment shapes the single-instance fixture cannot express -- two ready
+instances behind one binding, two bindings, a published binding with no instance, a
+ready instance behind an unpublished binding, a superseded second revision whose
+engine is stopped, a ``voice_validation`` binding with no execution defaults, the
+three binding shapes a create refuses before admission (file-TTS commit mode,
+audio delivery, and a plan the binding's recipe disagrees with), and a pool whose
+owner has no fencing token -- because the report used to start from
+``engine_instances`` and answer ``admitting`` from a healthy sibling of the instance
+a create would pin (#857 third round, #863), from a binding that had no instance at
+all, from a revision no create can name, from dropping a nameable binding whose kind
+needs no execution block, or from checking only that a binding had a block instead
+of the gates a create applies to it.
+
+Boundaries: PostgreSQL with the shipped schema and roles. The rows that need a
+second instance or a second binding build them through the product's own
+``create_runtime_intent`` / ``observe_runtime`` ports and catalog publication, not
+by hand-writing the engine tables. It is not a real engine, gateway or GPU: readiness
+receipts are rewritten into the state a renewal would produce rather than elapsed by
+a clock. The workspace refusals are answered by the service before admission is
+consulted, so they are pinned here by name on both surfaces. MySQL/InnoDB and
+concurrency are covered by their own suites.
+"""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Callable
+from dataclasses import replace
+from typing import Any
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+from tests.fake.runtime_intents import BINDING as RUNTIME_BINDING
+from tests.fake.runtime_intents import COMMAND as RUNTIME_COMMAND
+from tests.fake.runtime_intents import PLAN as RUNTIME_PLAN
+from tests.fake.runtime_intents import REQUEST as RUNTIME_REQUEST
+from tests.integration.test_coordination_foundation import foundation as foundation
+from tests.integration.test_production_admission import AdmissionDatabase
+from tests.integration.test_production_admission import admission_database as admission_database
+from tests.integration.test_production_jobs import database as database
+from tests.integration.test_production_runtime_intents import (
+    runtime_database as runtime_database,
+)
+from tests.integration.test_public_job_admission_http_pg import (
+    BINDING,
+    HOST_NODE,
+    INSTANCE,
+    PREFIX,
+    TOPOLOGY_DIGEST,
+    WORKSPACE,
+    _app,
+    _body,
+    _error,
+)
+from tests.integration.test_public_job_atomic_admission_pg import _job, _seed, _store
+from tests.integration.test_runtime_observations import _command, _receipt, _wire
+
+from speechnexus_backend.speech.domain.publications import Publication
+from speechnexus_backend.speech.infrastructure.publications_sql import append_publication
+
+REPORT_CAUSE_BY_CREATE_CODE: dict[str, str] = {
+    "engine_not_ready": "engine_receipt_expired",
+    "engine_state_mismatch": "engine_state_mismatch",
+    "engine_resource_disabled": "engine_resource_disabled",
+    "job_capacity_exhausted": "capacity_exhausted",
+    "workspace_not_found": "workspace_not_found",
+    "workspace_disabled": "workspace_disabled",
+    "workspace_not_configured": "workspace_not_configured",
+    "job_unavailable": "storage_unavailable",
+}
+
+
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.parametrize("database", ["postgresql"], indirect=True),
+]
+
+
+REPORT_PATH = PREFIX + "/admission-readiness"
+
+
+def _query(db: Any, statement: str, parameters: tuple[object, ...] = ()) -> None:
+    db.query(statement, parameters)
+
+
+ROWS: tuple[tuple[str, Callable[[Any, int], None] | None, str | None], ...] = (
+    # (id, mutation, expected create public code; ``None`` means "a Job is created")
+    ("healthy", None, None),
+    (
+        "node-quarantined",
+        lambda db, now: _query(
+            db,
+            "UPDATE host_nodes SET node_state = 'quarantined' WHERE host_node_id = %s",
+            (HOST_NODE,),
+        ),
+        "engine_resource_disabled",
+    ),
+    (
+        "quota-full",
+        lambda db, now: _query(
+            db,
+            "UPDATE workspace_quotas SET held_attempts = max_attempts, "
+            "quarantined_attempts = 0 WHERE workspace_id = %s",
+            (WORKSPACE,),
+        ),
+        "job_capacity_exhausted",
+    ),
+    (
+        "slots-full",
+        lambda db, now: _query(
+            db,
+            "UPDATE engine_instances SET held_slots = max_slots "
+            "WHERE instance_id = %s AND instance_generation = %s",
+            INSTANCE,
+        ),
+        "job_capacity_exhausted",
+    ),
+    (
+        "pool-draining",
+        lambda db, now: _query(db, "UPDATE resource_pools SET pool_state = 'draining'"),
+        "engine_resource_disabled",
+    ),
+    (
+        # An unowned pool is a valid row only in this shape (``PoolOwnership``
+        # rejects None with any fencing/expiry/active state), and admission answers
+        # the disabled class for it on the create path.
+        "missing-pool-owner",
+        lambda db, now: _query(
+            db,
+            "UPDATE resource_pools SET owner_id = NULL, fencing_token = 0, "
+            "owner_expires_at_us = 0, owner_state = 'reconciling_takeover'",
+        ),
+        "engine_resource_disabled",
+    ),
+    (
+        "undecodable-intent",
+        lambda db, now: _query(
+            db,
+            "UPDATE runtime_instance_intents SET request_document = %s",
+            ("{}",),
+        ),
+        "engine_state_mismatch",
+    ),
+    (
+        "no-ready-instance",
+        lambda db, now: _query(
+            db,
+            "UPDATE engine_instances SET instance_state = 'draining' "
+            "WHERE instance_id = %s AND instance_generation = %s",
+            INSTANCE,
+        ),
+        "job_capacity_exhausted",
+    ),
+    # Receipt expiry needs the renewal-shaped rewrite the product itself produces,
+    # not a clock wait: admission also requires verified_at_us <= ready_at_us <= now.
+    ("receipt-expired", None, "engine_not_ready"),
+)
+
+
+def _expire_receipt(admission: AdmissionDatabase) -> None:
+    from tests.integration.test_public_job_admission_http_pg import _rewrite_receipt
+
+    db = admission.runtime.foundation.database
+    now_us = admission.runtime.now()
+    _rewrite_receipt(db, verified_at_us=now_us - 1000, expires_at_us=now_us - 1)
+
+
+# The fixture has one binding and one ready instance; these rows add the second of
+# each. ``instance-z`` sorts after ``instance-new`` so the create keeps pinning the
+# first instance, which is the arrangement a report that scanned every ready
+# instance could not see (#857 third round).
+OTHER_BINDING = "binding-other"
+OTHER_INSTANCE = ("instance-z", 1)
+OTHER_HOST = "host-z"
+OTHER_POOL = "asr-realtime"
+OTHER_GATEWAY = "gateway-z"
+OTHER_DIGEST = "sha256:" + "c" * 64
+# A binding the catalog never published (or retired): a create cannot name it, so a
+# ready instance carrying this revision is a ghost the report must ignore.
+GHOST_BINDING = "binding-unpublished"
+# The current head of the fixture's binding after a real second publication. A create
+# can name this revision and cannot name the superseded first one.
+HEAD_REVISION_ID = "binding-test-r2"
+HEAD_INSTANCE = ("instance-new2", 1)
+HEAD_HOST = "host-new2"
+HEAD_GATEWAY = "gateway-new2"
+# A binding whose only declared kind is `voice_validation`: a create for it needs no
+# `execution_defaults` block, so it is admissible with no execution block at all.
+VOICE_VALIDATION_BINDING = "binding-voice-validation"
+VOICE_VALIDATION_DIGEST = "sha256:" + "d" * 64
+
+
+def _register_ready_instance(
+    admission: AdmissionDatabase,
+    *,
+    binding_id: str,
+    instance_id: str,
+    host_node_id: str,
+    pool_id: str,
+    gateway_id: str,
+) -> None:
+    """Register and qualify one more ready instance through the product ports.
+
+    ``_prepare_ready`` only produces the fixture's first instance, so a second
+    ready instance -- the shape the single-instance rows cannot express -- is built
+    with the same ``create_runtime_intent`` / ``observe_runtime`` pair an operator
+    registration runs. The host and pool rows are inserted first because the
+    fixture has one of each; a second instance has to sit on its own node for the
+    per-node mutations to mean anything.
+    """
+    runtime = admission.runtime
+    db = runtime.foundation.database
+    if not db.query("SELECT 1 FROM resource_pools WHERE pool_id = %s", (pool_id,)):
+        db.query(
+            "INSERT INTO resource_pools (pool_id, service_class, pool_state, owner_id, "
+            "fencing_token, owner_state, owner_expires_at_us) "
+            "VALUES (%s, 'realtime', 'active', %s, 7, 'active', %s)",
+            (pool_id, RUNTIME_COMMAND.owner_id, runtime.now() + 60000000),
+        )
+    if not db.query("SELECT 1 FROM host_nodes WHERE host_node_id = %s", (host_node_id,)):
+        db.query(
+            "INSERT INTO host_nodes (host_node_id, memory_architecture, node_state, "
+            "topology_digest, allocatable_unified_physical_memory_bytes, "
+            "allocatable_device_memory_bytes, allocatable_host_memory_bytes, "
+            "allocatable_cpu_decode_millicores, allocatable_host_pcm_buffer_bytes, "
+            "allocatable_scratch_disk_bytes) "
+            "VALUES (%s, 'unified_memory', 'active', %s, "
+            "1000000, 0, 0, 1000000, 1000000, 1000000)",
+            (host_node_id, TOPOLOGY_DIGEST),
+        )
+    plan = replace(
+        RUNTIME_PLAN,
+        binding=replace(
+            RUNTIME_BINDING,
+            target_node_id=host_node_id,
+            pool_id=pool_id,
+            gateway_id=gateway_id,
+            binding_revision_id=binding_id,
+        ),
+    )
+    request = replace(
+        RUNTIME_REQUEST,
+        intent_id="runtime-" + instance_id,
+        instance_id=instance_id,
+        binding=plan.binding,
+    )
+    created = runtime.port.create_runtime_intent(
+        replace(RUNTIME_COMMAND, request=request, approved_plan=plan)
+    )
+    assert created.outcome == "committed", created
+    wire = _wire(runtime, request)
+    assert (
+        runtime.port.observe_runtime(_command(wire, receipt=_receipt(runtime, request))).outcome
+        == "committed"
+    )
+
+
+def _publish_other_binding(admission: AdmissionDatabase) -> None:
+    """Publish a second complete binding, cloned from the fixture's binding.
+
+    The probe set is one instance per binding, so a second binding is what
+    separates "this binding's pin target is refused" from "every create is
+    refused"; ``_seed`` publishes only ``binding-test`` and the deliberately
+    incomplete binding.
+    """
+    db = admission.runtime.foundation.database
+    source = db.query(
+        "SELECT definition_json FROM speech_binding_revisions WHERE binding_id = %s",
+        (BINDING,),
+    )[0]["definition_json"]
+    definition = json.loads(source)
+    definition["binding_id"] = OTHER_BINDING
+    db.query(
+        "INSERT INTO speech_binding_families (binding_id, latest_revision) VALUES (%s, '1')",
+        (OTHER_BINDING,),
+    )
+    db.query(
+        "INSERT INTO speech_binding_commands "
+        "(key_digest, binding_id, document_version, intent_json, request_digest) "
+        "VALUES (%s, %s, 1, '{}', %s)",
+        (OTHER_DIGEST, OTHER_BINDING, OTHER_DIGEST),
+    )
+    db.query(
+        "INSERT INTO speech_binding_revisions "
+        "(binding_id, revision, revision_id, key_digest, document_version, definition_json, "
+        "definition_digest, request_digest, created_at_us) "
+        "VALUES (%s, '1', %s, %s, 1, %s, %s, %s, 1)",
+        (
+            OTHER_BINDING,
+            OTHER_BINDING,
+            OTHER_DIGEST,
+            json.dumps(definition),
+            OTHER_DIGEST,
+            OTHER_DIGEST,
+        ),
+    )
+    # ``_seed`` leaves the catalog at revision 3 (one binding, the incomplete one and
+    # one voice), so the fourth publication is this binding.
+    with db.admin.transaction(), db.admin.cursor() as cursor:
+        assert append_publication(
+            cursor,
+            Publication("binding", OTHER_BINDING, 1, OTHER_BINDING, 1),
+            expected_current_revision=None,
+            expected_catalog_revision=4,
+        )
+
+
+def _ready_pins(admission: AdmissionDatabase, binding_id: str) -> list[str]:
+    """The instances a create for ``binding_id`` could pin, in selection order."""
+    rows = admission.runtime.foundation.database.query(
+        "SELECT i.instance_id FROM engine_instances AS i "
+        "JOIN runtime_instance_heads AS h ON h.instance_id = i.instance_id "
+        "AND h.current_generation = i.instance_generation "
+        "WHERE i.binding_revision_id = %s AND i.instance_state = 'ready' "
+        "AND h.current_prepare_intent_id IS NOT NULL "
+        "ORDER BY i.instance_id, i.instance_generation",
+        (binding_id,),
+    )
+    return [str(row["instance_id"]) for row in rows]
+
+
+def _quarantine(admission: AdmissionDatabase, host_node_id: str) -> None:
+    admission.runtime.foundation.database.query(
+        "UPDATE host_nodes SET node_state = 'quarantined' WHERE host_node_id = %s",
+        (host_node_id,),
+    )
+
+
+def _pinned_job(model: str, revision: str, *, key: str) -> Any:
+    """The fixture's TTS Job with an explicitly pinned model revision."""
+    job = _job(model=model, key=key)
+    configuration = json.loads(job.submission.effective_configuration_json)
+    configuration["models"]["tts"]["revision"] = revision
+    return replace(
+        job,
+        submission=replace(job.submission, effective_configuration_json=json.dumps(configuration)),
+    )
+
+
+def _publish_second_revision(admission: AdmissionDatabase) -> None:
+    """Publish revision 2 of the fixture's binding through ``append_publication``.
+
+    ``_seed`` leaves ``binding-test`` at revision 1, so the shape that separates
+    "superseded" from "current head" has to be a real second publication: the head
+    pointer moves, the old revision stays published, and a create can name only the
+    new one.
+    """
+    db = admission.runtime.foundation.database
+    definition = json.loads(
+        db.query(
+            "SELECT definition_json FROM speech_binding_revisions "
+            "WHERE binding_id = %s AND revision = '1'",
+            (BINDING,),
+        )[0]["definition_json"]
+    )
+    definition["revision"] = "2"
+    definition["revision_id"] = HEAD_REVISION_ID
+    db.query(
+        "INSERT INTO speech_binding_commands "
+        "(key_digest, binding_id, document_version, intent_json, request_digest) "
+        "VALUES (%s, %s, 1, '{}', %s)",
+        (OTHER_DIGEST, BINDING, OTHER_DIGEST),
+    )
+    db.query(
+        "INSERT INTO speech_binding_revisions "
+        "(binding_id, revision, revision_id, key_digest, document_version, definition_json, "
+        "definition_digest, request_digest, created_at_us) "
+        "VALUES (%s, '2', %s, %s, 1, %s, %s, %s, 1)",
+        (
+            BINDING,
+            HEAD_REVISION_ID,
+            OTHER_DIGEST,
+            json.dumps(definition),
+            OTHER_DIGEST,
+            OTHER_DIGEST,
+        ),
+    )
+    with db.admin.transaction(), db.admin.cursor() as cursor:
+        assert append_publication(
+            cursor,
+            Publication("binding", BINDING, 2, HEAD_REVISION_ID, 2),
+            expected_current_revision="1",
+            # ``_seed`` publishes three objects, so the catalogue sits at revision 4
+            # before this insert appends the fourth.
+            expected_catalog_revision=4,
+        )
+
+
+def _publish_voice_validation_binding(admission: AdmissionDatabase) -> None:
+    """Publish a binding a voice-validation create can name, with no defaults.
+
+    ``execution_defaults`` is optional in the binding schema and a
+    ``voice_validation`` create never reads it, so a binding that declares only that
+    task is admissible on the strength of the publication alone. Filtering the
+    universe on "has a valid execution block" would drop it and answer ``admitting``
+    while every create for it is refused.
+    """
+    db = admission.runtime.foundation.database
+    definition = {
+        "binding_id": VOICE_VALIDATION_BINDING,
+        "tasks": ["voice_validation"],
+        "release_tier": "production",
+    }
+    db.query(
+        "INSERT INTO speech_binding_families (binding_id, latest_revision) VALUES (%s, '1')",
+        (VOICE_VALIDATION_BINDING,),
+    )
+    db.query(
+        "INSERT INTO speech_binding_commands "
+        "(key_digest, binding_id, document_version, intent_json, request_digest) "
+        "VALUES (%s, %s, 1, '{}', %s)",
+        (VOICE_VALIDATION_DIGEST, VOICE_VALIDATION_BINDING, VOICE_VALIDATION_DIGEST),
+    )
+    db.query(
+        "INSERT INTO speech_binding_revisions "
+        "(binding_id, revision, revision_id, key_digest, document_version, definition_json, "
+        "definition_digest, request_digest, created_at_us) "
+        "VALUES (%s, '1', %s, %s, 1, %s, %s, %s, 1)",
+        (
+            VOICE_VALIDATION_BINDING,
+            VOICE_VALIDATION_BINDING,
+            VOICE_VALIDATION_DIGEST,
+            json.dumps(definition),
+            VOICE_VALIDATION_DIGEST,
+            VOICE_VALIDATION_DIGEST,
+        ),
+    )
+    with db.admin.transaction(), db.admin.cursor() as cursor:
+        assert append_publication(
+            cursor,
+            Publication("binding", VOICE_VALIDATION_BINDING, 1, VOICE_VALIDATION_BINDING, 1),
+            expected_current_revision=None,
+            expected_catalog_revision=4,
+        )
+
+
+@pytest.mark.parametrize(
+    ("row_id", "mutation", "create_code"),
+    ROWS,
+    ids=[row[0] for row in ROWS],
+)
+def test_the_report_and_a_create_answer_the_same_refusal(
+    admission_database: AdmissionDatabase,
+    row_id: str,
+    mutation: Callable[[Any, int], None] | None,
+    create_code: str | None,
+) -> None:
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    if row_id == "receipt-expired":
+        _expire_receipt(admission_database)
+    elif mutation is not None:
+        mutation(db, admission_database.runtime.now())
+    store = _store(admission_database)
+    # The report is read first: a create reserves the attempt and the slot, so the
+    # comparison must be two answers to the same instant, not one answer and then a
+    # deployment another create has already filled.
+    report = store.admission_readiness(WORKSPACE)
+    created = store.create(_job())
+    # `status` and `cause` are one answer split in two.
+    assert (report.status == "admitting") is (report.cause is None)
+    print(
+        f"ROW {row_id:<20} create={created.error_code or created.outcome:<26} "
+        f"status={report.status.value:<9} cause={report.cause.value if report.cause else None}"
+    )
+    if create_code is None:
+        assert created.outcome == "created", (row_id, created.error_code)
+        assert report.status == "admitting", (row_id, report.cause)
+        assert report.detail is None
+    else:
+        assert created.error_code == create_code, (row_id, created.error_code)
+        assert report.status == "degraded", (row_id, report.cause)
+        assert (
+            report.cause is not None
+            and report.cause.value == REPORT_CAUSE_BY_CREATE_CODE[create_code]
+        ), (row_id, report.cause)
+        assert report.detail
+
+
+def test_the_report_probes_the_instance_a_create_pins_not_a_healthy_sibling(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """Two ready instances, one binding, the pinned one's node quarantined.
+
+    This is the #857 third-round defect: the create pins the smaller instance id,
+    whose node is quarantined, so it answers ``engine_resource_disabled``; a report
+    that probes every ready instance reaches the healthy sibling and says
+    ``admitting``. Both possible verdicts are present in the data, so only the
+    selection layer decides which one the report publishes.
+    """
+    _seed(admission_database)
+    _register_ready_instance(
+        admission_database,
+        binding_id=BINDING,
+        instance_id=OTHER_INSTANCE[0],
+        host_node_id=OTHER_HOST,
+        pool_id=OTHER_POOL,
+        gateway_id=OTHER_GATEWAY,
+    )
+    _quarantine(admission_database, HOST_NODE)
+    # Premise: both instances are ready pin candidates for the same binding, and the
+    # create selects ``instance-new`` because it sorts first.
+    assert _ready_pins(admission_database, BINDING) == ["instance-new", "instance-z"]
+
+    store = _store(admission_database)
+    report = store.admission_readiness(WORKSPACE)
+    created = store.create(_job())
+    print(
+        f"ROW {'two-instances':<20} create={created.error_code or created.outcome:<26} "
+        f"status={report.status.value:<9} cause={report.cause.value if report.cause else None}"
+    )
+    # The create is the ground truth here: the report must answer the refusal the
+    # create actually produced, not the one a healthy sibling would have produced.
+    assert created.outcome == "rejected"
+    assert created.error_code == "engine_resource_disabled", created.error_code
+    assert report.status == "degraded", report.cause
+    assert report.cause is not None and report.cause.value == "engine_resource_disabled"
+    # ``instances[]`` names the probe set, so the healthy sibling is not in it: a
+    # report that lists it would be reporting an instance admission never selects.
+    assert [row.instance_id for row in report.instances] == ["instance-new"]
+
+
+def test_one_refused_binding_refuses_the_report_though_another_binding_works(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """Two bindings; only the other binding's pin target is disabled.
+
+    The report has no binding argument, so it must answer for the deployment: if
+    one binding's pin target is refused, a create for that binding is refused and
+    the report cannot say ``admitting`` because the sibling binding works.
+    """
+    _seed(admission_database)
+    _publish_other_binding(admission_database)
+    _register_ready_instance(
+        admission_database,
+        binding_id=OTHER_BINDING,
+        instance_id=OTHER_INSTANCE[0],
+        host_node_id=OTHER_HOST,
+        pool_id=OTHER_POOL,
+        gateway_id=OTHER_GATEWAY,
+    )
+    _quarantine(admission_database, OTHER_HOST)
+    assert _ready_pins(admission_database, OTHER_BINDING) == ["instance-z"]
+
+    store = _store(admission_database)
+    report = store.admission_readiness(WORKSPACE)
+    refused = store.create(_job(model=OTHER_BINDING))
+    healthy = store.create(_job(model=BINDING, key="synthetic-idem-0002"))
+    print(
+        f"ROW {'two-bindings-one-ref':<20} create={refused.error_code or refused.outcome:<26} "
+        f"status={report.status.value:<9} cause={report.cause.value if report.cause else None}"
+    )
+    # The reported list is in binding order, and the first refusal is the cause.
+    assert [row.instance_id for row in report.instances] == ["instance-z", "instance-new"]
+    assert refused.outcome == "rejected" and refused.error_code == "engine_resource_disabled"
+    assert healthy.outcome == "created", healthy.error_code
+    assert report.status == "degraded", report.cause
+    assert report.cause is not None and report.cause.value == "engine_resource_disabled"
+
+
+def test_two_usable_bindings_report_admitting(admission_database: AdmissionDatabase) -> None:
+    """Both bindings pin a healthy instance; every create would be admitted."""
+    _seed(admission_database)
+    _publish_other_binding(admission_database)
+    _register_ready_instance(
+        admission_database,
+        binding_id=OTHER_BINDING,
+        instance_id=OTHER_INSTANCE[0],
+        host_node_id=OTHER_HOST,
+        pool_id=OTHER_POOL,
+        gateway_id=OTHER_GATEWAY,
+    )
+    store = _store(admission_database)
+    report = store.admission_readiness(WORKSPACE)
+    created = store.create(_job(model=OTHER_BINDING))
+    print(
+        f"ROW {'two-bindings-healthy':<20} create={created.error_code or created.outcome:<26} "
+        f"status={report.status.value:<9} cause={report.cause.value if report.cause else None}"
+    )
+    assert [row.instance_id for row in report.instances] == ["instance-z", "instance-new"]
+    assert report.status == "admitting" and report.cause is None
+    assert report.detail is None
+    assert created.outcome == "created", created.error_code
+
+
+def test_a_published_binding_with_no_instance_refuses_the_report(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """A complete published binding with no ready instance is a capacity refusal.
+
+    A create for that binding answers ``job_capacity_exhausted``; a report that
+    starts from ``engine_instances`` cannot see the binding at all and answers
+    ``admitting`` from the healthy binding beside it, which is the failure this
+    route exists to prevent.
+    """
+    _seed(admission_database)
+    _publish_other_binding(admission_database)
+    store = _store(admission_database)
+    report = store.admission_readiness(WORKSPACE)
+    created = store.create(_job(model=OTHER_BINDING))
+    print(
+        f"ROW {'published-no-instance':<20} create={created.error_code or created.outcome:<26} "
+        f"status={report.status.value:<9} cause={report.cause.value if report.cause else None}"
+    )
+    assert created.outcome == "rejected"
+    assert created.error_code == "job_capacity_exhausted", created.error_code
+    assert report.status == "degraded", report.cause
+    assert report.cause is not None and report.cause.value == "capacity_exhausted"
+    # The binding contributes the verdict, not a row: there is no instance to report.
+    assert [row.instance_id for row in report.instances] == ["instance-new"]
+
+
+def test_an_unpublished_binding_with_a_ready_instance_is_not_reported(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """A ready instance behind an unpublished binding cannot refuse any create.
+
+    ``engine_instances`` may still hold one -- a retired or never-published catalog
+    is exactly how a ghost appears -- but no create can name that binding, so the
+    report must neither list it nor let its quarantined node turn the verdict
+    degraded while every create succeeds.
+    """
+    _seed(admission_database)
+    _register_ready_instance(
+        admission_database,
+        binding_id=GHOST_BINDING,
+        instance_id=OTHER_INSTANCE[0],
+        host_node_id=OTHER_HOST,
+        pool_id=OTHER_POOL,
+        gateway_id=OTHER_GATEWAY,
+    )
+    _quarantine(admission_database, OTHER_HOST)
+    store = _store(admission_database)
+    report = store.admission_readiness(WORKSPACE)
+    created = store.create(_job())
+    print(
+        f"ROW {'unpublished-instance':<20} create={created.error_code or created.outcome:<26} "
+        f"status={report.status.value:<9} cause={report.cause.value if report.cause else None}"
+    )
+    assert created.outcome == "created", created.error_code
+    assert report.status == "admitting" and report.cause is None
+    assert report.detail is None
+    assert [row.instance_id for row in report.instances] == ["instance-new"]
+
+
+def test_a_superseded_revision_is_not_in_the_reports_universe(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """A second publication moves the head; only the head is nameable.
+
+    Revision 1 stays published and keeps its healthy instance, but a create pinned to
+    it answers ``model_binding_not_current``. If the report looks at every published
+    revision it lists that instance as a second row, describing an instance no create
+    can select and a revision no create can name.
+    """
+    _seed(admission_database)
+    _publish_second_revision(admission_database)
+    _register_ready_instance(
+        admission_database,
+        binding_id=HEAD_REVISION_ID,
+        instance_id=HEAD_INSTANCE[0],
+        host_node_id=HEAD_HOST,
+        pool_id=OTHER_POOL,
+        gateway_id=HEAD_GATEWAY,
+    )
+    # Premise: both revisions have a ready pin target; only revision 2 is the head.
+    assert _ready_pins(admission_database, BINDING) == ["instance-new"]
+    assert _ready_pins(admission_database, HEAD_REVISION_ID) == ["instance-new2"]
+
+    store = _store(admission_database)
+    report = store.admission_readiness(WORKSPACE)
+    head = store.create(_pinned_job(BINDING, "2", key="synthetic-idem-0101"))
+    superseded = store.create(_pinned_job(BINDING, "1", key="synthetic-idem-0102"))
+    print(
+        f"ROW {'superseded-revision':<20} head={head.error_code or head.outcome:<26} "
+        f"old={superseded.error_code or superseded.outcome:<26} "
+        f"status={report.status.value:<9} cause={report.cause.value if report.cause else None}"
+    )
+    assert head.outcome == "created", head.error_code
+    # The pinned create is the ground truth for "revision 1 is not nameable".
+    assert superseded.outcome == "rejected"
+    assert report.status == "admitting" and report.cause is None
+    assert [row.instance_id for row in report.instances] == ["instance-new2"]
+
+
+def test_the_report_ignores_a_stopped_superseded_revision(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """The head is healthy while the superseded revision's engine is stopped.
+
+    The create that can be sent (revision 2) succeeds. A report that still puts the
+    superseded revision in its universe records that stopped engine and answers
+    ``degraded`` for a deployment that is admitting every create it can name.
+    """
+    _seed(admission_database)
+    _publish_second_revision(admission_database)
+    _register_ready_instance(
+        admission_database,
+        binding_id=HEAD_REVISION_ID,
+        instance_id=HEAD_INSTANCE[0],
+        host_node_id=HEAD_HOST,
+        pool_id=OTHER_POOL,
+        gateway_id=HEAD_GATEWAY,
+    )
+    _quarantine(admission_database, HOST_NODE)
+    store = _store(admission_database)
+    report = store.admission_readiness(WORKSPACE)
+    head = store.create(_pinned_job(BINDING, "2", key="synthetic-idem-0103"))
+    print(
+        f"ROW {'current-head-healthy':<20} create={head.error_code or head.outcome:<26} "
+        f"status={report.status.value:<9} cause={report.cause.value if report.cause else None}"
+    )
+    assert head.outcome == "created", head.error_code
+    assert report.status == "admitting" and report.cause is None
+    assert report.detail is None
+    assert [row.instance_id for row in report.instances] == ["instance-new2"]
+
+
+def test_a_voice_validation_binding_without_defaults_stays_in_the_universe(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """A published binding a voice-validation create can name is admissible.
+
+    ``execution_defaults`` is optional and a ``voice_validation`` create never reads
+    it, so this binding carries no execution block. It has no ready instance, so the
+    deployment answers ``job_capacity_exhausted`` to a create for it; a report that
+    filtered the universe on "has a valid execution block" would drop the binding and
+    answer ``admitting`` from the healthy binding beside it.
+    """
+    _seed(admission_database)
+    _publish_voice_validation_binding(admission_database)
+    store = _store(admission_database)
+    report = store.admission_readiness(WORKSPACE)
+    print(
+        f"ROW {'voice-validation-no-defaults':<20} "
+        f"status={report.status.value:<9} cause={report.cause.value if report.cause else None}"
+    )
+    assert report.status == "degraded", report.cause
+    assert report.cause is not None and report.cause.value == "capacity_exhausted"
+    # It contributes the verdict, not a row: there is no instance to report.
+    assert [row.instance_id for row in report.instances] == ["instance-new"]
+
+
+def _mutate_definition(
+    admission: AdmissionDatabase, mutate: Callable[[dict[str, Any]], None]
+) -> None:
+    """Rewrite the stored definition of the fixture's published binding.
+
+    The product never updates a revision in place, but every other fact must stay
+    the healthy fixture's for the row to isolate "the definition a create refuses":
+    the publication, the head, the instance, and the stored plan are untouched.
+    """
+    db = admission.runtime.foundation.database
+    definition = json.loads(
+        db.query(
+            "SELECT definition_json FROM speech_binding_revisions "
+            "WHERE binding_id = %s AND revision = '1'",
+            (BINDING,),
+        )[0]["definition_json"]
+    )
+    mutate(definition)
+    db.query(
+        "UPDATE speech_binding_revisions SET definition_json = %s "
+        "WHERE binding_id = %s AND revision = '1'",
+        (json.dumps(definition), BINDING),
+    )
+
+
+def _report_and_create(admission: AdmissionDatabase, row_id: str) -> tuple[Any, Any]:
+    store = _store(admission)
+    report = store.admission_readiness(WORKSPACE)
+    created = store.create(_job())
+    print(
+        f"ROW {row_id:<20} create={created.error_code or created.outcome:<26} "
+        f"status={report.status.value:<9} "
+        f"cause={report.cause.value if report.cause else None} "
+        f"instances={[row.instance_id for row in report.instances]}"
+    )
+    return report, created
+
+
+def test_a_tts_commit_mode_outside_the_file_semantics_is_not_admissible(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """A binding the file path refuses at request time is outside the universe.
+
+    The create validates the execution block's presence and timeout first, then the
+    file-TTS semantics: a block whose ``text_commit_mode`` is not ``explicit``
+    answers the request-shaped ``job_binding_incomplete``. The report used to stop
+    at the block's existence, so it answered ``admitting`` while that create was
+    refused. ``job_binding_incomplete`` is request-shaped in the contract, so no
+    cause may name it: the binding leaves the universe, and with no admissible
+    binding left the report answers ``engine_state_mismatch`` -- a deployment state
+    a retry cannot change. Before that, an empty admitted set answered
+    ``capacity_exhausted``, which is retryable and would have pointed the client at
+    the wrong fix.
+    """
+    _seed(admission_database)
+
+    def mutate(definition: dict[str, Any]) -> None:
+        # The fixture binding declares ASR too, and an ASR create would still be
+        # admitted; narrow the declaration so the broken TTS gate is the binding's
+        # only path to admission.
+        definition["tasks"] = ["tts_file"]
+        definition["execution_defaults"]["tts"]["text_commit_mode"] = "buffered"
+
+    _mutate_definition(admission_database, mutate)
+    report, created = _report_and_create(admission_database, "tts-commit-mode")
+    assert created.outcome == "rejected"
+    assert created.error_code == "job_binding_incomplete"
+    assert report.status == "degraded"
+    assert report.cause is not None and report.cause.value == "engine_state_mismatch"
+    assert report.instances == ()
+
+
+def test_a_tts_delivery_mode_outside_the_file_semantics_is_not_admissible(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """The second half of the same gate: ``audio_delivery`` must be ``complete``."""
+    _seed(admission_database)
+
+    def mutate(definition: dict[str, Any]) -> None:
+        definition["tasks"] = ["tts_file"]
+        definition["execution_defaults"]["tts"]["audio_delivery"] = "chunked"
+
+    _mutate_definition(admission_database, mutate)
+    report, created = _report_and_create(admission_database, "tts-audio-delivery")
+    assert created.outcome == "rejected"
+    assert created.error_code == "job_binding_incomplete"
+    assert report.status == "degraded"
+    assert report.cause is not None and report.cause.value == "engine_state_mismatch"
+    assert report.instances == ()
+
+
+def test_a_plan_that_disagrees_with_the_binding_is_not_admissible(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """A stored plan and the binding's recipe naming different manifests.
+
+    ``build_public_job_admission`` compares the approved plan with the definition
+    (revision, manifest, pool, gateway, node) and answers
+    ``job_binding_incomplete`` on any disagreement. The report's probe rebuilds its
+    command from the plan and never read the definition, so it answered
+    ``admitting`` while every create for the binding was refused. The binding is
+    request-shaped-refused and therefore outside the universe.
+    """
+    _seed(admission_database)
+    _mutate_definition(
+        admission_database,
+        lambda definition: definition["execution_recipe"].update(
+            capacity_manifest_id="manifest-other"
+        ),
+    )
+    report, created = _report_and_create(admission_database, "recipe-manifest")
+    assert created.outcome == "rejected"
+    assert created.error_code == "job_binding_incomplete"
+    assert report.status == "degraded"
+    assert report.cause is not None and report.cause.value == "engine_state_mismatch"
+    assert report.instances == ()
+
+
+def test_a_pool_whose_owner_has_no_fencing_token_is_disabled_on_both_surfaces(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """The create's disabled predicate has two halves; the report mirrored one.
+
+    ``build_public_job_admission`` answers ``engine_resource_disabled`` when the
+    pool has no owner *or* its fencing token is not positive. The report only
+    checked the owner, and a non-owner pool row with a zero token is not even a
+    constructible ``PoolOwnership``: the store mapped that ``ValueError`` to 503
+    ``job_unavailable``. Both surfaces now name the same disabled class.
+    """
+    _seed(admission_database)
+    _query(
+        admission_database.runtime.foundation.database,
+        "UPDATE resource_pools SET fencing_token = 0 WHERE pool_id = %s",
+        (RUNTIME_PLAN.binding.pool_id,),
+    )
+    report, created = _report_and_create(admission_database, "pool-owner-token")
+    assert created.outcome == "rejected"
+    assert created.error_code == "engine_resource_disabled"
+    assert report.status == "degraded"
+    assert report.cause is not None
+    assert report.cause.value == REPORT_CAUSE_BY_CREATE_CODE[created.error_code]
+    assert [row.instance_id for row in report.instances] == ["instance-new"]
+
+
+def test_a_report_never_reserves(admission_database: AdmissionDatabase) -> None:
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    store = _store(admission_database)
+    before = db.query(
+        "SELECT held_attempts, version FROM workspace_quotas WHERE workspace_id = %s",
+        (WORKSPACE,),
+    )
+    store.admission_readiness(WORKSPACE)
+    store.admission_readiness(WORKSPACE)
+    assert (
+        db.query(
+            "SELECT held_attempts, version FROM workspace_quotas WHERE workspace_id = %s",
+            (WORKSPACE,),
+        )
+        == before
+    )
+
+
+def test_the_report_lists_the_ready_instances_with_their_receipt_window(
+    admission_database: AdmissionDatabase,
+) -> None:
+    # ``instances[]`` is the operator's lever: it must name the rows admission reads,
+    # with the same receipt vocabulary the console report prints. A report that
+    # omitted the expired instance would leave a degraded answer without a cause.
+    _seed(admission_database)
+    _expire_receipt(admission_database)
+    report = _store(admission_database).admission_readiness(WORKSPACE)
+    row = next(item for item in report.instances if item.instance_id == INSTANCE[0])
+    assert row.instance_generation == INSTANCE[1]
+    assert row.readiness_state == "expired"
+    assert row.remaining_seconds is not None and row.remaining_seconds < 0
+    assert row.max_slots >= row.held_slots + row.quarantined_slots
+    assert report.quota is not None and report.quota.max_attempts == 2
+
+
+WORKSPACE_ROWS = (
+    (
+        "workspace-disabled",
+        "UPDATE speech_workspaces SET workspace_state = 'disabled' WHERE workspace_id = %s",
+        (WORKSPACE,),
+        WORKSPACE,
+        "workspace_disabled",
+    ),
+    # A workspace row without its quota row is the state a registration has not yet
+    # provisioned: admission has nothing to charge, so both surfaces must name
+    # `workspace_not_configured` instead of a storage or a workspace-state answer.
+    (
+        "workspace-not-configured",
+        "INSERT INTO speech_workspaces "
+        "(workspace_id, display_name, workspace_state, created_at_us) "
+        "VALUES ('workspace-quota-gap', 'test', 'active', 1)",
+        (),
+        "workspace-quota-gap",
+        "workspace_not_configured",
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    ("row_id", "statement", "parameters", "workspace_id", "code"),
+    WORKSPACE_ROWS,
+    ids=[row[0] for row in WORKSPACE_ROWS],
+)
+@pytest.mark.anyio
+async def test_a_workspace_refusal_is_answered_by_both_surfaces_over_http(
+    admission_database: AdmissionDatabase,
+    row_id: str,
+    statement: str,
+    parameters: tuple[object, ...],
+    workspace_id: str,
+    code: str,
+) -> None:
+    # These two refusals are decided before admission is consulted, so they are
+    # pinned on the HTTP surface: the create answers its own 4xx code and the
+    # report names the same class. A report that named a different workspace state
+    # than the create refused on would be the same defect at a different layer.
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    db.query(statement, parameters)
+    async with AsyncClient(
+        transport=ASGITransport(app=_app(admission_database)), base_url="http://test"
+    ) as client:
+        created = await client.post(
+            PREFIX,
+            json=_body(workspace_id=workspace_id),
+            headers={"Idempotency-Key": "readiness-" + row_id},
+        )
+        report_response = await client.get(REPORT_PATH, params={"workspace_id": workspace_id})
+    assert report_response.status_code == 200, report_response.text
+    report = report_response.json()
+    answered, _, _ = _error(created)
+    print(
+        f"ROW {row_id:<20} create={answered:<26} "
+        f"status={report['status']:<9} cause={report['cause']}"
+    )
+    assert answered == code, (row_id, answered)
+    assert report["status"] == "degraded", (row_id, report)
+    assert report["cause"] == code, (row_id, report)
+
+
+def test_an_unknown_workspace_is_reported_by_its_own_name(
+    admission_database: AdmissionDatabase,
+) -> None:
+    # The create for this workspace answers `workspace_not_found` in the service,
+    # before admission is consulted; the report must name the same class instead of
+    # silently reporting the default workspace.
+    _seed(admission_database)
+    report = _store(admission_database).admission_readiness("workspace-absent")
+    assert report.status == "degraded"
+    assert report.cause is not None and report.cause.value == "workspace_not_found"
+    assert report.workspace_id == "workspace-absent"
+    assert report.instances == ()

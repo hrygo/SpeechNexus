@@ -132,6 +132,38 @@ PASSTHROUGH_RAISE_POINTS: dict[tuple[str, str, str, str | None], dict[str, Any]]
     (
         "infrastructure/admission_sql.py",
         "admit_in_transaction",
+        "verdict.code",
+        None,
+    ): {
+        "reason": (
+            "The create path runs the same predicate the readiness report runs "
+            "(#863) and re-raises the refusal it returned. `Refused.code` is filled "
+            "only by `decide_create_admission` from an `AdmissionRejectedError` it "
+            "caught, so the set is the literals the domain predicates raise; the "
+            "entry states them instead of pointing at a class that never raises."
+        ),
+        "allowed": (
+            "capacity_exhausted",
+            "gateway_drain_incomplete",
+            "intent_conflict",
+            "invalid_counter",
+            "invalid_runtime_request",
+            "lease_not_active",
+            "not_found",
+            "owner_busy",
+            "policy_or_resource_disabled",
+            "quota_exceeded",
+            "recipe_mismatch",
+            "reconciliation_required",
+            "stale_fencing_token",
+            "stale_instance_generation",
+            "unapproved_runtime_template",
+            "version_conflict",
+        ),
+    },
+    (
+        "infrastructure/admission_sql.py",
+        "admit_in_transaction",
         "job.error_code or 'reconciliation_required'",
         None,
     ): {

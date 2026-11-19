@@ -79,11 +79,6 @@ UNIMPLEMENTED_OPERATIONS: dict[str, tuple[str, str]] = {
         "/v1/nexus/realtime/sessions/{session_id}/cancellations",
     ),
     "connectRealtime": ("GET", "/v1/realtime"),
-    # Declared by #845 and frozen by its contract slice; the report itself is not
-    # assembled yet. The literal segment shares the `/v1/nexus/jobs/` prefix with the
-    # dynamic `{job_id}` route, so this placeholder is mounted before that router
-    # (see `app.py`); otherwise `getJob` would answer for it.
-    "getJobAdmissionReadiness": ("GET", "/v1/nexus/jobs/admission-readiness"),
 }
 
 

@@ -199,7 +199,7 @@ def concrete(path: str) -> str:
 
 
 def test_contract_and_placeholder_table_agree() -> None:
-    assert len(CASES) == 7
+    assert len(CASES) == 6
     assert {operation for operation, _, _ in CASES} == set(UNIMPLEMENTED_OPERATIONS)
     declared = {operation for operation, _, _ in declared_operations()}
     # Every implemented route now declares its own 503 (ServiceUnavailable):
@@ -509,21 +509,23 @@ async def test_a_parameter_shadows_a_literal_route_registered_after_it() -> None
 def test_a_placeholder_registered_after_its_matching_template_is_rejected() -> None:
     """The reverse order is rejected too: the placeholder would answer nothing.
 
-    This is the arrangement #845's contract slice had to fix: with
-    ``GET /v1/nexus/jobs/{job_id}`` registered first, the literal report path was
-    answered as a Job id and the declared operation was unreachable.
+    A real route registered before the placeholder for the same template makes the
+    placeholder own nothing it is declared for. #863 removed the readiness
+    placeholder, so the case uses a live placeholder path: the guard rejects the
+    shared template itself, which is the stronger of the two shapes.
     """
     app = FastAPI()
 
     async def get_job(**params: str) -> dict[str, str]:
         return params
 
-    app.add_api_route("/v1/nexus/jobs/{job_id}", get_job, methods=["GET"])
+    app.add_api_route("/v1/nexus/operations/{operation_id}", get_job, methods=["GET"])
     app.include_router(create_unimplemented_router())
     with pytest.raises(RuntimeError) as raised:
         assert_placeholder_ownership(app.routes)
     message = raised.value.args[0]
-    assert "/v1/nexus/jobs/{job_id} answers /v1/nexus/jobs/admission-readiness" in message
+    assert "real routes must not share a method+template with a placeholder" in message
+    assert "GET /v1/nexus/operations/{operation_id}" in message
 
 
 @pytest.mark.parametrize(

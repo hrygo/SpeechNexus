@@ -96,6 +96,14 @@ CATALOGUE_PROJECTION_COMMENT = (
     "admission_state=unavailable",
     "from None",
     "#941",
+    # The contract was corrected to the same projection (#941). The comment must not
+    # keep telling the next reader that the contract still says the opposite.
+    "static projection, not a live",
+)
+STALE_PROJECTION_COMMENT_PHRASES = (
+    "contract defect #941",
+    "Structurally unsatisfiable",
+    '"current admission facts"',
 )
 
 
@@ -256,6 +264,7 @@ CLAIMS = (
         name="catalogue-readiness-projection-comment",
         doc=CATALOG_RUNTIME,
         required=CATALOGUE_PROJECTION_COMMENT,
+        forbidden=STALE_PROJECTION_COMMENT_PHRASES,
     ),
 )
 

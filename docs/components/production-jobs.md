@@ -1068,6 +1068,27 @@ uv run speechnexus-job-dispatch-worker
 `succeeded`、`failed`、`unknown`、`skipped`、`deferred`、`lease_reclaimed`、
 `lease_lost`。只包含计数，不包含原命令、请求 ID、端点或凭据。
 
+### 部署启动闸门
+
+`deploy/job-startup-gate.py` 是该容器的入口：它在领取任何租约之前逐条检查部署前提，
+每条缺失打印一行具名 `FAIL` 并以退出码 1 结束，全部通过后才 `exec` worker。数据库侧
+的五种形状有真库证据——真 Alembic 迁移、`scripts/dev-env/provision-job-roles.py`
+装出的非 owner 角色，只有对象存储协作者是替身，因此这些用例不需要 MinIO：
+
+| 前提形状 | 闸门行为 |
+| --- | --- |
+| 参考 provisioning 的全量授权 | 通过；`ok:` 行报告迁移头、角色守卫、SELECT 探针与认领后写列；`exec` 是最后一个动作 |
+| 撤回 `coordination_jobs` 四个认领列的 `UPDATE` | 非零退出；每个缺列一行，点名 `<schema>.coordination_jobs.<column> (UPDATE)` 与要安装的五个 grant 组，不是泛化的权限不足 |
+| 撤回 `<schema>.alembic_version` 的 `SELECT` | 非零退出；点名修它的那条 `GRANT SELECT ON <schema>.alembic_version TO "<role>"`，并声明不在未经验证的迁移头上启动 worker |
+| `alembic_version` 落后于制品头 | 非零退出；一句话同时给出库里的 revision 与制品头 |
+| 以上任一失败 | 在 `exec` 之前返回，worker 不会带着坏前提启动 |
+
+「读不到迁移头」与「迁移头落后」是两种不同失败，打印的句子也不同：前者点名那条
+`GRANT`，后者给出两端的 revision。闸门在读表之前无法判断遇到哪一种，所以两者都不能
+降级为 `pending` 行。真库用例在 `tests/integration/test_job_startup_gate_pg.py`；
+接线与退出码的单测是 `tests/unit/test_job_startup_gate.py`，文本级守卫是
+`tests/ci/test_reference_deploy_job_prereqs.py`。
+
 ### 续租、接管与优雅停止
 
 每次网关查询（包括查询后的下一步处理前）都以 `claim_owner_id`、`claim_version`

@@ -34,7 +34,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts/dev-env/check-image-contract-digest.py"
 
-REAL = "sha256:" + "da291ca201964dd1ec16ca1293f124765c15a447574db437fadc135126c9ec5e"
+REAL = "sha256:" + "4650e63cdb35afeeeded8e7bcfeff6aaa84616e2eaa35ba92d07470f81c38b67"
 FIXTURE = "sha256:" + "a" * 64
 OTHER = "sha256:" + "0" * 63 + "1"
 

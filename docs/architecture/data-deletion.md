@@ -56,9 +56,12 @@ deletion_object_storage_unconfigured` 是部署缺口（`retryable=false`）：�
    资源不存在返回 `404 resource_not_found`。部署/工作空间仍遵循当前入口规则。
 2. 所有者在短事务中读取目标版本与完整依赖快照，建立不可变 plan。依赖按
    `(owner,kind,id,revision,relation)` 排序，不得重复同一关系。
-   Speech 侧支持 `asset`、`artifact`、`voice_revision` 与 `operation_content` 目标，
-   且与资产写路径保持同一锁序：先以 `FOR KEY SHARE` 锁 `speech_workspaces` 行，再以
-   `FOR SHARE` 锁目标行，最后插入计划行，避免与资产写路径反向加锁而死锁。`asset`
+   Speech 侧支持 `asset`、`artifact`、`voice_revision` 与 `operation_content` 目标。
+   `asset`、`artifact` 与 `operation_content` 和资产写路径保持同一锁序：先以
+   `FOR KEY SHARE` 锁 `speech_workspaces` 行，再以 `FOR SHARE` 锁目标行，最后插入
+   计划行，避免与资产写路径反向加锁而死锁；`voice_revision` 只锁
+   `speech_voice_drafts` 行（执行 `FOR UPDATE`、准入 `FOR SHARE`），不触碰 workspace
+   行。`asset`
    固定资产版本、摘要、对象版本，并把未释放的资产引用作为 `persistent_reference /
    blocks` 依赖；`operation_content` 固定 Job 的 `status_version` 与请求摘要，活跃 Job
    以自身 `active_execution / blocks` 阻断，引用该 Job 的声音草稿 revision 以
@@ -144,8 +147,13 @@ Speech 的执行路由接受 `asset`、`artifact`、`voice_revision` 与 `operat
 `409 deletion_plan_expired`；任何拒绝都不产生部分级联。`eligible=false` 的计划不再
 被拒绝成 HTTP 409：执行把它落成账本里的 `blocked` Deletion，`error.code` 为
 `deletion_target_in_use`，消息点名阻断依赖，`result` 为空。阻断记录是该幂等键的终态；
-解除依赖后必须重新预检、换新键。并发提交的新引用由外键拒绝，同样映射为明确的
-`409 deletion_dependency_conflict`，不会是 500 或未知结果。
+解除依赖后必须重新预检、换新键。并发提交的新引用按依赖是否有外键分两类：有外键的引用
+由数据库拒绝并映射为明确的 `409 deletion_dependency_conflict`；`voice_revision` 的
+Job intent 没有 revision 外键，因此删除侧在重读依赖前对 `speech_voice_drafts` 行加
+`FOR UPDATE`，准入侧在读取 revision 前对同一行加 `FOR SHARE`，双方按“草稿行 →
+revision/依赖读取”的同一顺序串行化。后到方看到先提交的结果：删除报
+`409 deletion_plan_changed`（或预检阶段即 `blocked`），准入报 `job_unavailable` /
+`job_binding_incomplete`，不会留下指向已删 revision 的 intent，也不会是 500 或未知结果。
 
 `asset` 复用既有资产内容删除状态机，不另造一套：在同一事务内把资产推进到
 `expired`（追加 `speech_asset_events`），写入或复用 `speech_content_deletions` 行
@@ -163,8 +171,12 @@ Speech 的执行路由接受 `asset`、`artifact`、`voice_revision` 与 `operat
 清除确认后用带身份与摘要条件的 `UPDATE` 把行推进到 `deleted / deleted_at_us`（与 0054
 的保留期路径同一记录），再把账本标成 `succeeded`；清除失败保持 `queued`，同一键重启后
 继续。`voice_revision` 没有对象存储步骤，内容只在该 revision 行里，因此在接受事务内
-`DELETE` 该行并把账本直接写成 `succeeded`；生成 Job、其事件与计量事实保留。跨模块
-停止协调不在本实现内（跟 `#338`），已发布声音版本与执行证据仍以 blocker 呈现。
+`DELETE` 该行并把账本直接写成 `succeeded`；生成 Job、其事件与计量事实保留。接受事务在
+重读依赖前先对 `speech_voice_drafts` 行加 `FOR UPDATE`，准入在读取 revision 前对同一行
+加 `FOR SHARE`：intent 没有 revision 外键，只有这把行锁能让“读到 revision 后插入
+intent”与“确认无引用后删除 revision”排成一个顺序。锁序在两侧都是先草稿行、后
+revision/依赖读取；删除侧不等待 workspace 行，准入侧也不反向加锁，因此不会形成环。
+跨模块停止协调不在本实现内（跟 `#338`），已发布声音版本与执行证据仍以 blocker 呈现。
 
 `0059_speech_deletion_ledger` 是持久删除账本：一行对应一次已接受删除，记录计划身份与
 摘要、目标、删除/保留集合、幂等键摘要与意图摘要、内容账本外键与完成时间。

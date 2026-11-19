@@ -71,6 +71,8 @@ DELETION_LEDGER_DDL = (
             CHECK (intent_digest ~ '^[0-9a-f]{64}$'),
         -- The exact public scope this row authorized, as
         -- [[owner, kind, id, revision], ...]; never a re-derived current set.
+        -- This is authorization scope, not a completion result: ``status`` and
+        -- ``result`` state what was actually removed.
         deleted JSONB NOT NULL CHECK (
             jsonb_typeof(deleted) = 'array' AND jsonb_array_length(deleted) >= 1),
         retained JSONB NOT NULL CHECK (jsonb_typeof(retained) = 'array'),

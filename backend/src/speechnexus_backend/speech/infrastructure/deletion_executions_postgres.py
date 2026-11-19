@@ -107,6 +107,10 @@ _PRIVILEGES: tuple[tuple[str, str, str | None], ...] = (
     ("SELECT", "speech_job_intents", None),
     ("SELECT", "speech_voice_draft_revisions", None),
     ("SELECT", "speech_voice_drafts", None),
+    # Row lock only: admission holds FOR SHARE on the draft while it reads the
+    # revision, so the executor needs UPDATE to take FOR UPDATE. No column is
+    # ever assigned by this route.
+    ("UPDATE", "speech_voice_drafts", "head_revision"),
     ("SELECT", "speech_voice_capability_evidence", None),
     ("SELECT", "speech_voice_revisions", None),
     ("SELECT", "speech_artifacts", None),
@@ -338,6 +342,18 @@ class _DeletionExecution:
         confirm_scope(plan, request, now=self._tx.now())
         if not plan.eligible:
             return self._blocked(plan, request, key_digest, intent_digest, request_id)
+        if plan.target.kind == "voice_revision":
+            # Admission takes a FOR SHARE lock on the same draft row before it
+            # reads the revision it is about to pin into a Job intent. Taking the
+            # row exclusively here, before the dependency re-read, makes that
+            # read-or-delete decision one serial order: either admission commits
+            # its intent first and the snapshot below sees it, or this deletion
+            # commits first and admission finds no revision. Without this lock the
+            # intent has no foreign key to catch the race.
+            self._tx.rows(
+                "SELECT 1 FROM speech_voice_drafts WHERE draft_id = %s FOR UPDATE",
+                (plan.target.resource_id,),
+            )
         snapshot = snapshot_target(self._tx, self._workspace_id, plan.target, exclusive=True)
         # Re-read the key now that the target lock is held: a concurrent request
         # with the same key may have committed while this transaction waited, and
@@ -468,8 +484,10 @@ class _DeletionExecution:
         """Delete one unreferenced draft revision in the accepting transaction.
 
         The row's content lives only in the database, so there is no object step
-        and no queued state: the digest was rechecked under this transaction and
-        the DELETE is the removal.
+        and no queued state: ``accept`` already holds the draft row lock while it
+        re-reads the dependencies, and the DELETE is the removal. Holding that
+        lock through the delete is what keeps a concurrent admission from pinning
+        the revision into an intent after the dependency snapshot.
         """
         deleted = self._tx.rows(
             "DELETE FROM speech_voice_draft_revisions "

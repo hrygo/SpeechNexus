@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -10,6 +12,7 @@ from typing import Any
 import psycopg
 import pytest
 from psycopg.conninfo import make_conninfo
+from psycopg.rows import dict_row
 from tests.integration.test_coordination_foundation import foundation as foundation
 from tests.integration.test_production_admission import AdmissionDatabase
 from tests.integration.test_production_admission import admission_database as admission_database
@@ -31,6 +34,10 @@ from speechnexus_backend.speech.infrastructure.job_dispatch_postgres import Post
 from speechnexus_backend.speech.infrastructure.job_schema import (
     job_dispatch_grants,
     job_runtime_grants,
+)
+from speechnexus_backend.speech.infrastructure.public_job_admission import (
+    PublicJobAdmissionRejectedError,
+    build_public_job_admission,
 )
 from speechnexus_backend.speech.infrastructure.public_job_admission_grants import (
     public_job_admission_grants,
@@ -248,6 +255,105 @@ def _job(
             submitted_at_us=1_800_000_000_000_000,
         ),
     )
+
+
+VALIDATION_DRAFT = "draft-admission-deletion"
+VALIDATION_JOB = "job-admission-deletion-gen"
+VALIDATION_ASSET = "asset-admission-deletion"
+
+
+def _seed_validation_candidate(db: Any) -> None:
+    """A clone draft revision a validation Job can pin, with no publication yet."""
+    db.query(
+        "INSERT INTO speech_jobs (job_id, workspace_id, kind, model_id, request_digest, "
+        "state, status_version, result_json, created_at_us, updated_at_us) "
+        "VALUES (%s, %s, 'tts', %s, %s, 'succeeded', 2, '{}', 1, 1)",
+        (VALIDATION_JOB, WORKSPACE, BINDING, DIGEST),
+    )
+    db.query(
+        "INSERT INTO speech_voice_drafts (draft_id, generation_job_id, kind, status, "
+        "head_revision, metadata_revision, display_name, input_json, binding_json, "
+        "created_at_us, updated_at_us) "
+        "VALUES (%s, %s, 'clone', 'candidate', '1', 1, 'Synthetic candidate', %s, %s, 1, 1)",
+        (
+            VALIDATION_DRAFT,
+            VALIDATION_JOB,
+            '{"reference_audio_asset_id":"' + VALIDATION_ASSET + '",'
+            '"source_use_confirmed":true,"reference_text":"synthetic"}',
+            '{"id":"' + BINDING + '","revision":"1"}',
+        ),
+    )
+    db.query(
+        "INSERT INTO speech_voice_draft_revisions (draft_id, revision, kind, "
+        "generation_job_id, input_json, binding_json, created_at_us) "
+        "VALUES (%s, '1', 'clone', %s, %s, %s, 1)",
+        (
+            VALIDATION_DRAFT,
+            VALIDATION_JOB,
+            '{"reference_audio_asset_id":"' + VALIDATION_ASSET + '",'
+            '"source_use_confirmed":true,"reference_text":"synthetic"}',
+            '{"id":"' + BINDING + '","revision":"1"}',
+        ),
+    )
+    db.query(
+        "INSERT INTO speech_assets (asset_id, workspace_id, purpose, asset_state, upload_phase, "
+        "bytes, sha256, request_digest, object_key, media_type, duration_ms, sample_rate_hz, "
+        "channels, created_at_us, expires_at_us) VALUES "
+        "(%s, %s, 'voice_reference', 'ready', 'settled', 1024, %s, %s, "
+        "'private/admission-deletion.wav', 'audio/wav', 1000, 24000, 1, 1, 1000000)",
+        (VALIDATION_ASSET, WORKSPACE, DIGEST, DIGEST),
+    )
+
+
+def _validation_job() -> NewPublicJob:
+    intent = {
+        "workspace_id": WORKSPACE,
+        "kind": "voice_validation",
+        "model": BINDING,
+        "input": {
+            "voice_draft_id": VALIDATION_DRAFT,
+            "draft_revision": "1",
+            "validation_set_revision": "1",
+        },
+        "output": {"transcript_format": "json", "save_artifacts": True},
+        "constraints": {"allow_degradation": False, "require_exact_parameters": False},
+    }
+    job_id = "job-admission-deletion"
+    return NewPublicJob(
+        job_id=job_id,
+        workspace_id=WORKSPACE,
+        kind="voice_validation",
+        model_id=BINDING,
+        request_digest=canonical_digest(intent),
+        request_document=json.dumps(intent),
+        initial_event_digest=canonical_digest({"job_id": job_id, "event_seq": 0}),
+        idempotency_key_digest=idempotency_digest("admission-deletion"),
+        submission=JobSubmission(
+            request_id="request-" + job_id,
+            client_reference=None,
+            effective_configuration_json=json.dumps(
+                {"models": {"voice": {"id": BINDING, "revision": "1"}}}
+            ),
+            execution_revision=1,
+            progress_unit="audio_ms",
+            progress_total=1000,
+            submitted_at_us=1_800_000_000_000_000,
+        ),
+    )
+
+
+def _wait_for_backend(db: Any, query_fragment: str, wait_fragment: str) -> bool:
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        rows = db.query(
+            "SELECT count(*) AS n FROM pg_stat_activity WHERE wait_event_type = 'Lock' "
+            "AND strpos(query, %s) > 0 AND strpos(query, %s) > 0",
+            (query_fragment, wait_fragment),
+        )
+        if rows and rows[0]["n"]:
+            return True
+        time.sleep(0.02)
+    return False
 
 
 def _counts(db: Any) -> dict[str, int]:
@@ -632,3 +738,70 @@ def test_writer_column_level_attempt_insert_is_detected(
         pytest.raises(ValueError, match="admission reservations"),
     ):
         _verify_privileges(connection, db.schema)
+
+
+def test_voice_validation_admission_waits_for_a_deletion_draft_lock(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """Admission takes the draft lock before it reads the revision it will pin.
+
+    This drives the unpinned create path: ``_lock_validation_target`` runs only
+    when a caller supplied ``expected_binding``, so otherwise this revision read
+    is the first draft touch. The deleting transaction holds the draft row
+    ``FOR UPDATE`` and has deleted the revision but not committed. Admission must
+    wait on its own ``FOR SHARE``
+    and, once the deletion commits, find no revision and refuse with
+    ``job_unavailable`` (the existing refusal for a vanished revision). Without
+    that shared lock it reads the pre-delete row and builds an admission whose
+    later intent would name a deleted revision.
+    """
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    _seed_validation_candidate(db)
+    deleting = psycopg.connect(db.url, row_factory=dict_row)
+    outcome: list[str] = []
+    thread: threading.Thread | None = None
+    try:
+        deleting.execute(f'SET search_path TO "{db.schema}", pg_catalog')
+        deleting.execute(
+            "SELECT 1 FROM speech_voice_drafts WHERE draft_id = %s FOR UPDATE",
+            (VALIDATION_DRAFT,),
+        )
+        deleting.execute(
+            "DELETE FROM speech_voice_draft_revisions WHERE draft_id = %s AND revision = '1'",
+            (VALIDATION_DRAFT,),
+        )
+
+        def admit() -> None:
+            with psycopg.connect(db.url, row_factory=dict_row) as connection:
+                connection.execute(f'SET search_path TO "{db.schema}", pg_catalog')
+                cursor = connection.cursor()
+                try:
+                    build_public_job_admission(
+                        cursor,
+                        _validation_job(),
+                        now_us=1_800_000_000_000_000,
+                        max_command_bytes=1_048_576,
+                        storage_bucket="transcription-inputs",
+                    )
+                except PublicJobAdmissionRejectedError as error:
+                    outcome.append(error.code)
+                else:
+                    outcome.append("admitted")
+
+        thread = threading.Thread(target=admit)
+        thread.start()
+        waited = _wait_for_backend(db, "speech_voice_drafts", "FOR SHARE")
+        if not waited:
+            # No lock means admission already read the pre-delete revision; let
+            # that attempt finish so the outcome below is stable and observable.
+            thread.join(5)
+        deleting.commit()
+        thread.join(30)
+        assert not thread.is_alive()
+        assert outcome in (["job_binding_incomplete"], ["job_unavailable"]), outcome
+    finally:
+        deleting.rollback()
+        deleting.close()
+        if thread is not None:
+            thread.join(5)

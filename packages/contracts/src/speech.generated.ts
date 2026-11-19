@@ -6617,7 +6617,7 @@ export interface operations {
       };
     };
     responses: {
-      /** @description Immutable plan or original asynchronous deletion record. */
+      /** @description Pinned, immutable deletion plan for the requested target. */
       200: {
         headers: {
           [name: string]: unknown;
@@ -6629,6 +6629,11 @@ export interface operations {
       /** @description Target, plan or deletion resource not found. */
       404: {
         headers: {
+          /**
+           * @description This refusal is deterministic for the submitted request; replaying
+           *     the same key or body cannot change it.
+           */
+          "X-Should-Retry": "false";
           [name: string]: unknown;
         };
         content: {
@@ -6639,6 +6644,11 @@ export interface operations {
       /** @description Dependency, revision, plan expiry or idempotency conflict. */
       409: {
         headers: {
+          /**
+           * @description This refusal is deterministic for the submitted request; replaying
+           *     the same key or body cannot change it.
+           */
+          "X-Should-Retry": "false";
           [name: string]: unknown;
         };
         content: {
@@ -6648,6 +6658,11 @@ export interface operations {
       /** @description Invalid target owner or confirmation scope. */
       422: {
         headers: {
+          /**
+           * @description This refusal is deterministic for the submitted request; replaying
+           *     the same key or body cannot change it.
+           */
+          "X-Should-Retry": "false";
           [name: string]: unknown;
         };
         content: {
@@ -6701,7 +6716,7 @@ export interface operations {
       };
     };
     responses: {
-      /** @description Immutable plan or original asynchronous deletion record. */
+      /** @description Stored Deletion for this Idempotency-Key: `queued` or `running` while content removal is pending, `blocked` when a live dependency prevents it, and `succeeded` once removal is confirmed. */
       202: {
         headers: {
           [name: string]: unknown;
@@ -6713,6 +6728,11 @@ export interface operations {
       /** @description Target, plan or deletion resource not found. */
       404: {
         headers: {
+          /**
+           * @description This refusal is deterministic for the submitted request; replaying
+           *     the same key or body cannot change it.
+           */
+          "X-Should-Retry": "false";
           [name: string]: unknown;
         };
         content: {
@@ -6723,6 +6743,11 @@ export interface operations {
       /** @description Dependency, revision, plan expiry or idempotency conflict. */
       409: {
         headers: {
+          /**
+           * @description This refusal is deterministic for the submitted request; replaying
+           *     the same key or body cannot change it.
+           */
+          "X-Should-Retry": "false";
           [name: string]: unknown;
         };
         content: {
@@ -6732,6 +6757,11 @@ export interface operations {
       /** @description Invalid target owner or confirmation scope. */
       422: {
         headers: {
+          /**
+           * @description This refusal is deterministic for the submitted request; replaying
+           *     the same key or body cannot change it.
+           */
+          "X-Should-Retry": "false";
           [name: string]: unknown;
         };
         content: {
@@ -6781,7 +6811,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Immutable plan or original asynchronous deletion record. */
+      /** @description Stored Deletion for this Idempotency-Key, including `blocked` with its reason when content was not removed. */
       200: {
         headers: {
           [name: string]: unknown;
@@ -6793,6 +6823,11 @@ export interface operations {
       /** @description Target, plan or deletion resource not found. */
       404: {
         headers: {
+          /**
+           * @description This refusal is deterministic for the submitted request; replaying
+           *     the same key or body cannot change it.
+           */
+          "X-Should-Retry": "false";
           [name: string]: unknown;
         };
         content: {
@@ -6803,6 +6838,11 @@ export interface operations {
       /** @description Dependency, revision, plan expiry or idempotency conflict. */
       409: {
         headers: {
+          /**
+           * @description This refusal is deterministic for the submitted request; replaying
+           *     the same key or body cannot change it.
+           */
+          "X-Should-Retry": "false";
           [name: string]: unknown;
         };
         content: {
@@ -6812,6 +6852,11 @@ export interface operations {
       /** @description Invalid target owner or confirmation scope. */
       422: {
         headers: {
+          /**
+           * @description This refusal is deterministic for the submitted request; replaying
+           *     the same key or body cannot change it.
+           */
+          "X-Should-Retry": "false";
           [name: string]: unknown;
         };
         content: {

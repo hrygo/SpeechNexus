@@ -41,7 +41,7 @@ Web 两个镜像按 `deploy/README.md`「Web images」以构建提交为 tag 产
 | Python 包版本 | `0.1.0.dev0` | 8 个 `pyproject.toml` 的 `version` 字段（根、`backend`、`execution-gateway`、`node-controller`、`asset-inspector`、`packages/contracts`、`packages/media`、`deploy/engines/vllm-asr-lifecycle`）。API 的 `/healthz` 与 `GET /v1/nexus/version` 的 `version` 字段都取自 `backend/src/speechnexus_backend/__init__.py:3` | 人手声明；不随契约修订变化 |
 | TypeScript 包版本 | `0.1.0` | 5 个 `package.json` 的 `version` 字段（根、`packages/contracts`、`web/admin`、`web/shared`、`web/workbench`） | 人手声明；不随契约修订变化 |
 | 契约 `info.version` | 按文件各自计数，**不存在一个「契约总版本」**。8 个 OpenAPI 文件各有自己的值：`contracts/speech-openapi.yaml:4` = `0.1.0.dev18`、`contracts/admin-openapi.yaml:4` = `0.1.0.dev11`、`contracts/workbench-openapi.yaml:4` = `0.1.0.dev2`、`contracts/internal/execution-control.openapi.yaml:4` = `0.4.0.dev1`、`contracts/internal/asset-inspection.openapi.yaml:4` 与 `contracts/internal/runtime-control.openapi.yaml:4` = `0.1.0.dev1`、`contracts/operations.openapi.yaml:4` 与 `contracts/binding-defaults-producer.openapi.yaml:4` = `0.1.0.dev0` | 每个 OpenAPI 文件自己的 `info.version` 字符串。它被人手维护，`scripts/dev-env/check-http-contract-changes.py` 只把它当作「破坏性变更允许清单」的版本对键，没有「必须递增」的守卫 | 人手维护；运行期不读它 |
-| `contract_digest` | `sha256:da291ca201964dd1ec16ca1293f124765c15a447574db437fadc135126c9ec5e` | `contracts/` 下每个 `*.yaml`/`*.json` 文件按相对路径字节序，对「`<相对路径> SPACE <该文件 sha256> NEWLINE`」求总 `sha256`（算法在 `scripts/dev-env/generate-contract-bindings.py:823`）。生成期同时写进 Python 包（`packages/contracts/src/speechnexus_contracts/contract_digest.py`）与 TypeScript 包（`packages/contracts/src/contract_digest.generated.ts`） | 生成器产出一个值，两侧消费者各自持有；API 在运行期自报（`backend/src/speechnexus_backend/speech/interfaces/http/version_identity.py:30`），两个 Web 入口把同一个值烘焙进 bundle 并在页面启动时比对（`web/shared/src/ui/contract-identity.tsx:1`） |
+| `contract_digest` | `sha256:4650e63cdb35afeeeded8e7bcfeff6aaa84616e2eaa35ba92d07470f81c38b67` | `contracts/` 下每个 `*.yaml`/`*.json` 文件按相对路径字节序，对「`<相对路径> SPACE <该文件 sha256> NEWLINE`」求总 `sha256`（算法在 `scripts/dev-env/generate-contract-bindings.py:823`）。生成期同时写进 Python 包（`packages/contracts/src/speechnexus_contracts/contract_digest.py`）与 TypeScript 包（`packages/contracts/src/contract_digest.generated.ts`） | 生成器产出一个值，两侧消费者各自持有；API 在运行期自报（`backend/src/speechnexus_backend/speech/interfaces/http/version_identity.py:30`），两个 Web 入口把同一个值烘焙进 bundle 并在页面启动时比对（`web/shared/src/ui/contract-identity.tsx:1`） |
 
 **复核时点（2026-11-17）**：当时上表取值逐项重取后与 2026-11-16 的基线相同——
 `contract_digest` 离线重算仍是 `sha256:ad581b46…7863`；`/healthz` 与 `GET /v1/nexus/version`
@@ -51,12 +51,12 @@ Web 两个镜像按 `deploy/README.md`「Web images」以构建提交为 tag 产
 `0.4.0.dev1` / `0.1.0.dev1` ×2 / `0.1.0.dev0` ×2。该时点之前，基线之后合并的提交没有改
 `contracts/` 的字节。
 
-**摘要的两次后续变化**：`#1009`（2026-11-19 11:04）改了 `contracts/` 的字节，`contract_digest`
+**摘要的三次后续变化**：`#1009`（2026-11-19 11:04）改了 `contracts/` 的字节，`contract_digest`
 变为 `sha256:5c2d96be…e25d`，本页表格当时没有同步；本次 `#941` 把
 `nexus.readiness.admission_state` 的契约描述改为静态投影（见已知限制 13），摘要再变为
 `sha256:2411332…4942`，上表当时已按该值更新。`#941` 这次是**描述口径**订正：字段名、枚举、
 响应形状与生成消费者接口均未变。随后 `#819` 补齐三个删除操作的真实 `503` 声明，摘要再变为
-`sha256:da291ca…ec5e`，上表与自查命令已按当前值同步。
+`sha256:4650e6…8b67`，上表与自查命令已按当前值同步。
 
 契约摘要与 `GET /v1/nexus/version` 的应答形状在 `packages/contracts/src/speechnexus_contracts/version.openapi.json:81`
 （`required: ["version", "contract_digest"]`）；该路由由健康检查路由无条件挂载
@@ -85,10 +85,10 @@ Web 两个镜像按 `deploy/README.md`「Web images」以构建提交为 tag 产
 ```bash
 # 1. 运行时自报（部署侧、构建侧都应一致）
 curl -sS http://127.0.0.1:8000/v1/nexus/version
-# {"version":"0.1.0.dev0","contract_digest":"sha256:da291ca201964dd1ec16ca1293f124765c15a447574db437fadc135126c9ec5e"}
+# {"version":"0.1.0.dev0","contract_digest":"sha256:4650e63cdb35afeeeded8e7bcfeff6aaa84616e2eaa35ba92d07470f81c38b67"}
 
 # 2. 在要核对的提交上离线重算，并直接比对运行期值
-UV_NO_CONFIG=1 uv run python scripts/dev-env/print-contract-digest.py --expect sha256:da291ca201964dd1ec16ca1293f124765c15a447574db437fadc135126c9ec5e
+UV_NO_CONFIG=1 uv run python scripts/dev-env/print-contract-digest.py --expect sha256:4650e63cdb35afeeeded8e7bcfeff6aaa84616e2eaa35ba92d07470f81c38b67
 
 # 3. 页面 bundle 里烘焙的值（应与 1、2 相同；bundle 里另有测试夹具的假摘要，形如重复字符）
 grep -o 'sha256:[0-9a-f]\{64\}' web/workbench/dist/assets/*.js | sort -u

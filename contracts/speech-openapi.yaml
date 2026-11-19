@@ -2874,13 +2874,22 @@ paths:
               $ref: "./shared/deletion.schema.json#/$defs/DeletionPlanRequest"
       responses:
         "200":
-          description: Immutable plan or original asynchronous deletion record.
+          description: Pinned, immutable deletion plan for the requested target.
           content:
             application/json:
               schema:
                 $ref: "./shared/deletion.schema.json#/$defs/DeletionPlan"
         "404":
           description: Target, plan or deletion resource not found.
+          headers:
+            X-Should-Retry:
+              required: true
+              description: |
+                This refusal is deterministic for the submitted request; replaying
+                the same key or body cannot change it.
+              schema:
+                type: string
+                const: "false"
           content:
             application/json:
               schema:
@@ -2889,12 +2898,30 @@ paths:
           $ref: "#/components/responses/MethodNotAllowed"
         "409":
           description: Dependency, revision, plan expiry or idempotency conflict.
+          headers:
+            X-Should-Retry:
+              required: true
+              description: |
+                This refusal is deterministic for the submitted request; replaying
+                the same key or body cannot change it.
+              schema:
+                type: string
+                const: "false"
           content:
             application/json:
               schema:
                 $ref: "./shared/errors.schema.json#/$defs/ErrorResponse"
         "422":
           description: Invalid target owner or confirmation scope.
+          headers:
+            X-Should-Retry:
+              required: true
+              description: |
+                This refusal is deterministic for the submitted request; replaying
+                the same key or body cannot change it.
+              schema:
+                type: string
+                const: "false"
           content:
             application/json:
               schema:
@@ -2970,13 +2997,22 @@ paths:
               $ref: "./shared/deletion.schema.json#/$defs/DeletionCreateRequest"
       responses:
         "202":
-          description: Immutable plan or original asynchronous deletion record.
+          description: 'Stored Deletion for this Idempotency-Key: `queued` or `running` while content removal is pending, `blocked` when a live dependency prevents it, and `succeeded` once removal is confirmed.'
           content:
             application/json:
               schema:
                 $ref: "./shared/deletion.schema.json#/$defs/Deletion"
         "404":
           description: Target, plan or deletion resource not found.
+          headers:
+            X-Should-Retry:
+              required: true
+              description: |
+                This refusal is deterministic for the submitted request; replaying
+                the same key or body cannot change it.
+              schema:
+                type: string
+                const: "false"
           content:
             application/json:
               schema:
@@ -2985,12 +3021,30 @@ paths:
           $ref: "#/components/responses/MethodNotAllowed"
         "409":
           description: Dependency, revision, plan expiry or idempotency conflict.
+          headers:
+            X-Should-Retry:
+              required: true
+              description: |
+                This refusal is deterministic for the submitted request; replaying
+                the same key or body cannot change it.
+              schema:
+                type: string
+                const: "false"
           content:
             application/json:
               schema:
                 $ref: "./shared/errors.schema.json#/$defs/ErrorResponse"
         "422":
           description: Invalid target owner or confirmation scope.
+          headers:
+            X-Should-Retry:
+              required: true
+              description: |
+                This refusal is deterministic for the submitted request; replaying
+                the same key or body cannot change it.
+              schema:
+                type: string
+                const: "false"
           content:
             application/json:
               schema:
@@ -3059,13 +3113,22 @@ paths:
             $ref: "./shared/identifiers.schema.json#/$defs/Identifier"
       responses:
         "200":
-          description: Immutable plan or original asynchronous deletion record.
+          description: Stored Deletion for this Idempotency-Key, including `blocked` with its reason when content was not removed.
           content:
             application/json:
               schema:
                 $ref: "./shared/deletion.schema.json#/$defs/Deletion"
         "404":
           description: Target, plan or deletion resource not found.
+          headers:
+            X-Should-Retry:
+              required: true
+              description: |
+                This refusal is deterministic for the submitted request; replaying
+                the same key or body cannot change it.
+              schema:
+                type: string
+                const: "false"
           content:
             application/json:
               schema:
@@ -3074,12 +3137,30 @@ paths:
           $ref: "#/components/responses/MethodNotAllowed"
         "409":
           description: Dependency, revision, plan expiry or idempotency conflict.
+          headers:
+            X-Should-Retry:
+              required: true
+              description: |
+                This refusal is deterministic for the submitted request; replaying
+                the same key or body cannot change it.
+              schema:
+                type: string
+                const: "false"
           content:
             application/json:
               schema:
                 $ref: "./shared/errors.schema.json#/$defs/ErrorResponse"
         "422":
           description: Invalid target owner or confirmation scope.
+          headers:
+            X-Should-Retry:
+              required: true
+              description: |
+                This refusal is deterministic for the submitted request; replaying
+                the same key or body cannot change it.
+              schema:
+                type: string
+                const: "false"
           content:
             application/json:
               schema:

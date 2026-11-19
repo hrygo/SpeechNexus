@@ -797,7 +797,7 @@ async def test_a_failed_purge_stays_queued_and_the_same_key_resumes(sandbox: San
 
 
 async def test_a_restart_replays_the_stored_result(sandbox: Sandbox) -> None:
-    """A new process, pool and service still answer the same key from the ledger."""
+    """A new pool and service in this process still answer the same key."""
     app, pool, objects, _artifacts = _app(sandbox)
     plan = await _preview(app, "asset", ASSET, 3, "key-plan-restart")
     first = await _execute(app, _confirm(plan), "key-exec-restart")
@@ -809,12 +809,102 @@ async def test_a_restart_replays_the_stored_result(sandbox: Sandbox) -> None:
         replay = await _execute(restarted_app, _confirm(plan), "key-exec-restart")
         assert replay.status_code == 202, replay.text
         assert replay.json() == first.json()
-        # Nothing was deleted twice: the fresh process purged nothing.
+        # Nothing was deleted twice: the restarted service read the stored ledger
+        # row and did not touch the object version again.
         assert restarted_objects.versions == []
         assert objects.versions == ["minio-asset-exec-1"]
         assert len(_ledger(sandbox, "key-exec-restart")) == 1
     finally:
         restarted_pool.close()
+
+
+async def test_a_live_purge_claim_answers_503_until_the_crash_lease_expires(
+    sandbox: Sandbox,
+) -> None:
+    """A crashed executor's claim is a wait, not a second purge.
+
+    Acceptance and the object purge are separate transactions. If the process dies
+    after acceptance, the ledger row is ``queued`` with a live ``purge_claimed_at``
+    and no completion. A same-key replay inside the 120 s lease waits, then answers
+    ``503 deletion_unavailable`` without touching the Artifact. Once the lease has
+    expired the same key reclaims the row and finishes the purge.
+    """
+    app, pool, _objects, artifacts = _app(sandbox)
+    try:
+        plan = await _preview(app, "artifact", ARTIFACT, 1, "key-plan-crash-lease")
+        body = _confirm(plan)
+        target = plan["target"]
+        request = DeletionRequest(
+            plan["id"],
+            int(plan["plan_revision"]),
+            plan["plan_digest"],
+            (
+                DeletionTarget(
+                    "speech",
+                    target["kind"],
+                    target["resource"]["id"],
+                    int(target["resource"]["revision"]),
+                ),
+            ),
+        )
+        key = "key-exec-crash-lease"
+        key_digest = hashlib.sha256(key.encode()).hexdigest()
+        with pool.connection(timeout=5) as connection:
+            transaction = _Transaction(connection, time.monotonic() + 5, WORKSPACE)
+            accepted = _DeletionExecution(transaction, WORKSPACE).accept(
+                request,
+                key_digest=key_digest,
+                intent_digest=deletion_intent_digest(request),
+                purge_available=True,
+                artifact_purge_available=True,
+                request_id="crash-lease",
+            )
+            assert accepted.record.status == "queued"
+            connection.commit()
+        assert artifacts.pinned == []
+        claimed = _read(
+            sandbox,
+            "SELECT status, purge_claimed_at IS NOT NULL AS live "
+            "FROM speech_deletion_ledger WHERE id = %s",
+            (accepted.record.id,),
+        )
+        assert claimed == [{"status": "queued", "live": True}]
+
+        replay = await _execute(app, body, key)
+        assert replay.status_code == 503, replay.text
+        assert replay.json()["error"]["code"] == "deletion_unavailable"
+        assert replay.json()["error"]["retryable"] is True
+        assert artifacts.pinned == []
+        assert _read(
+            sandbox,
+            "SELECT count(*) AS n FROM speech_deletion_ledger WHERE id = %s AND status = 'queued'",
+            (accepted.record.id,),
+        ) == [{"n": 1}]
+
+        with psycopg.connect(sandbox.url, autocommit=True, row_factory=dict_row) as admin:
+            admin.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
+            admin.execute(
+                "UPDATE speech_deletion_ledger "
+                "SET purge_claimed_at = clock_timestamp() - interval '121 seconds', "
+                "created_at = clock_timestamp() - interval '122 seconds' "
+                "WHERE id = %s",
+                (accepted.record.id,),
+            )
+
+        resumed = await _execute(app, body, key)
+        assert resumed.status_code == 202, resumed.text
+        payload = resumed.json()
+        _deletion_validator("Deletion").validate(payload)
+        assert payload["status"] == "succeeded"
+        assert payload["id"] == accepted.record.id
+        assert artifacts.pinned == [("artifacts/artifact-exec-pg.wav", "minio-artifact-exec-1")]
+        assert _read(
+            sandbox,
+            "SELECT count(*) AS n FROM speech_deletion_ledger WHERE id = %s",
+            (accepted.record.id,),
+        ) == [{"n": 1}]
+    finally:
+        pool.close()
 
 
 async def test_operation_content_deletes_the_intent_and_keeps_the_evidence(
@@ -1367,6 +1457,100 @@ async def test_voice_revision_execution_deletes_only_that_revision(sandbox: Sand
         assert replay.json() == payload
         assert _read(sandbox, "SELECT count(*) AS n FROM speech_deletion_ledger") == [{"n": 1}]
     finally:
+        pool.close()
+
+
+def _wait_for_lock(sandbox: Sandbox, query_fragment: str, wait_fragment: str) -> bool:
+    """Observe one backend actually waiting on the named row lock."""
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        rows = _read(
+            sandbox,
+            "SELECT count(*) AS n FROM pg_stat_activity "
+            "WHERE wait_event_type = 'Lock' AND strpos(query, %s) > 0 "
+            "AND strpos(query, %s) > 0",
+            (query_fragment, wait_fragment),
+        )
+        if rows and rows[0]["n"]:
+            return True
+        time.sleep(0.02)
+    return False
+
+
+async def test_voice_revision_deletion_serializes_with_a_concurrent_intent(
+    sandbox: Sandbox,
+) -> None:
+    """The deletion locks the draft before it re-reads, so a racing intent wins or loses.
+
+    The second connection holds the admission's ``FOR SHARE`` on the draft and has
+    already read the revision, exactly where admission sits before it inserts its
+    intent. The deletion must wait on ``FOR UPDATE``; when the intent commits, the
+    post-lock re-read sees it and answers ``409 deletion_plan_changed``. Removing
+    the deletion lock lets the DELETE commit first and leaves an intent pointing
+    at a missing revision, which is the dangling state this test forbids.
+    """
+    _seed_unreferenced_revision(sandbox)
+    app, pool, _objects, _artifacts = _app(sandbox)
+    admission = psycopg.connect(sandbox.url, row_factory=dict_row)
+    responses: list[httpx.Response] = []
+    try:
+        plan = await _preview(app, "voice_revision", DRAFT, 2, "key-race-plan")
+        body = _confirm(plan)
+        admission.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
+        admission.execute("SET TIME ZONE 'UTC'")
+        admission.execute(
+            "SELECT 1 FROM speech_voice_drafts WHERE draft_id = %s FOR SHARE", (DRAFT,)
+        )
+        admission.execute(
+            "SELECT input_json FROM speech_voice_draft_revisions "
+            "WHERE draft_id = %s AND revision = '2'",
+            (DRAFT,),
+        )
+        thread = threading.Thread(
+            target=lambda: responses.append(asyncio.run(_execute(app, body, "key-race-exec")))
+        )
+        thread.start()
+        waited = _wait_for_lock(sandbox, "speech_voice_drafts", "FOR UPDATE")
+        if not waited:
+            # No lock means the deletion already won; let it finish before the
+            # admission-shaped insert so the resulting dangling row is stable.
+            thread.join(5)
+            assert not thread.is_alive()
+        admission.execute(
+            "INSERT INTO speech_job_intents "
+            "(job_id, request_digest, request_document, recorded_at_us) "
+            "VALUES (%s, %s, %s, %s)",
+            (
+                REV2_JOB,
+                sha("4"),
+                '{"model":"tts-synthetic","input":{"voice_draft_id":"'
+                + DRAFT
+                + '","draft_revision":"2"}}',
+                NOW_US,
+            ),
+        )
+        admission.commit()
+        thread.join(30)
+        assert not thread.is_alive()
+        assert len(responses) == 1
+        assert responses[0].status_code == 409, responses[0].text
+        assert responses[0].json()["error"]["code"] == "deletion_plan_changed"
+        # The losing request left the revision for the intent it now names.
+        assert _read(
+            sandbox,
+            "SELECT count(*) AS n FROM speech_voice_draft_revisions "
+            "WHERE draft_id = %s AND revision = '2'",
+            (DRAFT,),
+        ) == [{"n": 1}]
+        assert _read(
+            sandbox,
+            "SELECT count(*) AS n FROM speech_job_intents WHERE job_id = %s",
+            (REV2_JOB,),
+        ) == [{"n": 1}]
+    finally:
+        admission.rollback()
+        admission.close()
+        thread.join(5)
         pool.close()
 
 

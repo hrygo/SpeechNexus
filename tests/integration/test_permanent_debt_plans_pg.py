@@ -17,10 +17,12 @@ designs apart:
   even after its lease was released);
 * released leases (what a whole-lease scan would pay for).
 
-The plan assertions are structural (which index serves the read, which relations are
-never sequentially scanned, how many rows the index returns); the timings and buffer
-counts are printed so the numbers in the change's evidence come from the same run as the
-gate.
+The plan assertions are structural (which relations are never sequentially scanned, how many
+rows each read returns, and that the permanent read's access path is migration 0062's index);
+the timings and buffer counts are printed so the numbers in the change's evidence come from
+the same run as the gate. The fourth read's assertions name the degradation it forbids rather
+than the index it must pick: it may be answered from the fence window or from the held leases,
+and a plan outside those two is not a failure if it stays bounded.
 """
 
 from __future__ import annotations
@@ -307,28 +309,137 @@ def _plan(
     return plan
 
 
-def _nodes(plan: dict[str, Any]) -> Iterable[dict[str, Any]]:
-    pending = [plan]
+def _nodes(plan: Mapping[str, Any]) -> Iterable[dict[str, Any]]:
+    pending: list[dict[str, Any]] = [dict(plan)]
     while pending:
         node = pending.pop()
         pending.extend(node.get("Plans", []))
         yield node
 
 
-def _scans(plan: dict[str, Any], relation: str) -> list[dict[str, Any]]:
+def _scans(plan: Mapping[str, Any], relation: str) -> list[dict[str, Any]]:
     return [node for node in _nodes(plan) if node.get("Relation Name") == relation]
 
 
-def _assert_no_sequential_scan(plan: dict[str, Any], relation: str) -> None:
-    sequential = [
-        node["Node Type"]
-        for node in _scans(plan, relation)
-        if node["Node Type"] in ("Seq Scan", "Parallel Seq Scan")
+#: The relations the polled debt reads join that grow with the deployment: released
+#: leases, settled and exhausted ledger rows, the fence history, and the Job table. A
+#: sequential scan of any of them puts the deployment's history back into the 5 s poll,
+#: which is the degradation these assertions exist for.
+#:
+#: `submit_intents` is deliberately absent. It is empty in this seed, so the planner reads
+#: it at `Total Cost` 0.0 -- the plan CI reported in #1026 did exactly that -- and a scan
+#: of an empty table says nothing about whether a read follows the window rather than
+#: history. Listing it would fail otherwise bounded plans.
+_GROWTH_RELATIONS = (
+    "admission_leases",
+    "speech_job_cancellation_reconciliations",
+    "speech_job_cancellation_fences",
+    "speech_jobs",
+)
+
+#: Scan types whose rows come from reading the relation end to end.
+_SEQUENTIAL_SCANS = ("Seq Scan", "Parallel Seq Scan")
+#: Scan types whose rows come from an index -- the window range or the held capacity,
+#: never the relation's size. A `Bitmap Heap Scan` is the row source of a `Bitmap Index
+#: Scan`, so both count as index-backed. No index is named, because any index that answers
+#: the same range is equally bounded.
+_INDEX_SCANS = ("Index Scan", "Index Only Scan", "Bitmap Index Scan", "Bitmap Heap Scan")
+
+
+def _sequential_scans(plan: Mapping[str, Any], relation: str) -> list[dict[str, Any]]:
+    return [node for node in _scans(plan, relation) if node["Node Type"] in _SEQUENTIAL_SCANS]
+
+
+def _assert_no_sequential_scan(plan: Mapping[str, Any], relation: str) -> None:
+    for node in _sequential_scans(plan, relation):
+        raise AssertionError(
+            f"{relation} must not be sequentially scanned: {node['Node Type']} returned"
+            f" {int(node.get('Actual Rows', 0))} rows in"
+            f" {int(node.get('Actual Loops', 0))} loop(s), so the read's cost follows the"
+            " deployment's history"
+        )
+
+
+def _access_summary(plan: Mapping[str, Any], relations: Iterable[str]) -> str:
+    """Name the access path of each relation, instead of printing the whole plan tree.
+
+    A failed plan assertion used to print the entire EXPLAIN tree -- one line of several
+    thousand characters -- which hid the premise that had failed. What decides a premise
+    is the scan type, the index and the relation, so the message carries exactly those,
+    plus the rows and loops each access returned.
+    """
+    wanted = tuple(relations)
+    parts: list[str] = []
+    for node in _nodes(plan):
+        relation = node.get("Relation Name")
+        if relation not in wanted:
+            continue
+        index = node.get("Index Name")
+        access = f"{node['Node Type']} {index}" if index else str(node["Node Type"])
+        parts.append(
+            f"{access} on {relation} rows={int(node.get('Actual Rows', 0))}"
+            f" loops={int(node.get('Actual Loops', 0))}"
+        )
+    return "[" + ", ".join(parts) + "]"
+
+
+def _assert_bounded_read(
+    plan: Mapping[str, Any], *, expected_rows: int, relations: Iterable[str] = _GROWTH_RELATIONS
+) -> None:
+    """The bounded read must return the window's rows through an index, never a scan.
+
+    This states the degradation the read must not fall into, not the index it must choose.
+    The fourth read has several bounded paths -- migration 0060's fence-age index,
+    migration 0062's held-lease index, a bitmap plan over either, or a future index that
+    answers the same range -- and none of them is its contract; staying bounded is.
+    Naming one index (or a short list) is what CI #1026 hit: the plan was bounded and
+    driven from the held leases, so the fence index was absent and the lease index carried
+    the 15 held leases rather than the 5 in-window rows, and the test failed on a plan
+    that had not degraded.
+
+    Three facts are required, and each failure names the one that is missing:
+
+    * no relation that grows with the deployment is read by a sequential scan;
+    * the read returns exactly the in-window rows -- asserted on the read's own output
+      rather than on an index node's count, because a nested-loop inner node reports rows
+      *per loop*: the fence point lookup of a lease-driven plan reports 0 for the 5 rows it
+      returns over 15 loops, so "some index node reports 5" is not a property every
+      bounded plan shares;
+    * those rows came from index-backed access to one of the read's relations.
+    """
+    wanted = tuple(relations)
+    rows = int(plan.get("Actual Rows", 0))
+    summary = _access_summary(plan, wanted)
+    degraded = sorted(
+        (node for relation in wanted for node in _sequential_scans(plan, relation)),
+        key=lambda node: str(node["Relation Name"]),
+    )
+    if degraded:
+        first = degraded[0]
+        raise AssertionError(
+            f"the bounded read returned {rows} rows from a sequential scan of"
+            f" {first['Relation Name']} ({first['Node Type']},"
+            f" rows={int(first.get('Actual Rows', 0))},"
+            f" loops={int(first.get('Actual Loops', 0))}); a relation that grows with the"
+            f" deployment must be read through an index: {summary}"
+        )
+    if rows != expected_rows:
+        raise AssertionError(
+            f"the bounded read returned {rows} rows, not the {expected_rows} in-window rows:"
+            f" {summary}"
+        )
+    index_nodes = [
+        node
+        for node in _nodes(plan)
+        if node.get("Node Type") in _INDEX_SCANS and node.get("Relation Name") in wanted
     ]
-    assert not sequential, f"{relation} must not be sequentially scanned: {sequential}"
+    if not index_nodes:
+        raise AssertionError(
+            f"no index-backed node carried the {expected_rows} in-window rows: {summary}"
+        )
 
 
-def _index_rows(plan: dict[str, Any], index: str) -> int | None:
+def _index_rows(plan: Mapping[str, Any], index: str) -> int | None:
     rows = [
         int(node.get("Actual Rows", 0)) for node in _nodes(plan) if node.get("Index Name") == index
     ]
@@ -387,26 +498,16 @@ def test_the_permanent_read_is_bounded_by_the_held_leases(
         # grows with the deployment (released leases, settled and exhausted ledger rows,
         # the fence history), so a scan of any of them would put uptime back into the 5 s
         # poll. `admission_leases` is included now that it is the driving table.
-        for relation in (
-            "admission_leases",
-            "speech_job_cancellation_reconciliations",
-            "speech_job_cancellation_fences",
-            "speech_jobs",
-        ):
+        for relation in _GROWTH_RELATIONS:
             _assert_no_sequential_scan(permanent, relation)
         # The bounded fourth read keeps its own access path. Migration 0062 gives it a
         # second bounded path: with the held leases indexed, the planner may answer it from
-        # the lease side and reach the fences by primary key instead. Either way the read
-        # stays on an index; what must never happen is a scan of the fence history, so the
-        # assertion is "one of the two bounded indexes carried it", not "it was 0060's".
-        bounded_rows = _index_rows(bounded, "speech_job_cancellation_fence_age_scan")
-        if bounded_rows is None:
-            bounded_rows = _index_rows(bounded, LEASE_DEBT_INDEX)
-        assert bounded_rows == _IN_WINDOW, (
-            f"the bounded read must stay on a bounded path: {bounded}"
-        )
-        _assert_no_sequential_scan(bounded, "speech_job_cancellation_fences")
-        _assert_no_sequential_scan(bounded, "admission_leases")
+        # the lease side and reach the fences by primary key instead; either path is
+        # bounded by the window or by capacity. What must never happen is a scan of a
+        # history table, so the assertion is the degradation it forbids -- no sequential
+        # scan of a relation that grows with the deployment, and the in-window rows
+        # returned through index-backed access -- not the index the planner picked.
+        _assert_bounded_read(bounded, expected_rows=_IN_WINDOW)
 
 
 def test_the_permanent_reads_cost_does_not_follow_the_three_histories() -> None:

@@ -84,6 +84,13 @@ def test_statement_timeout_is_set_before_work_from_the_configured_budget() -> No
 
 
 def test_transaction_installs_statement_timeout_once_for_multiple_statements() -> None:
+    """The budget is installed once per transaction, not once per statement.
+
+    No public method issues two statements today, so this case pins the intent for the
+    first `work` that does: `statement_timeout` is a per-statement server setting, so
+    re-installing it per statement would silently turn a 2 s budget into 2 s x N.
+    `_run` is called directly because the public entry points cannot express it.
+    """
     store, pool = build(timeout_seconds=2)
 
     def work(connection: Any) -> list[dict[str, Any]]:
@@ -102,6 +109,12 @@ def test_transaction_installs_statement_timeout_once_for_multiple_statements() -
 
 
 def test_sub_millisecond_budget_floors_at_one_millisecond_not_zero() -> None:
+    """`max(1, ...)` keeps the milliseconds an integer YAML-free string, never "0".
+
+    This is the arithmetic guard, not a reachable production path: psycopg_pool turns
+    a sub-millisecond `timeout` into an immediate PoolTimeout before `_run` gets a
+    connection, so the value is only defended, never observed.
+    """
     timeout_seconds = 1e-7
     assert 0 < timeout_seconds <= 30, "the constructor must accept this budget as-is"
     store, pool = build(timeout_seconds=timeout_seconds)

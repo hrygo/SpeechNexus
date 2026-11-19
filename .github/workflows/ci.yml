@@ -227,6 +227,14 @@ jobs:
   # 没有作业级 `if:`：源码 PR 删改被引用文件同样会让终态文档的引用失效，docs 范围
   # 的 PR 也必须跑到它，所以它和 `routing`、`docs_matrix` 一样每个 PR 都执行。
   # 只依赖 runner 的系统 Python 3.12+ 与标准库，不安装项目依赖。
+  #
+  # 同一作业还有第二条**无范围过滤**的文档门禁：`docs/releases/unreleased.md` 必须
+  # 点名自最近发布标签以来新增或修改的每个迁移与每个 `*_grants` 函数
+  # （`scripts/dev-env/check-unreleased-notes.py`）。它用 `git describe --tags` 取标签，
+  # 因此检出改为 `fetch-depth: 0`：浅检出解析不到标签时脚本以 2 退出，而不是假绿。
+  # 放在本作业而不是新开作业，是因为它同样要求「每个 PR 都跑」，而本作业已经为一条
+  # 文档门禁检出仓库；第二个作业要为同一份全历史再检出一次。受保护检查的作业集合与
+  # 结果映射因此不变（`tests/contract/test_ci_workflow.py` 钉住的那份真值表不动）。
   docs_refs:
     name: "Docs: path:line references"
     runs-on: ubuntu-24.04
@@ -236,10 +244,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          fetch-depth: 1
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Check documented path:line references against the ratchet baseline
         run: python3 scripts/dev-env/check-doc-refs.py --baseline scripts/dev-env/doc-refs-baseline.json
+
+      - name: Check every unreleased migration and grant change is in the notes
+        run: python3 scripts/dev-env/check-unreleased-notes.py
 
   python_tests:
     name: "Python: tests, coverage and build (part ${{ matrix.part }})"

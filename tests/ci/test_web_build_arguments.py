@@ -81,9 +81,18 @@ def indented_block(lines: list[str], start: int, indent: int) -> list[str]:
 #: (`dockerfile : x`), so the reader must tolerate it or the same key written with a
 #: space slips past every check below.
 KEY = re.compile(r"^( *)([A-Za-z_][\w.-]*)[ \t]*:(.*)$")
+#: A key written with quotes. YAML treats `"build"` and `build` as the same key, so a
+#: quoted key would be invisible to KEY while still steering the document.
+QUOTED_KEY = re.compile(r"""^( *)["']([^"']+)["'][ \t]*:""")
+#: A trailing comment on an otherwise plain line; YAML discards it.
+TRAILING_COMMENT = re.compile(r"[ \t]+#.*$")
 #: A YAML alias/merge at the start of a value. Deliberately anchored: a quoted scalar
 #: such as `"x *.internal"` is a literal value, not an alias.
 VALUE_REFERENCE = re.compile(r"^(?:<<|[&*][A-Za-z_])")
+
+
+def _value(raw: str) -> str:
+    return TRAILING_COMMENT.sub("", raw).strip()
 
 
 def keys_at(lines: list[str], indent: int) -> list[tuple[str, str]]:
@@ -92,7 +101,7 @@ def keys_at(lines: list[str], indent: int) -> list[tuple[str, str]]:
     for line in lines:
         match = KEY.match(line)
         if match and len(match.group(1)) == indent:
-            pairs.append((match.group(2), match.group(3).strip()))
+            pairs.append((match.group(2), _value(match.group(3))))
     return pairs
 
 
@@ -146,6 +155,18 @@ def _reject_duplicate_keys(service: str, pairs: list[tuple[str, str]]) -> None:
         )
 
 
+def _reject_quoted_keys(service: str, lines: list[str], where: str) -> None:
+    """A quoted key steers the document but is invisible to KEY; refuse it outright."""
+    for line in lines:
+        match = QUOTED_KEY.match(line)
+        if match:
+            raise AssertionError(
+                f"{COMPOSE}: {service}'s {where} uses a quoted key "
+                f"({line.strip()!r}); this reader only understands bare keys, and YAML "
+                "treats the quoted form as the same key"
+            )
+
+
 def _line_index(lines: list[str], key: str, indent: int) -> int:
     for index, line in enumerate(lines):
         match = KEY.match(line)
@@ -157,6 +178,7 @@ def _line_index(lines: list[str], key: str, indent: int) -> int:
 def service_build(service: str) -> list[str]:
     """The `services.<service>.build` keys, located by indentation, not by PyYAML."""
     lines = document_lines(read(COMPOSE))
+    _reject_quoted_keys(service, lines, "document")
     # One `services:` and one definition per service, or the reader cannot say which
     # mapping the deployment actually uses -- YAML silently keeps the last one.
     _require_single(service, keys_at(lines, 0), "services", "the document")
@@ -171,9 +193,8 @@ def service_build(service: str) -> list[str]:
             f"{COMPOSE}: {service}'s build is a YAML alias or an inline value this "
             "reader cannot follow; write the `build:` mapping out"
         )
-    build_lines = [
-        line for line in service_lines[build_at + 1 :] if len(line) - len(line.lstrip()) > 4
-    ]
+    build_lines = indented_block(service_lines, build_at, 4)
+    _reject_quoted_keys(service, build_lines, "build")
     pairs = keys_at(build_lines, 6)
     _reject_indirection(service, pairs, build_lines)
     _reject_duplicate_keys(service, pairs)

@@ -3,9 +3,16 @@
 CI #1026 failed this read's assertion on a plan that had not degraded: the planner drove
 the fourth debt read from the held leases instead of the fence window, so the fence-age
 index was absent and the lease index returned the 15 held leases rather than the 5
-in-window rows. The plans below replay that shape from its EXPLAIN tree, plus the two
-plans the assertion must reject, so the test does not depend on which plan the planner
-happens to pick on a given machine.
+in-window rows. The plans below are **hand-built** to carry the parts of that shape the
+assertion reads -- the node types, relation and index names, and the per-loop row counts
+reports for the loops it ran -- plus the plans the assertion must reject, so the test does
+not depend on which plan the planner happens to pick on a given machine.
+
+They are not byte-for-byte EXPLAIN output: node order and the `Actual Loops` of outer
+children are simplified, and a real Plan JSON carries fields these omit. That is fine for
+what they pin -- the assertion's decision, not the planner's shape -- but it means a change
+to how plans are *reported* can pass these while the integration assertion still needs its
+own real-PostgreSQL run (which it has).
 """
 
 from __future__ import annotations
@@ -14,7 +21,11 @@ from typing import Any
 
 import pytest
 
-from tests.integration.test_permanent_debt_plans_pg import _IN_WINDOW, _assert_bounded_read
+from tests.integration.test_permanent_debt_plans_pg import (
+    _BOUNDED_LIMIT,
+    _IN_WINDOW,
+    _assert_bounded_read,
+)
 
 
 def _node(
@@ -166,7 +177,7 @@ def _degraded() -> dict[str, Any]:
 
 
 def test_the_fence_window_plan_is_bounded() -> None:
-    _assert_bounded_read(_fence_driven(), expected_rows=_IN_WINDOW)
+    _assert_bounded_read(_fence_driven(), expected_rows=_IN_WINDOW, limit=_BOUNDED_LIMIT)
 
 
 def test_a_bitmap_plan_over_the_window_is_bounded() -> None:
@@ -189,17 +200,19 @@ def test_a_bitmap_plan_over_the_window_is_bounded() -> None:
             )
         ],
     )
-    _assert_bounded_read(plan, expected_rows=_IN_WINDOW)
+    _assert_bounded_read(plan, expected_rows=_IN_WINDOW, limit=_BOUNDED_LIMIT)
 
 
 def test_a_third_index_that_answers_the_same_window_is_bounded() -> None:
     # The assertion must not care which bounded index the planner found: only that the
     # read stayed on an index and returned the window's rows.
-    _assert_bounded_read(_fence_driven("some_later_bounded_path"), expected_rows=_IN_WINDOW)
+    _assert_bounded_read(
+        _fence_driven("some_later_bounded_path"), expected_rows=_IN_WINDOW, limit=_BOUNDED_LIMIT
+    )
 
 
 def test_the_lease_driven_plan_from_ci_is_bounded() -> None:
-    _assert_bounded_read(_lease_driven(), expected_rows=_IN_WINDOW)
+    _assert_bounded_read(_lease_driven(), expected_rows=_IN_WINDOW, limit=_BOUNDED_LIMIT)
 
 
 def test_a_sequential_scan_of_a_growth_relation_names_the_relation() -> None:
@@ -207,7 +220,7 @@ def test_a_sequential_scan_of_a_growth_relation_names_the_relation() -> None:
         AssertionError,
         match="returned 5 rows from a sequential scan of speech_job_cancellation_fences",
     ):
-        _assert_bounded_read(_degraded(), expected_rows=_IN_WINDOW)
+        _assert_bounded_read(_degraded(), expected_rows=_IN_WINDOW, limit=_BOUNDED_LIMIT)
 
 
 def test_a_short_read_names_the_row_count_and_the_access_paths() -> None:
@@ -218,7 +231,7 @@ def test_a_short_read_names_the_row_count_and_the_access_paths() -> None:
         rows=0,
     )
     with pytest.raises(AssertionError, match="returned 0 rows, not the 5 in-window rows"):
-        _assert_bounded_read(short, expected_rows=_IN_WINDOW)
+        _assert_bounded_read(short, expected_rows=_IN_WINDOW, limit=_BOUNDED_LIMIT)
 
 
 def test_a_plan_without_index_backed_access_cannot_carry_the_rows() -> None:
@@ -228,12 +241,25 @@ def test_a_plan_without_index_backed_access_cannot_carry_the_rows() -> None:
         rows=_IN_WINDOW,
     )
     with pytest.raises(AssertionError, match="no index-backed node carried the 5 in-window"):
-        _assert_bounded_read(plan, expected_rows=_IN_WINDOW)
+        _assert_bounded_read(plan, expected_rows=_IN_WINDOW, limit=_BOUNDED_LIMIT)
 
 
 def test_the_failure_message_does_not_dump_the_whole_plan() -> None:
     with pytest.raises(AssertionError) as failure:
-        _assert_bounded_read(_degraded(), expected_rows=_IN_WINDOW)
+        _assert_bounded_read(_degraded(), expected_rows=_IN_WINDOW, limit=_BOUNDED_LIMIT)
     message = str(failure.value)
     assert len(message) < 500
     assert "speech_job_cancellation_fences" in message
+
+
+def test_the_row_count_needs_a_limit_that_cannot_truncate_the_window() -> None:
+    """A limit at or below the window makes the row count unable to see a truncation.
+
+    Both a window of five rows and a truncated window of fifty report the limit at the
+    top of the plan, so the assertion refuses a limit that cannot separate them instead
+    of passing on a number that no longer means what it says.
+    """
+
+    for limit in (_IN_WINDOW, _IN_WINDOW - 1):
+        with pytest.raises(AssertionError, match="must fit strictly inside limit"):
+            _assert_bounded_read(_fence_driven(), expected_rows=_IN_WINDOW, limit=limit)

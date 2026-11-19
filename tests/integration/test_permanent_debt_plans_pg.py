@@ -57,6 +57,9 @@ _OPEN_NO_LEDGER = 2
 _OPEN = _OPEN_EXHAUSTED + _OPEN_UNSETTLED + _OPEN_NO_LEDGER
 #: In-window rows: the fourth read's business, not the fifth's. They are held leases too.
 _IN_WINDOW = 5
+#: The bounded read's own LIMIT. It must stay well above ``_IN_WINDOW`` so that a
+#: truncated window cannot masquerade as a window holding exactly the in-window rows.
+_BOUNDED_LIMIT = 96
 _HELD = _OPEN + _IN_WINDOW
 #: (settled ledger rows, exhausted ledger rows, released leases) -- each term 10x.
 _SCALES = ((10_000, 100, 10_000), (100_000, 1_000, 100_000))
@@ -384,7 +387,11 @@ def _access_summary(plan: Mapping[str, Any], relations: Iterable[str]) -> str:
 
 
 def _assert_bounded_read(
-    plan: Mapping[str, Any], *, expected_rows: int, relations: Iterable[str] = _GROWTH_RELATIONS
+    plan: Mapping[str, Any],
+    *,
+    expected_rows: int,
+    limit: int,
+    relations: Iterable[str] = _GROWTH_RELATIONS,
 ) -> None:
     """The bounded read must return the window's rows through an index, never a scan.
 
@@ -407,6 +414,15 @@ def _assert_bounded_read(
       bounded plan shares;
     * those rows came from index-backed access to one of the read's relations.
     """
+    # Without this the row count cannot tell "the window held exactly this many rows" from
+    # "the window held more and the LIMIT truncated it": both report the limit at the top.
+    # The guard lives here so a future caller with a small limit fails loudly instead of
+    # silently weakening the assertion below.
+    if not 0 < expected_rows < limit:
+        raise AssertionError(
+            f"expected_rows={expected_rows} must fit strictly inside limit={limit},"
+            " otherwise the row assertion cannot detect a truncated window"
+        )
     wanted = tuple(relations)
     rows = int(plan.get("Actual Rows", 0))
     summary = _access_summary(plan, wanted)
@@ -462,7 +478,7 @@ def test_the_permanent_read_is_bounded_by_the_held_leases(
         permanent = _plan(
             query,
             _PERMANENT_DEBT,
-            {"now_us": now_us["now_us"], "grace_us": _GRACE_US, "limit": 96},
+            {"now_us": now_us["now_us"], "grace_us": _GRACE_US, "limit": _BOUNDED_LIMIT},
         )
         bounded = _plan(
             query,
@@ -471,7 +487,7 @@ def test_the_permanent_read_is_bounded_by_the_held_leases(
                 "now_us": now_us["now_us"],
                 "window_us": _WINDOW_US,
                 "grace_us": _GRACE_US,
-                "limit": 96,
+                "limit": _BOUNDED_LIMIT,
             },
         )
 
@@ -507,7 +523,7 @@ def test_the_permanent_read_is_bounded_by_the_held_leases(
         # history table, so the assertion is the degradation it forbids -- no sequential
         # scan of a relation that grows with the deployment, and the in-window rows
         # returned through index-backed access -- not the index the planner picked.
-        _assert_bounded_read(bounded, expected_rows=_IN_WINDOW)
+        _assert_bounded_read(bounded, expected_rows=_IN_WINDOW, limit=_BOUNDED_LIMIT)
 
 
 def test_the_permanent_reads_cost_does_not_follow_the_three_histories() -> None:
@@ -524,7 +540,7 @@ def test_the_permanent_reads_cost_does_not_follow_the_three_histories() -> None:
             permanent = _plan(
                 query,
                 _PERMANENT_DEBT,
-                {"now_us": now_us["now_us"], "grace_us": _GRACE_US, "limit": 96},
+                {"now_us": now_us["now_us"], "grace_us": _GRACE_US, "limit": _BOUNDED_LIMIT},
             )
             readings.append(
                 {

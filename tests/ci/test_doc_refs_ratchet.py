@@ -41,6 +41,7 @@ TERMINAL_DOC = "docs/operations/runbook.md"
 REVIEW_DOC = "docs/reviews/2026-11-16-review.md"
 REVIEW_BODY = "# 引用门禁的非作者审查（#859）\n\n当时指向 `{ref}`。\n"
 REAL_SOURCE = "backend/src/speechnexus_backend/real.py"
+DOC_TARGET = "docs/operations/target.md"
 GHOST_REF = "backend/src/speechnexus_backend/ghost.py:7"
 OTHER_GHOST_REF = "backend/src/speechnexus_backend/also_ghost.py:11"
 
@@ -65,6 +66,9 @@ class Repository:
         self.root = Path(temporary.name)
         self._git("init", "-q")
         self.write(REAL_SOURCE, "".join(f"LINE_{number} = {number}\n" for number in range(1, 6)))
+        # A document target long enough to tell the assertion window apart from a
+        # real drift: 60 lines, one recognisable marker per line.
+        self.write(DOC_TARGET, "".join(f"TARGET_{number} = {number}\n" for number in range(1, 61)))
 
     def _git(self, *args: str) -> None:
         subprocess.run(["git", *args], cwd=self.root, check=True, capture_output=True, text=True)
@@ -182,6 +186,121 @@ class ScopeTests(unittest.TestCase):
         self.assertIn("LAYOUT docs/reviews/2026-11-16-review.md", result.stdout)
 
 
+class AssertionTests(unittest.TestCase):
+    """A doc->doc reference must say *what* sits at the line, not only which line.
+
+    #1038: the six pointers in `docs/releases/mvp-0.1.0.md` were right when they
+    were written and had drifted 74-142 lines by the time anyone noticed, while
+    the gate stayed green - the line existed, so MISSING/OUT_OF_RANGE never fired.
+    These cases pin the replacement rule: the cited line (or the window around it)
+    must carry the fragment the reference names.
+    """
+
+    def test_a_matching_assertion_passes(self) -> None:
+        repo = Repository(self)
+        repo.write(TERMINAL_DOC, f"见 `{DOC_TARGET}:30`（该行须含 `TARGET_30`）。\n")
+        repo.track()
+        result = repo.run()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("ASSERT doc_refs=1 asserted=1", result.stdout)
+        self.assertIn("RESULT PASS", result.stdout)
+
+    def test_a_bare_document_reference_turns_red(self) -> None:
+        repo = Repository(self)
+        repo.write(TERMINAL_DOC, f"见 `{DOC_TARGET}:30`。\n")
+        repo.track()
+        result = repo.run()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("[UNASSERTED]", result.stdout)
+        self.assertIn("ASSERT doc_refs=1 asserted=0", result.stdout)
+        self.assertIn("SCOPE terminal problems=1 new=1 accepted=0", result.stdout)
+        self.assertIn("RESULT FAIL", result.stdout)
+
+    def test_an_assertion_that_is_not_at_the_line_turns_red(self) -> None:
+        # The counterexample the rule exists for: the line still exists and is in
+        # range, only its content is not what the document claims.
+        repo = Repository(self)
+        repo.write(TERMINAL_DOC, f"见 `{DOC_TARGET}:30`（该行须含 `NOT_ANYWHERE_1234`）。\n")
+        repo.track()
+        result = repo.run()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("[DRIFT]", result.stdout)
+        self.assertIn("全文也没有", result.stdout)
+        self.assertIn("RESULT FAIL", result.stdout)
+
+    def test_a_wrong_line_number_turns_red(self) -> None:
+        repo = Repository(self)
+        repo.write(TERMINAL_DOC, f"见 `{DOC_TARGET}:52`（该行须含 `TARGET_3 = 3`）。\n")
+        repo.track()
+        result = repo.run()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("[DRIFT]", result.stdout)
+        self.assertIn("最近在第 3 行（-49 行）", result.stdout)
+        self.assertIn("RESULT FAIL", result.stdout)
+
+    def test_the_window_tolerates_a_small_insertion(self) -> None:
+        # Ten lines inserted above the target shift it to 40; the reference still
+        # names the same content and stays green - the window is what buys that.
+        repo = Repository(self)
+        repo.write(TERMINAL_DOC, f"见 `{DOC_TARGET}:30`（该行须含 `TARGET_30`）。\n")
+        repo.write(
+            DOC_TARGET,
+            "".join(f"FILLER_{number}\n" for number in range(1, 11))
+            + "".join(f"TARGET_{number} = {number}\n" for number in range(1, 61)),
+        )
+        repo.track()
+        result = repo.run()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("RESULT PASS", result.stdout)
+
+    def test_the_window_catches_the_real_drift(self) -> None:
+        # Forty inserted lines put the content at 70, outside +-15: red. #1038's
+        # drift was 74-142, an order of magnitude above the window.
+        repo = Repository(self)
+        repo.write(TERMINAL_DOC, f"见 `{DOC_TARGET}:30`（该行须含 `TARGET_30`）。\n")
+        repo.write(
+            DOC_TARGET,
+            "".join(f"FILLER_{number}\n" for number in range(1, 41))
+            + "".join(f"TARGET_{number} = {number}\n" for number in range(1, 61)),
+        )
+        repo.track()
+        result = repo.run()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("[DRIFT]", result.stdout)
+        self.assertIn("最近在第 70 行（+40 行）", result.stdout)
+
+    def test_a_bare_code_reference_is_reported_but_not_gated(self) -> None:
+        # Code targets are the remaining debt: counted in the report, not required
+        # yet. A bare Markdown target is gated, so the two must not be confused.
+        repo = Repository(self)
+        repo.write(TERMINAL_DOC, f"实现见 `{REAL_SOURCE}:3`。\n")
+        repo.track()
+        result = repo.run()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("unasserted_code=1", result.stdout)
+        self.assertIn("RESULT PASS", result.stdout)
+
+    def test_an_assertion_on_a_record_reference_is_not_checked(self) -> None:
+        repo = Repository(self)
+        repo.write(REVIEW_DOC, REVIEW_BODY.format(ref=f"{DOC_TARGET}:30"))
+        repo.track()
+        result = repo.run()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("SCOPE terminal problems=0", result.stdout)
+        self.assertIn("RESULT PASS", result.stdout)
+
+    def test_deploy_is_scanned_by_default(self) -> None:
+        # `deploy/README.md` is a terminal document; its own references rot like
+        # any other, so the default roots cover it without a flag.
+        repo = Repository(self)
+        repo.write("deploy/README.md", f"实现见 `{DOC_TARGET}:30`。\n")
+        repo.track()
+        result = repo.run()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("[UNASSERTED]", result.stdout)
+        self.assertIn("deploy/README.md", result.stdout)
+
+
 class RatchetTests(unittest.TestCase):
     """The baseline accepts what is already there and nothing more."""
 
@@ -245,6 +364,37 @@ class CommittedStateTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("SCOPE terminal problems=0", result.stdout)
         self.assertIn("RESULT PASS", result.stdout)
+
+    def test_every_terminal_document_reference_is_asserted(self) -> None:
+        """The corpus guard: no terminal ref to a document is allowed to stay bare.
+
+        The gate turns red for a bare one, so an equal count is the proof that the
+        checkout carries none; the count itself keeps the corpus from silently
+        shrinking to nothing.
+        """
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--baseline", str(BASELINE)],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            check=False,
+        )
+        match = re.search(
+            r"ASSERT doc_refs=(\d+) asserted=(\d+) window=±(\d+) unasserted_code=(\d+)",
+            result.stdout,
+        )
+        self.assertIsNotNone(match, result.stdout)
+        assert match is not None
+        doc_refs, asserted, window, unasserted_code = (int(value) for value in match.groups())
+        self.assertEqual(doc_refs, asserted, result.stdout)
+        self.assertGreaterEqual(doc_refs, 50, result.stdout)
+        # The window is a documented number, not an accident of the default.
+        self.assertEqual(window, CHECK.ASSERTION_WINDOW)
+        # Code targets are still the open debt; the number is reported, not gated,
+        # so it may only go down as references gain assertions.
+        self.assertGreater(unasserted_code, 0)
 
     def test_the_committed_baseline_keeps_terminal_documents_fully_gated(self) -> None:
         payload = json.loads(BASELINE.read_text(encoding="utf-8"))

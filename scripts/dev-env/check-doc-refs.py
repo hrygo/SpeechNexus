@@ -5,10 +5,31 @@
 `config/settings.py:41` 而该文件根本不存在,比不写更坏——它让人以为有依据.
 靠人逐条 `sed -n` 核,慢且必然出错(我们已经被猜出来的行号误导过一次).
 
-判据只有三种,都是机械的:
+判据有三种,都是机械的:
   MISSING      路径在仓库里不存在(通常是裸文件名,或缺了目录段)
   OUT_OF_RANGE 行号超过文件总行数
   AMBIGUOUS    只有裸文件名,且仓库里同名文件不止一个(无法确定指哪个)
+
+这三种判据只回答「行号在不在」,不回答「那一行是不是被描述的那件事」.行号是序数:
+目标文档在上方任意位置插一段,它下面所有行号整体后移,而引用字面仍然「存在且不越界」,
+门禁照旧 PASS.#1038 的 6 处指针就是这样静默偏了 74-142 行.所以指向 Markdown 的引用
+必须带内容断言,把「那一行是哪件事」写进引用本身:
+
+    `deploy/README.md:1270` 后跟「该行须含 `check-public-job-execution-defaults.sql`」
+    (括号用全角或半角皆可)
+
+判据因此多出两种:
+  DRIFT       断言片段不在目标行 ±ASSERTION_WINDOW 行内
+  UNASSERTED  指向 Markdown 的终态引用没有带断言
+
+窗口取 ±15:容忍同文件上方的小幅插入(一段话、几行表格),而 #1038 的 74-142 行整体
+漂移必红.窗口取 0 会让「在文档顶部加一句话」把下方所有引用一起判红,重演 #859 那种
+长期红、最后被无视的检查.片段由作者从目标行附近挑,必须是该行真实存在的内容;门禁只
+校验存在性,不判断它是不是「该行最重要的那件事」.
+
+断言只对终态文档判定;过程记录保持原样,连断言都不校验——改记录等于改写当时的事实.
+代码目标(非 Markdown)的引用允许暂时不带断言,但报告用 `unasserted_code=` 计数,
+让欠账可见而不是静默:这批引用同样会腐烂,只是逐条补断言需要人读目标行,分刀处理.
 
 两类文档,两种处置(AGENTS.md「文档终态与事实化」):
   terminal 终态文档:docs/ 下除过程记录外的全部 Markdown.描述当前实现,引用
@@ -45,10 +66,13 @@
   scripts/dev-env/check-doc-refs.py                  # 报告,并按基线门禁终态文档
   scripts/dev-env/check-doc-refs.py --baseline scripts/dev-env/doc-refs-baseline.json
   scripts/dev-env/check-doc-refs.py --write-baseline scripts/dev-env/doc-refs-baseline.json
-  scripts/dev-env/check-doc-refs.py --path docs/operations
+  scripts/dev-env/check-doc-refs.py --path docs/operations --path deploy
   scripts/dev-env/check-doc-refs.py --show-records   # 逐条打印过程记录的问题
   scripts/dev-env/check-doc-refs.py --show           # 连被引用行的原文一起打印
   scripts/dev-env/check-doc-refs.py --json
+
+默认扫描 `docs` 与 `deploy`:`deploy/README.md` 是终态文档,它自己的引用和指向它的引用
+一样会腐烂.
 
 退出码:0 没有新增终态问题;1 有新增终态问题或 `docs/reviews/` 下的文件不是审查
 报告;2 环境不可用(不在 git 仓库、扫描路径不存在、基线不可读).
@@ -73,6 +97,12 @@ REF = re.compile(
 
 # 围栏代码块的起止行:最多 3 个前导空格,``` 或 ~~~,可带语言标记.
 FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+
+# 引用后面的内容断言:`path:line` 后跟「该行须含 `片段`」,全角或半角括号都可.
+# 关掉的右引号可省:引用不一定包在代码段里.
+ASSERTION = re.compile(r"^`?\s*[（(]\s*该行须含\s*`([^`\n]+)`\s*[）)]")
+# 断言窗口:目标行上下各多少行内出现片段即算命中,理由见模块 docstring.
+ASSERTION_WINDOW = 15
 
 TERMINAL = "terminal"
 RECORD = "record"
@@ -109,6 +139,7 @@ class RefResult(TypedDict):
     target: str
     line: int
     scope: str
+    assertion: str
 
 
 def git(root: Path, *args: str) -> str:
@@ -148,13 +179,16 @@ def line_count(path: str) -> int | None:
         return None
 
 
-def scan_document(doc: Path) -> tuple[list[tuple[int, str, str, int]], int]:
+def scan_document(doc: Path) -> tuple[list[tuple[int, str, str, int, str]], int]:
     """返回 (围栏外的引用, 围栏内被跳过的引用数).
 
     围栏代码块(顶栏与底栏之间的全部行)不参与检查:那里是引用的命令输出、
     探针摘录和示例片段,不是作者对当前文件的指认,详见模块 docstring.
+
+    每条引用是 `(文档行号, 该行原文, 路径, 行号, 内容断言)`;断言为空表示作者
+    没写,终态文档里指向 Markdown 的引用缺它就判 UNASSERTED.
     """
-    refs: list[tuple[int, str, str, int]] = []
+    refs: list[tuple[int, str, str, int, str]] = []
     fenced = 0
     fence: str | None = None
     for lineno, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), start=1):
@@ -171,8 +205,32 @@ def scan_document(doc: Path) -> tuple[list[tuple[int, str, str, int]], int]:
             fenced += len(REF.findall(line))
             continue
         for m in REF.finditer(line):
-            refs.append((lineno, line, m.group(1), int(m.group(2))))
+            assertion = ASSERTION.match(line[m.end() :])
+            refs.append(
+                (lineno, line, m.group(1), int(m.group(2)), assertion.group(1) if assertion else "")
+            )
     return refs, fenced
+
+
+def assertion_miss(target: str, ref_line: int, assertion: str) -> str | None:
+    """断言片段不在目标行 ±ASSERTION_WINDOW 内时返回原因,命中返回 None."""
+    try:
+        lines = Path(target).read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return None  # 读不到交给 classify 的 MISSING 分支,不在这里重复报
+    low = max(1, ref_line - ASSERTION_WINDOW)
+    high = min(len(lines), ref_line + ASSERTION_WINDOW)
+    if any(assertion in lines[number - 1] for number in range(low, high + 1)):
+        return None
+    nearest = [
+        (abs(number - ref_line), number)
+        for number, text in enumerate(lines, 1)
+        if assertion in text
+    ]
+    if not nearest:
+        return f"±{ASSERTION_WINDOW} 行内没有 `{assertion}`，全文也没有"
+    _, at = min(nearest)
+    return f"±{ASSERTION_WINDOW} 行内没有 `{assertion}`，最近在第 {at} 行（{at - ref_line:+d} 行）"
 
 
 def scope_of(repo_path: str) -> str:
@@ -321,7 +379,13 @@ def counts_line(counts: Counter[str]) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--path", default="docs", help="要扫描的目录（默认 docs）")
+    ap.add_argument(
+        "--path",
+        action="append",
+        default=None,
+        metavar="DIR",
+        help="要扫描的目录，可重复（默认 docs 与 deploy）",
+    )
     ap.add_argument(
         "--baseline",
         type=Path,
@@ -361,9 +425,22 @@ def main() -> int:
     for p in tracked:
         by_basename[Path(p).name].append(p)
 
-    scan_root = Path(args.path)
-    if not scan_root.exists():
-        print(f"path not found: {scan_root}", file=sys.stderr)
+    explicit_paths = args.path is not None
+    scan_roots: list[Path] = []
+    for name in args.path or ["docs", "deploy"]:
+        candidate_root = Path(name)
+        if not candidate_root.exists():
+            if explicit_paths:
+                print(f"path not found: {candidate_root}", file=sys.stderr)
+                return 2
+            # 默认根之一不存在(例如测试用的临时仓库没有 deploy/)时跳过,不是环境错误.
+            continue
+        resolved = candidate_root.resolve()
+        if any(resolved == other.resolve() for other in scan_roots):
+            continue
+        scan_roots.append(candidate_root)
+    if not scan_roots:
+        print("path not found: docs, deploy", file=sys.stderr)
         return 2
 
     accepted: Counter[str] = Counter()
@@ -380,38 +457,56 @@ def main() -> int:
     total = 0
     fenced = 0
     fenced_terminal = 0
+    doc_refs = 0
+    doc_refs_asserted = 0
+    unasserted_code = 0
 
-    for doc in sorted(scan_root.rglob("*.md")):
-        if not doc.is_file():
-            continue
-        repo_path = relative_to_repo(doc, root)
-        scanned.append((repo_path, doc))
-        try:
-            refs, skipped = scan_document(doc)
-        except (OSError, UnicodeDecodeError):
-            continue
-        fenced += skipped
-        scope = scope_of(repo_path)
-        if scope == TERMINAL:
-            fenced_terminal += skipped
-        for lineno, line, ref_path, ref_line in refs:
-            total += 1
-            if "外部依赖" in line:
-                verdict, detail = "EXTERNAL", "行内已标注为外部依赖"
-            else:
-                verdict, detail = classify(ref_path, ref_line, tracked_set, by_basename)
-            results.append(
-                {
-                    "doc": repo_path,
-                    "doc_line": lineno,
-                    "ref": f"{ref_path}:{ref_line}",
-                    "verdict": verdict,
-                    "detail": detail,
-                    "target": detail if verdict in ("OK", "EXTERNAL") else "",
-                    "line": ref_line,
-                    "scope": scope,
-                }
-            )
+    seen_docs: set[Path] = set()
+    for scan_root in scan_roots:
+        for doc in sorted(scan_root.rglob("*.md")):
+            if not doc.is_file():
+                continue
+            resolved = doc.resolve()
+            if resolved in seen_docs:
+                continue
+            seen_docs.add(resolved)
+            repo_path = relative_to_repo(doc, root)
+            scanned.append((repo_path, doc))
+            try:
+                refs, skipped = scan_document(doc)
+            except (OSError, UnicodeDecodeError):
+                continue
+            fenced += skipped
+            scope = scope_of(repo_path)
+            if scope == TERMINAL:
+                fenced_terminal += skipped
+            for lineno, line, ref_path, ref_line, assertion in refs:
+                total += 1
+                if "外部依赖" in line:
+                    verdict, detail, target = "EXTERNAL", "行内已标注为外部依赖", ""
+                else:
+                    verdict, detail, target = classify(
+                        ref_path, ref_line, assertion, scope, tracked_set, by_basename
+                    )
+                    if scope == TERMINAL and ref_path.endswith(".md"):
+                        doc_refs += 1
+                        if assertion:
+                            doc_refs_asserted += 1
+                    elif scope == TERMINAL and not assertion:
+                        unasserted_code += 1
+                results.append(
+                    {
+                        "doc": repo_path,
+                        "doc_line": lineno,
+                        "ref": f"{ref_path}:{ref_line}",
+                        "verdict": verdict,
+                        "detail": detail,
+                        "target": target,
+                        "line": ref_line,
+                        "scope": scope,
+                        "assertion": assertion,
+                    }
+                )
 
     problems = [r for r in results if r["verdict"] not in ("OK", "EXTERNAL")]
     terminal_problems = [r for r in problems if r["scope"] == TERMINAL]
@@ -466,6 +561,12 @@ def main() -> int:
                     "total": total,
                     "fenced": fenced,
                     "fenced_terminal": fenced_terminal,
+                    "assertions": {
+                        "doc_refs": doc_refs,
+                        "asserted": doc_refs_asserted,
+                        "unasserted_code": unasserted_code,
+                        "window": ASSERTION_WINDOW,
+                    },
                     "problems": problems,
                     "terminal": {
                         "problems": sum(terminal_keys.values()),
@@ -507,6 +608,10 @@ def main() -> int:
     print(
         f"\nSUMMARY refs={total} fenced={fenced} fenced_terminal={fenced_terminal} "
         f"{counts_line(counts)}"
+    )
+    print(
+        f"ASSERT doc_refs={doc_refs} asserted={doc_refs_asserted} "
+        f"window=±{ASSERTION_WINDOW} unasserted_code={unasserted_code}"
     )
     print(
         f"SCOPE {TERMINAL} problems={sum(terminal_keys.values())} "
@@ -557,9 +662,15 @@ def referenced_line(path: str, lineno: int) -> str:
 
 
 def classify(
-    ref_path: str, ref_line: int, tracked: set[str], by_basename: dict[str, list[str]]
-) -> tuple[str, str]:
-    """返回 (判定, 说明)。判定只可能是 OK / MISSING / OUT_OF_RANGE / AMBIGUOUS。"""
+    ref_path: str,
+    ref_line: int,
+    assertion: str,
+    scope: str,
+    tracked: set[str],
+    by_basename: dict[str, list[str]],
+) -> tuple[str, str, str]:
+    """返回 (判定, 说明, 解析到的目标路径)。判定只可能是 OK / MISSING /
+    OUT_OF_RANGE / AMBIGUOUS / DRIFT / UNASSERTED。"""
     candidate: str | None = None
 
     if ref_path in tracked:
@@ -571,23 +682,36 @@ def classify(
             candidate = matches[0]
         elif len(matches) > 1:
             joined = ", ".join(sorted(matches)[:3])
-            return "AMBIGUOUS", f"后缀匹配到 {len(matches)} 个：{joined}"
+            return "AMBIGUOUS", f"后缀匹配到 {len(matches)} 个：{joined}", ""
 
     if candidate is None:
         same_name = by_basename.get(Path(ref_path).name, [])
         if len(same_name) == 1:
             # 裸文件名唯一:路径可推断,但文档里仍应写全
-            return "MISSING", f"裸文件名，唯一匹配 {same_name[0]}"
+            return "MISSING", f"裸文件名，唯一匹配 {same_name[0]}", ""
         if len(same_name) > 1:
-            return "AMBIGUOUS", f"{len(same_name)} 个同名文件"
-        return "MISSING", "仓库内不存在该文件"
+            return "AMBIGUOUS", f"{len(same_name)} 个同名文件", ""
+        return "MISSING", "仓库内不存在该文件", ""
 
     total = line_count(candidate)
     if total is None:
-        return "MISSING", f"无法读取 {candidate}"
+        return "MISSING", f"无法读取 {candidate}", ""
     if ref_line < 1 or ref_line > total:
-        return "OUT_OF_RANGE", f"{candidate} 共 {total} 行"
-    return "OK", candidate
+        return "OUT_OF_RANGE", f"{candidate} 共 {total} 行", candidate
+
+    # 内容断言只对终态文档判定:记录里的引用保留原时点事实,连断言都不校验.
+    if scope == TERMINAL:
+        if assertion:
+            miss = assertion_miss(candidate, ref_line, assertion)
+            if miss is not None:
+                return "DRIFT", f"{candidate}:{ref_line} {miss}", candidate
+        elif ref_path.endswith(".md"):
+            return (
+                "UNASSERTED",
+                "指向 Markdown 的终态引用须带「该行须含 `片段`」,否则行号漂移无法被发现",
+                candidate,
+            )
+    return "OK", candidate, candidate
 
 
 if __name__ == "__main__":

@@ -633,7 +633,7 @@ except Exception as error:
 `python`），不假设镜像装了 `curl`。在操作主机上直接
 `curl "${SPEECHNEXUS_ENGINE_HEALTH_URL%/}/health"` 对 `host.docker.internal` 只会得到连接
 失败（从空库执行记录里就是 `curl: (52) Empty reply from server`
-（`compose-minimal-from-zero.md:190`），注册随即报 `engine_unreachable`），那不是引擎故障。
+（`compose-minimal-from-zero.md:197`（该行须含 `Empty reply from server`）），注册随即报 `engine_unreachable`），那不是引擎故障。
 
 然后执行一次性注册（`engine-registration` profile）：
 

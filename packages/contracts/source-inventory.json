@@ -88,7 +88,7 @@
     "version": null
   },
   "shared/deletion.schema.json": {
-    "sha256": "5511887d08c566d2ecce243b8b33a0029fe143888a4395c62e83fd11df70c180",
+    "sha256": "e1ef7f057febdff84392d517aba6e1bc48e54b7c5a71d645273d634a83454d11",
     "version": null
   },
   "shared/errors.schema.json": {

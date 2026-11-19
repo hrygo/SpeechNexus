@@ -502,7 +502,7 @@
       ]
     }
   },
-  "$comment": "x-speechnexus-errors is the exhaustive catalogue of stable error.code values the three Speech deletion operations (speechCreateDeletionPlan, speechCreateDeletion, speechGetDeletion) can answer with, mapped to their HTTP status; x-speechnexus-retryable-errors names the subset answered with error.retryable=true. A code omitted from the first map is not reachable, and a code listed without an emitting handler is stale. scripts/dev-env/check-route-conformance.py compares both maps against the emitting modules (deletion_errors.py, deletions.py, domain/deletion.py) in both directions and reports each drift with its file:line.",
+  "$comment": "x-speechnexus-errors is the exhaustive catalogue of stable error.code values the three Speech deletion operations (speechCreateDeletionPlan, speechCreateDeletion, speechGetDeletion) can answer in a non-2xx refusal, mapped to their HTTP status; x-speechnexus-retryable-errors names the subset answered with error.retryable=true. Codes carried inside a successful Deletion resource (Deletion.error for blocked/failed) are not refusals: x-speechnexus-resource-errors declares them separately, and a reserved entry there has no producer yet. A refusal code omitted from the first map is not reachable, and a refusal code listed without an emitting call site is stale. scripts/dev-env/check-route-conformance.py compares both refusal maps against the emitting call sites (deletion_errors.py, deletions.py, raises in the speech deletion modules) in both directions, keeps the resource map disjoint from them, and reports each drift with its file:line. Codes composed indirectly (constants, f-strings) are outside this static scan; the runtime map still collapses them to a declared refusal.",
   "x-speechnexus-errors": {
     "resource_not_found": 404,
     "deletion_plan_changed": 409,
@@ -524,7 +524,16 @@
   "x-speechnexus-retryable-errors": [
     "deletion_plans_unavailable",
     "deletion_unavailable",
-    "deletion_object_storage_unconfigured",
     "deletion_reference_unsupported"
-  ]
+  ],
+  "x-speechnexus-resource-errors": {
+    "deletion_stop_unconfirmed": {
+      "surface": "Deletion.error",
+      "states": [
+        "blocked"
+      ],
+      "status": "reserved",
+      "description": "Active execution stop or resource release is unconfirmed, so the deletion stays blocked/quarantined with capacity retained. It is carried inside a successful Deletion resource, never as an HTTP refusal, and its producer belongs to the pending execution slice; no route emits it yet."
+    }
+  }
 }

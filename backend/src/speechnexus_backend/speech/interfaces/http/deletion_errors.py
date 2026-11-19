@@ -108,10 +108,16 @@ def deletion_error(
                     "message": message,
                     "param": param,
                     "request_id": request_id,
-                    # A missing grant is a deployment gap, not a transient fault:
-                    # retrying the same request cannot fix it.
+                    # A missing grant or object-store identity is a deployment
+                    # gap, not a transient fault: retrying the same request
+                    # cannot fix it.
                     "retryable": status == 503
-                    and code not in ("deletion_plans_not_configured", "deletion_not_configured"),
+                    and code
+                    not in (
+                        "deletion_plans_not_configured",
+                        "deletion_not_configured",
+                        "deletion_object_storage_unconfigured",
+                    ),
                 }
             },
         ),

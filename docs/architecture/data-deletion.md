@@ -23,20 +23,31 @@ Speech `/v1/nexus/deletion-plans`、`/v1/nexus/deletions` 和 Workbench
 
 ## 稳定错误目录
 
-删除入口的稳定 HTTP 错误码、状态与可重试性以机器契约为准。Speech 三个删除操作由
+删除入口稳定**拒绝**错误码（非 2xx 响应中的 `error.code`）及其状态与可重试性以机器契约为准。
+Speech 三个删除操作由
 [`shared/deletion.schema.json`](../../contracts/shared/deletion.schema.json) 的
 `x-speechnexus-errors`（`code` → HTTP 状态）与 `x-speechnexus-retryable-errors`
 （回答 `error.retryable=true` 的 `code` 子集）穷举声明；Workbench 三个删除操作由
-[`workbench-openapi.yaml`](../../contracts/workbench-openapi.yaml) 各操作上的同名扩展声明。
-两处目录都是穷举声明，不是示例：`scripts/dev-env/check-route-conformance.py` 与发射代码
-双向比对，代码多出的、目录多出的、状态不符和可重试性不符的条目都会失败并定位到来源行。
+[`workbench-openapi.yaml`](../../contracts/workbench-openapi.yaml) 各操作上的同名扩展
+按操作穷举声明**删除专属**拒绝码，`resource_not_found`、`idempotency_conflict`、
+`store_unavailable` 等跨操作用信封码不在该目录，由各操作的通用错误响应声明。
+两处目录不是示例：`scripts/dev-env/check-route-conformance.py` 按操作与真实发射调用点
+双向比对，代码多出的、目录多出的、状态不符和可重试性不符的条目都会失败并定位到来源行；
+常量或 f-string 间接拼出的 code 不在该静态扫描内，运行期仍收敛到已声明 code。
+
+成功响应内 `Deletion.error` 携带的资源内错误不是拒绝，另由
+`x-speechnexus-resource-errors` 声明：blocked/quarantined 生命周期使用的
+`deletion_stop_unconfirmed` 当前标为 `reserved`，发射者属于尚未交付的执行切片。
+它不进入拒绝目录，也不受上段拒绝码双向比对约束。
 
 调用方读 `error.retryable` 决定是否用同一请求重试，不以状态码推断。`503
-deletion_unavailable` 表示同键并发清除的有界等待超时或执行存储暂不可用，账本保持
-`queued`，同一请求稍后可以重试；`503 deletion_plans_not_configured` 与 `503
-deletion_not_configured` 是部署权限缺口（`retryable=false`），须先应用对应的
-`deletion_plan_grants` / `deletion_execution_grants`。目标、参数、幂等键或确认范围的
-拒绝是 404/409/422，重试同一请求不会改变结果，收紧请求后才能继续。
+deletion_unavailable` 表示同键并发清除的有界等待超时、执行存储或账本暂不可用，或删除
+执行面尚未装配，账本保持 `queued`，同一请求稍后可以重试。`503
+deletion_plans_not_configured`、`503 deletion_not_configured` 与 `503
+deletion_object_storage_unconfigured` 是部署缺口（`retryable=false`）：前两者须先应用
+对应的 `deletion_plan_grants` / `deletion_execution_grants`，后者须先为执行面配置对象
+存储身份，重试同一请求不会改变结果。目标、参数、幂等键或确认范围的拒绝是 404/409/422，
+重试同一请求不会改变结果，收紧请求后才能继续。
 
 ## 预检和确认
 
@@ -101,7 +112,8 @@ succeeded，或进入 blocked/failed。blocked 记录依赖或停止未确认的
 `blocked` 与 `quarantined` 绑定；生产者须另行保证上面的状态和停止证据语义。
 
 活动执行先请求 abort/drain，再查询原执行获得停止和资源释放证据。未确认时进入
-`blocked / quarantined`，错误为 `deletion_stop_unconfirmed`；保留原容量账目，
+`blocked / quarantined`，`Deletion.error` 为 `deletion_stop_unconfirmed`（由
+`x-speechnexus-resource-errors` 声明）；保留原容量账目，
 不得因删除命令、客户端断线、deadline 或 tombstone 而归还预算。已发布声音的
 引用材料在声音版本仍可用时是持久依赖。声音版本先 tombstone、阻断新绑定并
 协调活动执行，才可删除其引用材料。不可变版本身份和摘要继续保留。

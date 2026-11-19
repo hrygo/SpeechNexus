@@ -13,13 +13,16 @@ requires the public error envelope, so a route added without envelope
 handling fails instead of passing on the status alone.
 
 The same run guards the deletion error catalogues. ``x-speechnexus-errors`` and
-``x-speechnexus-retryable-errors`` are exhaustive declarations, so both are
-compared with the code that answers: the Speech maps against the error table,
-the route literals and the domain subclasses, and the Workbench per-operation
-maps against the workbench error table and the literal refusals in
-``http_management.py``. A code the code emits but the contract omits, a code the
-contract lists but nothing emits, a status disagreement and a retryability
-disagreement each fail with a ``file:line``.
+``x-speechnexus-retryable-errors`` are exhaustive declarations of non-2xx
+refusals, so both are compared with the call sites that answer: the Speech maps
+against the error table, ``deletion_error()`` literals and raised error
+subclasses, and each Workbench operation's map against that operation's dispatch
+slice plus the literals and service exceptions it can reach. A code the code
+emits but the operation does not declare, a code the operation declares but no
+call site answers, a status disagreement and a retryability disagreement each
+fail with a ``file:line``. ``x-speechnexus-resource-errors`` stays disjoint from
+both refusal catalogues: those codes are carried inside a successful Deletion,
+not refused.
 
 The probe must never run business code. Shapes the simplified matcher cannot
 model faithfully fail closed before a request is sent (Starlette converters,
@@ -142,6 +145,20 @@ WORKBENCH_ERROR_TABLE = Path(
 WORKBENCH_DELETION_ROUTES = Path(
     "backend/src/speechnexus_backend/workbench/interfaces/http_management.py"
 )
+# Modules whose raises make a Speech deletion refusal code reachable. The HTTP
+# table maps codes; only a call site that raises the subclass (or writes the
+# literal) proves the route can answer it.
+SPEECH_DELETION_MODULES = (
+    SPEECH_DELETION_DOMAIN,
+    Path("backend/src/speechnexus_backend/speech/application/deletions.py"),
+    Path("backend/src/speechnexus_backend/speech/infrastructure/deletion_plans_postgres.py"),
+    Path("backend/src/speechnexus_backend/speech/infrastructure/deletion_executions_postgres.py"),
+)
+# Workbench service modules reached from the deletion dispatch branches.
+WORKBENCH_DELETION_MODULES = (
+    Path("backend/src/speechnexus_backend/workbench/application/deletions.py"),
+    Path("backend/src/speechnexus_backend/workbench/domain/deletion.py"),
+)
 DELETION_CODE_PREFIX = "deletion"
 WORKBENCH_DELETION_OPERATIONS = (
     "workbenchCreateDeletionPlan",
@@ -150,6 +167,7 @@ WORKBENCH_DELETION_OPERATIONS = (
 )
 ERROR_CATALOGUE_KEY = "x-speechnexus-errors"
 RETRYABLE_CATALOGUE_KEY = "x-speechnexus-retryable-errors"
+RESOURCE_CATALOGUE_KEY = "x-speechnexus-resource-errors"
 
 
 type LiteralValue = str | int | bool
@@ -2301,8 +2319,116 @@ def _retryable_expression(value: ast.expr) -> tuple[int, frozenset[str]]:
     return int(compared.value), frozenset(excluded)
 
 
-def _domain_error_codes(root: Path) -> dict[str, str]:
-    """Codes declared by ``DeletionError`` subclasses, which the route forwards."""
+@dataclass(frozen=True)
+class _FunctionIo:
+    """The raises and calls one function body writes, with their locations."""
+
+    classes: Mapping[str, str]
+    literals: Mapping[str, str]
+    calls: frozenset[str]
+
+
+def _scan_io(nodes: Sequence[ast.stmt], path: Path, *, only_deletions: bool = False) -> _FunctionIo:
+    """Collect raised class names, raised IngressError codes and call names."""
+    classes: dict[str, str] = {}
+    literals: dict[str, str] = {}
+    calls: set[str] = set()
+    stack: list[ast.AST] = list(nodes)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            continue
+        if isinstance(node, ast.Raise) and node.exc is not None:
+            raised = node.exc.func if isinstance(node.exc, ast.Call) else node.exc
+            if isinstance(raised, ast.Name):
+                location = _location(path, node.lineno)
+                classes.setdefault(raised.id, location)
+                if raised.id == "IngressError" and isinstance(node.exc, ast.Call):
+                    code = _string_argument(node.exc)
+                    if code is not None:
+                        literals.setdefault(code, location)
+        if isinstance(node, ast.Call):
+            function = node.func
+            if isinstance(function, ast.Name):
+                calls.add(function.id)
+            elif isinstance(function, ast.Attribute) and (
+                not only_deletions
+                or (isinstance(function.value, ast.Name) and function.value.id == "deletions")
+            ):
+                calls.add(function.attr)
+        stack.extend(ast.iter_child_nodes(node))
+    return _FunctionIo(classes=classes, literals=literals, calls=frozenset(calls))
+
+
+def _string_argument(call: ast.Call) -> str | None:
+    if not call.args:
+        return None
+    first = call.args[0]
+    if isinstance(first, ast.Constant) and isinstance(first.value, str):
+        return first.value
+    return None
+
+
+def _merge_io(index: dict[str, _FunctionIo], name: str, scanned: _FunctionIo) -> None:
+    existing = index.get(name)
+    index[name] = (
+        scanned
+        if existing is None
+        else _FunctionIo(
+            classes={**existing.classes, **scanned.classes},
+            literals={**existing.literals, **scanned.literals},
+            calls=existing.calls | scanned.calls,
+        )
+    )
+
+
+def _function_index(root: Path, paths: Sequence[Path]) -> dict[str, _FunctionIo]:
+    index: dict[str, _FunctionIo] = {}
+    for path in paths:
+        tree = _module_tree(root, path)
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                _merge_io(index, node.name, _scan_io(node.body, path))
+            elif isinstance(node, ast.ClassDef):
+                # Constructing a dataclass runs its validators; index them under
+                # the class name so ``DeletionTarget(...)`` resolves to the raise.
+                for method in node.body:
+                    if isinstance(
+                        method, (ast.FunctionDef, ast.AsyncFunctionDef)
+                    ) and method.name in {
+                        "__init__",
+                        "__post_init__",
+                    }:
+                        _merge_io(index, node.name, _scan_io(method.body, path))
+    return index
+
+
+def _closure(index: Mapping[str, _FunctionIo], names: Iterable[str]) -> _FunctionIo:
+    """Union the raises of the named functions and everything they call."""
+    seen: set[str] = set()
+    classes: dict[str, str] = {}
+    literals: dict[str, str] = {}
+    stack = list(names)
+    while stack:
+        name = stack.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        entry = index.get(name)
+        if entry is None:
+            continue
+        for raised, location in entry.classes.items():
+            classes.setdefault(raised, location)
+        for code, location in entry.literals.items():
+            literals.setdefault(code, location)
+        stack.extend(entry.calls - seen)
+    # Return every name visited, so a caller can chain this closure into the
+    # next module's index (local helpers construct domain objects).
+    return _FunctionIo(classes=classes, literals=literals, calls=frozenset(seen))
+
+
+def _domain_error_classes(root: Path) -> dict[str, tuple[str, str]]:
+    """Deletion error subclass -> (wire code, declaration location)."""
     tree = _module_tree(root, SPEECH_DELETION_DOMAIN)
     classes = [node for node in tree.body if isinstance(node, ast.ClassDef)]
     known = {"DeletionError"}
@@ -2315,7 +2441,7 @@ def _domain_error_codes(root: Path) -> dict[str, str]:
             if any(isinstance(base, ast.Name) and base.id in known for base in node.bases):
                 known.add(node.name)
                 changed = True
-    codes: dict[str, str] = {}
+    declared: dict[str, tuple[str, str]] = {}
     for node in classes:
         if node.name == "DeletionError" or node.name not in known:
             continue
@@ -2327,8 +2453,11 @@ def _domain_error_codes(root: Path) -> dict[str, str]:
                 continue
             value = statement.value
             if isinstance(value, ast.Constant) and isinstance(value.value, str):
-                codes.setdefault(value.value, _location(SPEECH_DELETION_DOMAIN, statement.lineno))
-    return codes
+                declared.setdefault(
+                    node.name,
+                    (value.value, _location(SPEECH_DELETION_DOMAIN, statement.lineno)),
+                )
+    return declared
 
 
 def _call_retryable(call: ast.Call) -> bool:
@@ -2347,11 +2476,11 @@ def _handler_literals(root: Path, path: Path, functions: tuple[str, ...]) -> dic
         function = node.func
         if not (isinstance(function, ast.Name) and function.id in functions):
             continue
-        first = node.args[0]
-        if not (isinstance(first, ast.Constant) and isinstance(first.value, str)):
+        code = _string_argument(node)
+        if code is None:
             continue
         codes.setdefault(
-            first.value,
+            code,
             EmittedCode(location=_location(path, node.lineno), retryable=_call_retryable(node)),
         )
     return codes
@@ -2381,10 +2510,47 @@ def _retryable_entries(value: object, path: Path) -> set[str]:
     return codes
 
 
-def _contract_line(root: Path, path: Path, code: str) -> str:
-    """Best-effort ``file:line`` for one declared code, for the drift report."""
+def _resource_catalogue(root: Path) -> set[str]:
+    """Resource-internal codes carried inside a successful Deletion response."""
+    document = json.loads(_source(root, DELETION_SCHEMA))
+    if not isinstance(document, dict):
+        raise RuntimeError(f"{DELETION_SCHEMA}: the schema must be a JSON object")
+    value = document.get(RESOURCE_CATALOGUE_KEY)
+    if not isinstance(value, dict):
+        raise RuntimeError(
+            f"{DELETION_SCHEMA}: {RESOURCE_CATALOGUE_KEY} must declare resource-internal codes"
+        )
+    codes: set[str] = set()
+    for code, entry in value.items():
+        if not isinstance(code, str) or not isinstance(entry, dict):
+            raise RuntimeError(
+                f"{DELETION_SCHEMA}: {RESOURCE_CATALOGUE_KEY} entry {code!r} must be an object"
+            )
+        if not isinstance(entry.get("status"), str):
+            raise RuntimeError(
+                f"{DELETION_SCHEMA}: {RESOURCE_CATALOGUE_KEY} entry {code!r} needs a status"
+            )
+        codes.add(code)
+    return codes
+
+
+def _contract_line(root: Path, path: Path, code: str, *, after: str | None = None) -> str:
+    """Best-effort ``file:line`` for one declared code, for the drift report.
+
+    ``after`` limits the scan to the block that follows ``operationId: <after>``,
+    so a code shared by several operations points at the matching declaration
+    instead of the first occurrence in the file.
+    """
     pattern = re.compile(rf'^\s*"?{re.escape(code)}"?\s*[:,\]]')
-    for number, line in enumerate(_source(root, path).splitlines(), start=1):
+    lines = _source(root, path).splitlines()
+    start = 0
+    if after is not None:
+        marker = f"operationId: {after}"
+        for index, line in enumerate(lines):
+            if marker in line:
+                start = index
+                break
+    for number, line in enumerate(lines[start:], start=start + 1):
         if pattern.match(line):
             return _location(path, number)
     return path.as_posix()
@@ -2400,17 +2566,17 @@ def _speech_catalogue(root: Path) -> tuple[dict[str, int], set[str], dict[str, s
     return codes, retryable, locations
 
 
-def _workbench_catalogue(root: Path) -> tuple[dict[str, int], set[str], dict[str, str]]:
+def _workbench_catalogue(
+    root: Path,
+) -> dict[str, tuple[dict[str, int], set[str], dict[str, str]]]:
     document = yaml.safe_load(_source(root, WORKBENCH_CONTRACT))
     if not isinstance(document, dict):
         raise RuntimeError(f"{WORKBENCH_CONTRACT}: the contract must be an object")
     paths = document.get("paths")
     if not isinstance(paths, dict):
         raise RuntimeError(f"{WORKBENCH_CONTRACT}: the contract has no paths object")
-    codes: dict[str, int] = {}
-    retryable: set[str] = set()
-    locations: dict[str, str] = {}
-    seen: set[str] = set()
+    catalogues: dict[str, tuple[dict[str, int], set[str], dict[str, str]]] = {}
+    status_by_code: dict[str, int] = {}
     for item in paths.values():
         if not isinstance(item, dict):
             continue
@@ -2423,27 +2589,33 @@ def _workbench_catalogue(root: Path) -> tuple[dict[str, int], set[str], dict[str
                 or operation_id not in WORKBENCH_DELETION_OPERATIONS
             ):
                 continue
-            seen.add(operation_id)
-            declared = _catalogue_map(operation.get(ERROR_CATALOGUE_KEY), WORKBENCH_CONTRACT)
-            for code, status in declared.items():
-                previous = codes.get(code)
+            codes = _catalogue_map(operation.get(ERROR_CATALOGUE_KEY), WORKBENCH_CONTRACT)
+            retryable = _retryable_entries(
+                operation.get(RETRYABLE_CATALOGUE_KEY), WORKBENCH_CONTRACT
+            )
+            for code, status in codes.items():
+                previous = status_by_code.get(code)
                 if previous is not None and previous != status:
                     raise RuntimeError(
                         f"{WORKBENCH_CONTRACT}: {code} is declared with both {previous} and "
                         f"{status} across the deletion operations"
                     )
-                codes[code] = status
-                locations.setdefault(code, _contract_line(root, WORKBENCH_CONTRACT, code))
-            retryable |= _retryable_entries(
-                operation.get(RETRYABLE_CATALOGUE_KEY), WORKBENCH_CONTRACT
+                status_by_code[code] = status
+            catalogues[operation_id] = (
+                codes,
+                retryable,
+                {
+                    code: _contract_line(root, WORKBENCH_CONTRACT, code, after=operation_id)
+                    for code in codes
+                },
             )
-    missing = sorted(set(WORKBENCH_DELETION_OPERATIONS) - seen)
+    missing = sorted(set(WORKBENCH_DELETION_OPERATIONS) - set(catalogues))
     if missing:
         raise RuntimeError(
             f"{WORKBENCH_CONTRACT}: deletion operation(s) {', '.join(missing)} are missing, "
             "so their error catalogue cannot be checked"
         )
-    return codes, retryable, locations
+    return catalogues
 
 
 def _speech_emitters(root: Path) -> tuple[dict[str, EmittedCode], tuple[Finding, ...]]:
@@ -2454,7 +2626,15 @@ def _speech_emitters(root: Path) -> tuple[dict[str, EmittedCode], tuple[Finding,
         for code, entry in table.items()
     }
     findings: list[Finding] = []
-    for code, entry in _handler_literals(root, SPEECH_DELETION_ROUTES, ("deletion_error",)).items():
+    literals = _handler_literals(root, SPEECH_DELETION_ROUTES, ("deletion_error",))
+    declared = _domain_error_classes(root)
+    raised: dict[str, str] = {}
+    for io in _function_index(root, SPEECH_DELETION_MODULES).values():
+        for name, location in io.classes.items():
+            raised.setdefault(name, location)
+    reachable: dict[str, str] = {}
+    for code, entry in literals.items():
+        reachable.setdefault(code, entry.location)
         if code not in emitted:
             findings.append(
                 Finding(
@@ -2463,35 +2643,214 @@ def _speech_emitters(root: Path) -> tuple[dict[str, EmittedCode], tuple[Finding,
                     "map; deletion_error() answers deletion_plans_unavailable instead",
                 )
             )
-    for code, location in _domain_error_codes(root).items():
+    for name, location in raised.items():
+        mapped = declared.get(name)
+        if mapped is None:
+            continue
+        code = mapped[0]
         if code not in emitted:
             findings.append(
                 Finding(
                     "deletion_error_collapsed",
-                    f"{location} declares {code}, which {SPEECH_DELETION_ERRORS} does not map; "
-                    "the route would answer deletion_plans_unavailable instead",
+                    f"{location} raises {name} ({code}), which {SPEECH_DELETION_ERRORS} does "
+                    "not map; the route would answer deletion_plans_unavailable instead",
+                )
+            )
+            continue
+        reachable.setdefault(code, location)
+    for code, entry in emitted.items():
+        if code not in reachable:
+            findings.append(
+                Finding(
+                    "deletion_error_unreachable",
+                    f"{SPEECH_DELETION_ERRORS} maps {code} at {entry.location} but no "
+                    "deletion_error() call or raised subclass answers it; the contract entry "
+                    "is a zombie",
                 )
             )
     return emitted, tuple(findings)
 
 
-def _workbench_emitters(root: Path) -> dict[str, EmittedCode]:
-    table = _error_table(root, WORKBENCH_ERROR_TABLE, "ERRORS")
-    emitted = {
-        code: entry for code, entry in table.items() if code.startswith(DELETION_CODE_PREFIX)
-    }
-    for code, entry in _handler_literals(
-        root, WORKBENCH_DELETION_ROUTES, ("_error", "IngressError")
-    ).items():
-        if not code.startswith(DELETION_CODE_PREFIX):
+def _exception_codes(root: Path) -> dict[str, tuple[str, bool]]:
+    """Exception class -> the code and retry permission its handler answers."""
+    endpoint = _find_function(_module_tree(root, WORKBENCH_DELETION_ROUTES), "endpoint")
+    mapping: dict[str, tuple[str, bool]] = {}
+    for node in ast.walk(endpoint):
+        if not isinstance(node, ast.ExceptHandler) or not isinstance(node.type, ast.Name):
             continue
-        existing = emitted.get(code)
-        if existing is None:
-            emitted[code] = entry
-        elif entry.retryable:
-            # A literal call site can grant retry permission the table does not.
-            emitted[code] = replace(existing, retryable=True)
-    return emitted
+        for child in ast.walk(node):
+            if not (isinstance(child, ast.Call) and isinstance(child.func, ast.Name)):
+                continue
+            if child.func.id != "_error":
+                continue
+            code = _string_argument(child)
+            if code is not None:
+                mapping.setdefault(node.type.id, (code, _call_retryable(child)))
+                break
+    return mapping
+
+
+def _find_function(tree: ast.Module, name: str) -> ast.FunctionDef | ast.AsyncFunctionDef:
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
+            return node
+    raise RuntimeError(f"{WORKBENCH_DELETION_ROUTES}: function {name}() is missing")
+
+
+def _operation_equality(test: ast.expr) -> str | None:
+    if not (
+        isinstance(test, ast.Compare)
+        and len(test.ops) == 1
+        and isinstance(test.ops[0], ast.Eq)
+        and len(test.comparators) == 1
+        and isinstance(test.left, ast.Name)
+        and test.left.id == "operation"
+    ):
+        return None
+    compared = test.comparators[0]
+    if isinstance(compared, ast.Constant) and isinstance(compared.value, str):
+        return compared.value
+    return None
+
+
+def _is_deletions_none(test: ast.expr) -> bool:
+    return (
+        isinstance(test, ast.Compare)
+        and len(test.ops) == 1
+        and isinstance(test.ops[0], (ast.Is, ast.Eq))
+        and len(test.comparators) == 1
+        and isinstance(test.left, ast.Name)
+        and test.left.id == "deletions"
+        and isinstance(test.comparators[0], ast.Constant)
+        and test.comparators[0].value is None
+    )
+
+
+def _workbench_operation_slices(root: Path) -> dict[str, list[ast.stmt]]:
+    """Split the deletion dispatch into the statements each operation can run.
+
+    The get and plan branches return from inside their own ``if``; the create
+    operation is everything that falls through after them. A restructure that
+    stops returning inside those branches makes this split wrong, so it fails
+    loudly instead of silently checking the wrong slice.
+    """
+    dispatch = _find_function(_module_tree(root, WORKBENCH_DELETION_ROUTES), "dispatch")
+    block: list[ast.stmt] | None = None
+    for node in ast.walk(dispatch):
+        if not isinstance(node, ast.If) or not node.orelse:
+            continue
+        if any(
+            isinstance(statement, ast.If) and _is_deletions_none(statement.test)
+            for statement in node.orelse
+        ):
+            block = node.orelse
+            break
+    if block is None:
+        raise RuntimeError(
+            f"{WORKBENCH_DELETION_ROUTES}: cannot locate the deletion dispatch block; "
+            "update this guard when dispatch() changes shape"
+        )
+    positions: dict[str, int] = {}
+    for index, statement in enumerate(block):
+        if not isinstance(statement, ast.If):
+            continue
+        operation = _operation_equality(statement.test)
+        if operation in WORKBENCH_DELETION_OPERATIONS:
+            positions.setdefault(operation, index)
+    getter = positions.get("workbenchGetDeletion")
+    planner = positions.get("workbenchCreateDeletionPlan")
+    if getter is None or planner is None or getter >= planner:
+        raise RuntimeError(
+            f"{WORKBENCH_DELETION_ROUTES}: the get/plan deletion branches changed order or "
+            "disappeared; update this guard when dispatch() changes shape"
+        )
+    getter_branch = block[getter]
+    planner_branch = block[planner]
+    if not isinstance(getter_branch, ast.If) or not isinstance(planner_branch, ast.If):
+        raise RuntimeError(
+            f"{WORKBENCH_DELETION_ROUTES}: the get/plan deletion branches are no longer if "
+            "statements; update this guard when dispatch() changes shape"
+        )
+    for branch in (getter_branch, planner_branch):
+        body = branch.body
+        if not body or not isinstance(body[-1], ast.Return):
+            raise RuntimeError(
+                f"{WORKBENCH_DELETION_ROUTES}:{branch.lineno}: a deletion branch no longer "
+                "returns inside its own if; the per-operation split would be wrong"
+            )
+    return {
+        "workbenchGetDeletion": [*block[:getter], *getter_branch.body],
+        "workbenchCreateDeletionPlan": [
+            *block[:getter],
+            *block[getter + 1 : planner],
+            *planner_branch.body,
+        ],
+        "workbenchCreateDeletion": [
+            *block[:getter],
+            *block[getter + 1 : planner],
+            *block[planner + 1 :],
+        ],
+    }
+
+
+def _workbench_operation_emitters(
+    root: Path,
+) -> tuple[dict[str, dict[str, EmittedCode]], tuple[Finding, ...]]:
+    table = _error_table(root, WORKBENCH_ERROR_TABLE, "ERRORS")
+    exception_codes = _exception_codes(root)
+    local_index = _function_index(root, (WORKBENCH_DELETION_ROUTES,))
+    service_index = _function_index(root, WORKBENCH_DELETION_MODULES)
+    slices = _workbench_operation_slices(root)
+    findings: list[Finding] = []
+    emitted: dict[str, dict[str, EmittedCode]] = {}
+    for operation, statements in slices.items():
+        direct = _scan_io(statements, WORKBENCH_DELETION_ROUTES, only_deletions=True)
+        local = _closure(local_index, direct.calls)
+        service = _closure(service_index, direct.calls | local.calls)
+        classes: dict[str, str] = {}
+        literals: dict[str, str] = {}
+        for source in (direct, local, service):
+            for name, location in source.classes.items():
+                classes.setdefault(name, location)
+            for code, location in source.literals.items():
+                literals.setdefault(code, location)
+        codes: dict[str, EmittedCode] = {}
+        for name, location in classes.items():
+            mapped = exception_codes.get(name)
+            if mapped is None:
+                continue
+            code, retryable = mapped
+            if not code.startswith(DELETION_CODE_PREFIX):
+                continue
+            codes.setdefault(
+                code,
+                EmittedCode(
+                    status=table[code].status if code in table else None,
+                    location=location,
+                    retryable=retryable,
+                ),
+            )
+        for code, location in literals.items():
+            if not code.startswith(DELETION_CODE_PREFIX):
+                continue
+            codes.setdefault(
+                code,
+                EmittedCode(
+                    status=table[code].status if code in table else None, location=location
+                ),
+            )
+        for code, entry in codes.items():
+            if code not in table:
+                findings.append(
+                    Finding(
+                        "deletion_error_collapsed",
+                        f"{operation} answers {code} at {entry.location}, which "
+                        f"{WORKBENCH_ERROR_TABLE} does not map; _error() answers internal_error "
+                        "instead",
+                    )
+                )
+        emitted[operation] = codes
+    return emitted, tuple(findings)
 
 
 def _catalogue_findings(
@@ -2526,8 +2885,8 @@ def _catalogue_findings(
             Finding(
                 "deletion_error_unused",
                 f"{contract} declares {code} at "
-                f"{contract_locations.get(code, contract.as_posix())} but no emitter exists; "
-                "remove the stale code",
+                f"{contract_locations.get(code, contract.as_posix())} but the guard finds no "
+                f"emitting call site for {surface}; remove the stale code",
             )
         )
     for code in sorted(declared_retryable - set(declared)):
@@ -2565,12 +2924,13 @@ def _catalogue_findings(
 
 
 def check_deletion_error_catalogue(root: Path) -> ErrorCatalogue:
-    """Guard both deletion error catalogues against the code that answers them."""
+    """Guard the refusal catalogues per surface and keep resource codes separate."""
     speech_codes, speech_retryable, speech_locations = _speech_catalogue(root)
-    speech_emitted, collapse_findings = _speech_emitters(root)
-    workbench_codes, workbench_retryable, workbench_locations = _workbench_catalogue(root)
-    workbench_emitted = _workbench_emitters(root)
-    findings = list(collapse_findings)
+    speech_emitted, speech_findings = _speech_emitters(root)
+    resource_codes = _resource_catalogue(root)
+    workbench_catalogues = _workbench_catalogue(root)
+    workbench_emitted, workbench_findings = _workbench_operation_emitters(root)
+    findings = [*speech_findings, *workbench_findings]
     findings.extend(
         _catalogue_findings(
             "the Speech deletion routes",
@@ -2581,33 +2941,61 @@ def check_deletion_error_catalogue(root: Path) -> ErrorCatalogue:
             speech_emitted,
         )
     )
-    findings.extend(
-        _catalogue_findings(
-            "the Workbench deletion operations",
-            WORKBENCH_CONTRACT,
-            workbench_codes,
-            workbench_locations,
-            workbench_retryable,
-            workbench_emitted,
-        )
-    )
-    rows = (
+    rows = [
         CatalogueRow(
             "Speech deletion routes",
             DELETION_SCHEMA.as_posix(),
             len(speech_codes),
             len(speech_emitted),
             sum(1 for entry in speech_emitted.values() if entry.retryable),
-        ),
-        CatalogueRow(
-            "Workbench deletion operations",
-            WORKBENCH_CONTRACT.as_posix(),
-            len(workbench_codes),
-            len(workbench_emitted),
-            sum(1 for entry in workbench_emitted.values() if entry.retryable),
-        ),
-    )
-    return ErrorCatalogue(rows=rows, findings=tuple(findings))
+        )
+    ]
+    for operation in WORKBENCH_DELETION_OPERATIONS:
+        declared, retryable, locations = workbench_catalogues[operation]
+        emitted = workbench_emitted[operation]
+        findings.extend(
+            _catalogue_findings(
+                f"the {operation} operation",
+                WORKBENCH_CONTRACT,
+                declared,
+                locations,
+                retryable,
+                emitted,
+            )
+        )
+        rows.append(
+            CatalogueRow(
+                operation,
+                WORKBENCH_CONTRACT.as_posix(),
+                len(declared),
+                len(emitted),
+                sum(1 for entry in emitted.values() if entry.retryable),
+            )
+        )
+    refusal_codes = set(speech_codes)
+    for declared, _, _ in workbench_catalogues.values():
+        refusal_codes |= set(declared)
+    emitted_refusals = set(speech_emitted)
+    for emitted in workbench_emitted.values():
+        emitted_refusals |= set(emitted)
+    for code in sorted(resource_codes & refusal_codes):
+        findings.append(
+            Finding(
+                "deletion_error_classified_twice",
+                f"{code} is declared both as a resource-internal error ({RESOURCE_CATALOGUE_KEY}) "
+                f"and as an HTTP refusal ({ERROR_CATALOGUE_KEY}); it is carried inside a "
+                "successful Deletion, not answered as a refusal",
+            )
+        )
+    for code in sorted(resource_codes & emitted_refusals):
+        findings.append(
+            Finding(
+                "deletion_error_classified_twice",
+                f"{code} is declared resource-internal but a deletion route emits it as an "
+                "HTTP refusal; move it to the refusal catalogue or stop raising it",
+            )
+        )
+    return ErrorCatalogue(rows=tuple(rows), findings=tuple(findings))
 
 
 def build_report(root: Path = ROOT) -> Report:

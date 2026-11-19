@@ -419,7 +419,7 @@ class FixModeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         # The plan names the reference site, the old and new line, and the hit.
         self.assertIn("[FIX]", result.stdout)
-        self.assertIn(f"{DOC_TARGET}:30  30 -> 46", result.stdout)
+        self.assertIn(f"{DOC_TARGET}:30  30 -> 46 (+16)", result.stdout)
         self.assertIn("命中：TARGET_30 = 30", result.stdout)
         self.assertIn("FIX RESULT PASS", result.stdout)
         self.assertIn("--dry-run 未写文件", result.stdout)
@@ -433,7 +433,7 @@ class FixModeTests(unittest.TestCase):
         result = repo.run("--fix")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("30 -> 46", result.stdout)
-        self.assertIn("SELFCHECK drift_before=1 drift_after=0", result.stdout)
+        self.assertIn("SELFCHECK written=1 failures=0 drift_before=1 drift_after=0", result.stdout)
         after = (repo.root / TERMINAL_DOC).read_text(encoding="utf-8")
         self.assertEqual(after, before.replace(f"{DOC_TARGET}:30", f"{DOC_TARGET}:46"))
         # The assertion text is untouched; only the digits moved. Comparing the
@@ -476,7 +476,7 @@ class FixModeTests(unittest.TestCase):
         lines = (repo.root / TERMINAL_DOC).read_text(encoding="utf-8").splitlines()
         self.assertIn(f"{DOC_TARGET}:30", lines[0], "多个命中时不许改这条")
         self.assertIn(f"{DOC_TARGET}:47", lines[1], "其余引用照改")
-        self.assertIn("SELFCHECK drift_before=2 drift_after=1", result.stdout)
+        self.assertIn("SELFCHECK written=1 failures=0 drift_before=2 drift_after=1", result.stdout)
         self.assertIn("FIX UNRESOLVED drift=1", result.stdout)
         self.assertIn("RESULT FAIL", result.stdout)
 
@@ -492,6 +492,95 @@ class FixModeTests(unittest.TestCase):
         self.assertIn("出现 0 次", result.stdout)
         self.assertIn("FIX UNRESOLVED drift=1", result.stdout)
         self.assertEqual((repo.root / TERMINAL_DOC).read_text(encoding="utf-8"), body)
+
+    def _scan(self, total: int) -> object:
+        return CHECK.Scan(
+            results=[],
+            scanned=[],
+            total=total,
+            fenced=0,
+            fenced_terminal=0,
+            doc_refs=0,
+            doc_refs_asserted=0,
+            unasserted_code=0,
+        )
+
+    def test_self_check_rejects_an_off_by_one_write(self) -> None:
+        # The self-check must not reuse the +-15 assertion window: a writer that
+        # lands one line off would still look green there, which is exactly the
+        # mutation #1049's review ran. Line 31 holds TARGET_31, not TARGET_30.
+        repo = Repository(self)
+        repo.write(DOC_TARGET, TARGETS)
+        repo.track()
+        result = {
+            "doc": TERMINAL_DOC,
+            "doc_line": 1,
+            "ref": f"{DOC_TARGET}:30",
+            "verdict": "DRIFT",
+            "detail": "",
+            "target": DOC_TARGET,
+            "line": 30,
+            "scope": CHECK.TERMINAL,
+            "assertion": "TARGET_30",
+        }
+        plan = CHECK.FixPlan(result, [(30, 32)], 31, "")
+        scan = self._scan(1)
+        failures = CHECK.self_check(repo.root, [plan], scan, scan)
+        self.assertEqual(len(failures), 1, failures)
+        self.assertIn("该行没有 `TARGET_30`", failures[0])
+
+    def test_self_check_rejects_a_reference_count_drop(self) -> None:
+        # A write that deletes references (refs=2175 -> 2146) leaves every
+        # surviving reference valid, so only the total can catch it.
+        repo = Repository(self)
+        repo.track()
+        failures = CHECK.self_check(repo.root, [], self._scan(10), self._scan(9))
+        self.assertEqual(len(failures), 1, failures)
+        self.assertIn("引用总数 10 -> 9", failures[0])
+
+    def test_dry_run_does_not_report_pass_when_the_gate_is_red(self) -> None:
+        # No DRIFT means nothing to fix, but the gate is still red for MISSING.
+        # A dry-run that exits 0 here would read as "ready to merge".
+        repo = Repository(self)
+        repo.write(TERMINAL_DOC, f"实现见 `{GHOST_REF}`。\n")
+        repo.track()
+        status_before = self._status(repo)
+        result = repo.run("--fix", "--dry-run")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("计划外仍有 1 条基线外终态问题", result.stdout)
+        self.assertIn("FIX RESULT FAIL", result.stdout)
+        self.assertNotIn("FIX RESULT PASS", result.stdout)
+        self.assertEqual(self._status(repo), status_before)
+
+    def test_fix_includes_a_review_layout_problem_in_its_exit_code(self) -> None:
+        # The module docstring says the exit code follows the gate; layout is part
+        # of the gate, so `--fix` must not print PASS while the job would fail.
+        repo = Repository(self)
+        repo.write("docs/reviews/terminal-notes.md", f"实现见 `{REAL_SOURCE}:3`。\n")
+        repo.track()
+        written = repo.run("--fix")
+        self.assertEqual(written.returncode, 1, written.stdout + written.stderr)
+        self.assertIn("LAYOUT docs/reviews/terminal-notes.md", written.stdout)
+        self.assertIn("RESULT FAIL", written.stdout)
+        dry = repo.run("--fix", "--dry-run")
+        self.assertEqual(dry.returncode, 1, dry.stdout + dry.stderr)
+        self.assertIn("过程记录布局问题", dry.stdout)
+
+    def test_fix_never_touches_process_records(self) -> None:
+        # DRIFT is only produced for terminal documents; `--fix` must keep that
+        # scope. A record that cites the same target at an old line stays frozen.
+        repo = Repository(self)
+        record = "docs/reviews/2026-11-16-review.md"
+        record_body = f"# 引用门禁的非作者审查（#1049）\n\n当时指向 `{DOC_TARGET}:3`。\n"
+        repo.write(record, record_body)
+        repo.write(TERMINAL_DOC, f"见 `{DOC_TARGET}:30`（该行须含 `TARGET_30`）。\n")
+        repo.write(DOC_TARGET, FILLER_16 + TARGETS)
+        repo.track()
+        result = repo.run("--fix")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((repo.root / record).read_text(encoding="utf-8"), record_body)
+        terminal = (repo.root / TERMINAL_DOC).read_text(encoding="utf-8")
+        self.assertIn(f"{DOC_TARGET}:46", terminal)
 
     def test_two_references_on_one_line_are_both_rewritten(self) -> None:
         # The rewrite works on digit spans, right to left: a naive left-to-right

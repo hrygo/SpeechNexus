@@ -655,11 +655,11 @@ uv run pytest tests/ci tests/contract/test_ci_workflow.py tests/unit/test_integr
 
 ### 修复与排障：`--fix` 与 `--show-ok`
 
-`--fix` 处理可机械修复的 `DRIFT`：断言片段在目标文件里唯一命中时，把引用处的行号数字改写为该命中行的行号；命中 0 处或多处时不动该条，仍按 `[DRIFT]` 报告并标 `[UNFIXABLE：原因]`（出现 0 次，或出现 N 次并列出命中的行号）。它只改行号数字，不碰片段文本，也不改被引用的目标文件；同一行有多条引用时按数字区间从右往左替换，后面的引用不会因前面的改写而错位。
+`--fix` 处理可机械修复的 `DRIFT`：断言片段在目标文件里唯一命中时，把引用处的行号数字改写为该命中行的行号；命中 0 处或多处时不动该条，仍按 `[DRIFT]` 报告并标 `[UNFIXABLE：原因]`（出现 0 次，或出现 N 次并列出命中的行号）。它只改行号数字，不碰片段文本，也不改被引用的目标文件；同一行有多条引用时按数字区间从右往左替换，后面的引用不会因前面的改写而错位。计划里的位移带符号（`30 -> 500 (+470)`），章节级搬移在计划里直接可见。
 
-`--fix --dry-run` 只打印计划、不写文件：每条列出引用处、`旧行号 -> 新行号` 与命中的那一行原文，结尾 `FIX drift=… fixable=… unfixable=…` 与 `FIX RESULT PASS|FAIL`；计划未覆盖全部 `DRIFT` 时退出码为 1，验收时用 `git status` 的未变化证明没有写入。
+`--fix --dry-run` 只打印计划、不写文件：每条列出引用处、`旧行号 -> 新行号 (+位移)` 与命中的那一行原文，结尾 `FIX drift=… fixable=… unfixable=… projected_new=…` 与 `FIX RESULT PASS|FAIL`。它按首次扫描外推门禁，而不是只看 DRIFT：计划未覆盖全部 `DRIFT`、`projected_new` 非零（计划外仍有基线外终态问题）或存在过程记录布局问题时退出码为 1，避免「门禁红但无 DRIFT」显示成可以合并；验收时用 `git status` 的未变化证明没有写入。
 
-`--fix` 写入后立刻用同一套扫描重新自检，打印 `SELFCHECK drift_before=… drift_after=… unasserted_before=… unasserted_after=…`。残留 `DRIFT`、新出现 `UNASSERTED`，或存在基线外的终态问题时以非零退出；`--fix` 不能与 `--write-baseline`、`--json`、`--show`/`--show-ok` 同时使用。
+`--fix` 写入后立刻用同一套扫描重新自检，并额外跑两条不变式：逐条用**精确行号**核对写入行确有该片段（不复用 ±15 窗口——窗口容得下 15 行误差，正好放过「刚写下去的行号偏 1 行」），以及引用总数不下降（写入丢了引用时逐条核对无从谈起，门禁计数却会静默变少）。输出 `SELFCHECK written=… failures=… drift_before=… drift_after=… unasserted_before=… unasserted_after=…`，违反项以 `FIX SELFCHECK FAIL` 列出。残留 `DRIFT`、新出现 `UNASSERTED`、基线外终态问题、过程记录布局问题或自检失败都以非零退出；`--fix` 不能与 `--write-baseline`、`--json`、`--show`/`--show-ok` 同时使用。
 
 `--fix` 的边界是「唯一命中」，不是「语义正确」：片段唯一但实际指错位置时，工具会把行号改到那一处并让门禁变绿，语义仍要人读。命中多处时刻意不选最近的一条（#1042 是手工处理过这类情形）：工具不替作者猜。
 
@@ -667,7 +667,7 @@ uv run pytest tests/ci tests/contract/test_ci_workflow.py tests/unit/test_integr
 
 `--show-ok` 把 OK 侧补回 `--show`：每条 OK 引用也打印被引用行的原文，用来核对「这条为什么算 OK」「片段是不是恰好命中了同一文件里另一处」。没有把全部结果塞进 `--json`：JSON 面向机器，两千多条 OK 行只会淹没真正的问题，人读的排障路径是 `--show`。
 
-上述行为由 `tests/ci/test_doc_refs_ratchet.py` 的子进程用例钉住：dry-run 不改文件、`--fix` 只动行号数字、多处命中不改且其余照改退出非零、`--show-ok` 的原文与目标行一致、`--show` 的两个档位标记。
+上述行为由 `tests/ci/test_doc_refs_ratchet.py` 的用例钉住：dry-run 不改文件且与门禁同判、`--fix` 只动行号数字、多处命中不改且其余照改退出非零、精确行自检拒绝偏 1 行的写入、引用总数下降即失败、layout 计入退出码、过程记录不被改写、`--show-ok` 的原文与目标行一致、`--show` 的两个档位标记。
 
 ### AMBIGUOUS 判据审计
 

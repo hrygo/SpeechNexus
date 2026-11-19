@@ -65,9 +65,14 @@
 `--fix` 把 DRIFT 的修复从「逐条改别的文件里的行号」压成一条命令:对每条 DRIFT,
 若断言片段在目标文件里**唯一命中**,就把引用处的行号改写成命中行的行号;命中 0 处
 或多处时不猜——该条不改、原样报 `UNFIXABLE` 并说明原因.它只改行号数字,不碰片段
-文本,也不改目标文件.`--dry-run` 只打印计划(引用处、旧行号→新行号、命中行原文),
-不写文件.写入后立刻重新扫描自检:仍有 DRIFT 或新出现 `UNASSERTED` 时非零退出,
-这样「修完仍然是红的」不会被静默当成成功.
+文本,也不改目标文件.计划里的位移带符号(`30 -> 500 (+470)`),章节级搬移一眼可见.
+`--dry-run` 只打印计划,不写文件.
+
+写入后立刻重新扫描自检,判据不是再跑一遍 ±15 窗口——那等于用要修的窗口量误差,偏 1
+行也会放过——而是逐条用**精确行号**核对写入行确有该片段,并要求引用总数不下降
+(写入丢了引用时门禁计数会静默变少).残留 DRIFT、新出现 `UNASSERTED`、基线外终态
+问题或过程记录布局问题都非零退出;`--dry-run` 不做写入,用首次扫描减去可修 DRIFT
+外推同一判定,不把「门禁红但计划完整」显示成 PASS.
 
 `--show-ok` 给 `--show` 补上 OK 侧:OK 引用也打印被引用行的原文,用来核对「这条
 为什么算 OK」「片段是不是恰好命中了同一文件里另一处」.没有把全部结果塞进 `--json`:
@@ -90,8 +95,9 @@ JSON 是给机器消费的,把两千多条 OK 行加进去只会淹没真正的�
 一样会腐烂.
 
 退出码:0 没有新增终态问题;1 有新增终态问题或 `docs/reviews/` 下的文件不是审查
-报告;2 环境不可用(不在 git 仓库、扫描路径不存在、基线不可读).`--fix` 的 0 还要求
-计划覆盖全部 DRIFT(写入模式要求自检后没有残留 DRIFT).
+报告;2 环境不可用(不在 git 仓库、扫描路径不存在、基线不可读).`--fix` 沿用同一
+判据:计划外仍有基线外终态问题、过程记录布局问题,或写入自检的精确行核对/引用总数
+不变式失败时也是 1;dry-run 外推同一判定.
 只读:只查 git 索引与工作区文件,除 `--write-baseline` 与 `--fix` 外不改任何东西.
 """
 
@@ -562,9 +568,10 @@ def print_fix_plan(plan: FixPlan) -> None:
             f"  [UNFIXABLE：{plan.reason}]"
         )
         return
+    shift = plan.new_line - result["line"]
     print(
         f"[FIX] {result['doc']}:{result['doc_line']}  ->  {result['ref']}"
-        f"  {result['line']} -> {plan.new_line}"
+        f"  {result['line']} -> {plan.new_line} ({shift:+d})"
     )
     print(f"      命中：{referenced_line(result['target'], plan.new_line)}")
 
@@ -600,6 +607,42 @@ def apply_fixes(root: Path, plans: list[FixPlan]) -> None:
             raise SystemExit(f"cannot write {repo_path}: {exc}") from exc
 
 
+def self_check(root: Path, plans: list[FixPlan], first: Scan, after: Scan) -> list[str]:
+    """写入后的不变式;返回违反项(空列表 = 通过).
+
+    不能复用 ±ASSERTION_WINDOW:窗口容得下 15 行误差,而这里要回答的正是「刚写下去
+    的这一个行号对不对」——偏 1 行也会被窗口放过,自检灵敏度就等于要修的窗口.
+    所以逐条用精确行号核对目标行确有该片段。再要求引用总数不下降:写入把引用删掉
+    时(实测 2175 -> 2146)逐条核对无从谈起,但门禁计数会静默变少,总量是最后一道闸.
+    """
+    failures: list[str] = []
+    for plan in plans:
+        if plan.new_line is None:
+            continue
+        result = plan.result
+        try:
+            lines = (
+                (root / result["target"]).read_text(encoding="utf-8", errors="replace").splitlines()
+            )
+        except OSError:
+            failures.append(
+                f"{result['doc']}:{result['doc_line']} 写入 {result['target']}:{plan.new_line}"
+                " 后读不到目标文件"
+            )
+            continue
+        if (
+            not 1 <= plan.new_line <= len(lines)
+            or result["assertion"] not in lines[plan.new_line - 1]
+        ):
+            failures.append(
+                f"{result['doc']}:{result['doc_line']} 写入 {result['target']}:{plan.new_line}，"
+                f"该行没有 `{result['assertion']}`"
+            )
+    if after.total < first.total:
+        failures.append(f"引用总数 {first.total} -> {after.total}，写入后丢了引用")
+    return failures
+
+
 def run_fix(
     root: Path,
     scan_roots: list[Path],
@@ -610,8 +653,9 @@ def run_fix(
 ) -> int:
     """执行 `--fix`:计划、可选写入、写入后自检.
 
-    退出码只表达「修完了没有」:残留 DRIFT、新出现 UNASSERTED,或还有基线外的终态
-    问题时为 1;计划覆盖全部 DRIFT 且终态问题不多于基线时为 0.
+    退出码与门禁对齐:残留 DRIFT、新出现 UNASSERTED、基线外终态问题、过程记录布局
+    问题,或写入自检的精确行核对/引用总数不变式失败时为 1;dry-run 不做写入,用首次
+    扫描减去可修 DRIFT 外推同样的判定,防止「门禁红但计划完整」显示成 PASS.
     """
     plans = plan_fixes(root, first.results)
     for plan in plans:
@@ -620,11 +664,32 @@ def run_fix(
     unfixable = len(plans) - fixable
     drift_before = len(plans)
     unasserted_before = sum(1 for r in first.results if r["verdict"] == "UNASSERTED")
-    print(f"\nFIX drift={drift_before} fixable={fixable} unfixable={unfixable}")
+    first_problems = [r for r in first.results if r["verdict"] not in ("OK", "EXTERNAL")]
+    first_terminal = [r for r in first_problems if r["scope"] == TERMINAL]
+    first_keys: Counter[str] = Counter(problem_key(r) for r in first_terminal)
+    new_keys = first_keys - accepted
+    layouts = misplaced_records(first.scanned)
+    fixed_keys: Counter[str] = Counter(
+        problem_key(plan.result) for plan in plans if plan.new_line is not None
+    )
+    projected_new = new_keys - fixed_keys
+    print(
+        f"\nFIX drift={drift_before} fixable={fixable} unfixable={unfixable} "
+        f"projected_new={sum(projected_new.values())}"
+    )
+    for repo_path, reason in layouts:
+        print(f"LAYOUT {repo_path}  {reason}")
 
     if dry_run:
+        reasons: list[str] = []
         if unfixable:
-            print("FIX RESULT FAIL  计划未覆盖全部 DRIFT；--dry-run 未写文件")
+            reasons.append(f"计划未覆盖全部 DRIFT（unfixable={unfixable}）")
+        if projected_new:
+            reasons.append(f"计划外仍有 {sum(projected_new.values())} 条基线外终态问题")
+        if layouts:
+            reasons.append(f"{len(layouts)} 个过程记录布局问题")
+        if reasons:
+            print("FIX RESULT FAIL  " + "；".join(reasons) + "；--dry-run 未写文件")
             return 1
         print("FIX RESULT PASS  --dry-run 未写文件；去掉 --dry-run 才会写入")
         return 0
@@ -633,18 +698,22 @@ def run_fix(
     after = scan_repository(root, scan_roots)
     drift_after = sum(1 for r in after.results if r["verdict"] == "DRIFT")
     unasserted_after = sum(1 for r in after.results if r["verdict"] == "UNASSERTED")
+    failures = self_check(root, plans, first, after)
     print(
-        f"SELFCHECK drift_before={drift_before} drift_after={drift_after} "
+        f"SELFCHECK written={fixable} failures={len(failures)} "
+        f"drift_before={drift_before} drift_after={drift_after} "
         f"unasserted_before={unasserted_before} unasserted_after={unasserted_after}"
     )
+    for failure in failures:
+        print(f"FIX SELFCHECK FAIL {failure}")
 
     after_problems = [r for r in after.results if r["verdict"] not in ("OK", "EXTERNAL")]
     after_terminal = [r for r in after_problems if r["scope"] == TERMINAL]
     terminal_keys: Counter[str] = Counter(problem_key(r) for r in after_terminal)
-    new_keys = terminal_keys - accepted
+    after_new = terminal_keys - accepted
     print(
         f"SCOPE {TERMINAL} problems={sum(terminal_keys.values())} "
-        f"new={sum(new_keys.values())} accepted={sum(accepted.values())}"
+        f"new={sum(after_new.values())} accepted={sum(accepted.values())}"
     )
     for result in after_terminal:
         if result["verdict"] == "DRIFT":
@@ -656,7 +725,9 @@ def run_fix(
             f"FIX UNRESOLVED unasserted={unasserted_after - unasserted_before}"
             "  改写后新出现 UNASSERTED"
         )
-    if drift_after or unasserted_after > unasserted_before or new_keys:
+    if failures:
+        print(f"FIX UNRESOLVED selfcheck={len(failures)}  写入的行号或引用总数未通过精确核对")
+    if drift_after or unasserted_after > unasserted_before or after_new or layouts or failures:
         print("RESULT FAIL")
         return 1
     print("RESULT PASS")

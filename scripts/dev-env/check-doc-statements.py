@@ -76,6 +76,16 @@ STALE_LIVE_READINESS_PHRASES = (
     "实例 `ready` 后本端点会上报 `available`",
     "实例变成 `ready` 后该字段会跟着变",
 )
+# The contract now defines `admission_state` as a static projection of whether the
+# deployment established the per-workspace facts (#941). The old "live verdict"
+# reading was a contract defect; it must not return as if the contract still said it,
+# and the gap must not go back to being tracked as pending wiring.
+STALE_CONTRACT_DEFECT_PHRASES = (
+    "契约把 `admission_state` 定义成实时准入判据",
+    "**契约缺陷**",
+    "`current admission facts`",
+    "二者结构性不符",
+)
 # The comment above the catalogue construction is the only place that says *why* the
 # projection is static. Guarding the runbook alone left it deletable: dropping the
 # argument and keeping the first line stayed green (#939 P2 M6/M7).
@@ -225,16 +235,17 @@ CLAIMS = (
             "是**静态投影**（fail-closed），不是实时状态",
             "**不随实例注册、实例 `ready` 或 Job `202` 变化**",
             "不表示引擎故障或不可准入",
-            # The contract's admission_state cannot be satisfied by wiring more live
-            # facts: it is per workspace, this endpoint has no workspace (#941). Kept to
-            # a short run of characters, so a later reflow cannot red this without the
-            # sentence changing.
-            "二者结构性不符",
-            "**契约缺陷**",
-            "`current admission facts`",
+            # The contract's admission_state is a static projection of whether the
+            # deployment established per-workspace admission facts; this endpoint has
+            # no workspace (#941), so more live facts cannot turn it into a verdict.
+            # Kept to short runs of characters, so a later reflow cannot red this
+            # without the sentence changing.
+            "不是某个 workspace 此刻能否被准入",
+            "接不进实时准入",
+            "消费者不需要改",
             "#941",
         ),
-        forbidden=STALE_LIVE_READINESS_PHRASES,
+        forbidden=STALE_LIVE_READINESS_PHRASES + STALE_CONTRACT_DEFECT_PHRASES,
         # The anchor is the READABLE definition, not the comment's first line: edits
         # *after* it (the common case) must not red the guard for a stale citation.
         anchor=(CATALOG_RUNTIME, "READABLE = frozenset("),

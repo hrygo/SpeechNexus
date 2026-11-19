@@ -3786,7 +3786,7 @@
         "admission_state": {
           "type": "string",
           "enum": ["available", "queueable", "capacity_full", "unavailable"],
-          "description": "available means currently admissible; queueable means the binding can\naccept work that waits for capacity; capacity_full means a required\nreservation is currently unavailable; unavailable means the model\ncannot be admitted now. None of these fields implies quality.\n"
+          "description": "A static projection of whether this deployment has established the\nper-workspace admission facts, not a verdict for any workspace at this\ninstant. This endpoint carries no workspace while admission is computed\nper workspace, so no value here answers whether a given workspace can be\nadmitted now. `unavailable` reports that those facts are not established\nfor this catalogue, which is the state the assembled catalogue reports;\nit implies neither an engine fault nor a refused admission. `available`,\n`queueable`, and `capacity_full` are the per-workspace admission\nreport's values and remain in this enum; a catalogue that establishes\nno per-workspace fact does not emit them. The per-workspace live surface\nis `GET /v1/nexus/jobs/admission-readiness` (it takes `workspace_id`),\nand an actual create answer is `POST /v1/nexus/jobs`. None of these\nfields implies quality.\n"
         }
       }
     },

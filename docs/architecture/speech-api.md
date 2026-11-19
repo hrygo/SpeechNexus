@@ -185,7 +185,7 @@ TTS 目标设计要求保留实际格式、采样率、声道、时长、摘要�
 
 ### 1.5 能力协商与版本
 
-能力快照包含 `snapshot_id`、`catalog_revision`、`policy_revision`、生成时间、逻辑模型绑定、参数域、音色 revision、预设 revision、格式、辅助能力及限制。readiness 分别报告配置完整、引擎就绪、质量资格、当前可准入状态；`available` 不等于业务生产质量已通过。
+能力快照包含 `snapshot_id`、`catalog_revision`、`policy_revision`、生成时间、逻辑模型绑定、参数域、音色 revision、预设 revision、格式、辅助能力及限制。readiness 是静态投影：分别报告配置完整、引擎就绪、质量资格，以及本部署是否建立了按 workspace 的准入事实（`admission_state`）；它不是某个 workspace 的实时准入判据，实时面是 `GET /v1/nexus/jobs/admission-readiness`。`available` 不等于业务生产质量已通过。
 
 当前 PostgreSQL 目录投影提供已发布 binding 的模型信息，`profiles` 和 `voices` 暂为空；
 能力接口对传入的 `workspace_id` 只检查标识格式，不查询其是否存在或按其过滤目录。

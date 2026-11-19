@@ -13,8 +13,11 @@ export interface paths {
     /**
      * List published logical models
      * @description Returns the OpenAI model-list shape. The `nexus` object on each model
-     *     separates binding revision, support, quality qualification, and current
-     *     admission facts. This endpoint never exposes model paths or endpoints.
+     *     separates binding revision, support, quality qualification, and a static
+     *     readiness projection: the readiness block reports only the facts this
+     *     catalogue has established, never a live verdict for a workspace. This
+     *     endpoint never exposes model paths or endpoints. The per-workspace live
+     *     surface is `GET /v1/nexus/jobs/admission-readiness`.
      */
     get: operations["listModels"];
     put?: never;
@@ -1257,10 +1260,19 @@ export interface components {
       engine_ready: boolean;
       quality_qualified: boolean;
       /**
-       * @description available means currently admissible; queueable means the binding can
-       *     accept work that waits for capacity; capacity_full means a required
-       *     reservation is currently unavailable; unavailable means the model
-       *     cannot be admitted now. None of these fields implies quality.
+       * @description A static projection of whether this deployment has established the
+       *     per-workspace admission facts, not a verdict for any workspace at this
+       *     instant. This endpoint carries no workspace while admission is computed
+       *     per workspace, so no value here answers whether a given workspace can be
+       *     admitted now. `unavailable` reports that those facts are not established
+       *     for this catalogue, which is the state the assembled catalogue reports;
+       *     it implies neither an engine fault nor a refused admission. `available`,
+       *     `queueable`, and `capacity_full` are the per-workspace admission
+       *     report's values and remain in this enum; a catalogue that establishes
+       *     no per-workspace fact does not emit them. The per-workspace live surface
+       *     is `GET /v1/nexus/jobs/admission-readiness` (it takes `workspace_id`),
+       *     and an actual create answer is `POST /v1/nexus/jobs`. None of these
+       *     fields implies quality.
        * @enum {string}
        */
       admission_state: "available" | "queueable" | "capacity_full" | "unavailable";

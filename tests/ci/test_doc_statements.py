@@ -187,14 +187,14 @@ class DocumentedCapabilityGuardTests(unittest.TestCase):
         )
         self._assert_red("catalogue-readiness-projection")
 
-    def test_dropping_the_structural_mismatch_turns_red(self) -> None:
+    def test_dropping_the_static_projection_turns_red(self) -> None:
         """The "wait for live facts" reading is what shipped the contract defect (#941)."""
         self._rewrite(
             RUNBOOK,
-            "**二者结构性不符，接入多少实时事实都满足不了该定义**",
+            "接不进实时准入",
             "接入实时事实之后就对上了",
         )
-        self._assert_red("二者结构性不符")
+        self._assert_red("接不进实时准入")
 
     def test_a_deleted_projection_comment_turns_red(self) -> None:
         """The comment argument is what keeps the projection static; deleting it reverts."""
@@ -220,8 +220,8 @@ class DocumentedCapabilityGuardTests(unittest.TestCase):
         """A correct paragraph with one reverse assertion added (#939 M5)."""
         self._rewrite(
             RUNBOOK,
-            "**不是待接入项**。",
-            "**不是待接入项**。实测：实例 `ready` 后本端点会上报 `available`。",
+            "**消费者不需要改**。",
+            "**消费者不需要改**。实测：实例 `ready` 后本端点会上报 `available`。",
         )
         self._assert_red("实例 `ready` 后本端点会上报 `available`")
 
@@ -229,8 +229,8 @@ class DocumentedCapabilityGuardTests(unittest.TestCase):
         """The same reversal parked outside the paragraph (#939 M8)."""
         self._rewrite(
             RUNBOOK,
-            "**不是待接入项**。",
-            "**不是待接入项**。实例变成 `ready` 后该字段会跟着变。",
+            "**消费者不需要改**。",
+            "**消费者不需要改**。实例变成 `ready` 后该字段会跟着变。",
         )
         self._assert_red("实例变成 `ready` 后该字段会跟着变")
 
@@ -250,7 +250,7 @@ class DocumentedCapabilityGuardTests(unittest.TestCase):
         """Forbidding whole asserting clauses must not reject a negation (#939 M4)."""
         self._rewrite(
             RUNBOOK,
-            "**不是待接入项**。",
-            "**不是待接入项**。本端点不是反映实时状态的通道。",
+            "**消费者不需要改**。",
+            "**消费者不需要改**。本端点不是反映实时状态的通道。",
         )
         self._assert_green()

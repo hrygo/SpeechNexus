@@ -496,8 +496,10 @@ workspace 的准入事实面，**不是某个 workspace 此刻能否被准入**�
 契约 `:59-68` 只有 `X-Request-ID` 与 `If-None-Match`），所以这个字段**接不进实时准入**——接入多少
 实时事实都改变不了这一点。口径已按 `#941` 订正为静态投影，**消费者不需要改**。实时准入不由该端点
 承载：判「现在能不能建 Job」看 `POST /v1/nexus/jobs` 的实际应答码（第 11 节），按 workspace 的
-实时报告是 `GET /v1/nexus/jobs/admission-readiness`（带 `workspace_id`，当前仍是占位、跟踪
-`#863`）。
+实时报告是 `GET /v1/nexus/jobs/admission-readiness`（带 `workspace_id`，已接通，`#863`）：它返回
+的是「此刻这一次创建会得到的答案」，与创建走同一个判定函数、同一份选择集合，因此
+`admitting` 表示该 workspace 的创建会被接受，`degraded` 的 `cause` 就是创建会给出的那个码
+映射出的原因。
 
 `DEL-535`（基线 `origin/main` `c0172a22`）当时在这里拿到的是 `503 model_catalogue_unavailable`，
 **不是角色没配**：catalog 要求定义里的 `binding_id` 等于发布的 `object_id`

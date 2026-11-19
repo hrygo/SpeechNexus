@@ -17,8 +17,8 @@ export interface paths {
      *     readiness projection: the readiness block reports only the facts this
      *     catalogue has established, never a live verdict for a workspace. This
      *     endpoint never exposes model paths or endpoints. The per-workspace surface
-     *     is `GET /v1/nexus/jobs/admission-readiness`, which this deployment still
-     *     answers with `503 operation_not_implemented`.
+     *     is `GET /v1/nexus/jobs/admission-readiness`, which returns the live verdict
+     *     for one workspace by running the same predicate a create runs.
      */
     get: operations["listModels"];
     put?: never;
@@ -572,8 +572,8 @@ export interface paths {
      *     | --- | --- |
      *     | `engine_receipt_expired` | 503 `engine_not_ready`, `retryable: false`. The ready instance the create would pin holds a readiness receipt outside its window. Re-sign it with `speechnexus-register-engine --renew-readiness`; `speechnexus-engine-readiness` prints the remaining window. |
      *     | `engine_state_mismatch` | 503 `engine_state_mismatch`, `retryable: false`. The pinned instance's stored intent no longer decodes or no longer matches admission's expectation, its generation moved, or the pool owner lease is being reconciled or transferred, so the pin cannot be trusted. Reconcile or re-register the instance. |
-     *     | `engine_resource_disabled` | 503 `engine_resource_disabled`, `retryable: false`. The instance's runtime service state, the host node it runs on, the approved recipe (including its approval window) or the runtime template approval is not active. Re-enable the instance or re-approve the recipe. |
-     *     | `capacity_exhausted` | 429 `job_capacity_exhausted` with `Retry-After`. The workspace quota holds every attempt, an instance is at its slot bound, or no ready instance can serve a create: none is registered, the pool that would own it does not admit work, or its lease identity is absent. A released attempt or slot clears it; the missing-instance arms only clear when an instance becomes ready or a pool becomes active, which is an operator action, so a client that retries forever sees the same 429. |
+     *     | `engine_resource_disabled` | 503 `engine_resource_disabled`, `retryable: false`. The instance's runtime service state, the host node it runs on, the pool that owns it (its state, its owner identity or its fencing token), the approved recipe (including its approval window) or the runtime template approval is not active. Re-enable the instance, restore the pool owner, or re-approve the recipe. |
+     *     | `capacity_exhausted` | 429 `job_capacity_exhausted` with `Retry-After`. The workspace quota holds every attempt, an instance is at its slot bound, or no ready instance can serve a create: none is registered for the pinned binding, or every registered one is not ready. A released attempt or slot clears it; the missing-instance arms only clear when an instance becomes ready, which is an operator action, so a client that retries forever sees the same 429. A pool that does not admit work or a missing pool-owner identity is `engine_resource_disabled`, not this code. |
      *     | `workspace_not_found` | 422 `workspace_not_found`. No workspace catalog row exists for the reported workspace. |
      *     | `workspace_disabled` | 422 `workspace_disabled`. The workspace row exists but is not active. Enable the workspace. |
      *     | `workspace_not_configured` | 422 `workspace_not_configured`. The workspace exists but has no quota row, so admission has nothing to charge. Registering an engine for the workspace writes one. |
@@ -1273,10 +1273,9 @@ export interface components {
        *     admission report answers with its own vocabulary (`status` plus a
        *     single `cause`), never with these three values. The per-workspace
        *     surface is `GET /v1/nexus/jobs/admission-readiness` (it takes
-       *     `workspace_id`); it is declared here and this deployment still answers
-       *     `503 operation_not_implemented` for it until that report is
-       *     implemented. An actual create answer is `POST /v1/nexus/jobs`. None
-       *     of these fields implies quality.
+       *     `workspace_id`); it returns the live verdict, so an actual create
+       *     answer is either that report or `POST /v1/nexus/jobs`. None of these
+       *     fields implies quality.
        * @enum {string}
        */
       admission_state: "available" | "queueable" | "capacity_full" | "unavailable";

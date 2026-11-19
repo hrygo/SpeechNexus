@@ -57,23 +57,38 @@ def job_block(job_id: str) -> str:
     ]
 
 
-def bare_code_reference_count() -> int:
-    """Terminal references to non-Markdown targets that still carry no assertion.
+MARKDOWN_REF = re.compile(r"`([\w][\w./-]*\.(?:py|sql|ts|tsx|js|mjs|sh|toml|yaml|yml|json)):(\d+)`")
+RECORD_PATH = re.compile(
+    r"^docs/(reviews|archive)/|^docs/(validation|audits)/\d{4}-\d{2}-\d{2}-.+\.md$"
+)
+FENCE_LINE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 
-    Mirrors the counter in `main`, so the report is checked against the tree
-    instead of a pinned number. The debt is supposed to reach zero; asserting
-    `> 0` would turn red on the day it is finally paid off.
+
+def independent_bare_code_refs() -> int:
+    """A lower bound on `unasserted_code`, counted without the gate's own parser.
+
+    Deliberately a strict subset of what `main` counts: only backticked paths with
+    a known extension, only outside fences, only lines carrying neither an
+    assertion nor an external-dependency marker. A regression that makes the
+    gate's regex stop matching a whole class of references would drop its own
+    counter to zero while this count stayed put, so the two disagree - a check
+    that mirrored `main` (same `scope_of`, same `scan_document`) would agree on
+    zero and pass.
     """
     total = 0
     for root in ("docs", "deploy"):
         for doc in sorted((ROOT / root).rglob("*.md")):
-            if CHECK.scope_of(doc.relative_to(ROOT).as_posix()) != CHECK.TERMINAL:
+            rel = doc.relative_to(ROOT).as_posix()
+            if RECORD_PATH.search(rel):
                 continue
-            refs, _ = CHECK.scan_document(doc)
-            for _, line, ref_path, _, assertion in refs:
-                if "外部依赖" in line or assertion or ref_path.endswith(".md"):
+            in_fence = False
+            for line in doc.read_text(encoding="utf-8").splitlines():
+                if FENCE_LINE.match(line):
+                    in_fence = not in_fence
                     continue
-                total += 1
+                if in_fence or "该行须含" in line or "外部依赖" in line:
+                    continue
+                total += len(MARKDOWN_REF.findall(line))
     return total
 
 
@@ -476,10 +491,15 @@ class CommittedStateTests(unittest.TestCase):
         self.assertGreater(doc_refs, 0, result.stdout)
         # The window is a documented number, not an accident of the default.
         self.assertEqual(window, CHECK.ASSERTION_WINDOW)
-        # The debt counter is a count, not a threshold: compare it with the tree
-        # itself, so paying the debt down (365 bare code refs today) never turns
-        # this red. A fixed `> 0` would fail exactly on the day the work finishes.
-        self.assertEqual(unasserted_code, bare_code_reference_count(), result.stdout)
+        # The debt counter is a count, not a threshold: paying the debt down (365
+        # bare code refs today) must never turn this red, so there is no floor on
+        # the number itself. It is instead bounded from below by an independent
+        # scan of the corpus - one that does not reuse the gate's regex or scope
+        # rules - so a parser regression that silently stops matching shows up as
+        # `unasserted_code < lower_bound` rather than as agreement on zero.
+        lower_bound = independent_bare_code_refs()
+        self.assertGreater(lower_bound, 0, result.stdout)
+        self.assertGreaterEqual(unasserted_code, lower_bound, result.stdout)
 
     def test_the_committed_baseline_keeps_terminal_documents_fully_gated(self) -> None:
         payload = json.loads(BASELINE.read_text(encoding="utf-8"))

@@ -3,23 +3,31 @@
 ``speech_job_cancellation_reconciliations.attempts`` is bounded in three places that
 must agree: the table's ``CHECK``, the claim's clamp
 ``LEAST(attempts + 1, _MAX_ATTEMPTS)``, and the readiness read that names a saturated
-row (``ATTEMPT_CEILING``, added by #1038). The claim side now imports the schema
-constant, so equality is a consequence of identity. That makes a value comparison the
-wrong guard: it goes green on any pair of equal literals, which is exactly the
-re-forking this file exists to catch.
+row (``ATTEMPT_CEILING``, added by #1038). The claim side imports the schema constant,
+so equality is a consequence of identity. That makes a value comparison the wrong
+guard: it goes green on any pair of equal literals, which is exactly the re-forking
+this file exists to catch.
 
 These assertions therefore check the *source binding* and the *SQL text*:
 
-* the claim module's ``_MAX_ATTEMPTS`` must be bound to the imported
-  ``ATTEMPT_CEILING`` name, not to a literal, and it must be imported from the schema
-  module rather than defined next door;
+* the claim module's ``_MAX_ATTEMPTS`` must have exactly one module-level binding,
+  and that binding must be the imported ``ATTEMPT_CEILING`` (bare name, its import
+  alias, or ``<module alias>.ATTEMPT_CEILING``) -- never an expression that merely
+  evaluates to the same number;
+* the import must come from ``job_cancellation_fence_schema``, and the claim module
+  must not rebind ``ATTEMPT_CEILING``: a later ``ATTEMPT_CEILING = 64`` wins at import
+  time and would silently undo the alias;
 * the claim must pass that binding as its ``%(max_attempts)s`` parameter, and the SQL
   must clamp through the placeholder with no numeric literal in its place;
 * the DDL must interpolate the same object.
 
-``is`` alone cannot carry the Python side: ``64`` is a CPython cached small int, so a
-reintroduced ``_MAX_ATTEMPTS = 64`` is still ``is``-identical to the constant. The AST
-assertion is what makes the counterexample fail.
+Two traps this file guards against, both of which pass a value comparison:
+
+* ``is`` cannot tell a literal from the constant: ``64`` is a CPython cached small int,
+  so ``_MAX_ATTEMPTS = 64`` is still ``is``-identical to ``ATTEMPT_CEILING``;
+* Python keeps the *last* module-level binding, so a second assignment (or a later
+  ``ATTEMPT_CEILING = 64``) overrides the imported one while a helper that reads the
+  first binding stays green.
 
 Drift is a behaviour bug, not a cosmetic one:
 
@@ -45,6 +53,8 @@ from speechnexus_backend.speech.infrastructure import (
 )
 
 _SCHEMA_MODULE_SUFFIX = "job_cancellation_fence_schema"
+_CEILING = "ATTEMPT_CEILING"
+_CLAIM_ALIAS = "_MAX_ATTEMPTS"
 
 
 def _claim_module_tree() -> ast.Module:
@@ -82,65 +92,154 @@ def _split_arguments(arguments: str) -> list[str]:
     return parts
 
 
-def _module_level_binding(name: str) -> ast.expr | None:
+def _module_level_bindings(name: str) -> list[tuple[int, ast.expr]]:
+    """Every module-level assignment to ``name``, in source order."""
+    bindings: list[tuple[int, ast.expr]] = []
     for node in _claim_module_tree().body:
         if isinstance(node, ast.Assign):
             if any(isinstance(target, ast.Name) and target.id == name for target in node.targets):
-                return node.value
+                bindings.append((node.lineno, node.value))
         elif (
             isinstance(node, ast.AnnAssign)
             and isinstance(node.target, ast.Name)
             and node.target.id == name
+            and node.value is not None
         ):
-            return node.value
-    return None
+            bindings.append((node.lineno, node.value))
+    return bindings
 
 
-def _parameters_dict_value(key: str) -> ast.expr | None:
+def _one_binding(name: str) -> ast.expr:
+    """The binding runtime keeps; a second one silently overrides the first."""
+    bindings = _module_level_bindings(name)
+    found = "; ".join(f"line {line}: {ast.dump(value)}" for line, value in bindings)
+    assert len(bindings) == 1, (
+        f"the claim module must bind {name} exactly once: Python keeps the last "
+        "module-level binding, so a second one overrides what the import aliased; "
+        f"found {found or 'no binding'}"
+    )
+    return bindings[0][1]
+
+
+def _ceiling_import_bindings() -> tuple[set[str], set[str], set[str]]:
+    """Names that denote the schema's ATTEMPT_CEILING without restating its value."""
+    from_names: set[str] = set()
+    module_aliases: set[str] = set()
+    module_paths: set[str] = set()
+    for node in ast.walk(_claim_module_tree()):
+        if isinstance(node, ast.ImportFrom):
+            from_schema = (node.module or "").endswith(_SCHEMA_MODULE_SUFFIX)
+            for alias in node.names:
+                if alias.name == _CEILING and from_schema:
+                    from_names.add(alias.asname or alias.name)
+                elif alias.name == _SCHEMA_MODULE_SUFFIX:
+                    module_aliases.add(alias.asname or alias.name)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if not alias.name.endswith(_SCHEMA_MODULE_SUFFIX):
+                    continue
+                if alias.asname:
+                    module_aliases.add(alias.asname)
+                else:
+                    module_paths.add(alias.name)
+    return from_names, module_aliases, module_paths
+
+
+def _dotted_path(node: ast.expr) -> str | None:
+    parts: list[str] = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if not isinstance(node, ast.Name):
+        return None
+    parts.append(node.id)
+    return ".".join(reversed(parts))
+
+
+def _is_the_one_ceiling(node: ast.expr) -> bool:
+    """True when the expression *is* the schema constant, not a copy of its value."""
+    from_names, module_aliases, module_paths = _ceiling_import_bindings()
+    if isinstance(node, ast.Name):
+        return node.id in from_names
+    if isinstance(node, ast.Attribute):
+        path = _dotted_path(node)
+        if path is None:
+            return False
+        candidates = {f"{alias}.{_CEILING}" for alias in module_aliases}
+        candidates |= {f"{module}.{_CEILING}" for module in module_paths}
+        return path in candidates
+    return False
+
+
+def _parameters_dict_values(key: str) -> list[tuple[int, ast.expr]]:
+    values: list[tuple[int, ast.expr]] = []
     for node in ast.walk(_claim_module_tree()):
         if not isinstance(node, ast.Dict):
             continue
         for dict_key, dict_value in zip(node.keys, node.values, strict=True):
             if isinstance(dict_key, ast.Constant) and dict_key.value == key:
-                return dict_value
-    return None
-
-
-def _imports_ceiling_from_schema() -> bool:
-    for node in ast.walk(_claim_module_tree()):
-        if not isinstance(node, ast.ImportFrom) or not (node.module or "").endswith(
-            _SCHEMA_MODULE_SUFFIX
-        ):
-            continue
-        if any(alias.name == "ATTEMPT_CEILING" for alias in node.names):
-            return True
-    return False
+                values.append((dict_value.lineno, dict_value))
+    return values
 
 
 def test_the_claim_binds_the_read_face_constant_instead_of_a_literal() -> None:
     """One bound, two readers: the claim alias must be the imported object itself."""
-    binding = _module_level_binding("_MAX_ATTEMPTS")
-    assert isinstance(binding, ast.Name) and binding.id == "ATTEMPT_CEILING", (
-        "the claim's _MAX_ATTEMPTS must be assigned the imported ATTEMPT_CEILING name, "
-        f"not its own value; found {ast.dump(binding) if binding is not None else 'no binding'}"
+    imported = _ceiling_import_bindings()
+    assert any(imported), (
+        f"{_CEILING} must come from {_SCHEMA_MODULE_SUFFIX} (name, alias, or module "
+        "alias): a look-alike constant defined beside the claim would satisfy the "
+        "shape check while re-forking the number"
     )
-    assert _imports_ceiling_from_schema(), (
-        "ATTEMPT_CEILING must be imported from job_cancellation_fence_schema: a "
-        "look-alike constant defined beside the claim would satisfy the name check "
-        "while re-forking the number"
+    binding = _one_binding(_CLAIM_ALIAS)
+    assert _is_the_one_ceiling(binding), (
+        f"the claim's {_CLAIM_ALIAS} must be the schema's {_CEILING}, not a copy of "
+        f"its value; accepted shapes: {_CEILING}, its import alias from "
+        f"{_SCHEMA_MODULE_SUFFIX}, or <module alias>.{_CEILING}; found "
+        f"{ast.dump(binding)} at line {binding.lineno}. Same-value expressions "
+        "(64, int('64'), ATTEMPT_CEILING * 1) are rejected: they re-fork the value "
+        "even when they happen to equal it today"
     )
     # Weak on its own (small ints are cached, so a literal is also ``is``-identical);
     # it is kept to state the runtime result the AST assertion above guarantees.
     assert ledger_store._MAX_ATTEMPTS is fence_schema.ATTEMPT_CEILING
 
 
+def test_the_claim_does_not_rebind_the_imported_constant() -> None:
+    """A later ``ATTEMPT_CEILING = 64`` wins at import time and undoes the alias."""
+    rebindings = _module_level_bindings(_CEILING)
+    found = "; ".join(f"line {line}: {ast.dump(value)}" for line, value in rebindings)
+    assert rebindings == [], (
+        f"the claim module must not reassign {_CEILING}: the import is its only "
+        "binding, and a later module-level assignment overrides it before any claim "
+        f"runs; found {found or 'nothing'}"
+    )
+    rebound_globals = [
+        (node.lineno, name)
+        for node in ast.walk(_claim_module_tree())
+        if isinstance(node, ast.Global)
+        for name in node.names
+        if name in {_CEILING, _CLAIM_ALIAS}
+    ]
+    assert rebound_globals == [], (
+        "the claim module must not rebind the ceiling or its alias through "
+        f"``global``; found {rebound_globals}"
+    )
+
+
 def test_the_claim_parameter_carries_that_binding() -> None:
-    """The SQL parameter must be the imported alias, not a second number."""
-    value = _parameters_dict_value("max_attempts")
-    assert isinstance(value, ast.Name) and value.id == "_MAX_ATTEMPTS", (
-        "the claim must pass the imported ceiling as max_attempts; a literal here "
-        "would bypass the binding above; found "
-        f"{ast.dump(value) if value is not None else 'nothing'}"
+    """The SQL parameter must be the imported ceiling, not a second number."""
+    values = _parameters_dict_values("max_attempts")
+    found = "; ".join(f"line {line}: {ast.dump(value)}" for line, value in values)
+    assert len(values) == 1, (
+        "the claim must set max_attempts exactly once: a second dict entry would "
+        f"silently override the first; found {found or 'nothing'}"
+    )
+    value = values[0][1]
+    same_source = isinstance(value, ast.Name) and value.id == _CLAIM_ALIAS
+    same_source = same_source or _is_the_one_ceiling(value)
+    assert same_source, (
+        "the claim must pass the imported ceiling as max_attempts, through the alias "
+        f"or directly; a value here bypasses the binding above; found {ast.dump(value)}"
     )
 
 

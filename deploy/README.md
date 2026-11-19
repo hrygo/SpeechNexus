@@ -5,8 +5,10 @@ synchronous speech surface**. Following
 [ADR 0004](../docs/decisions/0004-cluster-ready-architecture-and-single-node-mvp.md),
 the architecture remains cluster-ready, but this bootstrap is not a production
 capacity, multi-node high-availability or model-qualification claim. Release
-images must still be pinned by digest before publication; the bootstrap uses
-explicit version tags for readability.
+images are published by `.github/workflows/release-images.yml` with their digests
+attached to the GitHub Release ([Published release images](#published-release-images));
+the bootstrap itself still builds from source and uses explicit version tags for
+readability, so a deployment that consumes published images pins them by digest.
 
 Start with the executable, command-by-command guide:
 [Minimal synchronous ASR/TTS Compose deployment](../docs/operations/compose-minimal.md).
@@ -561,6 +563,84 @@ prove nothing. With a right source, a `docker load` that delivered a different c
 an image that predates the same-version guard, fails instead of merely carrying the tag.
 Record that digest with the deployment: together with the layer diffIDs it is what makes
 "same version" reviewable without the building host.
+
+### Published release images
+
+[`.github/workflows/release-images.yml`](../.github/workflows/release-images.yml) is the
+publication path for the deployment images. It builds them for a release tag, pushes them
+to GHCR, and attaches their digests to that tag's GitHub Release. It does not make
+`deploy/compose.yaml` build less: the bootstrap still builds from source, and a deployment
+consumes published images only when it pins them explicitly (below). A tag whose release
+page carries no `speechnexus-<tag>-images.txt` asset has not been published by this
+workflow and has no published images.
+
+| Image | Build input | Services |
+| --- | --- | --- |
+| `ghcr.io/hrygo/speechnexus-python` | `deploy/images/python.Dockerfile` | the 12 `build: *python-build` units, including `gateway` — `execution-gateway` has no image of its own |
+| `ghcr.io/hrygo/speechnexus-web-admin` | `deploy/images/web.Dockerfile`, `APP_NAME=admin` | `admin` |
+| `ghcr.io/hrygo/speechnexus-web-workbench` | `deploy/images/web.Dockerfile`, `APP_NAME=workbench` | `workbench` |
+| `ghcr.io/hrygo/speechnexus-node-controller` | `deploy/images/node-controller.Dockerfile` | `node-controller` (outside this compose file) |
+| `ghcr.io/hrygo/speechnexus-asset-inspector` | `asset-inspector/Dockerfile` | `asset-inspector` |
+
+`minio` is not built here: compose consumes the third-party composition by tag.
+
+Each image is an `amd64` and an `arm64` build made natively on GitHub's `ubuntu-24.04` and
+`ubuntu-24.04-arm` runners and merged into one manifest list, so a plain `docker pull`
+resolves the architecture of the pulling host. The reference deployment is aarch64; no
+step publishes an amd64-only image while calling it multi-architecture. The published tags
+are `v<version>` (the release tag verbatim), `<version>` and `sha-<12-char commit>`; all
+three point at the same manifest list, and the per-architecture build tags
+`sha-<12>-amd64` / `sha-<12>-arm64` are merge inputs, not deployment targets.
+
+Starting a publication:
+
+```bash
+# The release must exist first; the workflow attaches assets to it and never creates one.
+gh release view v0.1.0
+gh workflow run release-images.yml -f ref=v0.1.0
+```
+
+A `push` of a `v*` tag starts the same run. Every image carries
+`org.opencontainers.image.source`, `.revision` and `.version`, plus
+`org.speechnexus.source.commit` and `org.speechnexus.release.tag`, so a pulled image names
+the commit and release it came from.
+
+The run attaches three assets and then re-reads each published tag from the registry,
+failing if the digest it reads differs from the digest it wrote. A digest on the release
+page therefore names bytes that were pullable at publication time:
+
+- `speechnexus-<tag>-images.txt` — one `registry/repo:<tag>@sha256:…` line per image;
+- `speechnexus-<tag>-SHA256SUMS` — checksums of the other two assets;
+- `speechnexus-<tag>-compose.yaml` — `deploy/compose.yaml` at the same tag.
+
+Verify and pin what the page claims:
+
+```bash
+tag=v0.1.0
+gh release download "$tag" --pattern "speechnexus-${tag}-*"
+shasum -a 256 -c "speechnexus-${tag}-SHA256SUMS"
+# Every line is a complete image reference; the digest is the manifest list.
+docker pull "$(grep speechnexus-python "speechnexus-${tag}-images.txt")"
+# Both architectures must be present in the index:
+docker buildx imagetools inspect "ghcr.io/hrygo/speechnexus-python:${tag}"
+```
+
+Pinning a published image replaces the build for that service without editing
+`deploy/compose.yaml` — the same deployment-side override pattern as [Web images](#web-images),
+started with `--no-build` so compose does not rebuild over the pinned digest:
+
+```yaml
+services:
+  api:
+    image: ghcr.io/hrygo/speechnexus-python@sha256:<digest from images.txt>
+```
+
+Two boundaries this workflow does not cover. The images are unsigned: no provenance or SBOM
+attestations are attached, and `id-token` is not granted, so a digest proves what was
+published rather than who published it. And GHCR packages created by `GITHUB_TOKEN` are
+private by default, so an anonymous `docker pull` fails until the package's visibility is
+set to public and it is linked to this repository in the package settings; the publication
+run itself reads its own images back with the same token, so it cannot detect that gap.
 
 ## Configuration authority
 

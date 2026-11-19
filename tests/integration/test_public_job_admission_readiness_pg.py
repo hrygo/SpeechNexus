@@ -809,7 +809,10 @@ def test_a_tts_commit_mode_outside_the_file_semantics_is_not_admissible(
     at the block's existence, so it answered ``admitting`` while that create was
     refused. ``job_binding_incomplete`` is request-shaped in the contract, so no
     cause may name it: the binding leaves the universe, and with no admissible
-    binding left the report answers ``capacity_exhausted``.
+    binding left the report answers ``engine_state_mismatch`` -- a deployment state
+    a retry cannot change. Before that, an empty admitted set answered
+    ``capacity_exhausted``, which is retryable and would have pointed the client at
+    the wrong fix.
     """
     _seed(admission_database)
 
@@ -825,7 +828,7 @@ def test_a_tts_commit_mode_outside_the_file_semantics_is_not_admissible(
     assert created.outcome == "rejected"
     assert created.error_code == "job_binding_incomplete"
     assert report.status == "degraded"
-    assert report.cause is not None and report.cause.value == "capacity_exhausted"
+    assert report.cause is not None and report.cause.value == "engine_state_mismatch"
     assert report.instances == ()
 
 
@@ -844,7 +847,7 @@ def test_a_tts_delivery_mode_outside_the_file_semantics_is_not_admissible(
     assert created.outcome == "rejected"
     assert created.error_code == "job_binding_incomplete"
     assert report.status == "degraded"
-    assert report.cause is not None and report.cause.value == "capacity_exhausted"
+    assert report.cause is not None and report.cause.value == "engine_state_mismatch"
     assert report.instances == ()
 
 
@@ -871,7 +874,7 @@ def test_a_plan_that_disagrees_with_the_binding_is_not_admissible(
     assert created.outcome == "rejected"
     assert created.error_code == "job_binding_incomplete"
     assert report.status == "degraded"
-    assert report.cause is not None and report.cause.value == "capacity_exhausted"
+    assert report.cause is not None and report.cause.value == "engine_state_mismatch"
     assert report.instances == ()
 
 

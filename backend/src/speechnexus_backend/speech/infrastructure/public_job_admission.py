@@ -1571,6 +1571,10 @@ def load_admission_readiness(
     reports: list[ReadinessInstanceReport] = []
     refusal: str | None = None
     admitted = 0
+    # A published binding that no create can reach admission through is a deployment
+    # state, not a capacity state: answering ``job_capacity_exhausted`` there would
+    # tell a client to retry something that never becomes retryable.
+    unreachable_binding = False
     for candidate in candidates:
         definition = _parse_definition(candidate["definition_json"])
         if definition is None:
@@ -1583,6 +1587,7 @@ def load_admission_readiness(
             # naming this binding is refused with the request-shaped
             # ``job_binding_incomplete`` before admission. The binding is outside the
             # universe, and it must not contribute capacity either.
+            unreachable_binding = True
             continue
         if candidate["instance_id"] is None:
             # The binding is published but has no pin target: a create naming it
@@ -1630,6 +1635,7 @@ def load_admission_readiness(
             # The binding and the stored plan disagree, which a create answers with
             # the same request-shaped ``job_binding_incomplete`` before admission;
             # the binding is outside the universe and contributes no row.
+            unreachable_binding = True
             continue
         admitted += 1
         reports.append(_instance_report(runtime, readiness_state, now_us))
@@ -1682,9 +1688,13 @@ def load_admission_readiness(
                 instances=tuple(reports),
                 quota=quota,
             )
-        # No ready instance at all: the create path selects nothing and answers the
-        # capacity refusal, so the report names the same class.
-        refusal = "job_capacity_exhausted"
+        # Nothing was admitted. Two deployment states look alike from here and must
+        # not be conflated: every published binding is unusable (a create naming any
+        # of them answers the request-shaped ``job_binding_incomplete``), or the
+        # bindings are usable but none has a pin target (a create answers the
+        # capacity refusal). Naming capacity for the first case would hand a client a
+        # retryable 429 for a state retrying cannot change.
+        refusal = "engine_state_mismatch" if unreachable_binding else "job_capacity_exhausted"
     cause = _PROBE_STATE_CODES.get(refusal) or cause_for_refusal(refusal)
     return refused_readiness(
         cause,

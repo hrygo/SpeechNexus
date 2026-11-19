@@ -36,6 +36,8 @@ import re
 import unittest
 from pathlib import Path
 
+from tests.ci.interpreter_floor import source_tree
+
 ROOT = Path(__file__).resolve().parents[2]
 COMPOSE = ROOT / "deploy/compose.yaml"
 ENV_EXAMPLE = ROOT / "deploy/compose.env.example"
@@ -76,9 +78,8 @@ def service_block(compose: str, name: str) -> str:
     return rest[: end.start()] if end is not None else rest
 
 
-def settings_fields(source: str) -> set[str]:
+def settings_fields(tree: ast.Module) -> set[str]:
     """The declared field names of ``WorkbenchSettings``, read without importing."""
-    tree = ast.parse(source)
     for node in ast.walk(tree):
         if isinstance(node, ast.ClassDef) and node.name == "WorkbenchSettings":
             return {
@@ -143,7 +144,7 @@ class WorkbenchDeploymentUnitTests(unittest.TestCase):
 
     def test_the_forwarded_workbench_keys_are_all_declared(self) -> None:
         """A key the settings class does not declare stops the service at startup."""
-        fields = settings_fields(read(SETTINGS))
+        fields = settings_fields(source_tree(SETTINGS))
         allowed = {ENV_PREFIX + name.upper() for name in fields}
         forwarded = set()
         for name in (MIGRATE_SERVICE, API_SERVICE):

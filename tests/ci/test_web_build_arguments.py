@@ -77,6 +77,40 @@ def indented_block(lines: list[str], start: int, indent: int) -> list[str]:
     return block
 
 
+BUILD_KEY = re.compile(r"^      ([A-Za-z_][\w.-]*):")
+#: A YAML anchor (`&name`) or alias (`*name`) token, wherever it appears.
+YAML_REFERENCE = re.compile(r"(?:^|[\s\[{,])[&*][A-Za-z_][\w-]*")
+
+
+def _reject_indirection(service: str, block: list[str]) -> None:
+    """Refuse YAML this reader cannot follow instead of green-lighting it.
+
+    `deploy/compose.yaml` itself uses anchors (`x-python-build`,
+    `x-engine-registration-env`), so `args: *web-args` or a `<<:` merge can move
+    the arguments into a mapping the indentation reader never inspects. PyYAML
+    resolved those and saw the pinned argument; reading text must stay
+    fail-closed rather than silently pass a build this guard cannot see.
+    """
+    for line in block:
+        if "<<" in line or YAML_REFERENCE.search(line):
+            raise AssertionError(
+                f"{COMPOSE}: {service}'s build uses a YAML alias, anchor or merge key "
+                f"({line.strip()!r}) this reader cannot follow; inline the mapping so "
+                "the guard can see the arguments"
+            )
+
+
+def _reject_duplicate_keys(service: str, block: list[str]) -> None:
+    """YAML keeps the last duplicate key; this reader cannot tell which one wins."""
+    keys = [match.group(1) for line in block if (match := BUILD_KEY.match(line))]
+    duplicates = sorted({key for key in keys if keys.count(key) > 1})
+    if duplicates:
+        raise AssertionError(
+            f"{COMPOSE}: {service}'s build repeats {duplicates}; the last value wins in "
+            "YAML, so this reader cannot tell which one the deployment uses"
+        )
+
+
 def service_build(service: str) -> list[str]:
     """The `services.<service>.build` block, located by indentation, not by PyYAML."""
     lines = document_lines(read(COMPOSE))
@@ -84,10 +118,24 @@ def service_build(service: str) -> list[str]:
         if line != f"  {service}:":
             continue
         service_lines = indented_block(lines, index, 2)
-        for offset, item in enumerate(service_lines):
-            if item == "    build:":
-                return indented_block(service_lines, offset, 4)
-        raise AssertionError(f"{COMPOSE}: service {service!r} has no build block")
+        builds = [item for item in service_lines if item == "    build:"]
+        aliased = [item for item in service_lines if item.startswith("    build:")]
+        if len(aliased) > len(builds):
+            raise AssertionError(
+                f"{COMPOSE}: {service}'s build is a YAML alias or an inline value this "
+                "reader cannot follow; write the `build:` mapping out"
+            )
+        if len(builds) > 1:
+            raise AssertionError(
+                f"{COMPOSE}: {service} repeats `build:`; the last block wins in YAML, so "
+                "this reader cannot tell which one the deployment uses"
+            )
+        if not builds:
+            raise AssertionError(f"{COMPOSE}: service {service!r} has no build block")
+        block = indented_block(service_lines, service_lines.index(builds[0]), 4)
+        _reject_indirection(service, block)
+        _reject_duplicate_keys(service, block)
+        return block
     raise AssertionError(f"{COMPOSE} has no service {service!r}")
 
 
@@ -128,7 +176,13 @@ class ArgumentsTests(unittest.TestCase):
         for service in ("admin", "workbench"):
             build = service_build(service)
             with self.subTest(service=service):
-                self.assertIn(f"      dockerfile: {DOCKERFILE}", build)
+                # Exactly one line, so a second `dockerfile:` cannot win silently.
+                dockerfiles = [line for line in build if line.startswith("      dockerfile:")]
+                self.assertEqual(
+                    dockerfiles,
+                    [f"      dockerfile: {DOCKERFILE}"],
+                    f"{COMPOSE} must set exactly one exact `dockerfile:` in {service}'s build",
+                )
                 text = "\n".join(build)
                 for name in NETWORK_ARGS:
                     self.assertNotIn(

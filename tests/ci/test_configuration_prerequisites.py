@@ -54,7 +54,6 @@ from __future__ import annotations
 
 import ast
 import re
-import sys
 import tempfile
 import tomllib
 import unittest
@@ -78,6 +77,13 @@ from tests.ci.configuration_prerequisites import (
     Row,
     message_marker,
 )
+from tests.ci.interpreter_floor import (
+    PYPROJECT,
+    PYTHON_PIN,
+    REQUIRED_PYTHON,
+    floor_label,
+    source_tree,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 DOC_PATH = ROOT / DOC
@@ -99,57 +105,6 @@ ASSIGNED = re.compile(r"(?m)^(?P<variable>SPEECHNEXUS_[A-Z0-9_]+)=(?P<value>.*)$
 
 def read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
-
-
-PYPROJECT = ROOT / "pyproject.toml"
-PYTHON_PIN = ROOT / ".python-version"
-FLOOR = re.compile(r">=\s*(\d+)\.(\d+)")
-
-
-def required_python() -> tuple[int, int]:
-    """The product's declared interpreter floor, read from `requires-python`.
-
-    A second copy of ``3.14`` here is how a guard starts constraining the product
-    instead of checking it (#1001), so the number comes from `pyproject.toml`.
-    """
-    declared = tomllib.loads(read(PYPROJECT))["project"]["requires-python"]
-    floor = FLOOR.search(declared)
-    assert floor is not None, f"requires-python {declared!r} has no >=X.Y floor"
-    return int(floor.group(1)), int(floor.group(2))
-
-
-REQUIRED_PYTHON = required_python()
-
-
-def _source_ast(path: str, text: str, version: tuple[int, int]) -> ast.Module:
-    """Parse one repository source under the product's interpreter floor.
-
-    The guard judges syntax the product is allowed to use. An interpreter below
-    ``requires-python`` cannot tell "this file is broken" from "I am too old", and
-    reporting the second as the first sent people to parenthesize valid PEP 758
-    code (#1001). It therefore skips and says which interpreter it needs; only an
-    interpreter that meets the floor may call a ``SyntaxError`` a source defect.
-    """
-    try:
-        return ast.parse(text)
-    except SyntaxError as error:
-        floor = f"{REQUIRED_PYTHON[0]}.{REQUIRED_PYTHON[1]}"
-        running = f"{version[0]}.{version[1]}"
-        if version < REQUIRED_PYTHON:
-            raise unittest.SkipTest(
-                f"this guard must run on Python >= {floor} (running {running}); "
-                "it cannot judge syntax it cannot parse"
-            ) from None
-        raise AssertionError(
-            f"{path} does not parse on Python {running}, which meets the product floor "
-            f"{floor} declared in pyproject.toml: {error}. Fix the source or pin a "
-            "text: probe."
-        ) from None
-
-
-def source_tree(path: str, *, version: tuple[int, int] | None = None) -> ast.Module:
-    """`ast.parse` for one repository file, under the interpreter-floor policy."""
-    return _source_ast(path, read(ROOT / path), version or sys.version_info[:2])
 
 
 def _const(node: ast.expr) -> object:
@@ -538,17 +493,20 @@ class InterpreterFloorTest(unittest.TestCase):
     def test_the_floor_comes_from_pyproject_and_the_ci_pin_agrees(self) -> None:
         declared = tomllib.loads(read(PYPROJECT))["project"]["requires-python"]
         self.assertIn(
-            f">={REQUIRED_PYTHON[0]}.{REQUIRED_PYTHON[1]}",
+            f">={floor_label()}",
             declared.replace(" ", ""),
             "the floor this guard enforces is no longer the declared requires-python",
         )
         pinned = read(PYTHON_PIN).strip()
-        self.assertEqual(
-            tuple(int(part) for part in pinned.split(".")[:2]),
+        parts = tuple(int(part) for part in pinned.split("."))
+        padded = (*parts, 0, 0)[:3]
+        self.assertGreaterEqual(
+            padded,
             REQUIRED_PYTHON,
-            f".python-version ({pinned}) is not the floor requires-python declares "
+            f".python-version ({pinned}) is below the floor requires-python declares "
             f"({declared}); the CI interpreter could fall below the syntax the product uses",
         )
+        self.assertEqual(padded[:2], REQUIRED_PYTHON[:2], pinned)
 
     def test_an_older_interpreter_skips_instead_of_blaming_the_source(self) -> None:
         # Any source this interpreter rejects stands in for the PEP 758 syntax a
@@ -560,7 +518,7 @@ class InterpreterFloorTest(unittest.TestCase):
             with self.assertRaises(unittest.SkipTest) as raised:
                 source_tree(str(path), version=older)
         self.assertEqual(
-            f"this guard must run on Python >= {REQUIRED_PYTHON[0]}.{REQUIRED_PYTHON[1]} "
+            f"this guard must run on Python >= {floor_label()} "
             f"(running {older[0]}.{older[1]}); it cannot judge syntax it cannot parse",
             str(raised.exception),
         )

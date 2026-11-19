@@ -23,7 +23,7 @@ CI 使用[工作流](../../.github/workflows/ci.yml)和[标准库路由](../../s
 - `web/<app>/public/` 内的说明文件：Vite 把 `public/` 原样复制进构建产物（`dist`），文件本身是产品资产，仍走 `full`。
 - `deploy/engines/file-voice-clone/README.md`、`deploy/engines/file-voice-design/README.md`：`tests/unit/gateway/test_engine_language_semantics.py` 直接读取并断言其措辞，`docs` 车道不执行 pytest，仍走 `full`。
 
-其余说明文件不被任何构建或检查读取：Vite 只跟随导入（全仓库没有对 `.md` 的 `?raw`／`import.meta.glob`／`new URL` 导入，并由 `tests/ci` 的回归守住），`tsc` 与 ESLint 只处理 TS/TSX，Prettier 的 `format:check` glob 不含 `*.md`；`deploy/images/web.Dockerfile` 的 `COPY web web` 会把 `web/AGENTS.md` 的字节带进 builder 层，但最终阶段只发布 `dist`。这类文件包括源码树内的 `web/workbench/src/AGENTS.md`。`deploy/README.md` 虽被 `tests/ci` 的 unittest 守卫读取，但 `docs` 车道的 `routing` 作业本来就执行 `python3 -m unittest discover -s tests/ci`，守卫在轻量路径上继续运行。
+其余说明文件不被任何构建或检查读取：Vite 只跟随导入（全仓库没有对 `.md` 的 `?raw`／`import.meta.glob`／`new URL` 导入，并由 `tests/ci` 的回归守住），`tsc` 与 ESLint 只处理 TS/TSX，Prettier 的 `format:check` glob 不含 `*.md`；`deploy/images/web.Dockerfile` 的 `COPY web web` 会把 `web/AGENTS.md` 的字节带进 builder 层，但最终阶段只发布 `dist`。这类文件包括源码树内的 `web/workbench/src/AGENTS.md`。`deploy/README.md` 虽被 `tests/ci` 的 unittest 守卫读取，但无范围过滤的 `guards` 作业本来就执行 `python -m unittest discover -s tests/ci`（跑在 `.python-version` 钉住的解释器上），守卫在轻量路径上继续运行。
 
 例外集合由 `tests/ci/test_ci_routing.py::ProseRoutingTests` 双向核对：期望车道从三条独立规则派生（Dockerfile 字面量 `COPY`、单测读者、`web/<app>/public/`），再与 `classify` 和 `_prose_route` 逐条比对，新增例外而不补规则（或反之）都会变红。派生只认字面量 `COPY <path>.md`：目录形式复制（如 `COPY web web`、`COPY packages/contracts packages/contracts`）、`ADD` 与 glob 不在派生内，新增这类消费者须人工登记到 `_IMAGE_COPY_PROSE`。仅 `AGENTS.md` 与 `README*.md` 按内容归类，`agents.md`、`AGENTS.MD`、`Readme.md`、`README.rst`、`README` 等命名变体仍走 `full`（fail-closed，不会漏跑验证）。
 
@@ -178,8 +178,8 @@ Python 测试作业是两个矩阵腿：每腿执行 `python-coverage.py run --w
 # 路由输出：pure-Web 改动应为 web，并排除 0–3 片
 python3 scripts/dev-env/ci-routing.py --event pull_request --base <sha> --output /tmp/route
 cat /tmp/route    # mode=web / excluded_shards=[{"shard": 0}, ..., {"shard": 3}]
-# 门禁与矩阵形状的结构回归（不安装项目依赖）
-python3 -m unittest discover -s tests/ci -v
+# 门禁与矩阵形状的结构回归（不安装项目依赖；用 `.python-version` 的 3.14）
+python -m unittest discover -s tests/ci -v
 ```
 
 三条反例与一次同改动的 `web` 路由实跑（都在 PR 阶段完成，运行记录长期可用；承载它们的一次性分支已删除）：
@@ -598,7 +598,8 @@ uv run python scripts/dev-env/python-coverage.py combine \
 从仓库根目录验证变更：
 
 ```sh
-python3 -m unittest discover -s tests/ci -v
+# `python` 必须是 `.python-version` 的 3.14：更旧的解释器会跳过语法判定而不是判红
+python -m unittest discover -s tests/ci -v
 uv run pytest tests/ci tests/contract/test_ci_workflow.py tests/unit/test_integration_shards.py -q --no-cov
 ```
 

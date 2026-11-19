@@ -26,6 +26,8 @@ import re
 import unittest
 from pathlib import Path
 
+from tests.ci.interpreter_floor import source_tree
+
 ROOT = Path(__file__).resolve().parents[2]
 PREREQUISITES = ROOT / "backend/src/speechnexus_backend/speech/domain/job_prerequisites.py"
 MAP_DOC = ROOT / "docs/operations/compose-minimal.md"
@@ -38,7 +40,7 @@ LEAK = re.compile(r"postgresql://|mysql://|@|password|secret", re.IGNORECASE)
 
 def shipped_rows() -> list[tuple[str, str, str]]:
     """Read the shipped table as literals, without importing the backend."""
-    tree = ast.parse(PREREQUISITES.read_text(encoding="utf-8"), filename=str(PREREQUISITES))
+    tree = source_tree(PREREQUISITES)
     for node in tree.body:
         target: ast.expr
         value: ast.expr | None

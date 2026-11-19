@@ -28,6 +28,7 @@ from pathlib import Path
 from unittest import mock
 
 from tests.ci import service_environment_keys as registry
+from tests.ci.interpreter_floor import source_tree
 from tests.ci.service_environment_keys import (
     BACKEND_ENVIRONMENT,
     CONTROLLER_ENVIRONMENT,
@@ -64,7 +65,7 @@ from tests.ci.service_environment_keys import (
 
 def _shared_definition_sources(module: str) -> dict[str, str]:
     """Return ``{name: source}`` for the engine definitions that must stay identical."""
-    tree = ast.parse((ROOT / module).read_text(encoding="utf-8"))
+    tree = source_tree(module)
     sources: dict[str, str] = {}
     for node in tree.body:
         if isinstance(node, ast.ClassDef) and node.name in SHARED_DEFINITIONS:

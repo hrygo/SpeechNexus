@@ -44,6 +44,10 @@ REAL_SOURCE = "backend/src/speechnexus_backend/real.py"
 DOC_TARGET = "docs/operations/target.md"
 GHOST_REF = "backend/src/speechnexus_backend/ghost.py:7"
 OTHER_GHOST_REF = "backend/src/speechnexus_backend/also_ghost.py:11"
+# The #1049 counterexample shape: sixteen inserted lines put `TARGET_30` at line 46,
+# one line past the +-15 window, so a reference to line 30 turns `DRIFT`.
+FILLER_16 = "".join(f"FILLER_{number}\n" for number in range(1, 17))
+TARGETS = "".join(f"TARGET_{number} = {number}\n" for number in range(1, 61))
 
 
 def job_block(job_id: str) -> str:
@@ -381,6 +385,129 @@ class AssertionTests(unittest.TestCase):
         self.assertIn("deploy/README.md", result.stdout)
 
 
+class FixModeTests(unittest.TestCase):
+    """`--fix` moves the line number, and only when the fragment names one line.
+
+    #1049: sixteen inserted lines turn 21 references red at once, and repairing
+    them by hand is one edit per referencing document. The tool may do the
+    mechanical part, but only when the fragment identifies exactly one line.
+    Picking among several matches would move a pointer to the wrong place while
+    the gate went green, which is worse than leaving it red.
+    """
+
+    def _drifted(self, case: unittest.TestCase, body: str | None = None) -> Repository:
+        repo = Repository(case)
+        repo.write(TERMINAL_DOC, body or f"见 `{DOC_TARGET}:30`（该行须含 `TARGET_30`）。\n")
+        repo.write(DOC_TARGET, FILLER_16 + TARGETS)
+        repo.track()
+        return repo
+
+    def _status(self, repo: Repository) -> str:
+        return subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=repo.root,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+
+    def test_dry_run_lists_the_plan_and_writes_nothing(self) -> None:
+        repo = self._drifted(self)
+        before = (repo.root / TERMINAL_DOC).read_text(encoding="utf-8")
+        status_before = self._status(repo)
+        result = repo.run("--fix", "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        # The plan names the reference site, the old and new line, and the hit.
+        self.assertIn("[FIX]", result.stdout)
+        self.assertIn(f"{DOC_TARGET}:30  30 -> 46", result.stdout)
+        self.assertIn("命中：TARGET_30 = 30", result.stdout)
+        self.assertIn("FIX RESULT PASS", result.stdout)
+        self.assertIn("--dry-run 未写文件", result.stdout)
+        # Nothing on disk moved: same bytes, same `git status`.
+        self.assertEqual((repo.root / TERMINAL_DOC).read_text(encoding="utf-8"), before)
+        self.assertEqual(self._status(repo), status_before)
+
+    def test_fix_rewrites_only_the_line_number_and_the_gate_passes(self) -> None:
+        repo = self._drifted(self)
+        before = (repo.root / TERMINAL_DOC).read_text(encoding="utf-8")
+        result = repo.run("--fix")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("30 -> 46", result.stdout)
+        self.assertIn("SELFCHECK drift_before=1 drift_after=0", result.stdout)
+        after = (repo.root / TERMINAL_DOC).read_text(encoding="utf-8")
+        self.assertEqual(after, before.replace(f"{DOC_TARGET}:30", f"{DOC_TARGET}:46"))
+        # The assertion text is untouched; only the digits moved. Comparing the
+        # two changed lines with the number mapped back proves that directly.
+        diff = subprocess.run(
+            ["git", "diff", "--unified=0"],
+            cwd=repo.root,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        changed = [
+            line[1:]
+            for line in diff.splitlines()
+            if line[:1] in "+-" and not line.startswith(("+++", "---"))
+        ]
+        self.assertEqual(len(changed), 2, diff)
+        self.assertIn(f"{DOC_TARGET}:30", changed[0], diff)
+        self.assertIn(f"{DOC_TARGET}:46", changed[1], diff)
+        normalized = [re.sub(r"\.md:\d+", ".md:N", line) for line in changed]
+        self.assertEqual(normalized[0], normalized[1], diff)
+        gate = repo.run()
+        self.assertEqual(gate.returncode, 0, gate.stdout + gate.stderr)
+        self.assertIn("RESULT PASS", gate.stdout)
+
+    def test_an_ambiguous_fragment_is_left_alone_and_the_rest_is_fixed(self) -> None:
+        # `TARGET_30` appears on lines 46 and 77: the tool must not choose. The
+        # neighbouring `TARGET_31` reference is unique and still gets repaired.
+        repo = self._drifted(
+            self,
+            f"见 `{DOC_TARGET}:30`（该行须含 `TARGET_30`）。\n"
+            f"见 `{DOC_TARGET}:31`（该行须含 `TARGET_31`）。\n",
+        )
+        repo.write(DOC_TARGET, FILLER_16 + TARGETS + "TARGET_30 = 30\n")
+        result = repo.run("--fix")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("[UNFIXABLE：", result.stdout)
+        self.assertIn("出现 2 次", result.stdout)
+        self.assertIn("46、77", result.stdout)
+        lines = (repo.root / TERMINAL_DOC).read_text(encoding="utf-8").splitlines()
+        self.assertIn(f"{DOC_TARGET}:30", lines[0], "多个命中时不许改这条")
+        self.assertIn(f"{DOC_TARGET}:47", lines[1], "其余引用照改")
+        self.assertIn("SELFCHECK drift_before=2 drift_after=1", result.stdout)
+        self.assertIn("FIX UNRESOLVED drift=1", result.stdout)
+        self.assertIn("RESULT FAIL", result.stdout)
+
+    def test_a_fragment_that_is_gone_is_reported_without_a_rewrite(self) -> None:
+        # Zero hits is the other side of "do not guess": there is no line to move
+        # the reference to, so the DRIFT stays and the command exits non-zero.
+        repo = Repository(self)
+        body = f"见 `{DOC_TARGET}:30`（该行须含 `NOT_ANYWHERE_1234`）。\n"
+        repo.write(TERMINAL_DOC, body)
+        repo.track()
+        result = repo.run("--fix")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("出现 0 次", result.stdout)
+        self.assertIn("FIX UNRESOLVED drift=1", result.stdout)
+        self.assertEqual((repo.root / TERMINAL_DOC).read_text(encoding="utf-8"), body)
+
+    def test_two_references_on_one_line_are_both_rewritten(self) -> None:
+        # The rewrite works on digit spans, right to left: a naive left-to-right
+        # replacement would shift the second span and corrupt the line.
+        repo = self._drifted(
+            self,
+            f"见 `{DOC_TARGET}:30`（该行须含 `TARGET_30`）与"
+            f"`{DOC_TARGET}:31`（该行须含 `TARGET_31`）。\n",
+        )
+        result = repo.run("--fix")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        line = (repo.root / TERMINAL_DOC).read_text(encoding="utf-8")
+        self.assertIn(f"{DOC_TARGET}:46", line)
+        self.assertIn(f"{DOC_TARGET}:47", line)
+
+
 class ShowModeTests(unittest.TestCase):
     """`--show` is a troubleshooting view: problems with their target line."""
 
@@ -395,6 +522,62 @@ class ShowModeTests(unittest.TestCase):
         # ...and the healthy reference is not, so a DRIFT is not buried among the
         # thousands of OK rows the old `--show` printed.
         self.assertNotIn(REAL_SOURCE, result.stdout)
+
+
+class ShowOkTests(unittest.TestCase):
+    """`--show-ok` returns the OK-side excerpts to whoever is troubleshooting.
+
+    #1049: `--show` printing only problems is right, but then "why does this OK
+    reference count as OK?" and "did the fragment happen to match another line in
+    the same file?" can only be answered by `sed -n` on every reference. The flag
+    prints the referenced line verbatim, from the same helper the problem view
+    uses, so the two sides cannot disagree.
+    """
+
+    def test_show_ok_prints_the_referenced_line_verbatim(self) -> None:
+        repo = Repository(self)
+        repo.write(TERMINAL_DOC, f"见 `{DOC_TARGET}:30`（该行须含 `TARGET_30`）。\n")
+        repo.track()
+        result = repo.run("--show", "--show-ok")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        target_line = (repo.root / DOC_TARGET).read_text(encoding="utf-8").splitlines()[29]
+        self.assertIn(target_line, result.stdout)
+        self.assertIn(f"[OK] {TERMINAL_DOC}:1", result.stdout)
+        # The default view still hides OK rows: the flag is the explicit request.
+        plain = repo.run("--show")
+        self.assertNotIn(target_line, plain.stdout)
+
+    def test_show_ok_covers_code_references_too(self) -> None:
+        # The OK side is not only document targets; a bare code reference is the
+        # other half of the corpus and needs the same excerpt.
+        repo = Repository(self)
+        repo.write(TERMINAL_DOC, f"实现见 `{REAL_SOURCE}:3`。\n")
+        repo.track()
+        result = repo.run("--show-ok")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("LINE_3 = 3", result.stdout)
+
+
+class ShowTierTests(unittest.TestCase):
+    """`--show` keeps the new-vs-accepted marker while printing the excerpt."""
+
+    def test_show_marks_new_and_accepted_terminal_problems(self) -> None:
+        repo = Repository(self)
+        repo.write(TERMINAL_DOC, f"实现见 `{GHOST_REF}`。\n")
+        repo.track()
+        self.assertEqual(repo.run("--write-baseline", "baseline.json").returncode, 0)
+        accepted = repo.run("--baseline", "baseline.json", "--show")
+        self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+        self.assertIn("[MISSING]", accepted.stdout)
+        self.assertIn("[基线已接受]", accepted.stdout)
+        self.assertNotIn("[新增,基线外]", accepted.stdout)
+        # Adding a second problem must show both tiers in the same view.
+        repo.write(TERMINAL_DOC, f"实现见 `{GHOST_REF}` 与 `{OTHER_GHOST_REF}`。\n")
+        repo.track()
+        mixed = repo.run("--baseline", "baseline.json", "--show")
+        self.assertEqual(mixed.returncode, 1, mixed.stdout + mixed.stderr)
+        self.assertIn("[新增,基线外]", mixed.stdout)
+        self.assertIn("[基线已接受]", mixed.stdout)
 
 
 class RatchetTests(unittest.TestCase):
@@ -586,6 +769,8 @@ class WorkflowTests(unittest.TestCase):
             "fenced_terminal",
             "doc-refs-baseline.json",
             "一级标题须含审查",
+            "--fix",
+            "--show-ok",
         ):
             with self.subTest(required=required):
                 self.assertIn(required, section)

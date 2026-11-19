@@ -62,6 +62,18 @@
   当前基线是 `scripts/dev-env/doc-refs-baseline.json`.新增终态问题只能通过改
   基线文件「接受」,那次改动在 PR diff 里可见,不是静默放行.
 
+`--fix` 把 DRIFT 的修复从「逐条改别的文件里的行号」压成一条命令:对每条 DRIFT,
+若断言片段在目标文件里**唯一命中**,就把引用处的行号改写成命中行的行号;命中 0 处
+或多处时不猜——该条不改、原样报 `UNFIXABLE` 并说明原因.它只改行号数字,不碰片段
+文本,也不改目标文件.`--dry-run` 只打印计划(引用处、旧行号→新行号、命中行原文),
+不写文件.写入后立刻重新扫描自检:仍有 DRIFT 或新出现 `UNASSERTED` 时非零退出,
+这样「修完仍然是红的」不会被静默当成成功.
+
+`--show-ok` 给 `--show` 补上 OK 侧:OK 引用也打印被引用行的原文,用来核对「这条
+为什么算 OK」「片段是不是恰好命中了同一文件里另一处」.没有把全部结果塞进 `--json`:
+JSON 是给机器消费的,把两千多条 OK 行加进去只会淹没真正的问题;人读的排障路径是
+`--show`.
+
 用法:
   scripts/dev-env/check-doc-refs.py                  # 报告,并按基线门禁终态文档
   scripts/dev-env/check-doc-refs.py --baseline scripts/dev-env/doc-refs-baseline.json
@@ -69,14 +81,18 @@
   scripts/dev-env/check-doc-refs.py --path docs/operations --path deploy
   scripts/dev-env/check-doc-refs.py --show-records   # 逐条打印过程记录的问题
   scripts/dev-env/check-doc-refs.py --show           # 只打印问题项, 并附被引用行的原文
+  scripts/dev-env/check-doc-refs.py --show --show-ok # OK 引用的被引用行也打印
+  scripts/dev-env/check-doc-refs.py --fix --dry-run  # 只打印改写计划, 不写文件
+  scripts/dev-env/check-doc-refs.py --fix            # 唯一命中时改写行号, 然后自检
   scripts/dev-env/check-doc-refs.py --json
 
 默认扫描 `docs` 与 `deploy`:`deploy/README.md` 是终态文档,它自己的引用和指向它的引用
 一样会腐烂.
 
 退出码:0 没有新增终态问题;1 有新增终态问题或 `docs/reviews/` 下的文件不是审查
-报告;2 环境不可用(不在 git 仓库、扫描路径不存在、基线不可读).
-只读:只查 git 索引与工作区文件,除 `--write-baseline` 外不改任何东西.
+报告;2 环境不可用(不在 git 仓库、扫描路径不存在、基线不可读).`--fix` 的 0 还要求
+计划覆盖全部 DRIFT(写入模式要求自检后没有残留 DRIFT).
+只读:只查 git 索引与工作区文件,除 `--write-baseline` 与 `--fix` 外不改任何东西.
 """
 
 from __future__ import annotations
@@ -88,7 +104,7 @@ import subprocess
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import TypedDict
+from typing import NamedTuple, TypedDict
 
 # 文档里出现的 `路径:行号`.路径段允许 / . _ - 与字母数字.
 REF = re.compile(
@@ -214,6 +230,19 @@ def scan_document(doc: Path) -> tuple[list[tuple[int, str, str, int, str]], int]
     return refs, fenced
 
 
+def fragment_lines(target: str, fragment: str) -> list[int]:
+    """目标文件里包含片段的行号(升序).
+
+    命中 0 处表示片段全文没有;命中多处表示工具无法判断作者指的是哪一处——两种
+    情况 `--fix` 都不猜.文件读不到时也返回空列表,调用方按 DRIFT 的原因报告.
+    """
+    try:
+        lines = Path(target).read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+    return [number for number, text in enumerate(lines, 1) if fragment in text]
+
+
 def assertion_miss(target: str, ref_line: int, assertion: str) -> str | None:
     """断言片段不在目标行 ±ASSERTION_WINDOW 内时返回原因,命中返回 None."""
     try:
@@ -224,14 +253,10 @@ def assertion_miss(target: str, ref_line: int, assertion: str) -> str | None:
     high = min(len(lines), ref_line + ASSERTION_WINDOW)
     if any(assertion in lines[number - 1] for number in range(low, high + 1)):
         return None
-    nearest = [
-        (abs(number - ref_line), number)
-        for number, text in enumerate(lines, 1)
-        if assertion in text
-    ]
-    if not nearest:
+    occurrences = fragment_lines(target, assertion)
+    if not occurrences:
         return f"±{ASSERTION_WINDOW} 行内没有 `{assertion}`，全文也没有"
-    _, at = min(nearest)
+    _, at = min((abs(number - ref_line), number) for number in occurrences)
     return f"±{ASSERTION_WINDOW} 行内没有 `{assertion}`，最近在第 {at} 行（{at - ref_line:+d} 行）"
 
 
@@ -366,7 +391,7 @@ def print_ref(result: RefResult, *, show: bool, marker: str = "") -> None:
         excerpt = referenced_line(result["target"], int(result["line"]))
         print(
             f"[{result['verdict']}] {result['doc']}:{result['doc_line']}"
-            f"  ->  {result['ref']}\n      {excerpt}"
+            f"  ->  {result['ref']}{marker}\n      {excerpt}"
         )
     else:
         print(
@@ -379,80 +404,30 @@ def counts_line(counts: Counter[str]) -> str:
     return " ".join(f"{key}={value}" for key, value in sorted(counts.items()))
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument(
-        "--path",
-        action="append",
-        default=None,
-        metavar="DIR",
-        help="要扫描的目录，可重复（默认 docs 与 deploy）",
-    )
-    ap.add_argument(
-        "--baseline",
-        type=Path,
-        default=None,
-        help="棘轮基线 JSON；省略时不接受任何终态文档问题（等于全量门禁）",
-    )
-    ap.add_argument(
-        "--write-baseline",
-        type=Path,
-        default=None,
-        metavar="PATH",
-        help="按当前结果重写基线后退出；过程记录目录布局不合约定时不写",
-    )
-    ap.add_argument(
-        "--problems-only",
-        "--show-records",
-        dest="show_records",
-        action="store_true",
-        help="逐条打印过程记录的问题（默认只打印计数，避免逐条噪音淹没终态问题）",
-    )
-    ap.add_argument(
-        "--show",
-        action="store_true",
-        help="只打印问题项并附被引用行的原文；用于判断内容是否与文档描述相符",
-    )
-    ap.add_argument("--json", action="store_true")
-    args = ap.parse_args()
+class Scan(NamedTuple):
+    """一次全量扫描的结果与计数.
 
-    root = repository_root()
-    if root is None:
-        print("not inside a git repository", file=sys.stderr)
-        return 2
+    `--fix` 写入后拿同一套扫描再跑一次自检,所以扫描必须是一个可重复调用的函数,
+    不能留在 `main` 的循环里——自检和首次扫描走同一条代码路径,两者不一致就没有意义.
+    """
 
+    results: list[RefResult]
+    scanned: list[tuple[str, Path]]
+    total: int
+    fenced: int
+    fenced_terminal: int
+    doc_refs: int
+    doc_refs_asserted: int
+    unasserted_code: int
+
+
+def scan_repository(root: Path, scan_roots: list[Path]) -> Scan:
+    """扫描 `scan_roots` 下的全部 Markdown,返回逐条结果与计数."""
     tracked = tracked_files(root)
     tracked_set = set(tracked)
     by_basename: dict[str, list[str]] = defaultdict(list)
     for p in tracked:
         by_basename[Path(p).name].append(p)
-
-    explicit_paths = args.path is not None
-    scan_roots: list[Path] = []
-    for name in args.path or ["docs", "deploy"]:
-        candidate_root = Path(name)
-        if not candidate_root.exists():
-            if explicit_paths:
-                print(f"path not found: {candidate_root}", file=sys.stderr)
-                return 2
-            # 默认根之一不存在(例如测试用的临时仓库没有 deploy/)时跳过,不是环境错误.
-            continue
-        resolved = candidate_root.resolve()
-        if any(resolved == other.resolve() for other in scan_roots):
-            continue
-        scan_roots.append(candidate_root)
-    if not scan_roots:
-        print("path not found: docs, deploy", file=sys.stderr)
-        return 2
-
-    accepted: Counter[str] = Counter()
-    baseline_records: dict[str, Counter[str]] = {}
-    if args.baseline is not None:
-        try:
-            accepted, baseline_records = load_baseline(args.baseline)
-        except ValueError as exc:
-            print(f"baseline invalid: {exc}", file=sys.stderr)
-            return 2
 
     results: list[RefResult] = []
     scanned: list[tuple[str, Path]] = []
@@ -509,6 +484,294 @@ def main() -> int:
                         "assertion": assertion,
                     }
                 )
+    return Scan(
+        results=results,
+        scanned=scanned,
+        total=total,
+        fenced=fenced,
+        fenced_terminal=fenced_terminal,
+        doc_refs=doc_refs,
+        doc_refs_asserted=doc_refs_asserted,
+        unasserted_code=unasserted_code,
+    )
+
+
+class FixPlan(NamedTuple):
+    """一条 DRIFT 的改写计划;`new_line` 为 None 表示不猜、原样保留."""
+
+    result: RefResult
+    spans: list[tuple[int, int]]
+    new_line: int | None
+    reason: str
+
+
+def rewrite_spans(root: Path, result: RefResult) -> list[tuple[int, int]]:
+    """引用处那一行里,这段引用的行号数字所占的区间(按出现顺序).
+
+    扫描与改写是两次独立的读取,所以这里按「路径:行号」和断言同时匹配重新定位。
+    同一行里同一个引用出现多次时全部改写——它们指向同一个目标,新行号也相同,
+    同一行里路径:行号相同但断言不同的两条引用,靠断言区分.
+    """
+    try:
+        lines = (root / result["doc"]).read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return []
+    if not 1 <= result["doc_line"] <= len(lines):
+        return []
+    line = lines[result["doc_line"] - 1]
+    spans: list[tuple[int, int]] = []
+    for match in REF.finditer(line):
+        if f"{match.group(1)}:{match.group(2)}" != result["ref"]:
+            continue
+        assertion = ASSERTION.match(line[match.end() :])
+        fragment = assertion.group(1) if assertion is not None else ""
+        if fragment != result["assertion"]:
+            continue
+        spans.append((match.start(2), match.end(2)))
+    return spans
+
+
+def plan_fixes(root: Path, results: list[RefResult]) -> list[FixPlan]:
+    """把每条 DRIFT 变成一条改写计划;0 处或多处命中都不猜."""
+    plans: list[FixPlan] = []
+    for result in results:
+        if result["verdict"] != "DRIFT":
+            continue
+        occurrences = fragment_lines(result["target"], result["assertion"])
+        if len(occurrences) != 1:
+            if not occurrences:
+                reason = "片段在目标文件出现 0 次，不改行号"
+            else:
+                shown = "、".join(str(number) for number in occurrences[:5])
+                reason = f"片段在目标文件出现 {len(occurrences)} 次（第 {shown} 行），不猜"
+            plans.append(FixPlan(result, [], None, reason))
+            continue
+        spans = rewrite_spans(root, result)
+        if not spans:
+            plans.append(FixPlan(result, [], None, "引用处找不到行号数字，未改写"))
+            continue
+        plans.append(FixPlan(result, spans, occurrences[0], ""))
+    return plans
+
+
+def print_fix_plan(plan: FixPlan) -> None:
+    result = plan.result
+    if plan.new_line is None:
+        print(
+            f"[DRIFT] {result['doc']}:{result['doc_line']}  ->  {result['ref']}"
+            f"  [UNFIXABLE：{plan.reason}]"
+        )
+        return
+    print(
+        f"[FIX] {result['doc']}:{result['doc_line']}  ->  {result['ref']}"
+        f"  {result['line']} -> {plan.new_line}"
+    )
+    print(f"      命中：{referenced_line(result['target'], plan.new_line)}")
+
+
+def apply_fixes(root: Path, plans: list[FixPlan]) -> None:
+    """只改行号数字,按区间从右往左替换,同一行多条引用互不影响."""
+    edits_by_doc: dict[str, dict[int, list[tuple[int, int, str]]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    for plan in plans:
+        if plan.new_line is None:
+            continue
+        result = plan.result
+        for start, end in plan.spans:
+            edits_by_doc[result["doc"]][result["doc_line"]].append((start, end, str(plan.new_line)))
+    for repo_path, edits_by_line in edits_by_doc.items():
+        path = root / repo_path
+        try:
+            original = path.read_bytes().decode("utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise SystemExit(f"cannot read {repo_path}: {exc}") from exc
+        lines = original.splitlines(keepends=True)
+        for doc_line, edits in edits_by_line.items():
+            line = lines[doc_line - 1]
+            for start, end, new in sorted(edits, reverse=True):
+                if not line[start:end].isdigit():
+                    raise SystemExit(f"{repo_path}:{doc_line} 的行号区间不是数字，未写入")
+                line = line[:start] + new + line[end:]
+            lines[doc_line - 1] = line
+        try:
+            path.write_bytes("".join(lines).encode("utf-8"))
+        except OSError as exc:
+            raise SystemExit(f"cannot write {repo_path}: {exc}") from exc
+
+
+def run_fix(
+    root: Path,
+    scan_roots: list[Path],
+    accepted: Counter[str],
+    first: Scan,
+    *,
+    dry_run: bool,
+) -> int:
+    """执行 `--fix`:计划、可选写入、写入后自检.
+
+    退出码只表达「修完了没有」:残留 DRIFT、新出现 UNASSERTED,或还有基线外的终态
+    问题时为 1;计划覆盖全部 DRIFT 且终态问题不多于基线时为 0.
+    """
+    plans = plan_fixes(root, first.results)
+    for plan in plans:
+        print_fix_plan(plan)
+    fixable = sum(1 for plan in plans if plan.new_line is not None)
+    unfixable = len(plans) - fixable
+    drift_before = len(plans)
+    unasserted_before = sum(1 for r in first.results if r["verdict"] == "UNASSERTED")
+    print(f"\nFIX drift={drift_before} fixable={fixable} unfixable={unfixable}")
+
+    if dry_run:
+        if unfixable:
+            print("FIX RESULT FAIL  计划未覆盖全部 DRIFT；--dry-run 未写文件")
+            return 1
+        print("FIX RESULT PASS  --dry-run 未写文件；去掉 --dry-run 才会写入")
+        return 0
+
+    apply_fixes(root, plans)
+    after = scan_repository(root, scan_roots)
+    drift_after = sum(1 for r in after.results if r["verdict"] == "DRIFT")
+    unasserted_after = sum(1 for r in after.results if r["verdict"] == "UNASSERTED")
+    print(
+        f"SELFCHECK drift_before={drift_before} drift_after={drift_after} "
+        f"unasserted_before={unasserted_before} unasserted_after={unasserted_after}"
+    )
+
+    after_problems = [r for r in after.results if r["verdict"] not in ("OK", "EXTERNAL")]
+    after_terminal = [r for r in after_problems if r["scope"] == TERMINAL]
+    terminal_keys: Counter[str] = Counter(problem_key(r) for r in after_terminal)
+    new_keys = terminal_keys - accepted
+    print(
+        f"SCOPE {TERMINAL} problems={sum(terminal_keys.values())} "
+        f"new={sum(new_keys.values())} accepted={sum(accepted.values())}"
+    )
+    for result in after_terminal:
+        if result["verdict"] == "DRIFT":
+            print_ref(result, show=False, marker="  [未修复]")
+    if drift_after:
+        print(f"FIX UNRESOLVED drift={drift_after}  片段不唯一或全文没有，行号未改写")
+    if unasserted_after > unasserted_before:
+        print(
+            f"FIX UNRESOLVED unasserted={unasserted_after - unasserted_before}"
+            "  改写后新出现 UNASSERTED"
+        )
+    if drift_after or unasserted_after > unasserted_before or new_keys:
+        print("RESULT FAIL")
+        return 1
+    print("RESULT PASS")
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument(
+        "--path",
+        action="append",
+        default=None,
+        metavar="DIR",
+        help="要扫描的目录，可重复（默认 docs 与 deploy）",
+    )
+    ap.add_argument(
+        "--baseline",
+        type=Path,
+        default=None,
+        help="棘轮基线 JSON；省略时不接受任何终态文档问题（等于全量门禁）",
+    )
+    ap.add_argument(
+        "--write-baseline",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="按当前结果重写基线后退出；过程记录目录布局不合约定时不写",
+    )
+    ap.add_argument(
+        "--problems-only",
+        "--show-records",
+        dest="show_records",
+        action="store_true",
+        help="逐条打印过程记录的问题（默认只打印计数，避免逐条噪音淹没终态问题）",
+    )
+    ap.add_argument(
+        "--show",
+        action="store_true",
+        help="只打印问题项并附被引用行的原文；用于判断内容是否与文档描述相符",
+    )
+    ap.add_argument(
+        "--show-ok",
+        action="store_true",
+        help="配合 --show：OK 引用也打印被引用行原文（可单独使用）",
+    )
+    ap.add_argument(
+        "--fix",
+        action="store_true",
+        help="对每条 DRIFT：片段在目标文件唯一命中时改写行号，0/多处命中不改并报 UNFIXABLE",
+    )
+    ap.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="配合 --fix：只打印改写计划，不写文件",
+    )
+    ap.add_argument("--json", action="store_true")
+    args = ap.parse_args()
+
+    if args.dry_run and not args.fix:
+        print("--dry-run 需要与 --fix 一起使用", file=sys.stderr)
+        return 2
+    if args.fix and args.write_baseline is not None:
+        print("--fix 不能与 --write-baseline 同时使用", file=sys.stderr)
+        return 2
+    if args.fix and args.json:
+        print("--fix 不能与 --json 同时使用", file=sys.stderr)
+        return 2
+    if args.fix and (args.show or args.show_ok):
+        print("--fix 不接受 --show：它自己会打印每条改写与命中的那一行", file=sys.stderr)
+        return 2
+
+    root = repository_root()
+    if root is None:
+        print("not inside a git repository", file=sys.stderr)
+        return 2
+
+    explicit_paths = args.path is not None
+    scan_roots: list[Path] = []
+    for name in args.path or ["docs", "deploy"]:
+        candidate_root = Path(name)
+        if not candidate_root.exists():
+            if explicit_paths:
+                print(f"path not found: {candidate_root}", file=sys.stderr)
+                return 2
+            # 默认根之一不存在(例如测试用的临时仓库没有 deploy/)时跳过,不是环境错误.
+            continue
+        resolved = candidate_root.resolve()
+        if any(resolved == other.resolve() for other in scan_roots):
+            continue
+        scan_roots.append(candidate_root)
+    if not scan_roots:
+        print("path not found: docs, deploy", file=sys.stderr)
+        return 2
+
+    accepted: Counter[str] = Counter()
+    baseline_records: dict[str, Counter[str]] = {}
+    if args.baseline is not None:
+        try:
+            accepted, baseline_records = load_baseline(args.baseline)
+        except ValueError as exc:
+            print(f"baseline invalid: {exc}", file=sys.stderr)
+            return 2
+
+    scan = scan_repository(root, scan_roots)
+    if args.fix:
+        return run_fix(root, scan_roots, accepted, scan, dry_run=args.dry_run)
+
+    results = scan.results
+    scanned = scan.scanned
+    total = scan.total
+    fenced = scan.fenced
+    fenced_terminal = scan.fenced_terminal
+    doc_refs = scan.doc_refs
+    doc_refs_asserted = scan.doc_refs_asserted
+    unasserted_code = scan.unasserted_code
 
     problems = [r for r in results if r["verdict"] not in ("OK", "EXTERNAL")]
     terminal_problems = [r for r in problems if r["scope"] == TERMINAL]
@@ -587,12 +850,20 @@ def main() -> int:
         )
         return 1 if new_keys or layout_offenders else 0
 
-    if args.show:
-        # 排障模式:只打印问题项。全量打印会把 DRIFT 之类埋在几千行 OK 里,
-        # 而 OK 行没有排障价值——要核对某条 OK 引用时直接看那处文档。
+    if args.show or args.show_ok:
+        # 排障模式:默认只打印问题项。全量打印会把 DRIFT 埋在两千多行 OK 里,
+        # 而 `--show-ok` 是显式要求才放出的 OK 侧,并附被引用行原文——核对「这条
+        # 为什么算 OK」「片段是不是恰好命中了同一文件里另一处」只能靠它.
+        # 档位标记在排障视图里同样要带:先分清这条是新问题还是老问题,再看内容.
+        tier = {id(r): "  [新增,基线外]" for r in new_terminal}
+        tier.update({id(r): "  [基线已接受]" for r in accepted_terminal})
         for r in results:
-            if r["verdict"] not in ("OK", "EXTERNAL"):
-                print_ref(r, show=True)
+            if r["verdict"] == "EXTERNAL":
+                continue
+            if r["verdict"] == "OK" and not args.show_ok:
+                continue
+            marker = tier.get(id(r), "  [过程记录]" if r["scope"] == RECORD else "")
+            print_ref(r, show=True, marker=marker)
     else:
         for r in new_terminal:
             print_ref(r, show=False, marker="  [新增,基线外]")

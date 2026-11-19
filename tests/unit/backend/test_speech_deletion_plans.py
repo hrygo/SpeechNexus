@@ -395,3 +395,79 @@ def test_the_intent_digest_ignores_confirmation_order() -> None:
     assert first == reordered
     narrower = deletion_intent_digest(_confirmation(plan, (plan.target,)))
     assert narrower != first
+
+
+def test_confirm_scope_admits_a_blocked_plan_so_execution_can_record_it() -> None:
+    """The dependency verdict is not a credential refusal; the ledger reports it."""
+    from speechnexus_backend.speech.domain.deletion import (
+        DeletionDependencyConflictError,
+        confirm,
+        confirm_scope,
+    )
+
+    blocked = service(snapshot(ASSET, (reference(),))).preview(ASSET, "ordinary", "key-plan-11")
+    request = _confirmation(blocked, (blocked.target,))
+    with pytest.raises(DeletionDependencyConflictError):
+        confirm(blocked, request, now=blocked.created_at)
+    # Same identity, window and scope, without the eligibility judgement.
+    confirm_scope(blocked, request, now=blocked.created_at)
+
+
+def test_a_blocked_record_carries_the_typed_error_and_no_result() -> None:
+    from speechnexus_backend.speech.domain.deletion import (
+        DeletionFailure,
+        DeletionRecord,
+        deletion_payload,
+    )
+
+    failure = DeletionFailure(
+        code="deletion_target_in_use",
+        type="invalid_request_error",
+        message="still referenced by speech_jobs job-1",
+        param="target",
+        request_id="req-blocked-1",
+        retryable=False,
+    )
+    record = DeletionRecord(
+        id="dl-blocked-1",
+        plan_id="dp-blocked-1",
+        plan_digest="sha256:" + "a" * 64,
+        status="blocked",
+        cleanup_state="pending",
+        created_at=NOW,
+        updated_at=NOW,
+        error=failure,
+    )
+    payload = deletion_payload(record)
+    assert payload["result"] is None
+    assert payload["error"] == {
+        "code": "deletion_target_in_use",
+        "type": "invalid_request_error",
+        "message": "still referenced by speech_jobs job-1",
+        "param": "target",
+        "request_id": "req-blocked-1",
+        "retryable": False,
+    }
+    # A stopped record without a reason, and a live record with one, are both
+    # unrepresentable: the 0063 CHECK enforces the same equivalence.
+    with pytest.raises(ValueError, match="blocked or failed"):
+        DeletionRecord(
+            id="dl-blocked-2",
+            plan_id="dp-blocked-1",
+            plan_digest="sha256:" + "a" * 64,
+            status="blocked",
+            cleanup_state="pending",
+            created_at=NOW,
+            updated_at=NOW,
+        )
+    with pytest.raises(ValueError, match="carries its reason and no other"):
+        DeletionRecord(
+            id="dl-blocked-3",
+            plan_id="dp-blocked-1",
+            plan_digest="sha256:" + "a" * 64,
+            status="queued",
+            cleanup_state="pending",
+            created_at=NOW,
+            updated_at=NOW,
+            error=failure,
+        )

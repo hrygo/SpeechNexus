@@ -210,16 +210,22 @@ class MinioArtifactRemoval(MinioArtifactObjects):
     """
 
     def delete_version(self, artifact: ArtifactRecord) -> None:
-        if not artifact.storage_version_id or artifact.storage_version_id == "null":
+        self.delete_pinned(artifact.object_key, artifact.storage_version_id)
+
+    def delete_pinned(self, object_key: str, version_id: str) -> None:
+        """Remove one pinned version by identity, never by key alone.
+
+        The confirmed-deletion route pins the object identity in its plan, so it
+        passes the two values instead of a re-read Artifact row. The proof is the
+        same as retention's: a follow-up stat must report the version absent, and
+        any other outcome stays unconfirmed rather than claiming a removal.
+        """
+        if not object_key or not version_id or version_id == "null":
             raise ArtifactError("artifact_cleanup_unconfirmed")
         try:
-            self._client.remove_object(
-                self._bucket, artifact.object_key, version_id=artifact.storage_version_id
-            )
+            self._client.remove_object(self._bucket, object_key, version_id=version_id)
             try:
-                self._client.stat_object(
-                    self._bucket, artifact.object_key, version_id=artifact.storage_version_id
-                )
+                self._client.stat_object(self._bucket, object_key, version_id=version_id)
             except S3Error as error:
                 if error.code in ("NoSuchKey", "NoSuchObject", "NoSuchVersion"):
                     return

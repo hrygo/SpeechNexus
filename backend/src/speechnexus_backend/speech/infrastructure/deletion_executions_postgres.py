@@ -32,6 +32,7 @@ from speechnexus_backend.speech.domain.assets import VerifiedObject
 from speechnexus_backend.speech.domain.deletion import (
     DeletionDependencyConflictError,
     DeletionError,
+    DeletionFailure,
     DeletionIdempotencyConflictError,
     DeletionLedgerConfigurationError,
     DeletionLedgerUnavailableError,
@@ -44,9 +45,10 @@ from speechnexus_backend.speech.domain.deletion import (
     DeletionTarget,
     DeletionTargetNotFoundError,
     DeletionTargetUnsupportedError,
-    confirm,
+    confirm_scope,
     confirmed_targets,
     dependency_snapshot,
+    failure_payload,
     plan_digest,
     retained_independent_copies,
 )
@@ -81,8 +83,8 @@ _PLAN_ROW_COLUMNS = (
 _LEDGER_ROW_COLUMNS = (
     "id, workspace_id, plan_id, plan_revision, plan_digest, target_owner, target_kind, "
     "target_id, target_revision, idempotency_key_digest, intent_digest, deleted, retained, "
-    "status, cleanup_state, content_ledger_id, purge_claimed_at, created_at, updated_at, "
-    "completed_at"
+    "error, status, cleanup_state, content_ledger_id, purge_claimed_at, created_at, "
+    "updated_at, completed_at"
 )
 # How long one executor may hold the purge claim. It must exceed any object purge
 # the deployment allows, because a live claim is what stops a second purge; an
@@ -104,7 +106,12 @@ _PRIVILEGES: tuple[tuple[str, str, str | None], ...] = (
     ("SELECT", "speech_jobs", None),
     ("SELECT", "speech_job_intents", None),
     ("SELECT", "speech_voice_draft_revisions", None),
+    ("SELECT", "speech_voice_drafts", None),
+    ("SELECT", "speech_voice_capability_evidence", None),
+    ("SELECT", "speech_voice_revisions", None),
     ("SELECT", "speech_artifacts", None),
+    ("UPDATE", "speech_artifacts", "*"),
+    ("DELETE", "speech_voice_draft_revisions", None),
     ("UPDATE", "speech_deletion_ledger", "*"),
     ("INSERT", DELETION_LEDGER, "*"),
     *(("INSERT", "speech_content_deletions", column) for column in CONTENT_DELETION_INSERT_COLUMNS),
@@ -155,6 +162,19 @@ class _LedgerRow:
             if status == "succeeded" and completed_at is not None
             else None
         )
+        error = self.row["error"]
+        failure = (
+            DeletionFailure(
+                code=cast(str, error["code"]),
+                type=cast(str, error["type"]),
+                message=cast(str, error["message"]),
+                param=cast(str | None, error["param"]),
+                request_id=cast(str, error["request_id"]),
+                retryable=bool(error["retryable"]),
+            )
+            if isinstance(error, dict)
+            else None
+        )
         return DeletionRecord(
             id=cast(str, self.row["id"]),
             plan_id=cast(str, self.row["plan_id"]),
@@ -164,6 +184,7 @@ class _LedgerRow:
             created_at=cast(datetime, self.row["created_at"]),
             updated_at=cast(datetime, self.row["updated_at"]),
             result=result,
+            error=failure,
         )
 
 
@@ -297,6 +318,8 @@ class _DeletionExecution:
         key_digest: str,
         intent_digest: str,
         purge_available: bool,
+        artifact_purge_available: bool,
+        request_id: str,
     ) -> AcceptedDeletion:
         existing = self._tx.ledger_by_key(key_digest, lock=True)
         if existing is not None:
@@ -309,7 +332,12 @@ class _DeletionExecution:
         if plan_row is None:
             raise DeletionTargetNotFoundError
         plan = plan_from_row(plan_row)
-        confirm(plan, request, now=self._tx.now())
+        # The plan's identity, window and confirmed scope are refusals. Its
+        # dependency verdict is not: an ineligible plan is accepted as a *blocked*
+        # Deletion, so the reason is durable and the status is never `unknown`.
+        confirm_scope(plan, request, now=self._tx.now())
+        if not plan.eligible:
+            return self._blocked(plan, request, key_digest, intent_digest, request_id)
         snapshot = snapshot_target(self._tx, self._workspace_id, plan.target, exclusive=True)
         # Re-read the key now that the target lock is held: a concurrent request
         # with the same key may have committed while this transaction waited, and
@@ -337,7 +365,127 @@ class _DeletionExecution:
             return self._accept_operation_content(
                 plan, request, plan_row["target_digest"], key_digest, intent_digest
             )
+        if plan.target.kind == "artifact":
+            return self._accept_artifact(
+                plan,
+                request,
+                snapshot.content_snapshot,
+                key_digest,
+                intent_digest,
+                artifact_purge_available,
+            )
+        if plan.target.kind == "voice_revision":
+            return self._accept_voice_revision(plan, request, key_digest, intent_digest)
         raise DeletionTargetUnsupportedError
+
+    def _blocked(
+        self,
+        plan: DeletionPlan,
+        request: DeletionRequest,
+        key_digest: str,
+        intent_digest: str,
+        request_id: str,
+    ) -> AcceptedDeletion:
+        """Record why an ineligible plan cannot remove its target.
+
+        The plan is a single-use credential, so the blocked row is the durable
+        answer for this key; resolving the dependency means a new preview and a
+        new key. The message names the blocking dependencies and never claims any
+        content was removed.
+        """
+        blockers = [item for item in plan.dependencies if item.disposition == "blocks"]
+        names = ", ".join(
+            f"{item.target.kind} {item.target.resource_id}@{item.target.revision} ({item.relation})"
+            for item in blockers[:8]
+        )
+        if len(blockers) > 8:
+            names += f", and {len(blockers) - 8} more"
+        failure = DeletionFailure(
+            code="deletion_target_in_use",
+            type="invalid_request_error",
+            message=(
+                "The target is still referenced, so nothing was deleted: "
+                + names
+                + ". Resolve the dependency, create a new plan and confirm it."
+            ),
+            param="target",
+            request_id=request_id,
+            retryable=False,
+        )
+        return self._record(
+            plan,
+            request,
+            key_digest,
+            intent_digest,
+            status="blocked",
+            content_ledger_id=None,
+            error=failure,
+        )
+
+    def _accept_artifact(
+        self,
+        plan: DeletionPlan,
+        request: DeletionRequest,
+        content: dict[str, object],
+        key_digest: str,
+        intent_digest: str,
+        artifact_purge_available: bool,
+    ) -> AcceptedDeletion:
+        """Accept the purge of one pinned Artifact object version.
+
+        The row is not moved yet: ``complete`` writes the same ``deleted`` record
+        the retention path does only after the object version is confirmed gone,
+        so a failed purge leaves the record ``queued`` instead of claiming a
+        removal.
+        """
+        if not artifact_purge_available:
+            raise DeletionObjectStorageUnavailableError(
+                "artifact deletion requires the object-store identity"
+            )
+        object_key = content.get("object_key")
+        version_id = content.get("storage_version_id")
+        if not isinstance(object_key, str) or not isinstance(version_id, str):
+            raise DeletionObjectStorageUnavailableError(
+                "the pinned Artifact object identity is not readable"
+            )
+        return self._record(
+            plan,
+            request,
+            key_digest,
+            intent_digest,
+            status="queued",
+            content_ledger_id=None,
+            pending_artifact=(object_key, version_id),
+        )
+
+    def _accept_voice_revision(
+        self,
+        plan: DeletionPlan,
+        request: DeletionRequest,
+        key_digest: str,
+        intent_digest: str,
+    ) -> AcceptedDeletion:
+        """Delete one unreferenced draft revision in the accepting transaction.
+
+        The row's content lives only in the database, so there is no object step
+        and no queued state: the digest was rechecked under this transaction and
+        the DELETE is the removal.
+        """
+        deleted = self._tx.rows(
+            "DELETE FROM speech_voice_draft_revisions "
+            "WHERE draft_id = %s AND revision = %s RETURNING draft_id",
+            (plan.target.resource_id, str(plan.target.revision)),
+        )
+        if not deleted:
+            raise DeletionPlanChangedError
+        return self._record(
+            plan,
+            request,
+            key_digest,
+            intent_digest,
+            status="succeeded",
+            content_ledger_id=None,
+        )
 
     def _accept_asset(
         self,
@@ -441,8 +589,12 @@ class _DeletionExecution:
     # -- resume and completion ---------------------------------------------
     def _resume(self, existing: _LedgerRow) -> AcceptedDeletion:
         record = existing.record()
-        if record.status == "succeeded":
+        if record.status in ("succeeded", "blocked", "failed"):
+            # A blocked/failed row is this key's durable answer; resuming never
+            # turns it into a removal or a different status.
             return AcceptedDeletion(record, None)
+        if existing.row["target_kind"] == "artifact":
+            return self._resume_artifact(existing, record)
         content_ledger_id = cast(str | None, existing.row["content_ledger_id"])
         if content_ledger_id is None:
             raise _unavailable()
@@ -472,13 +624,29 @@ class _DeletionExecution:
             return AcceptedDeletion(record, None)
         return AcceptedDeletion(_LedgerRow(claimed).record(), proof)
 
+    def _resume_artifact(self, existing: _LedgerRow, record: DeletionRecord) -> AcceptedDeletion:
+        plan_row = self._tx.plan_row(cast(str, existing.row["plan_id"]))
+        if plan_row is None:
+            raise _unavailable()
+        content = cast(dict[str, Any], plan_row["content_snapshot"])
+        object_key = content.get("object_key")
+        version_id = content.get("storage_version_id")
+        if not isinstance(object_key, str) or not isinstance(version_id, str):
+            raise _unavailable()
+        claimed = self._tx.claim_purge(cast(str, existing.row["id"]))
+        if claimed is None:
+            return AcceptedDeletion(record, None)
+        return AcceptedDeletion(_LedgerRow(claimed).record(), None, (object_key, version_id))
+
     def complete(self, deletion_id: str, *, key_digest: str) -> DeletionRecord:
         existing = self._tx.ledger_by_id(deletion_id)
         if existing is None or existing.row["idempotency_key_digest"] != key_digest:
             raise _unavailable()
         record = existing.record()
-        if record.status == "succeeded":
+        if record.status != "queued":
             return record
+        if existing.row["target_kind"] == "artifact":
+            return self._complete_artifact(existing)
         if not lock_workspace(self._tx, self._workspace_id):
             raise DeletionPlanChangedError
         with self._tx.asset_cursor() as cursor:
@@ -491,6 +659,36 @@ class _DeletionExecution:
                 # The pinned preconditions changed after the purge. Do not claim a
                 # completion the ledger did not record; the row stays queued.
                 return record
+        return self._finalize(existing, self._tx.now())
+
+    def _complete_artifact(self, existing: _LedgerRow) -> DeletionRecord:
+        """Confirm the purge by writing the same `deleted` record retention writes.
+
+        The pinned object identity and digest are rechecked in the UPDATE itself.
+        A row whose identity moved, or that another path already deleted, is not
+        claimed as this deletion's success: the ledger stays ``queued``.
+        """
+        plan_row = self._tx.plan_row(cast(str, existing.row["plan_id"]))
+        if plan_row is None:
+            raise _unavailable()
+        content = cast(dict[str, Any], plan_row["content_snapshot"])
+        updated = self._tx.rows(
+            "UPDATE speech_artifacts SET artifact_state = 'deleted', deleted_at_us = %s "
+            "WHERE artifact_id = %s AND workspace_id = %s "
+            "AND artifact_state IN ('ready','expired') "
+            "AND sha256 = %s AND object_key = %s AND storage_version_id = %s "
+            "RETURNING artifact_id",
+            (
+                self._tx.now_us(),
+                cast(str, existing.row["target_id"]),
+                self._workspace_id,
+                cast(str, content.get("sha256")),
+                cast(str, content.get("object_key")),
+                cast(str, content.get("storage_version_id")),
+            ),
+        )
+        if not updated:
+            return existing.record()
         return self._finalize(existing, self._tx.now())
 
     def _finalize(self, existing: _LedgerRow, now: datetime) -> DeletionRecord:
@@ -536,7 +734,9 @@ class _DeletionExecution:
         status: str,
         content_ledger_id: str | None,
         pending: VerifiedObject | None = None,
+        pending_artifact: tuple[str, str] | None = None,
         deletion_id: str | None = None,
+        error: DeletionFailure | None = None,
     ) -> AcceptedDeletion:
         now = self._tx.now()
         ledger_id = deletion_id or ("dl-" + uuid.uuid4().hex)
@@ -559,6 +759,7 @@ class _DeletionExecution:
                 intent_digest,
                 Jsonb(_scope(confirmed_targets(plan))),
                 Jsonb(_scope(retained_independent_copies(plan))),
+                Jsonb(failure_payload(error)) if error is not None else None,
                 status,
                 "complete" if status == "succeeded" else "pending",
                 content_ledger_id,
@@ -570,14 +771,14 @@ class _DeletionExecution:
         stored = self._tx.ledger_by_key(key_digest)
         if stored is None:
             raise _unavailable()
-        if pending is not None:
+        if pending is not None or pending_artifact is not None:
             claimed = self._tx.claim_purge(cast(str, stored.row["id"]))
             if claimed is None:
                 # Another request already owns this row's purge; the caller must
                 # wait for it rather than purging the same version again.
                 return AcceptedDeletion(stored.record(), None)
             stored = _LedgerRow(claimed)
-        return AcceptedDeletion(stored.record(), pending)
+        return AcceptedDeletion(stored.record(), pending, pending_artifact)
 
 
 def _positive(value: Any) -> int:
@@ -646,6 +847,8 @@ class PostgresDeletionExecutions:
         key_digest: str,
         intent_digest: str,
         purge_available: bool,
+        artifact_purge_available: bool,
+        request_id: str,
         workspace_id: str,
     ) -> AcceptedDeletion:
         try:
@@ -662,7 +865,16 @@ class PostgresDeletionExecutions:
                     key_digest=key_digest,
                     intent_digest=intent_digest,
                     purge_available=purge_available,
+                    artifact_purge_available=artifact_purge_available,
+                    request_id=request_id,
                 )
+        except psycopg.errors.ForeignKeyViolation:
+            # A reference was committed after the recheck: the delete itself is
+            # what the database refuses. This is an explicit dependency conflict,
+            # never an unknown outcome or a 500.
+            raise DeletionDependencyConflictError(
+                "a live dependency appeared while deleting"
+            ) from None
         except psycopg.errors.UniqueViolation:
             return self._replay_after_race(
                 request,

@@ -425,6 +425,7 @@ WRITER_INSERT_COLUMNS: dict[str, tuple[str, ...]] = {
         "intent_digest",
         "deleted",
         "retained",
+        "error",
         "status",
         "cleanup_state",
         "content_ledger_id",
@@ -464,10 +465,12 @@ WRITER_UPDATE_COLUMNS: dict[str, tuple[str, ...]] = {
     "speech_deletion_ledger": (
         "status",
         "cleanup_state",
+        "error",
         "updated_at",
         "completed_at",
         "purge_claimed_at",
     ),
+    "speech_artifacts": ("artifact_state", "deleted_at_us"),
     "speech_content_deletions": (
         "storage_version_id",
         "deletion_state",
@@ -510,9 +513,9 @@ WRITER_UPDATE_COLUMNS: dict[str, tuple[str, ...]] = {
     ),
 }
 
-# 复制自 job_runtime._JOB_DELETE_TABLES:删除执行只删公开 Job 意图行(#540),
-# 其余已声明关系仍拒绝 DELETE/TRUNCATE。
-WRITER_DELETE_TABLES: tuple[str, ...] = ("speech_job_intents",)
+# 复制自 job_runtime._JOB_DELETE_TABLES:删除执行只删公开 Job 意图行(#540)
+# 与一个无引用的声音草稿 revision,其余已声明关系仍拒绝 DELETE/TRUNCATE。
+WRITER_DELETE_TABLES: tuple[str, ...] = ("speech_job_intents", "speech_voice_draft_revisions")
 
 # 复制自 speech.domain.job_dispatch.DispatchJobKind 的取值。
 DISPATCHABLE_KINDS = frozenset({"asr", "tts", "voice_design", "voice_clone", "voice_validation"})

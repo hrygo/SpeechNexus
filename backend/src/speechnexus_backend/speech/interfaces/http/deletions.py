@@ -161,7 +161,7 @@ def create_deletion_router(get_service: Callable[[], DeletionPlanner | None]) ->
         except ValueError, TypeError:
             return deletion_error("invalid_deletion_request", request_id)
         try:
-            record = await run_in_threadpool(service.execute, confirmation, key)
+            record = await run_in_threadpool(service.execute, confirmation, key, request_id)
         except DeletionError as error:
             return deletion_error(error.code, request_id)
         return JSONResponse(

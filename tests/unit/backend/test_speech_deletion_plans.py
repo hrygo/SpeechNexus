@@ -33,6 +33,7 @@ from speechnexus_backend.speech.domain.deletion import (
     DeletionTargetNotFoundError,
     DeletionTargetUnsupportedError,
     Dependency,
+    confirmed_targets,
     plan_digest,
     plan_payload,
 )
@@ -284,3 +285,113 @@ async def test_http_does_not_echo_a_body_over_the_bound() -> None:
     response = await _post(app, oversized)
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "invalid_deletion_request"
+
+
+# The execution half is decided in the domain before any transaction runs: these
+# pin the refusal order and the set semantics the route relies on.
+
+NOW = datetime(2026, 11, 19, 6, 0, tzinfo=UTC)
+
+
+def _cascade_plan() -> DeletionPlan:
+    """A synthetic plan whose confirmable scope holds two members.
+
+    Every real speech plan cascades over exactly one target, so a one-element
+    tuple is trivially order-insensitive; the scope semantics can only be shown
+    on a plan with a cascade child plus a retained independent copy.
+    """
+    parent = DeletionTarget("speech", "asset", "asset-parent-1", 1)
+    child = Dependency(
+        DeletionTarget("speech", "artifact", "artifact-child-1", 2), "owned_child", "cascade"
+    )
+    copy = Dependency(
+        DeletionTarget("workbench", "saved_asset", "saved-copy-1", 3), "independent_copy", "retain"
+    )
+    return DeletionPlan.create(
+        plan_id="dp-synthetic-scope-1",
+        workspace_id="workspace-default",
+        target=parent,
+        mode="cascade",
+        dependencies=(child, copy),
+        now=NOW,
+    )
+
+
+def _confirmation(plan: DeletionPlan, targets: tuple[DeletionTarget, ...]) -> Any:
+    from speechnexus_backend.speech.domain.deletion import DeletionRequest
+
+    return DeletionRequest(plan.id, plan.revision, plan_digest(plan), targets)
+
+
+def test_a_reordered_confirmation_of_the_same_scope_is_accepted() -> None:
+    from speechnexus_backend.speech.domain.deletion import confirm
+
+    plan = _cascade_plan()
+    scope = confirmed_targets(plan)
+    assert len(scope) == 2, "a two-member scope is what makes order meaningful"
+    assert scope != tuple(reversed(scope))
+    confirm(plan, _confirmation(plan, scope), now=NOW)
+    confirm(plan, _confirmation(plan, tuple(reversed(scope))), now=NOW)
+    # A duplicate is a malformed request, not a wider confirmation.
+    with pytest.raises(ValueError, match="distinct targets"):
+        _confirmation(plan, (scope[0], scope[0]))
+
+
+def test_confirming_less_or_more_than_the_scope_is_a_mismatch() -> None:
+    from speechnexus_backend.speech.domain.deletion import (
+        DeletionConfirmationMismatchError,
+        confirm,
+        retained_independent_copies,
+    )
+
+    plan = _cascade_plan()
+    scope = confirmed_targets(plan)
+    # The parent alone would delete the target while dropping the cascade child.
+    with pytest.raises(DeletionConfirmationMismatchError):
+        confirm(plan, _confirmation(plan, (plan.target,)), now=NOW)
+    # The retained copy is reported, never confirmed for deletion.
+    retained = retained_independent_copies(plan)
+    assert retained == (DeletionTarget("workbench", "saved_asset", "saved-copy-1", 3),)
+    with pytest.raises(DeletionConfirmationMismatchError):
+        confirm(plan, _confirmation(plan, (*scope, *retained)), now=NOW)
+
+
+def test_confirm_reports_the_first_reason_a_plan_is_stale() -> None:
+    from speechnexus_backend.speech.domain.deletion import (
+        DeletionConfirmationMismatchError,
+        DeletionDependencyConflictError,
+        DeletionPlanExpiredError,
+        DeletionRequest,
+        confirm,
+    )
+
+    plan = service(snapshot(ASSET)).preview(ASSET, "ordinary", "key-plan-9")
+    confirmed = _confirmation(plan, (plan.target,))
+    # A wrong digest identifies a different plan, reported before the expiry the
+    # caller would otherwise see.
+    wrong_digest = DeletionRequest(plan.id, plan.revision, "sha256:" + "0" * 64, confirmed.targets)
+    with pytest.raises(DeletionPlanChangedError):
+        confirm(plan, wrong_digest, now=plan.created_at + timedelta(seconds=301))
+    # The right plan, past its fixed window, reports expiry.
+    with pytest.raises(DeletionPlanExpiredError):
+        confirm(plan, confirmed, now=plan.created_at + timedelta(seconds=301))
+    # A blocker is reported before the confirmed set can be compared.
+    blocked = service(snapshot(ASSET, (reference(),))).preview(ASSET, "ordinary", "key-plan-10")
+    with pytest.raises(DeletionDependencyConflictError):
+        confirm(blocked, _confirmation(blocked, (blocked.target,)), now=blocked.created_at)
+    # Only then is the scope compared, and a target outside it is a mismatch.
+    rejected = DeletionTarget("speech", "asset", "asset-other", 1)
+    with pytest.raises(DeletionConfirmationMismatchError):
+        confirm(plan, _confirmation(plan, (rejected,)), now=plan.created_at)
+
+
+def test_the_intent_digest_ignores_confirmation_order() -> None:
+    from speechnexus_backend.speech.domain.deletion import deletion_intent_digest
+
+    plan = _cascade_plan()
+    scope = confirmed_targets(plan)
+    first = deletion_intent_digest(_confirmation(plan, scope))
+    reordered = deletion_intent_digest(_confirmation(plan, tuple(reversed(scope))))
+    assert first == reordered
+    narrower = deletion_intent_digest(_confirmation(plan, (plan.target,)))
+    assert narrower != first

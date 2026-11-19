@@ -16,6 +16,17 @@ from speechnexus_backend.speech.application.public_jobs import PublicJobs
 from speechnexus_backend.speech.application.voice_drafts import VoiceDrafts
 from speechnexus_backend.speech.application.voice_publications import VoicePublications
 from speechnexus_backend.speech.domain.job_prerequisites import ADMISSION_DSN
+from speechnexus_backend.speech.infrastructure.assets_minio import MinioAssetObjects
+from speechnexus_backend.speech.infrastructure.deletion_executions_postgres import (
+    PostgresDeletionExecutions,
+)
+from speechnexus_backend.speech.infrastructure.deletion_ledger_schema import (
+    ASSET_UPDATE_COLUMNS,
+    CONTENT_DELETION_UPDATE_COLUMNS,
+    DELETION_LEDGER_UPDATE_COLUMNS,
+    JOB_INTENT_DELETE_TABLES,
+    LEGACY_INTENT_UPDATE_COLUMNS,
+)
 from speechnexus_backend.speech.infrastructure.deletion_plans_postgres import (
     PostgresDeletionPlans,
 )
@@ -88,18 +99,25 @@ _PUBLICATION_REQUIRED_SELECT = (
 )
 _PUBLICATION_REQUIRED_INSERT = (*_PUBLICATION_APPEND_ONLY, "speech_publication_heads")
 
-# The deletion preview is one route; its grants are checked when that route is
-# used, not as a process-wide startup condition. A writer that never serves it
-# must still boot, and a deployment that forgets the grants gets a diagnosable
-# 503 on the route instead of a silent runtime failure.
+# The deletion routes are two routes; their grants are checked when those routes
+# are used, not as a process-wide startup condition. A writer that never serves
+# them must still boot, and a deployment that forgets the grants gets a
+# diagnosable 503 on the route instead of a silent runtime failure.
 DELETION_PREVIEW_TABLES = (
     "speech_asset_objects",
     "speech_asset_references",
     "speech_deletion_plans",
 )
+# The execution route (0059) adds its own ledger and reuses the asset content
+# deletion machine's two relations. None is a startup requirement.
+DELETION_EXECUTION_TABLES = (
+    "speech_content_deletions",
+    "speech_asset_events",
+    "speech_deletion_ledger",
+)
 # Allowed but not required. A role may hold these grants (the reference
 # deployment does) or none at all (a writer that never serves the route).
-_JOB_OPTIONAL_TABLES = frozenset(DELETION_PREVIEW_TABLES)
+_JOB_OPTIONAL_TABLES = frozenset((*DELETION_PREVIEW_TABLES, *DELETION_EXECUTION_TABLES))
 REQUIRED_SELECT = (
     "speech_workspaces",
     "speech_publications",
@@ -164,6 +182,7 @@ _JOB_DECLARED_TABLES = tuple(
             *REQUIRED_SELECT,
             *REQUIRED_INSERT,
             *DELETION_PREVIEW_TABLES,
+            *DELETION_EXECUTION_TABLES,
             "coordination_jobs",
             "coordination_outbox",
             "admission_operations",
@@ -177,10 +196,16 @@ _JOB_DECLARED_TABLES = tuple(
 # for this role, and the two required surfaces must be complete.
 _JOB_UPDATE_SURFACE: dict[str, tuple[str, ...]] = {
     **REQUIRED_UPDATE_COLUMNS,
-    # Allowed, not required: deletion preview takes these row locks, and the
-    # route's own probe names them when they are missing.
+    # Allowed, not required: deletion preview takes these row locks and deletion
+    # execution drives the asset content-deletion machine, and the route's own
+    # probe names any missing column instead of failing at request time.
     "speech_workspaces": ("metadata_revision",),
-    "speech_assets": ("version",),
+    "speech_assets": ASSET_UPDATE_COLUMNS,
+    "speech_deletion_ledger": DELETION_LEDGER_UPDATE_COLUMNS,
+    "speech_content_deletions": CONTENT_DELETION_UPDATE_COLUMNS,
+    # Operation-content deletion tombstones the legacy private command copy
+    # through 0007's command-shape CHECK (#540).
+    "admission_operations": LEGACY_INTENT_UPDATE_COLUMNS,
     "coordination_jobs": (
         "claim_owner_id",
         "claim_expires_at_us",
@@ -196,6 +221,13 @@ _JOB_UPDATE_SURFACE: dict[str, tuple[str, ...]] = {
     ),
 }
 _JOB_REQUIRED_UPDATE = frozenset(REQUIRED_UPDATE_COLUMNS)
+# The deletion executor removes exactly the authoritative public Job intent row of
+# the confirmed operation (#540). Every other declared relation still refuses
+# DELETE/TRUNCATE, and the assertion below is what keeps that surface one table.
+_JOB_DELETE_TABLES = frozenset(JOB_INTENT_DELETE_TABLES)
+assert set(_JOB_DECLARED_TABLES) >= _JOB_DELETE_TABLES, (
+    "The deletion DELETE surface names a relation outside the declared writer surface"
+)
 # A writer-only deployment keeps reads and cancellations, but a create has no
 # admission role to reserve capacity with. The store used to answer the bare
 # ``503 job_unavailable``, which read like a database outage; the runtime names the
@@ -237,6 +269,7 @@ class JobRuntime:
         self._capacity_pool: SpeechPool | None = None
         self.jobs: PublicJobs | None = None
         self.deletion_plans: SpeechDeletions | None = None
+        self.deletion_objects: MinioAssetObjects | None = None
         self.voice_drafts: VoiceDrafts | None = None
         self.voice_publications: VoicePublications | None = None
         # The single release object the immediate cancellation and the
@@ -339,9 +372,27 @@ class JobRuntime:
                         "deletion_plans_not_configured.",
                         ", ".join(missing_grants),
                     )
+                deletion_executions = PostgresDeletionExecutions(
+                    pool, timeout_seconds=self._settings.job_transaction_timeout_seconds
+                )
+                try:
+                    execution_missing = deletion_executions.missing_privileges()
+                except (psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests) as error:
+                    _LOG.debug("deletion execution probe skipped: %s", type(error).__name__)
+                    execution_missing = ()
+                if execution_missing:
+                    _LOG.warning(
+                        "deletion execution is not provisioned; missing %s. Apply "
+                        "deletion_execution_grants to the Job writer; the rest of the API "
+                        "starts normally and the route answers 503 deletion_not_configured.",
+                        ", ".join(execution_missing),
+                    )
+                self.deletion_objects = self._open_deletion_objects()
                 self.deletion_plans = SpeechDeletions(
                     deletion_store,
                     workspace_id=self._settings.capability_default_workspace_id,
+                    executions=deletion_executions,
+                    purge=self.deletion_objects,
                 )
                 self.voice_drafts = VoiceDrafts(self.jobs, PostgresVoiceDrafts(pool))
                 self.voice_publications = (
@@ -383,6 +434,30 @@ class JobRuntime:
                 raise ValueError(
                     "Public Job writer startup rejected; verify migration and writer role"
                 ) from None
+
+    def _open_deletion_objects(self) -> MinioAssetObjects | None:
+        """The asset object-store identity the deletion route purges with.
+
+        The content of an ``asset`` target is the object itself, so execution
+        cannot confirm a deletion without this identity. It is the same private
+        bucket the asset runtime writes; a deployment that does not configure
+        object storage keeps the preview route and answers
+        ``503 deletion_object_storage_unconfigured`` on execution instead of
+        claiming a purge that never happened.
+        """
+        settings = self._settings
+        if (
+            settings.object_storage_access_key is None
+            or settings.object_storage_secret_key is None
+            or settings.object_storage_endpoint is None
+        ):
+            return None
+        return MinioAssetObjects(
+            str(settings.object_storage_endpoint),
+            settings.object_storage_bucket,
+            settings.object_storage_access_key.get_secret_value(),
+            settings.object_storage_secret_key.get_secret_value(),
+        )
 
     def _open_admission_pool(self) -> SpeechPool | None:
         secret = self._settings.job_admission_database_url
@@ -574,14 +649,22 @@ def _verify_privileges(connection: SpeechConnection, schema: str) -> None:
     # needs (#561). Judging every declared relation closes the same gap on the
     # coordination/admission tables that the first slice only covered implicitly.
     for table in _JOB_DECLARED_TABLES:
+        refused = (
+            ("TRUNCATE", "REFERENCES", "TRIGGER")
+            if table in _JOB_DELETE_TABLES
+            else ("DELETE", "TRUNCATE", "REFERENCES", "TRIGGER")
+        )
         refuse_table_privileges(
             connection,
             None,
             f"{schema}.{table}",
             table,
-            ("DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"),
+            refused,
             subject=_JOB_SUBJECT,
         )
+    # DELETE is permitted but not required on that one relation, exactly like the
+    # execution route's other grants: a writer that never serves deletion boots
+    # without it, and the route's own probe names the gap before any content moves.
     # INSERT is a per-column authority too: no declared table may carry a
     # table-level grant, and every writable relation must match its declared
     # column set exactly (an added column must not silently widen the surface).

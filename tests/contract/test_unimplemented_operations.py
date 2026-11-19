@@ -57,12 +57,13 @@ PREDECLARED_SERVICE_UNAVAILABLE = frozenset(
         "getJobAdmissionReadiness",
     }
 )
-# The frozen contract still declares the placeholder component for this one
-# implemented operation: #819 slice A replaced its handler while ``contracts/**``
-# stays untouched, so the declaration is stale until slice D replaces the 503.
-# Naming the exception keeps it from hiding a second operation that really is a
-# placeholder.
-IMPLEMENTED_WITH_FROZEN_PLACEHOLDER_503 = frozenset({"speechCreateDeletionPlan"})
+# The frozen contract still declares the placeholder component for these implemented
+# operations: #819 replaced the handlers while ``contracts/**`` stays untouched, so
+# the declaration is stale until a later slice replaces the 503. Naming the
+# exceptions keeps them from hiding a second operation that really is a placeholder.
+IMPLEMENTED_WITH_FROZEN_PLACEHOLDER_503 = frozenset(
+    {"speechCreateDeletionPlan", "speechCreateDeletion"}
+)
 # Every placeholder answers at runtime, including the compatible-surface one.
 CASES = sorted(
     (operation, method, path) for operation, (method, path) in UNIMPLEMENTED_OPERATIONS.items()
@@ -205,14 +206,14 @@ def concrete(path: str) -> str:
 
 
 def test_contract_and_placeholder_table_agree() -> None:
-    assert len(CASES) == 9
+    assert len(CASES) == 8
     assert {operation for operation, _, _ in CASES} == set(UNIMPLEMENTED_OPERATIONS)
     declared = {operation for operation, _, _ in declared_operations()}
     # retireVoiceRevision and the six voice-draft operations now answer their
     # own 503 (ServiceUnavailable) after those routes shipped, and #484 replaced
     # the pronunciation collection pair with real routes, so only the remaining
-    # placeholders carry the dedicated component. #819 slice A added one
-    # implemented operation whose frozen declaration still points at it.
+    # placeholders carry the dedicated component. #819 added two implemented
+    # deletion operations whose frozen declarations still point at it.
     assert len(declared) == 6
     # The one exception is explicit and exclusive; every other operation that
     # points at the placeholder component is still a real placeholder.

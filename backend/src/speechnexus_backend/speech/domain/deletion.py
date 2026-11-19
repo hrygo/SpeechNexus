@@ -24,8 +24,13 @@ from typing import Any
 import rfc8785
 
 PLAN_OBJECT = "nexus.deletion_plan"
+DELETION_OBJECT = "nexus.deletion"
 PLAN_TTL = timedelta(seconds=300)
 INITIAL_PLAN_REVISION = 1
+# The public lifecycle of one clean-up resource. Execution in this slice produces
+# ``queued`` (content still awaiting object purge or resume) and ``succeeded``.
+DELETION_STATUSES = ("queued", "running", "blocked", "succeeded", "failed")
+CLEANUP_STATES = ("pending", "quarantined", "complete")
 
 OWNERS = ("speech", "workbench")
 SPEECH_KINDS = ("asset", "artifact", "voice_revision", "operation_content")
@@ -71,6 +76,40 @@ class DeletionIdempotencyConflictError(DeletionError):
 
 class DeletionPlanUnavailableError(DeletionError):
     code = "deletion_plans_unavailable"
+
+
+class DeletionConfirmationMismatchError(DeletionError):
+    """``confirm_targets`` is not exactly the plan's confirmable scope."""
+
+    code = "deletion_confirmation_mismatch"
+
+
+class DeletionPlanExpiredError(DeletionError):
+    code = "deletion_plan_expired"
+
+
+class DeletionDependencyConflictError(DeletionError):
+    """A ``blocks`` dependency forbids execution; re-preview after resolving it."""
+
+    code = "deletion_dependency_conflict"
+
+
+class DeletionLedgerUnavailableError(DeletionError):
+    """Deletion execution storage is absent or unhealthy; retry the same key."""
+
+    code = "deletion_unavailable"
+
+
+class DeletionLedgerConfigurationError(DeletionError):
+    """The route's own execution grants are missing; the rest of the API still serves."""
+
+    code = "deletion_not_configured"
+
+
+class DeletionObjectStorageUnavailableError(DeletionError):
+    """Asset content cannot be confirmed deleted without the object-store identity."""
+
+    code = "deletion_object_storage_unconfigured"
 
 
 class DeletionReferenceUnsupportedError(DeletionError):
@@ -283,23 +322,211 @@ def idempotency_key_digest(key: str) -> str:
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
 
+_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
+
+
+def digest(value: str) -> str:
+    if not isinstance(value, str) or _DIGEST.fullmatch(value) is None:
+        raise ValueError("Invalid deletion digest")
+    return value
+
+
+@dataclass(frozen=True, slots=True)
+class DeletionRequest:
+    """One confirmation of an issued plan.
+
+    ``targets`` is the client's ``confirm_targets`` as sent. Order carries no
+    meaning: the confirmation is compared as a set, so a reordered list names the
+    same scope. A duplicate entry is not a set member twice and is rejected before
+    this value is built (the contract declares ``uniqueItems``).
+    """
+
+    plan_id: str
+    expected_plan_revision: int
+    plan_digest: str
+    targets: tuple[DeletionTarget, ...]
+
+    def __post_init__(self) -> None:
+        identifier(self.plan_id)
+        revision(self.expected_plan_revision)
+        digest(self.plan_digest)
+        if not self.targets:
+            raise ValueError("A deletion confirmation names at least one target")
+        if len(set(self.targets)) != len(self.targets):
+            raise ValueError("A deletion confirmation names distinct targets")
+
+
+def confirmed_targets(plan: DeletionPlan) -> tuple[DeletionTarget, ...]:
+    """Exactly the plan's confirmable scope, sorted by identity.
+
+    A ``blocks`` dependency is *not* confirmable: the caller resolves it and
+    re-previews. An ``independent_copy / retain`` dependency is never deleted by
+    this owner. Only ``cascade`` dependencies join the target as deletable scope,
+    so the confirmation cannot widen or narrow what the plan authorized.
+    """
+    scope = {plan.target}
+    scope.update(item.target for item in plan.dependencies if item.disposition == "cascade")
+    return tuple(sorted(scope, key=lambda entry: entry.sort_key))
+
+
+def retained_independent_copies(plan: DeletionPlan) -> tuple[DeletionTarget, ...]:
+    """Copies this owner knows it must not delete, reported instead of removed."""
+    retained = {item.target for item in plan.dependencies if item.disposition == "retain"}
+    return tuple(sorted(retained, key=lambda entry: entry.sort_key))
+
+
+def deletion_intent_digest(request: DeletionRequest) -> str:
+    """Stable identity of the request behind one Idempotency-Key."""
+    document = {
+        "plan_id": request.plan_id,
+        "expected_plan_revision": str(request.expected_plan_revision),
+        "plan_digest": request.plan_digest,
+        "confirm_targets": [
+            target_payload(target) for target in sorted(request.targets, key=lambda t: t.sort_key)
+        ],
+    }
+    return hashlib.sha256(canonical_bytes(document)).hexdigest()
+
+
+def confirm(plan: DeletionPlan, request: DeletionRequest, *, now: datetime) -> None:
+    """Refuse any confirmation that is not exactly this plan's live scope.
+
+    Checked in the order the contract distinguishes: revision and digest identify
+    *this* plan, expiry is the plan's own window, blockers are a dependency
+    conflict, and only then is the target set compared. A stale plan therefore
+    reports why it is stale instead of hiding it behind a scope mismatch.
+    """
+    if request.expected_plan_revision != plan.revision:
+        raise DeletionPlanChangedError
+    if request.plan_digest != plan_digest(plan):
+        raise DeletionPlanChangedError
+    if now >= plan.expires_at:
+        raise DeletionPlanExpiredError
+    if not plan.eligible:
+        raise DeletionDependencyConflictError
+    if set(request.targets) != set(confirmed_targets(plan)):
+        raise DeletionConfirmationMismatchError
+
+
+@dataclass(frozen=True, slots=True)
+class DeletionResult:
+    deleted: tuple[DeletionTarget, ...]
+    retained_independent_copies: tuple[DeletionTarget, ...]
+    ledger_id: str
+    completed_at: datetime
+
+    def __post_init__(self) -> None:
+        identifier(self.ledger_id)
+        if not self.deleted:
+            raise ValueError("A deletion result names at least one deleted target")
+        if self.completed_at.tzinfo is None:
+            raise ValueError("A deletion result requires an explicit zone")
+        if set(self.deleted) & set(self.retained_independent_copies):
+            raise ValueError("A retained copy is never reported as deleted")
+
+
+@dataclass(frozen=True, slots=True)
+class DeletionRecord:
+    """Durable projection of one accepted deletion.
+
+    ``result`` is present exactly when the content removal is confirmed; an
+    interrupted execution keeps the same record with ``queued / pending`` and is
+    completed by replaying the original key.
+    """
+
+    id: str
+    plan_id: str
+    plan_digest: str
+    status: str
+    cleanup_state: str
+    created_at: datetime
+    updated_at: datetime
+    result: DeletionResult | None = None
+
+    def __post_init__(self) -> None:
+        identifier(self.id)
+        identifier(self.plan_id)
+        digest(self.plan_digest)
+        if self.status not in DELETION_STATUSES:
+            raise ValueError("Invalid deletion status")
+        if self.cleanup_state not in CLEANUP_STATES:
+            raise ValueError("Invalid deletion cleanup state")
+        if self.created_at.tzinfo is None or self.updated_at.tzinfo is None:
+            raise ValueError("Deletion timestamps require an explicit zone")
+        if self.updated_at < self.created_at:
+            raise ValueError("A deletion update cannot precede its creation")
+        complete = self.status == "succeeded"
+        if complete != (self.result is not None):
+            raise ValueError("A succeeded deletion carries its result and no other status does")
+        expected = "complete" if complete else None
+        if expected is not None and self.cleanup_state != expected:
+            raise ValueError("A succeeded deletion has completed cleanup")
+        if not complete and self.cleanup_state == "complete":
+            raise ValueError("Incomplete cleanup is never reported as complete")
+
+
+def result_payload(result: DeletionResult) -> dict[str, object]:
+    return {
+        "deleted": [target_payload(target) for target in result.deleted],
+        "retained_independent_copies": [
+            target_payload(target) for target in result.retained_independent_copies
+        ],
+        "ledger_id": result.ledger_id,
+        "completed_at": _time(result.completed_at),
+    }
+
+
+def deletion_payload(record: DeletionRecord) -> dict[str, object]:
+    return {
+        "id": record.id,
+        "object": DELETION_OBJECT,
+        "plan_id": record.plan_id,
+        "plan_digest": record.plan_digest,
+        "status": record.status,
+        "cleanup_state": record.cleanup_state,
+        "created_at": _time(record.created_at),
+        "updated_at": _time(record.updated_at),
+        "result": result_payload(record.result) if record.result is not None else None,
+        "error": None,
+    }
+
+
 __all__ = [
+    "CLEANUP_STATES",
+    "DELETION_OBJECT",
+    "DELETION_STATUSES",
+    "DeletionConfirmationMismatchError",
+    "DeletionDependencyConflictError",
     "DeletionError",
     "DeletionIdempotencyConflictError",
+    "DeletionLedgerConfigurationError",
+    "DeletionLedgerUnavailableError",
+    "DeletionObjectStorageUnavailableError",
     "DeletionOwnerMismatchError",
     "DeletionPlan",
     "DeletionPlanChangedError",
+    "DeletionPlanExpiredError",
     "DeletionPlanUnavailableError",
+    "DeletionRecord",
     "DeletionReferenceUnsupportedError",
+    "DeletionRequest",
+    "DeletionResult",
     "DeletionTarget",
     "DeletionTargetNotFoundError",
     "DeletionTargetUnsupportedError",
     "Dependency",
     "canonical_bytes",
+    "confirm",
+    "confirmed_targets",
+    "deletion_intent_digest",
+    "deletion_payload",
     "dependency_snapshot",
+    "digest",
     "idempotency_key_digest",
     "intent_digest",
     "plan_digest",
     "plan_payload",
+    "result_payload",
+    "retained_independent_copies",
     "unsigned_payload",
 ]

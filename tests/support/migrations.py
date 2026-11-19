@@ -34,6 +34,7 @@ def head_revision() -> str:
 HEAD = head_revision()
 
 
+DELETION_LEDGER_REVISION = "0059_speech_deletion_ledger"
 DELETION_PLAN_REVISION = "0058_speech_deletion_plans"
 ASR_SETTLEMENT_REVISION = "0057_asr_settlement"
 PRE_ASR_SETTLEMENT_REVISION = "0056_debt_probe_live_state_index"
@@ -48,10 +49,36 @@ def step_below_deletion_plans(connection: Any) -> None:
     production refusal instead of weakening it.
     """
     execute = connection.execute
+    # 0059's ledger references the plan rows, so it goes before them.
+    execute("DROP TABLE IF EXISTS speech_deletion_ledger")
     execute("DROP TABLE IF EXISTS speech_deletion_plans")
     execute(
         "UPDATE alembic_version SET version_num = %s",
         (ASR_SETTLEMENT_REVISION,),
+    )
+
+
+def step_below_deletion_ledger(connection: Any) -> None:
+    """Start a downgrade from the pre-0059 head.
+
+    0059 refuses to discard the deletion ledger, so a test that exercises 0058's
+    own refusal must first reconstruct the database a pre-0059 deployment has:
+    drop the ledger (0059's only object), restore the narrower content-deletion
+    reason, and stamp the predecessor.
+    """
+    execute = connection.execute
+    execute("DROP TABLE IF EXISTS speech_deletion_ledger")
+    execute(
+        "ALTER TABLE speech_content_deletions "
+        "DROP CONSTRAINT IF EXISTS speech_content_deletions_reason_check"
+    )
+    execute(
+        "ALTER TABLE speech_content_deletions ADD CONSTRAINT "
+        "speech_content_deletions_reason_check CHECK (reason = 'retention_expired')"
+    )
+    execute(
+        "UPDATE alembic_version SET version_num = %s",
+        (DELETION_PLAN_REVISION,),
     )
 
 
@@ -65,8 +92,9 @@ def step_below_asr_settlement(connection: Any) -> None:
     weakening 0057's refusal in production.
     """
     execute = connection.execute
-    # 0058 sits above 0057 and its downgrade is reached first; removing its only
-    # object keeps the simulated pre-0057 database coherent.
+    # 0059 and 0058 sit above 0057 and their downgrades are reached first;
+    # removing their objects keeps the simulated pre-0057 database coherent.
+    execute("DROP TABLE IF EXISTS speech_deletion_ledger")
     execute("DROP TABLE IF EXISTS speech_deletion_plans")
     execute("DROP TABLE IF EXISTS speech_asr_settlement")
     execute(

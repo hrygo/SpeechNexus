@@ -11,14 +11,17 @@ import psycopg
 import pytest
 
 from speechnexus_backend.speech.domain.assets import AssetError, UploadResult
-from speechnexus_backend.speech.infrastructure.assets_postgres import PostgresAssetMetadata, _Cursor
+from speechnexus_backend.speech.infrastructure.assets_postgres import (
+    AssetCursor,
+    PostgresAssetMetadata,
+)
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from tests.unit.test_assets import INSPECTION, INTENT, POLICY, PROOF, READY, RESERVED, WRITING
 
 
 def adapter(monkeypatch: pytest.MonkeyPatch) -> tuple[PostgresAssetMetadata, Mock]:
     metadata = PostgresAssetMetadata(cast(SpeechPool, Mock()), namespace_digest=PROOF.sha256)
-    cursor = Mock(spec=_Cursor)
+    cursor = Mock(spec=AssetCursor)
     cursor.rows.return_value = []
     cursor.asset.return_value = WRITING
     cursor.proof.return_value = None

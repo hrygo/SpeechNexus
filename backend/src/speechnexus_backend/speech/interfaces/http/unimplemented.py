@@ -79,7 +79,6 @@ UNIMPLEMENTED_OPERATIONS: dict[str, tuple[str, str]] = {
         "/v1/nexus/realtime/sessions/{session_id}/cancellations",
     ),
     "connectRealtime": ("GET", "/v1/realtime"),
-    "speechCreateDeletion": ("POST", "/v1/nexus/deletions"),
     "speechGetDeletion": ("GET", "/v1/nexus/deletions/{deletion_id}"),
     # Declared by #845 and frozen by its contract slice; the report itself is not
     # assembled yet. The literal segment shares the `/v1/nexus/jobs/` prefix with the

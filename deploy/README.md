@@ -1072,7 +1072,7 @@ runtime 的启动校验遵循同一条权限面规则：配置 schema 内声明�
 `INSERT`/`UPDATE`/`REFERENCES` 分开判定；schema 需要 `USAGE` 且拒绝 `CREATE`。
 列级判定一律使用 `has_column_privilege`/`has_any_column_privilege`，不以表级结果为代理。
 
-public Job writer 的 16 张可写表只接受列级 `INSERT`：表级 `INSERT` 在任何声明表上都被
+public Job writer 的每张可写表都只接受列级 `INSERT`：表级 `INSERT` 在任何声明表上都被
 拒绝，列集必须与 `job_writer_columns.py` 中的声明完全一致，少一列、多一列或新增列都不
 会自动扩权。拒绝信息点名权限类型与关系，并给出撤销授权或扩声明表的修复动作。
 
@@ -1096,7 +1096,10 @@ REVOKE INSERT ON
   <schema>.speech_voice_drafts,
   <schema>.speech_voice_draft_revisions,
   <schema>.speech_voice_metadata_commands,
-  <schema>.speech_deletion_plans
+  <schema>.speech_deletion_plans,
+  <schema>.speech_deletion_ledger,
+  <schema>.speech_content_deletions,
+  <schema>.speech_asset_events
 FROM <job-writer-role>;
 
 -- 然后对同一 Job writer 角色重跑以下 grant 函数（逐个）：
@@ -1110,9 +1113,14 @@ FROM <job-writer-role>;
 -- cancellation_reconciliation_grants
 -- artifact_publisher_grants
 -- deletion_plan_grants
+-- deletion_execution_grants
 --
--- deletion_plan_grants 不属于启动硬门：缺它时 Job writer 仍启动，仅
--- POST /v1/nexus/deletion-plans 返回 503 deletion_plans_not_configured。
+-- deletion_plan_grants / deletion_execution_grants 都不属于启动硬门：缺任一组时
+-- Job writer 仍启动，只有对应路由分别返回 503 deletion_plans_not_configured /
+-- 503 deletion_not_configured（retryable=false）。deletion_execution_grants 含
+-- 删除账本与资产内容删除账本的列级 INSERT/UPDATE、speech_asset_events 的列级
+-- INSERT（其 ON CONFLICT 另需 SELECT）、speech_assets 与 admission_operations 的
+-- 列级 UPDATE，以及唯一一条 DELETE ON speech_job_intents。
 -- public_job_admission_grants 属于独立的 admission 角色，不要应用到 Job writer：
 -- 它只给 speech_job_events 4/8 列，并额外授予 admission_attempts / requests / leases。
 ```

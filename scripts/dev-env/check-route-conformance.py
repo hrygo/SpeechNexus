@@ -98,8 +98,7 @@ KNOWN_UNIMPLEMENTED_OPERATIONS: dict[str, str] = {
     "getRealtimeSession": "realtime session read is not implemented",
     "cancelRealtimeSession": "realtime session cancellation is not implemented",
     "connectRealtime": "the /v1/realtime WebSocket route is not implemented",
-    # Deletion execution and its read are not implemented; the plan preview is.
-    "speechCreateDeletion": "speech deletion route is not implemented",
+    # Deletion execution and its plan preview are implemented; only the read is not.
     "speechGetDeletion": "speech deletion read route is not implemented",
     # Declared and frozen by the #845 contract slice; the report is not assembled.
     "getJobAdmissionReadiness": "the admission readiness report is not implemented",

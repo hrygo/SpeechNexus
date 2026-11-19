@@ -380,9 +380,9 @@ Job 已是 `cancelled` 是另一条分支，判定它的是**容量结论而不�
    它**不**使用 API 自己的 DSN，而是读取可选的专用只读 DSN
    `SPEECHNEXUS_READINESS_CANCELLATION_DSN`：为填充一个诊断就去给 `sn_api` 加取消账本、
    围栏、租约或执行表的 SELECT，是拿安全边界换一个字符串。没配这个 DSN 时 detail 是
-   `cancellation_debt: unavailable (not configured)`，其余一切照常。第二到第五路读法都不扩大
-   授权面：它们只读 `cancellation_debt_reader_grants` 已授予的列，迁移 `0060`、`0061` 与
-   `0062` 都只新增或替换索引（DDL），不新增表权限，也不会顺手给 `sn_api` 加表权限。该函数
+   `cancellation_debt: unavailable (not configured)`，其余一切照常。四路读取（含 Job 级
+   降级形态）都只读 `cancellation_debt_reader_grants` 声明的列：迁移 `0060`、`0061` 与
+   `0062` 只新增或替换索引（DDL），不新增表权限，也不会顺手给 `sn_api` 加表权限。该函数
    授予的账本列是五列：`job_id`、`settled_at_us`、`last_outcome`、`next_check_at_us` 与
    `attempts`——最后两列是「下一次领取在何时」与「已经重试过几次」，属于调度与重试记账，
    不含请求内容。**升级后必须重跑该函数**：旧的四列授权读不到 `attempts`，探针会退化为

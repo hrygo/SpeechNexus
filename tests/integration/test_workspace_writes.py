@@ -136,6 +136,11 @@ def upgrade(url: str, schema: str, revision: str) -> None:
                 )
                 connection.execute(
                     text(
+                        f'DROP INDEX IF EXISTS "{schema}".speech_job_cancellation_ledger_debt_scan'
+                    )
+                )
+                connection.execute(
+                    text(
                         f'UPDATE "{schema}".alembic_version '
                         "SET version_num = '0056_debt_probe_live_state_index'"
                     )

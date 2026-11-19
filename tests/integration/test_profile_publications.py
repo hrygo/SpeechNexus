@@ -748,10 +748,14 @@ def test_repeat_upgrade_and_refused_downgrade_preserve_history(sandbox: Sandbox)
         with engine.connect() as connection:
             config.attributes["connection"] = connection
             migration.upgrade(config, "head")
-            # 0060 refuses its own downgrade first; rebuild the pre-0060 head so this
-            # test still reaches 0059's guard. The age index is 0060's only object.
+            # 0060 and 0061 refuse their own downgrades first; rebuild the pre-0060
+            # head so this test still reaches 0059's guard. Each index is its own
+            # revision's only object.
             connection.execute(
                 text(f'DROP INDEX IF EXISTS "{s.schema}".speech_job_cancellation_fence_age_scan')
+            )
+            connection.execute(
+                text(f'DROP INDEX IF EXISTS "{s.schema}".speech_job_cancellation_ledger_debt_scan')
             )
             connection.execute(
                 text(f'UPDATE "{s.schema}".alembic_version SET version_num = :revision'),

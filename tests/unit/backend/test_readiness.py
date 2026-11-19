@@ -12,6 +12,8 @@ import pytest
 
 from speechnexus_backend.speech.application.readiness import ReadinessService
 from speechnexus_backend.speech.infrastructure.readiness import (
+    _PERMANENT_DEBT,
+    ABANDONED_HOLDING_CAPACITY,
     LEFT_CANCELLING_HOLDING_CAPACITY,
     CancellationDebtProbe,
     StopEvidenceDebtProbe,
@@ -227,6 +229,153 @@ def test_the_left_cancelling_label_counts_jobs_not_leases() -> None:
     assert "due now: 1" in detail
     assert "left-cancelling-holding-capacity: 1" in detail
     assert detail.count("left-cancelling-holding-capacity") == 1
+
+
+def test_the_abandoned_scope_counts_only_jobs_the_bounded_reads_did_not_name() -> None:
+    """#1008: the fifth label means "the age-bounded read face stopped naming this".
+
+    The fifth read overlaps the other reads by construction -- it has neither a
+    Job-state gate nor an age bound -- so the same lease can arrive twice. The first
+    read to name it owns it: the held-lease unit is not inflated, and a Job the
+    bounded read still names is never also called abandoned. That is what keeps the
+    two labels a statement about *which* read names the Job rather than two ways of
+    describing the same row.
+    """
+    detail = _describe_debt(
+        [
+            # Still inside the fourth read's window: it owns this lease.
+            (
+                "job-recent",
+                "lease-recent",
+                "reserved",
+                "unknown_quarantined",
+                None,
+                None,
+                None,
+                "exhausted",
+                LEFT_CANCELLING_HOLDING_CAPACITY,
+            ),
+            # The same lease, named again by the unbounded read: same row, same Job.
+            (
+                "job-recent",
+                "lease-recent",
+                "reserved",
+                "unknown_quarantined",
+                None,
+                None,
+                None,
+                "exhausted",
+                ABANDONED_HOLDING_CAPACITY,
+            ),
+            # Outside the window: only the unbounded read names it.
+            (
+                "job-old",
+                "lease-old",
+                "reserved",
+                "unknown_quarantined",
+                None,
+                None,
+                None,
+                "exhausted",
+                ABANDONED_HOLDING_CAPACITY,
+            ),
+        ]
+    )
+
+    assert detail is not None
+    # Two Jobs, two held leases: the repeated row added neither.
+    assert detail.startswith(
+        "cancellation_debt: 2 accepted cancellation(s) still hold capacity over 2 held lease(s)"
+    )
+    assert "lease-recent(lease=reserved" in detail
+    assert detail.count("lease-recent(lease=reserved") == 1
+    assert "left-cancelling-holding-capacity: 1" in detail
+    assert "abandoned-holding-capacity: 1" in detail
+    # The mark is counted once per Job, exactly as before the fifth read existed.
+    assert "never claimable (exhausted): 2" in detail
+
+
+def test_the_abandoned_scope_counts_jobs_not_leases() -> None:
+    """One Job with two held leases is one abandoned Job, as with every other scope."""
+    detail = _describe_debt(
+        [
+            (
+                "job-old",
+                "lease-a",
+                "reserved",
+                "unknown_quarantined",
+                None,
+                None,
+                None,
+                "exhausted",
+                ABANDONED_HOLDING_CAPACITY,
+            ),
+            (
+                "job-old",
+                "lease-b",
+                "reserved",
+                "unknown_quarantined",
+                None,
+                None,
+                None,
+                "exhausted",
+                ABANDONED_HOLDING_CAPACITY,
+            ),
+        ]
+    )
+
+    assert detail is not None
+    assert "over 2 held lease(s)" in detail
+    assert "abandoned-holding-capacity: 1" in detail
+    assert detail.count("abandoned-holding-capacity") == 1
+
+
+def test_the_abandoned_label_is_not_a_ledger_mark() -> None:
+    """The fifth scope joins neither the three marks nor the fourth label.
+
+    ``abandoned`` is a statement about the read that found the Job, not about its
+    schedule, so it must not be counted as one of the marks: a Job whose ledger is
+    merely ``due now`` is still reported there, and the raw state name never leaks.
+    """
+    detail = _describe_debt(
+        [
+            (
+                "job-old",
+                "lease-old",
+                "reserved",
+                "unknown_quarantined",
+                None,
+                None,
+                None,
+                "due",
+                ABANDONED_HOLDING_CAPACITY,
+            )
+        ]
+    )
+
+    assert detail is not None
+    assert "due now: 1" in detail
+    assert "abandoned-holding-capacity: 1" in detail
+    assert "left-cancelling-holding-capacity" not in detail
+    assert "due" in detail.split("(", 1)[1]
+
+
+def test_the_permanent_read_takes_no_lookback_window() -> None:
+    """#1008: a lookback window here is the defect, so it may not come back.
+
+    The read's bound is migration 0061's partial index -- the ledger's open rows --
+    not an age. A ``window_us`` placeholder or an ``accepted_at_us >=`` filter is how
+    the 25 h shape would silently disappear again, so neither may exist. The grace
+    premise is the one age condition every cancellation read shares, and it is an
+    upper bound only: it says the acceptance is old enough to judge, not that it is
+    recent enough to see.
+    """
+    assert "%(window_us)s" not in _PERMANENT_DEBT
+    assert "%(now_us)s" in _PERMANENT_DEBT  # the ``due`` branch and the grace premise
+    assert "accepted_at_us >=" not in _PERMANENT_DEBT
+    assert "accepted_at_us <= now_clock.now_us - %(grace_us)s" in _PERMANENT_DEBT
+    # And it reads the ledger's open rows with the index's own predicate.
+    assert "(r.settled_at_us IS NULL OR r.last_outcome = 'exhausted')" in _PERMANENT_DEBT
 
 
 def test_a_completed_execution_is_labelled_as_its_own_subclass() -> None:

@@ -1116,8 +1116,9 @@ SELECT 且拒绝任何写权限，未配置时列表返回 `503 model_binding_se
    下面第 4 类；
 4. 账本五列已授权、但该身份仍读不到租约/执行/终止证据表：这是正常的 Job 级降级，detail
    按账本事实打印**命中的**标记（`never claimed` / `never claimable (exhausted)` /
-   `due now` / `retrying on schedule`），四者按行互斥、只打印非零项；`attempts` 到 64 时
-   另有**并列**计数 `retrying at attempt ceiling`。能看到这些标记就说明账本列授权已生效；
+   `due now` / `retrying on schedule`），四者按行互斥、只打印非零项；`attempts` 到
+   `ATTEMPT_CEILING`（当前 64）时另有**并列**计数 `retrying at attempt ceiling`。能看到这些
+   标记就说明账本列授权已生效；
    整个 detail 退化为第 3 类则说明还没生效。
 
 `GRANT` 对下一次查询即生效：同一 `SPEECHNEXUS_READINESS_CANCELLATION_DSN`/角色的探针在

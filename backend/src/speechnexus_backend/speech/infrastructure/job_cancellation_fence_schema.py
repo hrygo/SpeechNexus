@@ -27,20 +27,21 @@ from speechnexus_backend.speech.infrastructure.job_writer_columns import (
 TABLE = CANCELLATION_FENCE_TABLE
 RECONCILIATION_TABLE = "speech_job_cancellation_reconciliations"
 NOT_SUBMITTED_TABLE = "speech_job_cancellation_not_submitted"
-#: Storage bound on the ledger's ``attempts`` counter, single-sourced from the CHECK
-#: below so the DDL and the readiness read cannot disagree. A row at the bound is not a
-#: failed write: the claim's ``LEAST(attempts + 1, ceiling)`` keeps it claimable forever,
-#: which is what makes a permanently refused release a bounded-but-endless retry rather
-#: than an error. The read face names that shape (#1038).
+#: Storage bound on the ledger's ``attempts`` counter. Exactly one number backs three
+#: readers, and none of them restates it: the ``CHECK`` below interpolates this name, the
+#: claim clamps with ``LEAST(attempts + 1, ceiling)`` after importing it as
+#: ``_MAX_ATTEMPTS``, and the readiness read names a row that reached it (#1038). A row at
+#: the bound is not a failed write: the clamp keeps it claimable forever, which is what
+#: makes a permanently refused release a bounded-but-endless retry rather than an error.
 #:
-#: KNOWN DEBT: the claim side still hard-codes the same bound as
-#: ``_MAX_ATTEMPTS = 64`` in ``job_cancellation_reconciliation_postgres.py``, and the two
-#: literals must stay equal. A claim ceiling below this one saturates ``attempts`` early,
-#: so the read face never says "at attempt ceiling" while the row is already spent -- the
-#: silent state #1038 removed. A claim ceiling above it makes ``LEAST(attempts + 1, N)``
-#: emit 65+, which the CHECK below rejects: the claim UPDATE fails and the row stops
-#: being retried at all. Changing one means changing both; importing this constant there
-#: is deferred only because that module belongs to another slice of this change.
+#: The claim side holds an alias of this object, never its own literal, so the two cannot
+#: disagree by omission. That matters because the disagreement is a behaviour bug: a claim
+#: ceiling below this one saturates ``attempts`` early, so the read face never says "at
+#: attempt ceiling" while the row is already spent (the silent state #1038 removed); one
+#: above it makes ``LEAST`` emit 65+, which the ``CHECK`` below rejects, so the claim
+#: ``UPDATE`` fails and the row stops being retried at all.
+#: ``tests/unit/backend/test_cancellation_ledger_bound.py`` fails if the claim module
+#: reintroduces a number of its own, in Python or inside its claim SQL.
 ATTEMPT_CEILING = 64
 
 JOB_CANCELLATION_FENCE_DDL = (

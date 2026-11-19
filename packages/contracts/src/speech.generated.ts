@@ -540,15 +540,21 @@ export interface paths {
      *     route is whether a create is admitted.
      *
      *     The verdict is one value, never a set. `cause` is the single refusal class a
-     *     create would answer right now, or null when it would be admitted; `status`
-     *     is `admitting` if and only if `cause` is null, and `admitting` holds if and
-     *     only if a create sent now would be admitted. The create path answers one
-     *     code, so a report naming several could only invent a precedence the API does
-     *     not have -- which of the observed refusals a create reached first -- and
-     *     would let the report describe a class the create never returns. Naming one
-     *     makes "this is the code a create would answer at this instant" the only
-     *     shape the response can take, and the two fields cannot disagree; the schema
-     *     rejects a body that does.
+     *     create for a published binding would answer right now, or null when a create
+     *     for every published binding would be admitted; `status` is `admitting`
+     *     if and only if `cause` is null, and `admitting` holds if and only if a
+     *     create for every published binding sent now would be admitted. The create
+     *     path answers one code, so a report naming several could only invent a
+     *     precedence the API does not have -- which of the observed refusals a create
+     *     reached first -- and would let the report describe a class the create never
+     *     returns. Naming one makes "this is the code a create would answer at this
+     *     instant" the only shape the response can take, and the two fields cannot
+     *     disagree; the schema rejects a body that does.
+     *
+     *     A create validates the binding it names before it asks admission, so a
+     *     published binding that validation rejects as incomplete
+     *     (`job_binding_incomplete`, request-shaped) is outside this verdict: it is
+     *     neither a cause nor an `instances` row.
      *
      *     Every public code that means "this deployment refuses every create" has
      *     exactly one cause here, and every cause names exactly one of those codes, so
@@ -2563,7 +2569,8 @@ export interface components {
     AdmissionReadiness: {
       /**
        * @description `admitting` if and only if `cause` is null, and if and only if a create
-       *     sent at this instant would be admitted; `degraded` otherwise. This is the
+       *     for every published binding sent at this instant would be admitted;
+       *     `degraded` otherwise. This is the
        *     one field a poller has to assert on. The two conditions are not a second
        *     verdict beside `cause`: the schema below constrains them together, so a
        *     body cannot claim a cause while admitting or be degraded without naming
@@ -2572,11 +2579,12 @@ export interface components {
        */
       status: "admitting" | "degraded";
       /**
-       * @description The refusal class a create sent at this instant would answer, or null when
-       *     it would be admitted. One value, never a set: the create path answers one
-       *     code and the report repeats that one code. `storage_unavailable` is the
-       *     only member reported for an unreadable store, because no other fact could
-       *     have been read.
+       * @description One value, never a set: the refusal class a create for a published
+       *     binding would answer at this instant, or null when every published
+       *     binding would admit a create. The create path answers one code and the
+       *     report repeats that one code. `storage_unavailable` is the only member
+       *     reported for an unreadable store, because no other fact could have been
+       *     read.
        */
       cause:
         | null
@@ -2603,12 +2611,15 @@ export interface components {
        */
       detail: string | null;
       /**
-       * @description The one instance a create would pin for each published binding — the same
-       *     selection rule a create applies, one row per `binding_revision_id` — in
-       *     ascending `(binding_revision_id, instance_id, instance_generation)` order.
-       *     Empty when the store could not be read. An instance reachable only through
-       *     a second generation of the same binding is not listed: a create does not
-       *     fall back to it.
+       * @description One row per published binding that has a pin target: the one instance a
+       *     create for that binding would select, under the same rule a create
+       *     applies, in ascending `(binding_revision_id, instance_id,
+       *     instance_generation)` order. A published binding with no `ready` instance
+       *     contributes the `capacity_exhausted` cause but no row, because there is no
+       *     instance whose receipt to report. Empty when the store could not be read.
+       *     An instance reachable only through a second generation of the same
+       *     binding, or through a binding that is not published, is not listed: a
+       *     create cannot name it.
        */
       instances: components["schemas"]["AdmissionReadinessInstance"][];
       /**

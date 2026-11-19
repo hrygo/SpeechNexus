@@ -193,6 +193,49 @@ def _execution_block(definition: dict[str, Any], kind: str) -> dict[str, Any]:
     return block
 
 
+def _admission_block(definition: dict[str, Any], kind: str) -> dict[str, Any]:
+    """The execution block a create would admit with, or the refusal it answers.
+
+    The create validates the block of the kind it names before it asks admission.
+    The report's binding filter calls this same function, so "this binding can
+    reach admission" cannot mean one thing to the create and another to the report.
+    """
+    block = _execution_block(definition, kind)
+    timeout = block["timeout_seconds"]
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 600:
+        raise PublicJobAdmissionRejectedError("job_binding_incomplete")
+    return block
+
+
+def _binding_reaches_admission(definition_json: Any) -> bool:
+    """Whether a create naming this binding can reach admission for some kind.
+
+    A binding whose execution defaults are incomplete for every supported kind
+    answers the request-shaped ``job_binding_incomplete`` before admission runs; that
+    is not a deployment-state refusal, so the report must not turn it into
+    ``capacity_exhausted``. A binding that is valid for at least one kind stays: a
+    create naming that kind does reach admission, and its pin target decides.
+    """
+    try:
+        definition = json.loads(definition_json)
+    except ValueError, TypeError, RecursionError:
+        return False
+    if not isinstance(definition, dict):
+        return False
+    defaults = definition.get("execution_defaults")
+    if not isinstance(defaults, dict):
+        return False
+    for kind in ("tts", "asr"):
+        if kind not in defaults:
+            continue
+        try:
+            _admission_block(definition, kind)
+        except PublicJobAdmissionRejectedError:
+            continue
+        return True
+    return False
+
+
 def _binding(cursor: _Cursor, model_id: str, revision: str) -> tuple[str, int, dict[str, Any]]:
     row = _one(
         cursor,
@@ -739,14 +782,8 @@ def build_public_job_admission(
             "timeout_seconds": timeout,
         }
     else:
-        block = _execution_block(definition, job.kind)
+        block = _admission_block(definition, job.kind)
         timeout = block["timeout_seconds"]
-        if (
-            isinstance(timeout, bool)
-            or not isinstance(timeout, (int, float))
-            or not 0 < timeout <= 600
-        ):
-            raise PublicJobAdmissionRejectedError("job_binding_incomplete")
         execution = block
     quota = _quota(cursor, job.workspace_id)
     instance = _instance(cursor, binding_revision_id, model_id)
@@ -1181,32 +1218,49 @@ def _readiness_workspace_state(cursor: _Cursor, workspace_id: str) -> str | None
 
 
 def _readiness_candidates(cursor: _Cursor) -> list[dict[str, Any]]:
-    """The one instance per binding that a create would pin, in binding order.
+    """One row per published binding, carrying the instance a create would pin.
 
-    A create is asked for a binding and pins the first ``ready`` instance of that
-    binding by ``(instance_id, instance_generation)``. The report has no binding
-    argument, so it asks that same question of every binding: ``DISTINCT ON``
-    keeps the first instance of each, and the rows come back in
-    ``binding_revision_id`` order so the reported cause is deterministic.
+    The question is about creates, and a create can only name a published, un-retired
+    binding revision -- the predicate ``_binding`` applies. Starting the read from
+    ``engine_instances`` answered a different question in both directions: a published
+    binding with no ready instance disappeared from the report (``admitting`` while
+    every create for it answered ``job_capacity_exhausted``), and a ready instance
+    behind an unpublished binding entered it (a refusal no create could reach). So
+    every published revision is the left side and its pin target -- the first
+    ``ready`` instance of that binding by ``(instance_id, instance_generation)``,
+    exactly as ``_instance`` selects it -- is the right side.
 
-    Reading every ready instance instead is the defect the readiness report was
-    rewritten for (#857 third round, #863): with the pinned instance's node
-    quarantined and a healthy sibling behind the same binding, the report probed
-    the sibling and answered ``admitting`` while every create for that binding was
-    refused. An instance the create path would never select (not ready, no prepare
-    intent) is not a candidate in either path.
+    A published binding with no pin target stays in the result as a row whose
+    instance columns are NULL: the caller records its capacity refusal instead of
+    letting the binding vanish. A published binding that cannot reach admission for
+    any kind (an incomplete definition) is not a candidate: a create naming it is
+    refused with the request-shaped ``job_binding_incomplete`` before admission, and
+    reporting that as ``capacity_exhausted`` would name a class no create returns.
+    The rows come back in ``binding_revision_id`` order so the reported cause is
+    deterministic.
     """
     cursor.execute(
-        "SELECT DISTINCT ON (i.binding_revision_id) i.binding_revision_id, i.instance_id, "
-        "i.instance_generation, i.host_node_id, i.pool_id "
-        "FROM engine_instances AS i "
+        "SELECT DISTINCT ON (p.revision_id) p.revision_id AS binding_revision_id, "
+        "r.definition_json, i.instance_id, i.instance_generation, i.host_node_id, i.pool_id "
+        "FROM speech_publications AS p "
+        "JOIN speech_binding_revisions AS r ON r.binding_id = p.object_id "
+        "AND r.revision = p.revision AND r.revision_id = p.revision_id "
+        "LEFT JOIN ("
+        "SELECT i.binding_revision_id, i.instance_id, i.instance_generation, "
+        "i.host_node_id, i.pool_id FROM engine_instances AS i "
         "JOIN runtime_instance_heads AS h ON h.instance_id = i.instance_id "
         "AND h.current_generation = i.instance_generation "
         "WHERE i.instance_state='ready' AND i.instance_generation IS NOT NULL "
-        "AND h.current_prepare_intent_id IS NOT NULL "
-        "ORDER BY i.binding_revision_id, i.instance_id, i.instance_generation"
+        "AND h.current_prepare_intent_id IS NOT NULL"
+        ") AS i ON i.binding_revision_id = p.revision_id "
+        "WHERE p.kind = 'binding' "
+        "AND NOT EXISTS ("
+        f"SELECT 1 FROM {RETIREMENT_TABLE} AS retired WHERE retired.kind = p.kind "
+        "AND retired.object_id = p.object_id AND retired.revision = p.revision "
+        "AND retired.revision_id = p.revision_id)"
+        "ORDER BY p.revision_id, i.instance_id, i.instance_generation"
     )
-    return cursor.fetchall()
+    return [row for row in cursor.fetchall() if _binding_reaches_admission(row["definition_json"])]
 
 
 def _readiness_one(cursor: _Cursor, query: str, parameters: tuple[object, ...]) -> dict[str, Any]:
@@ -1386,11 +1440,12 @@ def load_admission_readiness(
     returned. A condition that refuses a create therefore cannot be reported as
     ``admitting``, and the report never recomputes a window or a counter (#863).
 
-    The probe set is the create path's own selection: the first ready instance of
-    each binding (``_readiness_candidates``). The report answers ``admitting`` only
-    when the predicate admits every one of those instances, because a create naming
-    any of those bindings would pin exactly that instance; the first refusal in
-    binding order is the reported cause.
+    The probe set is every published binding a create could name, carrying the one
+    instance a create for it would pin (``_readiness_candidates``). The report
+    answers ``admitting`` only when the predicate admits a create for every one of
+    them; a published binding with no pin target contributes ``job_capacity_exhausted``
+    instead of disappearing, and the first refusal in binding order is the reported
+    cause. ``instances[]`` lists only the bindings that have a pin target.
     """
     identifier(workspace_id)
     state = _readiness_workspace_state(cursor, workspace_id)
@@ -1422,6 +1477,12 @@ def load_admission_readiness(
     reports: list[ReadinessInstanceReport] = []
     refusal: str | None = None
     for candidate in candidates:
+        if candidate["instance_id"] is None:
+            # The binding is published but has no pin target: a create naming it
+            # answers the capacity refusal, and the binding must not vanish from the
+            # verdict just because there is no instance row to report.
+            refusal = refusal or "job_capacity_exhausted"
+            continue
         try:
             runtime, host, readiness_state = _readiness_runtime(cursor, candidate, now_us=now_us)
         except (

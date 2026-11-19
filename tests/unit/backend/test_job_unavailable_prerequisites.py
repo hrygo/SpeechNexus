@@ -26,7 +26,7 @@ from httpx import ASGITransport, AsyncClient
 from speechnexus_contracts import ContractValidationError
 
 from speechnexus_backend.app import create_app
-from speechnexus_backend.speech.application.public_jobs import JobRejectedError
+from speechnexus_backend.speech.application.public_jobs import JobRejectedError, PublicJobs
 from speechnexus_backend.speech.domain.job_prerequisites import (
     ADMISSION_DSN,
     ADMISSION_DSN_KEY,
@@ -315,3 +315,22 @@ def test_the_shipped_rows_are_reachable_by_condition() -> None:
         assert (row.condition, row.detail, row.action) == (condition, detail, action)
     with pytest.raises(KeyError):
         prerequisite("no_such_condition")
+
+
+@pytest.mark.anyio
+async def test_a_store_without_the_readiness_port_answers_the_storage_outage() -> None:
+    """A store that cannot answer the report is a 503, never a silent `admitting`.
+
+    The service requires the read as a port instead of duck-typing it, so the route
+    has to convert the missing capability through the same storage answer every
+    other Job route uses rather than answering a fabricated verdict.
+    """
+    service = PublicJobs(cast(Any, object()), cast(Any, object()), now_us=lambda: 0)
+    async with AsyncClient(
+        transport=ASGITransport(app=_app(service)), base_url="http://test"
+    ) as client:
+        response = await client.get(PREFIX + "/admission-readiness")
+
+    assert response.status_code == 503, response.text
+    assert response.json()["error"]["code"] == "job_unavailable"
+    assert response.json()["error"]["retryable"] is False

@@ -15,11 +15,14 @@ Each row mutates one deployment fact, asks for a create and reads the report:
 
 The report runs ``decide_create_admission`` -- the predicate the create transaction
 runs -- so a row cannot pass by agreeing with a second copy of the rules. The probe
-set is the create path's own selection layer: the first ready instance of each
-binding. The last three cases build the deployment shape the single-instance rows
-cannot express (two ready instances behind one binding, and two bindings), because
-the report used to scan *every* ready instance and answer ``admitting`` from a
-healthy sibling of the instance a create would pin (#857 third round, #863).
+set is the create path's own scope: every published binding a create could name,
+carrying the one instance a create for it would pin. The cases after the rows build
+the deployment shapes the single-instance fixture cannot express -- two ready
+instances behind one binding, two bindings, a published binding with no instance,
+and a ready instance behind an unpublished binding -- because the report used to
+start from ``engine_instances`` and answer ``admitting`` from a healthy sibling of
+the instance a create would pin (#857 third round, #863), from a binding that had
+no instance at all, or refuse on an instance no create could name.
 
 Boundaries: PostgreSQL with the shipped schema and roles. The rows that need a
 second instance or a second binding build them through the product's own
@@ -173,6 +176,9 @@ OTHER_HOST = "host-z"
 OTHER_POOL = "asr-realtime"
 OTHER_GATEWAY = "gateway-z"
 OTHER_DIGEST = "sha256:" + "c" * 64
+# A binding the catalog never published (or retired): a create cannot name it, so a
+# ready instance carrying this revision is a ghost the report must ignore.
+GHOST_BINDING = "binding-unpublished"
 
 
 def _register_ready_instance(
@@ -458,6 +464,66 @@ def test_two_usable_bindings_report_admitting(admission_database: AdmissionDatab
     assert report.status == "admitting" and report.cause is None
     assert report.detail is None
     assert created.outcome == "created", created.error_code
+
+
+def test_a_published_binding_with_no_instance_refuses_the_report(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """A complete published binding with no ready instance is a capacity refusal.
+
+    A create for that binding answers ``job_capacity_exhausted``; a report that
+    starts from ``engine_instances`` cannot see the binding at all and answers
+    ``admitting`` from the healthy binding beside it, which is the failure this
+    route exists to prevent.
+    """
+    _seed(admission_database)
+    _publish_other_binding(admission_database)
+    store = _store(admission_database)
+    report = store.admission_readiness(WORKSPACE)
+    created = store.create(_job(model=OTHER_BINDING))
+    print(
+        f"ROW {'published-no-instance':<20} create={created.error_code or created.outcome:<26} "
+        f"status={report.status.value:<9} cause={report.cause.value if report.cause else None}"
+    )
+    assert created.outcome == "rejected"
+    assert created.error_code == "job_capacity_exhausted", created.error_code
+    assert report.status == "degraded", report.cause
+    assert report.cause is not None and report.cause.value == "capacity_exhausted"
+    # The binding contributes the verdict, not a row: there is no instance to report.
+    assert [row.instance_id for row in report.instances] == ["instance-new"]
+
+
+def test_an_unpublished_binding_with_a_ready_instance_is_not_reported(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """A ready instance behind an unpublished binding cannot refuse any create.
+
+    ``engine_instances`` may still hold one -- a retired or never-published catalog
+    is exactly how a ghost appears -- but no create can name that binding, so the
+    report must neither list it nor let its quarantined node turn the verdict
+    degraded while every create succeeds.
+    """
+    _seed(admission_database)
+    _register_ready_instance(
+        admission_database,
+        binding_id=GHOST_BINDING,
+        instance_id=OTHER_INSTANCE[0],
+        host_node_id=OTHER_HOST,
+        pool_id=OTHER_POOL,
+        gateway_id=OTHER_GATEWAY,
+    )
+    _quarantine(admission_database, OTHER_HOST)
+    store = _store(admission_database)
+    report = store.admission_readiness(WORKSPACE)
+    created = store.create(_job())
+    print(
+        f"ROW {'unpublished-instance':<20} create={created.error_code or created.outcome:<26} "
+        f"status={report.status.value:<9} cause={report.cause.value if report.cause else None}"
+    )
+    assert created.outcome == "created", created.error_code
+    assert report.status == "admitting" and report.cause is None
+    assert report.detail is None
+    assert [row.instance_id for row in report.instances] == ["instance-new"]
 
 
 def test_a_report_never_reserves(admission_database: AdmissionDatabase) -> None:

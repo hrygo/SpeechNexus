@@ -180,7 +180,10 @@ class _DeadlineConnection:
         ``SET TRANSACTION`` is only legal as a transaction's first statement, so
         this cannot go through ``execute``: ``arm`` writes ``statement_timeout``
         with a query first and would turn the set into an ``ActiveSqlTransaction``.
-        The raw round trip is still deadline-checked on both sides.
+        The raw round trip is therefore the only one in this transaction without a
+        server-side ``statement_timeout``; it scans no table, so the risk is bounded
+        to a hung connection, which the deadline checks on both sides and the pool's
+        ``connect_timeout`` still bound.
         """
         _remaining(self.deadline)
         self.raw.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")

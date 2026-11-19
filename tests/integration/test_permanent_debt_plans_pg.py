@@ -7,15 +7,18 @@ leases that still hold capacity. A lease that holds capacity is a live reservati
 reservations cannot exceed the deployment's instance slots, so the read's cost is
 bounded by capacity rather than by how much the deployment has accumulated.
 
-Three histories are grown together, tenfold between the two scales, because each of them
-is a real term in the alternatives and a seed that grows only one of them cannot tell the
+Five histories are grown together, tenfold between the two scales, because each of them is
+a real term in the alternatives and a seed that grows only one of them cannot tell the
 designs apart:
 
 * settled ledger rows (what a whole-ledger scan would pay for);
 * ``exhausted`` ledger rows (what migration 0061's ledger index kept forever -- an
   ``exhausted`` row is never settled, so it is a permanent member of that partial index
   even after its lease was released);
-* released leases (what a whole-lease scan would pay for).
+* released leases (what a whole-lease scan would pay for);
+* submit intents, one per lease (what the execution-state left join would pay for);
+* execution stop evidence, one per submit intent (what the evidence left join would pay
+  for).
 
 The plan assertions are structural (which relations are never sequentially scanned, how many
 rows each read returns, and that the permanent read's access path is migration 0062's index);
@@ -61,6 +64,16 @@ _IN_WINDOW = 5
 #: truncated window cannot masquerade as a window holding exactly the in-window rows.
 _BOUNDED_LIMIT = 96
 _HELD = _OPEN + _IN_WINDOW
+#: The permanent read reaches these five relations by primary or unique key once per held
+#: lease: the reconciliation, the fence, the Job, the submit intent and the stop evidence.
+#: Their index depth -- not their row count -- is the only thing a growing seed may move.
+_KEY_DESCENTS_PER_LEASE = 5
+#: A tenfold table can deepen one of those indexes by one level, i.e. one more page per
+#: descent. The budget is two so that a planner or page-layout difference between
+#: PostgreSQL versions cannot fail a read that stayed bounded; it is not a claim that a
+#: split costs a level. A read that followed the history instead would pay for its rows,
+#: i.e. thousands of pages -- an order of magnitude past this budget.
+_MAX_EXTRA_INDEX_LEVELS = 2
 #: (settled ledger rows, exhausted ledger rows, released leases) -- each term 10x.
 _SCALES = ((10_000, 100, 10_000), (100_000, 1_000, 100_000))
 _WINDOW_US = 86_400 * 1_000_000
@@ -119,7 +132,7 @@ def _seed_attempt_and_lease(
 
 
 def _seed(conn: Connection[dict[str, Any]], *, settled: int, exhausted: int, released: int) -> None:
-    """Three histories plus the held debt, all in one schema."""
+    """Five histories plus the held debt, all in one schema."""
     _coordination(conn)
     # -- histories: settled cancellations, exhausted cancellations, released leases.
     # Their leases are released: the capacity came back, so none of this is debt.
@@ -292,11 +305,45 @@ def _seed(conn: Connection[dict[str, Any]], *, settled: int, exhausted: int, rel
         "speech_jobs",
         "admission_attempts",
         "admission_leases",
-        "submit_intents",
         "speech_job_cancellation_fences",
         "speech_job_cancellation_reconciliations",
     ):
         conn.execute(f"ANALYZE {table}")
+    _seed_submit_and_stop_histories(conn)
+    for table in ("submit_intents", "execution_stop_evidence"):
+        conn.execute(f"ANALYZE {table}")
+
+
+def _seed_submit_and_stop_histories(conn: Connection[dict[str, Any]]) -> None:
+    """One submit intent per lease and one stop evidence per intent.
+
+    Both tables are part of the debt reads' join tree and both grow with the deployment:
+    ``submit_intents.lease_id`` is ``UNIQUE`` and a row is written whenever a lease is
+    submitted, while a released or finished execution never deletes it (only the private
+    ``request_document`` is redacted in place). ``execution_stop_evidence`` keeps one row
+    per intent -- the proof a stop was observed -- and has no delete path either.
+
+    They are seeded because the assertion's question is what the planner does with a
+    relation that has grown, and a scan of an empty table answers the opposite question:
+    with zero rows an index cannot beat a sequential read, so the planner is *right* to
+    scan it and the assertion would either have to excuse the table or fail a bounded
+    plan. Populating both keeps every entry in `_GROWTH_RELATIONS` honest at both scales.
+    """
+    conn.execute(
+        "INSERT INTO submit_intents (submit_intent_id, lease_id, operation_id, attempt_id,"
+        " command_digest, request_digest, request_document, deadline_at_us, recorded_at_us,"
+        " updated_at_us)"
+        " SELECT 'intent-' || l.lease_id, l.lease_id, l.operation_id, l.attempt_id, %s, %s,"
+        " '{}', l.deadline_at_us, %s, %s FROM admission_leases AS l",
+        (_DIGEST, _DIGEST, _OLD_US, _OLD_US),
+    )
+    conn.execute(
+        "INSERT INTO execution_stop_evidence (evidence_id, submit_intent_id, evidence_kind,"
+        " evidence_digest, observed_at_us, execution_stopped, resources_released)"
+        " SELECT 'evidence-' || i.submit_intent_id, i.submit_intent_id, 'engine_stop', %s,"
+        " %s, 1, 1 FROM submit_intents AS i",
+        (_DIGEST, _OLD_US),
+    )
 
 
 def _plan(
@@ -324,20 +371,33 @@ def _scans(plan: Mapping[str, Any], relation: str) -> list[dict[str, Any]]:
     return [node for node in _nodes(plan) if node.get("Relation Name") == relation]
 
 
-#: The relations the polled debt reads join that grow with the deployment: released
-#: leases, settled and exhausted ledger rows, the fence history, and the Job table. A
-#: sequential scan of any of them puts the deployment's history back into the 5 s poll,
-#: which is the degradation these assertions exist for.
+#: The relations the polled debt reads join that grow with the deployment. Every one of
+#: them keeps a row per event for the deployment's whole life, with no retention bound and
+#: no delete path, so a sequential scan of any of them puts uptime into the 5 s poll:
 #:
-#: `submit_intents` is deliberately absent. It is empty in this seed, so the planner reads
-#: it at `Total Cost` 0.0 -- the plan CI reported in #1026 did exactly that -- and a scan
-#: of an empty table says nothing about whether a read follows the window rather than
-#: history. Listing it would fail otherwise bounded plans.
+#: * ``admission_leases`` -- one row per stage lease per attempt; a released lease keeps
+#:   its row (that is why the history in this seed can grow it);
+#: * ``submit_intents`` -- one row per submitted lease (``lease_id`` is ``UNIQUE``);
+#:   finishing an execution redacts ``request_document`` in place, never deletes the row;
+#: * ``execution_stop_evidence`` -- one row per submit intent (``submit_intent_id`` is
+#:   ``UNIQUE``); it is the proof that a stop was observed, so it is not deleted;
+#: * ``speech_job_cancellation_fences`` and ``speech_job_cancellation_reconciliations``
+#:   -- one row per accepted cancellation;
+#: * ``speech_jobs`` -- one row per Job.
+#:
+#: Everything else stays out because neither debt read joins it: ``host_nodes``,
+#: ``resource_pools``, ``workspace_quotas`` and ``engine_instances`` are the deployment's own
+#: fixed configuration, and ``admission_attempts`` never appears in these two reads at all --
+#: so the list is exactly the union of the two reads' FROM/JOIN relations, not a sample of
+#: them. ``test_the_growth_relations_are_exactly_the_relations_the_two_reads_join`` keeps
+#: that equality honest in both directions.
 _GROWTH_RELATIONS = (
     "admission_leases",
-    "speech_job_cancellation_reconciliations",
+    "execution_stop_evidence",
     "speech_job_cancellation_fences",
+    "speech_job_cancellation_reconciliations",
     "speech_jobs",
+    "submit_intents",
 )
 
 #: Scan types whose rows come from reading the relation end to end.
@@ -510,10 +570,11 @@ def test_the_permanent_read_is_bounded_by_the_held_leases(
         # The rows the polled read returns, not just the index entries the plan touches:
         # a read that silently drops a shape must fail here, not only in the probe tests.
         assert permanent["Actual Rows"] == _HELD
-        # None of the four tables the read joins may be sequentially scanned: each one
-        # grows with the deployment (released leases, settled and exhausted ledger rows,
-        # the fence history), so a scan of any of them would put uptime back into the 5 s
-        # poll. `admission_leases` is included now that it is the driving table.
+        # None of the six relations the reads join may be sequentially scanned: each one
+        # grows with the deployment (released leases, submit intents, stop evidence,
+        # settled and exhausted ledger rows, the fence history, the Job table), so a scan
+        # of any of them would put uptime back into the 5 s poll. `admission_leases` is
+        # included now that it is the driving table.
         for relation in _GROWTH_RELATIONS:
             _assert_no_sequential_scan(permanent, relation)
         # The bounded fourth read keeps its own access path. Migration 0062 gives it a
@@ -526,7 +587,7 @@ def test_the_permanent_read_is_bounded_by_the_held_leases(
         _assert_bounded_read(bounded, expected_rows=_IN_WINDOW, limit=_BOUNDED_LIMIT)
 
 
-def test_the_permanent_reads_cost_does_not_follow_the_three_histories() -> None:
+def test_the_permanent_reads_cost_does_not_follow_the_histories() -> None:
     """Tenfold history, same debt: the same rows and the same number of pages."""
     readings: list[dict[str, float]] = []
     for settled, exhausted, released in _SCALES:
@@ -548,15 +609,23 @@ def test_the_permanent_reads_cost_does_not_follow_the_three_histories() -> None:
                     "exhausted": float(exhausted),
                     "released": float(released),
                     "ms": float(permanent["Actual Total Time"]),
-                    "blocks": float(permanent.get("Shared Hit Blocks", 0)),
+                    # Both counters: the two scales are seeded into separate schemas, so a
+                    # cold second scale would otherwise hide its reads in this number.
+                    "blocks": float(
+                        permanent.get("Shared Hit Blocks", 0)
+                        + permanent.get("Shared Read Blocks", 0)
+                    ),
                     "rows": float(permanent["Actual Rows"]),
                 }
             )
 
     print(f"\nscaling: {readings}")
     assert [reading["rows"] for reading in readings] == [_HELD, _HELD]
-    # 40 000 extra history rows (settled ledger, exhausted ledger, released leases
-    # together) may move the buffer count by the handful of pages the debt's own probes
-    # touch, but not by their order.
-    assert readings[1]["blocks"] - readings[0]["blocks"] <= 64
+    # The tenfold seed adds roughly 543 000 rows across the six histories, and the read's
+    # only per-row cost is one key descent per held lease per joined relation. A tenfold
+    # table deepens such an index by at most one level, so the buffer growth that is still
+    # a bounded read is bounded by those descents -- not by the rows.
+    assert readings[1]["blocks"] - readings[0]["blocks"] <= (
+        _HELD * _KEY_DESCENTS_PER_LEASE * _MAX_EXTRA_INDEX_LEVELS
+    )
     assert readings[1]["ms"] <= readings[0]["ms"] * 3 + 0.05

@@ -13,16 +13,27 @@ children are simplified, and a real Plan JSON carries fields these omit. That is
 what they pin -- the assertion's decision, not the planner's shape -- but it means a change
 to how plans are *reported* can pass these while the integration assertion still needs its
 own real-PostgreSQL run (which it has).
+
+The rejected plans are built per growth relation rather than as one degraded plan: the list
+is the guard's whole input, so each entry needs its own scan to be shown load-bearing, and a
+sequential scan anywhere in a plan that still returns its rows is exactly the degradation
+the assertion must name.
 """
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import pytest
 
+from speechnexus_backend.speech.infrastructure.readiness import (
+    _LEFT_CANCELLING_DEBT,
+    _PERMANENT_DEBT,
+)
 from tests.integration.test_permanent_debt_plans_pg import (
     _BOUNDED_LIMIT,
+    _GROWTH_RELATIONS,
     _IN_WINDOW,
     _assert_bounded_read,
 )
@@ -126,12 +137,21 @@ def _lease_driven() -> dict[str, Any]:
                                     ),
                                 ],
                             ),
-                            # Empty in this seed, so the planner reads it at cost 0.0;
-                            # a scan of it is not the degradation under assertion.
+                            # The integration seed writes one intent per lease and one
+                            # evidence row per intent, so both are key descents in the plan
+                            # this shape stands for.
                             _node(
-                                "Seq Scan",
+                                "Index Scan",
                                 relation="submit_intents",
-                                rows=0,
+                                index="submit_intents_lease_id_key",
+                                rows=1,
+                                loops=15,
+                            ),
+                            _node(
+                                "Index Scan",
+                                relation="execution_stop_evidence",
+                                index="execution_stop_evidence_submit_intent_id_key",
+                                rows=1,
                                 loops=15,
                             ),
                         ],
@@ -234,10 +254,46 @@ def test_a_short_read_names_the_row_count_and_the_access_paths() -> None:
         _assert_bounded_read(short, expected_rows=_IN_WINDOW, limit=_BOUNDED_LIMIT)
 
 
+@pytest.mark.parametrize("relation", _GROWTH_RELATIONS)
+def test_a_sequential_scan_of_any_growth_relation_is_rejected(relation: str) -> None:
+    """Every relation in the list is its own degradation, scanned while the read is bounded.
+
+    The plan still returns the 5 in-window rows through the fence index, so the only thing
+    that fails is the scan of ``relation``: the assertion must name that relation, or an
+    entry added to the list would silently protect nothing.
+    """
+    plan = _node(
+        "Limit",
+        rows=_IN_WINDOW,
+        plans=[
+            _node(
+                "Nested Loop",
+                rows=_IN_WINDOW,
+                plans=[
+                    _node(
+                        "Index Only Scan",
+                        relation="speech_job_cancellation_fences",
+                        index="speech_job_cancellation_fence_age_scan",
+                        rows=_IN_WINDOW,
+                    ),
+                    _node("Seq Scan", relation=relation, rows=50_000, loops=1),
+                ],
+            )
+        ],
+    )
+    with pytest.raises(
+        AssertionError,
+        match=f"sequential scan of {relation}",
+    ):
+        _assert_bounded_read(plan, expected_rows=_IN_WINDOW, limit=_BOUNDED_LIMIT)
+
+
 def test_a_plan_without_index_backed_access_cannot_carry_the_rows() -> None:
+    # A relation outside the growth list, so the scan guard stays silent and the missing
+    # index-backed node is the fact this case is about.
     plan = _node(
         "Seq Scan",
-        relation="submit_intents",
+        relation="host_nodes",
         rows=_IN_WINDOW,
     )
     with pytest.raises(AssertionError, match="no index-backed node carried the 5 in-window"):
@@ -263,3 +319,29 @@ def test_the_row_count_needs_a_limit_that_cannot_truncate_the_window() -> None:
     for limit in (_IN_WINDOW, _IN_WINDOW - 1):
         with pytest.raises(AssertionError, match="must fit strictly inside limit"):
             _assert_bounded_read(_fence_driven(), expected_rows=_IN_WINDOW, limit=limit)
+
+
+#: A table name after `FROM`/`JOIN`; the two debt reads use no subqueries over tables.
+_JOINED_TABLE = re.compile(r"\b(?:FROM|JOIN)\s+(?:ONLY\s+)?([a-z_][a-z0-9_]*)", re.IGNORECASE)
+
+
+def _joined_relations(sql: str) -> set[str]:
+    body = "\n".join(line.split("--", 1)[0] for line in sql.splitlines())
+    return set(_JOINED_TABLE.findall(body))
+
+
+def test_the_growth_relations_are_exactly_the_relations_the_two_reads_join() -> None:
+    """The table must track the SQL, not the other way round.
+
+    Parameterising the matrix over ``_GROWTH_RELATIONS`` keeps the guard honest for every
+    relation it lists, but it goes quiet in both directions it was built for: dropping a
+    relation from the list removes its cases, and a read that joins a new growing table
+    keeps the list green because nothing compares the two. This closes both by deriving
+    the expected set from the reads themselves.
+    """
+
+    joined = _joined_relations(_PERMANENT_DEBT) | _joined_relations(_LEFT_CANCELLING_DEBT)
+    assert joined == set(_GROWTH_RELATIONS), (
+        f"tabled but not joined: {sorted(set(_GROWTH_RELATIONS) - joined)}; "
+        f"joined but not tabled: {sorted(joined - set(_GROWTH_RELATIONS))}"
+    )

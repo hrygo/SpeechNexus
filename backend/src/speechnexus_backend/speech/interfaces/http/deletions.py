@@ -1,9 +1,10 @@
-"""Deletion preview and execution routes; the read route belongs to slice C.
+"""Deletion preview, execution and read routes.
 
-Both operations own only speech resources, re-check the immutable plan under one
-lock order and never hand-write a wire shape: the request is parsed into the
-domain values and the answer is projected back through the frozen contract's
-deletion schema.
+All three operations own only speech resources, re-check the immutable plan under
+one lock order (preview and execution) and never hand-write a wire shape: requests
+are parsed into domain values and answers are projected back through the frozen
+contract's deletion schema. The read route projects the durable ledger only; it
+neither replays the plan nor resumes the object purge.
 """
 
 from __future__ import annotations
@@ -168,6 +169,28 @@ def create_deletion_router(get_service: Callable[[], DeletionPlanner | None]) ->
             status_code=202,
             headers={"Cache-Control": "no-store"},
         )
+
+    @router.get(
+        DELETIONS + "/{deletion_id}",
+        operation_id="speechGetDeletion",
+        summary="Read a deletion record",
+    )
+    async def get_deletion(request: Request, deletion_id: str) -> Response:
+        request_id = _request_id(request)
+        service = get_service()
+        if service is None:
+            return deletion_error("deletion_unavailable", request_id)
+        try:
+            # An identifier the contract cannot express is answered like any other
+            # unknown one: the read surface never confirms what it does not hold.
+            identifier(deletion_id)
+        except ValueError:
+            return deletion_error("resource_not_found", request_id)
+        try:
+            record = await run_in_threadpool(service.read, deletion_id)
+        except DeletionError as error:
+            return deletion_error(error.code, request_id)
+        return JSONResponse(deletion_payload(record), headers={"Cache-Control": "no-store"})
 
     return router
 

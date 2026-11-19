@@ -40,6 +40,7 @@ def test_packaged_http_surface_is_closed_and_matches_real_operations() -> None:
     assert set(actual["paths"]) == PATHS | ARTIFACT_PATHS | {
         "/v1/nexus/deletion-plans",
         "/v1/nexus/deletions",
+        "/v1/nexus/deletions/{deletion_id}",
         "/healthz",
         "/readyz",
         "/v1/nexus/workspaces",

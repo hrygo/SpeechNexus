@@ -26,8 +26,8 @@
 
 【#471 更新】`listJobs` 已由真实实现接替占位（§3.2）；【#490 更新】`retireVoiceRevision` 的 `retire`
 已由真实实现接替占位，`disable` 明确返回 422（§3.3）；【#819 更新】`speechCreateDeletionPlan`
-（片 A）与 `speechCreateDeletion`（片 B）已由真实实现接替占位，分别返回 `200` 与 `202`，
-`speechGetDeletion` 仍为占位（片 C）。§3–§8 的历史表保留审计基线的原时点响应。已实现与未实现操作的唯一口径是 §10 门禁脚本的
+（片 A）、`speechCreateDeletion`（片 B）与 `speechGetDeletion`（片 C）均已由真实实现接替
+占位，分别返回 `200`、`202` 与账本投影的 `200`/`404`/`503`。§3–§8 的历史表保留审计基线的原时点响应。已实现与未实现操作的唯一口径是 §10 门禁脚本的
 `KNOWN_UNIMPLEMENTED_OPERATIONS`：计入与移出该基线随实现切片变化，本文件不复述计数，§6.1 只指向该基线。
 J1 已修复；历史表保留原时点响应。保留 #466 的契约测试和 #473 的 `0.1.0.dev8` 契约，
 `listJobs` 的 405 已声明，`known_status_gaps` 保持 **0**。

@@ -143,23 +143,6 @@ def cause_for_refusal(code: str) -> AdmissionReadinessCause:
     return cause
 
 
-def is_request_shaped_refusal(code: str) -> bool:
-    """Whether a refusal depends on the request body rather than the deployment.
-
-    The report speaks for the deployment and the reported ``workspace_id``, not for
-    one body, so a probe cannot legitimately produce these. The list is read from
-    the contract's own boundary rather than inferred per call.
-    """
-    return PUBLIC_ADMISSION_CODES.get(code, code) in {
-        "recipe_not_admitted",
-        "unsupported_parameter",
-        "job_request_expired",
-        "job_admission_contended",
-        "admission_state_invalid",
-        "job_outcome_unknown",
-    }
-
-
 @dataclass(frozen=True, slots=True)
 class ReadinessInstanceReport:
     """The public per-instance projection: receipt window plus slot headroom."""

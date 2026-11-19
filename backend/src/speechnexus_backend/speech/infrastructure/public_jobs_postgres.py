@@ -174,6 +174,18 @@ class _DeadlineConnection:
         _remaining(self.deadline)
         return _DeadlineRows(rows, self.deadline)
 
+    def read_only_snapshot(self) -> None:
+        """Pin one repeatable-read, read-only snapshot before any query runs.
+
+        ``SET TRANSACTION`` is only legal as a transaction's first statement, so
+        this cannot go through ``execute``: ``arm`` writes ``statement_timeout``
+        with a query first and would turn the set into an ``ActiveSqlTransaction``.
+        The raw round trip is still deadline-checked on both sides.
+        """
+        _remaining(self.deadline)
+        self.raw.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        _remaining(self.deadline)
+
     @contextmanager
     def admission_cursor(self) -> Iterator[_DeadlineCursor]:
         with self.raw.cursor() as raw:
@@ -569,6 +581,13 @@ class PostgresPublicJobs:
         deadline = time.monotonic() + self._timeout
         try:
             with self._admission_transaction(deadline) as connection:
+                # One verdict, one snapshot: the report issues a separate SELECT per
+                # fact (workspace, quota, each candidate, its pool and host), and
+                # under READ COMMITTED each would see a different committed state --
+                # e.g. a create's reservation visible to the slot read but not to the
+                # quota read. REPEATABLE READ pins all of them to one instant, and the
+                # transaction never writes, so READ ONLY also states that.
+                connection.read_only_snapshot()
                 now_us = _database_now_us(connection)
                 with connection.admission_cursor() as cursor:
                     return load_admission_readiness(cursor, workspace_id, now_us=now_us)

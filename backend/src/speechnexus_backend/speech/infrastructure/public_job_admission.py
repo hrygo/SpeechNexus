@@ -28,10 +28,10 @@ from speechnexus_backend.speech.domain.admission import (
     AdmissionRequest,
     AdmissionRuntime,
     AdmitRecipe,
-    Admitted,
     ApprovedAdmissionRecipe,
     ApprovedStage,
     OriginalBusinessCommand,
+    Refused,
     StageAllocation,
     decide_create_admission,
 )
@@ -1181,22 +1181,30 @@ def _readiness_workspace_state(cursor: _Cursor, workspace_id: str) -> str | None
 
 
 def _readiness_candidates(cursor: _Cursor) -> list[dict[str, Any]]:
-    """Every ready instance, in the order a create selects one.
+    """The one instance per binding that a create would pin, in binding order.
 
-    The create path pins the first ``ready`` instance of the requested binding by
-    ``(instance_id, instance_generation)``; the report cannot know the binding, so
-    it reads the same ordering across every ready instance and probes in that
-    order. An instance the create path would never select (not ready, no prepare
+    A create is asked for a binding and pins the first ``ready`` instance of that
+    binding by ``(instance_id, instance_generation)``. The report has no binding
+    argument, so it asks that same question of every binding: ``DISTINCT ON``
+    keeps the first instance of each, and the rows come back in
+    ``binding_revision_id`` order so the reported cause is deterministic.
+
+    Reading every ready instance instead is the defect the readiness report was
+    rewritten for (#857 third round, #863): with the pinned instance's node
+    quarantined and a healthy sibling behind the same binding, the report probed
+    the sibling and answered ``admitting`` while every create for that binding was
+    refused. An instance the create path would never select (not ready, no prepare
     intent) is not a candidate in either path.
     """
     cursor.execute(
-        "SELECT i.instance_id, i.instance_generation, i.host_node_id, i.pool_id "
+        "SELECT DISTINCT ON (i.binding_revision_id) i.binding_revision_id, i.instance_id, "
+        "i.instance_generation, i.host_node_id, i.pool_id "
         "FROM engine_instances AS i "
         "JOIN runtime_instance_heads AS h ON h.instance_id = i.instance_id "
         "AND h.current_generation = i.instance_generation "
         "WHERE i.instance_state='ready' AND i.instance_generation IS NOT NULL "
         "AND h.current_prepare_intent_id IS NOT NULL "
-        "ORDER BY i.instance_id, i.instance_generation"
+        "ORDER BY i.binding_revision_id, i.instance_id, i.instance_generation"
     )
     return cursor.fetchall()
 
@@ -1377,6 +1385,12 @@ def load_admission_readiness(
     the rows admission reads, builds the same command and names the one refusal it
     returned. A condition that refuses a create therefore cannot be reported as
     ``admitting``, and the report never recomputes a window or a counter (#863).
+
+    The probe set is the create path's own selection: the first ready instance of
+    each binding (``_readiness_candidates``). The report answers ``admitting`` only
+    when the predicate admits every one of those instances, because a create naming
+    any of those bindings would pin exactly that instance; the first refusal in
+    binding order is the reported cause.
     """
     identifier(workspace_id)
     state = _readiness_workspace_state(cursor, workspace_id)
@@ -1404,9 +1418,10 @@ def load_admission_readiness(
             now_us=now_us,
         )
     quota = _admission_quota_row(quota_row)
+    candidates = _readiness_candidates(cursor)
     reports: list[ReadinessInstanceReport] = []
     refusal: str | None = None
-    for candidate in _readiness_candidates(cursor):
+    for candidate in candidates:
         try:
             runtime, host, readiness_state = _readiness_runtime(cursor, candidate, now_us=now_us)
         except (
@@ -1457,15 +1472,18 @@ def load_admission_readiness(
             runtimes=(runtime,),
             now_us=now_us,
         )
-        if isinstance(verdict, Admitted):
+        if isinstance(verdict, Refused) and refusal is None:
+            # The candidates are in binding order, so the first refusal seen is the
+            # cause the report names; a later refusal cannot override it.
+            refusal = verdict.code
+    if refusal is None:
+        if candidates:
             return admitted_readiness(
                 workspace_id=workspace_id,
                 now_us=now_us,
                 instances=tuple(reports),
                 quota=quota,
             )
-        refusal = refusal or verdict.code
-    if refusal is None:
         # No ready instance at all: the create path selects nothing and answers the
         # capacity refusal, so the report names the same class.
         refusal = "job_capacity_exhausted"

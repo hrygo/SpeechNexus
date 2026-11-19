@@ -10,7 +10,7 @@ import uuid
 from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol, cast, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 import rfc8785
 
@@ -329,6 +329,20 @@ class JobFacts(Protocol):
     def now_us(self) -> int: ...
 
 
+@runtime_checkable
+class AdmissionReadinessStore(Protocol):
+    """The one read-only capability the readiness report needs from a store.
+
+    It is declared separately from ``PublicJobStore`` because the report is a
+    projection over admission rows: every store that writes Jobs would otherwise
+    have to grow a method only the admission adapter can implement. A store that
+    does not offer the read fails the report instead of it answering ``admitting``
+    by omission.
+    """
+
+    def admission_readiness(self, workspace_id: str) -> AdmissionReadiness: ...
+
+
 class PublicJobStore(Protocol):
     def find_by_key(
         self,
@@ -610,13 +624,13 @@ class PublicJobs:
         """Ask the store for one readiness verdict, never a second opinion.
 
         The service holds no admission rule: the store calls the predicate the
-        create path calls, so this method only forwards the question. A store that
-        cannot answer refuses loudly instead of admitting by omission.
+        create path calls, so this method only forwards the question. A store
+        without the read port fails the report rather than being reported as
+        admitting by omission.
         """
-        reader = getattr(self._store, "admission_readiness", None)
-        if reader is None:
+        if not isinstance(self._store, AdmissionReadinessStore):
             raise PublicJobUnavailableError
-        return cast("AdmissionReadiness", reader(workspace_id))
+        return self._store.admission_readiness(workspace_id)
 
     def submit(
         self,
@@ -1669,6 +1683,7 @@ def _canonical_intent(payload: Mapping[str, Any], kind: JobKind) -> dict[str, An
 
 
 __all__ = [
+    "AdmissionReadinessStore",
     "AssetNotReadyError",
     "CancellationView",
     "DisabledWorkspaceError",

@@ -92,33 +92,67 @@ def _split_arguments(arguments: str) -> list[str]:
     return parts
 
 
-def _module_level_bindings(name: str) -> list[tuple[int, ast.expr]]:
-    """Every module-level assignment to ``name``, in source order."""
-    bindings: list[tuple[int, ast.expr]] = []
+_SCOPE_BODIES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+_Binding = tuple[ast.expr, int, tuple[str, ...]]
+
+
+def _describe_binding(value: ast.expr, line: int, path: tuple[str, ...]) -> str:
+    """Where a binding lives, so a nested line number is findable in the source."""
+    where = f"inside {', inside '.join(path)}" if path else "at module level"
+    return f"{where} (line {line}): {ast.dump(value)}"
+
+
+def _walk_import_time(
+    node: ast.stmt | ast.excepthandler,
+    name: str,
+    path: tuple[str, ...],
+    found: list[_Binding],
+) -> None:
+    """Collect assignments to ``name`` that run when the module is imported.
+
+    ``if`` / ``try`` / ``with`` / ``for`` / ``while`` bodies do execute at import
+    time, so an assignment there binds the same global as a top-level one; missing
+    them let ``if True: _MAX_ATTEMPTS = 64`` bypass the guard. Function, class and
+    lambda bodies are skipped: their assignments are local or class attributes, not
+    module-level bindings.
+    """
+    if isinstance(node, _SCOPE_BODIES):
+        return
+    if isinstance(node, ast.Assign):
+        if any(isinstance(target, ast.Name) and target.id == name for target in node.targets):
+            found.append((node.value, node.lineno, path))
+    elif (
+        isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and node.target.id == name
+        and node.value is not None
+    ):
+        found.append((node.value, node.lineno, path))
+    nested = (*path, f"{type(node).__name__} at line {node.lineno}")
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, (ast.stmt, ast.excepthandler)):
+            _walk_import_time(child, name, nested, found)
+
+
+def _import_time_bindings(name: str) -> list[_Binding]:
+    """Every binding of ``name`` that takes effect at import, with nesting path."""
+    bindings: list[_Binding] = []
     for node in _claim_module_tree().body:
-        if isinstance(node, ast.Assign):
-            if any(isinstance(target, ast.Name) and target.id == name for target in node.targets):
-                bindings.append((node.lineno, node.value))
-        elif (
-            isinstance(node, ast.AnnAssign)
-            and isinstance(node.target, ast.Name)
-            and node.target.id == name
-            and node.value is not None
-        ):
-            bindings.append((node.lineno, node.value))
+        _walk_import_time(node, name, (), bindings)
     return bindings
 
 
 def _one_binding(name: str) -> ast.expr:
     """The binding runtime keeps; a second one silently overrides the first."""
-    bindings = _module_level_bindings(name)
-    found = "; ".join(f"line {line}: {ast.dump(value)}" for line, value in bindings)
+    bindings = _import_time_bindings(name)
+    found = "; ".join(_describe_binding(*binding) for binding in bindings)
     assert len(bindings) == 1, (
         f"the claim module must bind {name} exactly once: Python keeps the last "
-        "module-level binding, so a second one overrides what the import aliased; "
-        f"found {found or 'no binding'}"
+        "binding that runs at import time, so a second one -- including one inside "
+        f"if/try/with/for/while -- overrides what the import aliased; found "
+        f"{found or 'no binding'}"
     )
-    return bindings[0][1]
+    return bindings[0][0]
 
 
 def _ceiling_import_bindings() -> tuple[set[str], set[str], set[str]]:
@@ -206,12 +240,13 @@ def test_the_claim_binds_the_read_face_constant_instead_of_a_literal() -> None:
 
 def test_the_claim_does_not_rebind_the_imported_constant() -> None:
     """A later ``ATTEMPT_CEILING = 64`` wins at import time and undoes the alias."""
-    rebindings = _module_level_bindings(_CEILING)
-    found = "; ".join(f"line {line}: {ast.dump(value)}" for line, value in rebindings)
+    rebindings = _import_time_bindings(_CEILING)
+    found = "; ".join(_describe_binding(*binding) for binding in rebindings)
     assert rebindings == [], (
         f"the claim module must not reassign {_CEILING}: the import is its only "
-        "binding, and a later module-level assignment overrides it before any claim "
-        f"runs; found {found or 'nothing'}"
+        "binding, and any later assignment that runs at import time -- a bare one, "
+        "or one inside if/try/with/for/while -- overrides it before any claim runs "
+        f"(an ImportError fallback in an except branch counts); found {found or 'nothing'}"
     )
     rebound_globals = [
         (node.lineno, name)

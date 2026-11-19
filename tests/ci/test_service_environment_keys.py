@@ -28,6 +28,7 @@ from pathlib import Path
 from unittest import mock
 
 from tests.ci import service_environment_keys as registry
+from tests.ci.interpreter_floor import source_tree
 from tests.ci.service_environment_keys import (
     BACKEND_ENVIRONMENT,
     CONTROLLER_ENVIRONMENT,
@@ -64,7 +65,7 @@ from tests.ci.service_environment_keys import (
 
 def _shared_definition_sources(module: str) -> dict[str, str]:
     """Return ``{name: source}`` for the engine definitions that must stay identical."""
-    tree = ast.parse((ROOT / module).read_text(encoding="utf-8"))
+    tree = source_tree(module)
     sources: dict[str, str] = {}
     for node in tree.body:
         if isinstance(node, ast.ClassDef) and node.name in SHARED_DEFINITIONS:
@@ -262,12 +263,13 @@ class SourceReaderTest(unittest.TestCase):
     """The registry must stay correct when the system interpreter cannot parse.
 
     ``pyproject.toml`` targets Python 3.14, so product sources use PEP 758
-    exception lists (``except A, B:``). The ``routing`` job runs this guard with
-    the system interpreter (3.12 on the CI image), which rejects that syntax, so
-    reading a settings module cannot depend on being able to parse it. These
-    cases pin the text reader: it must reproduce the AST result, it must record
-    every module it had to read, and it must fail loudly instead of deriving an
-    empty key set -- an empty set would make every downstream check pass.
+    exception lists (``except A, B:``). ``guards`` runs this guard on the
+    interpreter ``.python-version`` pins, but a local run on an older interpreter
+    rejects that syntax, so reading a settings module cannot depend on being able
+    to parse it. These cases pin the text reader: it must reproduce the AST
+    result, it must record every module it had to read, and it must fail loudly
+    instead of deriving an empty key set -- an empty set would make every
+    downstream check pass.
     """
 
     PEP758_SOURCE = """

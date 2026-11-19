@@ -60,6 +60,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from tests.ci.interpreter_floor import source_tree
+
 ROOT = Path(__file__).resolve().parents[2]
 COMPOSE_FILE = ROOT / "deploy" / "compose.yaml"
 ENV_EXAMPLE = ROOT / "deploy" / "compose.env.example"
@@ -463,7 +465,7 @@ def _own_nodes(function: ast.AST) -> list[ast.AST]:
 
 def functions_containing(needle: str) -> set[str]:
     """Functions in the entry whose own body contains ``needle`` as a constant."""
-    tree = ast.parse(ENTRY.read_text(encoding="utf-8"))
+    tree = source_tree(ENTRY)
     found: set[str] = set()
     for node in ast.walk(tree):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):

@@ -35,8 +35,8 @@ recorded in the PR body. The `reference-acceptance.py` preflight has its own cas
 `test_private_lane_input_bucket_equal_to_env_passes`).
 
 This module stays standard-library-only: the `guards` CI job runs
-`python3 -m unittest discover -s tests/ci` on the system interpreter with nothing
-installed, so `_install_minio_stub()` stands in for the `minio` package that
+`python -m unittest discover -s tests/ci` on the interpreter `.python-version`
+pins with nothing installed, so `_install_minio_stub()` stands in for the `minio` package that
 `deploy/init-object-storage.py` imports at module scope. Under `uv run pytest` the
 real package is used instead.
 """
@@ -86,8 +86,8 @@ COMPOSE_LIST_DEFAULT = re.compile(
 def _install_minio_stub() -> None:
     """Keep this module importable under the dependency-free `guards` job.
 
-    That job runs `python3 -m unittest discover -s tests/ci` on the system
-    interpreter and installs nothing, while `deploy/init-object-storage.py` does
+    That job runs `python -m unittest discover -s tests/ci` on the interpreter
+    `.python-version` pins and installs nothing, while `deploy/init-object-storage.py` does
     `from minio import Minio` at import time. The real package is used when it is
     present; otherwise three stub modules cover exactly the symbols the bootstrap
     script imports, and every test replaces `Minio` with a fake client anyway.

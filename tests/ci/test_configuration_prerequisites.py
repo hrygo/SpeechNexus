@@ -7,8 +7,8 @@ remaining "configured A only works with C" keys. The scan itself is the fragile
 part: the next silent key will be added by someone who never reads this card. This
 guard keeps the scan from drifting and keeps every silent row disposed of.
 
-It performs six checks, all text-only (system interpreter, no service import, no
-container, no database):
+It performs six checks, all text-only (the product interpreter pinned by
+``.python-version``, no service import, no container, no database):
 
 1. **Inventory.** Every optional selector field declared by every settings class in
    the scanned modules (``SecretStr`` / ``Path`` / ``AnyHttpUrl`` / ``str``
@@ -54,6 +54,8 @@ from __future__ import annotations
 
 import ast
 import re
+import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -74,6 +76,13 @@ from tests.ci.configuration_prerequisites import (
     WARNED,
     Row,
     message_marker,
+)
+from tests.ci.interpreter_floor import (
+    PYPROJECT,
+    PYTHON_PIN,
+    REQUIRED_PYTHON,
+    floor_label,
+    source_tree,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -118,7 +127,7 @@ def _const(node: ast.expr) -> object:
 
 def settings_models(module: str) -> dict[str, str]:
     """Discover ``{class name: env prefix}`` for every SettingsConfigDict model."""
-    tree = ast.parse(read(ROOT / module))
+    tree = source_tree(module)
     found: dict[str, str] = {}
     for node in ast.walk(tree):
         if not isinstance(node, ast.ClassDef):
@@ -142,7 +151,7 @@ def settings_models(module: str) -> dict[str, str]:
 
 def selector_variables(module: str, class_name: str, prefix: str) -> dict[str, str]:
     """Return ``{env name: field name}`` for every optional selector in the class."""
-    tree = ast.parse(read(ROOT / module))
+    tree = source_tree(module)
     found: dict[str, str] = {}
     for node in ast.walk(tree):
         if not isinstance(node, ast.ClassDef) or node.name != class_name:
@@ -199,13 +208,7 @@ def probe_source(path: str, spec: str) -> str:
         if fragment not in text:
             raise AssertionError(f"{path} does not contain {fragment!r}")
         return fragment
-    try:
-        tree = ast.parse(text)
-    except SyntaxError as error:
-        raise AssertionError(
-            f"{path} uses syntax this interpreter cannot parse ({error}); "
-            "pin a text: probe instead of an AST symbol"
-        ) from None
+    tree = source_tree(path)
     chunks: list[str] = []
     for symbol in spec.split("|"):
         node = _symbol_node(tree, symbol)
@@ -311,7 +314,7 @@ class ConfigurationPrerequisitesTest(unittest.TestCase):
             )
             text = read(target)
             if path.endswith(".py"):
-                tree = ast.parse(text)
+                tree = source_tree(path)
                 names = {
                     node.name
                     for node in ast.walk(tree)
@@ -409,8 +412,7 @@ class ConfigurationPrerequisitesTest(unittest.TestCase):
         self.assertIn("不证明行为", section, "the meta-guard section must not claim behaviour")
 
     def test_audio_budget_defaults_agree_everywhere(self) -> None:
-        settings_text = read(ROOT / BACKEND)
-        tree = ast.parse(settings_text)
+        tree = source_tree(BACKEND)
         declared: dict[str, object] = {}
         for node in ast.walk(tree):
             if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
@@ -421,7 +423,7 @@ class ConfigurationPrerequisitesTest(unittest.TestCase):
                     for keyword in call.keywords:  # type: ignore[union-attr]
                         if keyword.arg == "default":
                             declared[name] = _const(keyword.value)
-        runtime_tree = ast.parse(read(ROOT / "backend/src/speechnexus_backend/asset_runtime.py"))
+        runtime_tree = source_tree("backend/src/speechnexus_backend/asset_runtime.py")
         runtime_defaults: dict[str, object] = {}
         for node in ast.walk(runtime_tree):
             name = ""
@@ -474,6 +476,73 @@ class ConfigurationPrerequisitesTest(unittest.TestCase):
         self.assertTrue(sample)
         self.assertTrue(all(row.behaviour == NAMED for row in sample))
         self.assertTrue(all(row.names_keys for row in sample))
+
+
+class InterpreterFloorTest(unittest.TestCase):
+    """The guard must run on the interpreter the product declares, and say so.
+
+    #1001: the ``guards`` job ran this module on the runner's system Python 3.12,
+    whose parser rejects the PEP 758 exception lists product sources already use.
+    The resulting red named the product file, not the interpreter, so it drove a
+    change to *product* syntax. These cases pin the split: below the floor the
+    guard skips with the version, at or above it a syntax error is a source defect.
+    """
+
+    PEP758 = "try:\n    pass\nexcept ValueError, TypeError:\n    pass\n"
+
+    def test_the_floor_comes_from_pyproject_and_the_ci_pin_agrees(self) -> None:
+        declared = tomllib.loads(read(PYPROJECT))["project"]["requires-python"]
+        self.assertIn(
+            f">={floor_label()}",
+            declared.replace(" ", ""),
+            "the floor this guard enforces is no longer the declared requires-python",
+        )
+        pinned = read(PYTHON_PIN).strip()
+        parts = tuple(int(part) for part in pinned.split("."))
+        padded = (*parts, 0, 0)[:3]
+        self.assertGreaterEqual(
+            padded,
+            REQUIRED_PYTHON,
+            f".python-version ({pinned}) is below the floor requires-python declares "
+            f"({declared}); the CI interpreter could fall below the syntax the product uses",
+        )
+        self.assertEqual(padded[:2], REQUIRED_PYTHON[:2], pinned)
+
+    def test_an_older_interpreter_skips_instead_of_blaming_the_source(self) -> None:
+        # Any source this interpreter rejects stands in for the PEP 758 syntax a
+        # 3.12 parser rejects; the verdict must come from the version, not the file.
+        older = (REQUIRED_PYTHON[0], REQUIRED_PYTHON[1] - 1)
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "unparseable.py"
+            path.write_text("def broken(:\n", encoding="utf-8")
+            with self.assertRaises(unittest.SkipTest) as raised:
+                source_tree(str(path), version=older)
+        self.assertEqual(
+            f"this guard must run on Python >= {floor_label()} "
+            f"(running {older[0]}.{older[1]}); it cannot judge syntax it cannot parse",
+            str(raised.exception),
+        )
+
+    def test_a_supported_interpreter_still_calls_a_syntax_error_a_source_defect(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "broken.py"
+            path.write_text("def broken(:\n", encoding="utf-8")
+            with self.assertRaises(AssertionError) as raised:
+                source_tree(str(path), version=REQUIRED_PYTHON)
+        message = str(raised.exception)
+        self.assertIn(
+            f"does not parse on Python {REQUIRED_PYTHON[0]}.{REQUIRED_PYTHON[1]}", message
+        )
+        self.assertIn("meets the product floor", message)
+        self.assertNotIn("must run on Python", message)
+
+    def test_this_interpreter_parses_the_floor_syntax(self) -> None:
+        """On the pinned interpreter this passes; below it the guard skips, not red."""
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "pep758.py"
+            path.write_text(self.PEP758, encoding="utf-8")
+            tree = source_tree(str(path))
+        self.assertTrue(tree.body)
 
 
 if __name__ == "__main__":

@@ -46,6 +46,8 @@ import re
 import unittest
 from pathlib import Path
 
+from tests.ci.interpreter_floor import source_tree
+
 ROOT = Path(__file__).resolve().parents[2]
 COMPOSE = ROOT / "deploy/compose.yaml"
 ENV_EXAMPLE = ROOT / "deploy/compose.env.example"
@@ -119,10 +121,10 @@ def literal_assignment(path: Path, name: str) -> object:
     """Return one module-level literal assignment without importing the module.
 
     ``deploy/`` and ``scripts/dev-env/`` read backend constants at runtime, which
-    the system interpreter running this suite cannot import; the literal copies
-    they must agree on are still checkable as syntax.
+    the dependency-free interpreter running this suite cannot import; the literal
+    copies they must agree on are still checkable as syntax.
     """
-    for node in ast.parse(read(path)).body:
+    for node in source_tree(path).body:
         if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
             target, value = node.target.id, node.value
         elif (

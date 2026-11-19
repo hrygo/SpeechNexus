@@ -98,8 +98,20 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
+      # `tests/ci` parses product sources, so it must run on the interpreter the
+      # product declares. The runner's system `python3` is 3.12, which rejects the
+      # PEP 758 `except A, B:` syntax already in the tree and reports it as broken
+      # product code (#1001). This installs only the interpreter pinned by
+      # `.python-version` -- never the project dependencies: the suite stays
+      # standard-library-only, so a missing interpreter is the only thing that can
+      # fail here.
+      - name: Set up the product Python the guards parse with
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version-file: .python-version
+
       - name: Verify routing boundaries without installing project dependencies
-        run: python3 -m unittest discover -s tests/ci -v
+        run: python -m unittest discover -s tests/ci -v
 
       - name: Set up Node.js for dependency-free design checks
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1

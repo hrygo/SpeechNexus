@@ -9,11 +9,13 @@ of settings a surface declares, and the set of prefixed names that are
 legitimately *not* settings.
 
 Both are derived here from the sources with :mod:`ast`, never copied by hand.
-Product sources target Python 3.14 (PEP 758 exception lists) while CI runs this
-module under the system interpreter, so a source the local parser rejects is read
-at text level instead and recorded in :data:`TEXT_READS` /
-:data:`DISCOVERY_TEXT_READS`; an unreadable source that yields no declaration or
-no key is an explicit failure, never an empty set that silently passes.
+Product sources target Python 3.14 (PEP 758 exception lists) and the ``guards``
+job runs this module on the interpreter ``.python-version`` pins, so that parser
+normally reads everything. A local run on an older interpreter must still work:
+a source the local parser rejects is read at text level instead and recorded in
+:data:`TEXT_READS` / :data:`DISCOVERY_TEXT_READS`; an unreadable source that
+yields no declaration or no key is an explicit failure, never an empty set that
+silently passes.
 
 ``SURFACES``
     Every settings class, its package, the operator name of the process that
@@ -374,8 +376,8 @@ def _keyword(call: ast.AST, name: str) -> ast.AST | None:
 #: Modules read as text because this interpreter cannot parse their source.
 #:
 #: ``pyproject.toml`` targets Python 3.14, so product sources use PEP 758
-#: exception lists (``except A, B:``), which the system interpreter CI runs this
-#: file with (3.12) rejects. Every read that falls back to text is recorded here:
+#: exception lists (``except A, B:``), which an interpreter below the pin (a local
+#: 3.12, for example) rejects. Every read that falls back to text is recorded here:
 #: the tests assert the record holds exactly the modules the local parser
 #: rejects, that each recorded module still yields its declarations and keys, and
 #: that a settings-bearing module whose text has no extractable declaration fails

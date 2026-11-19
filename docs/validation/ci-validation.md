@@ -23,7 +23,7 @@ CI 使用[工作流](../../.github/workflows/ci.yml)和[标准库路由](../../s
 - `web/<app>/public/` 内的说明文件：Vite 把 `public/` 原样复制进构建产物（`dist`），文件本身是产品资产，仍走 `full`。
 - `deploy/engines/file-voice-clone/README.md`、`deploy/engines/file-voice-design/README.md`：`tests/unit/gateway/test_engine_language_semantics.py` 直接读取并断言其措辞，`docs` 车道不执行 pytest，仍走 `full`。
 
-其余说明文件不被任何构建或检查读取：Vite 只跟随导入（全仓库没有对 `.md` 的 `?raw`／`import.meta.glob`／`new URL` 导入，并由 `tests/ci` 的回归守住），`tsc` 与 ESLint 只处理 TS/TSX，Prettier 的 `format:check` glob 不含 `*.md`；`deploy/images/web.Dockerfile` 的 `COPY web web` 会把 `web/AGENTS.md` 的字节带进 builder 层，但最终阶段只发布 `dist`。这类文件包括源码树内的 `web/workbench/src/AGENTS.md`。`deploy/README.md` 虽被 `tests/ci` 的 unittest 守卫读取，但 `docs` 车道的 `routing` 作业本来就执行 `python3 -m unittest discover -s tests/ci`，守卫在轻量路径上继续运行。
+其余说明文件不被任何构建或检查读取：Vite 只跟随导入（全仓库没有对 `.md` 的 `?raw`／`import.meta.glob`／`new URL` 导入，并由 `tests/ci` 的回归守住），`tsc` 与 ESLint 只处理 TS/TSX，Prettier 的 `format:check` glob 不含 `*.md`；`deploy/images/web.Dockerfile` 的 `COPY web web` 会把 `web/AGENTS.md` 的字节带进 builder 层，但最终阶段只发布 `dist`。这类文件包括源码树内的 `web/workbench/src/AGENTS.md`。`deploy/README.md` 虽被 `tests/ci` 的 unittest 守卫读取，但无范围过滤的 `guards` 作业本来就执行 `python -m unittest discover -s tests/ci`（跑在 `.python-version` 钉住的解释器上），守卫在轻量路径上继续运行。
 
 例外集合由 `tests/ci/test_ci_routing.py::ProseRoutingTests` 双向核对：期望车道从三条独立规则派生（Dockerfile 字面量 `COPY`、单测读者、`web/<app>/public/`），再与 `classify` 和 `_prose_route` 逐条比对，新增例外而不补规则（或反之）都会变红。派生只认字面量 `COPY <path>.md`：目录形式复制（如 `COPY web web`、`COPY packages/contracts packages/contracts`）、`ADD` 与 glob 不在派生内，新增这类消费者须人工登记到 `_IMAGE_COPY_PROSE`。仅 `AGENTS.md` 与 `README*.md` 按内容归类，`agents.md`、`AGENTS.MD`、`Readme.md`、`README.rst`、`README` 等命名变体仍走 `full`（fail-closed，不会漏跑验证）。
 
@@ -85,7 +85,7 @@ Node Controller 镜像验证由 CI 以同提交的 [reusable workflow](../../.gi
 | job ID | Actions 显示名称 | 实际职责 |
 | --- | --- | --- |
 | `routing` | `Route: scope and review boundary` | 按准确差异选择范围，并审查 PR 改动路径边界；不安装项目依赖、不跑任何测试，因此它在 checkout 后十余秒内发布 `mode`/`excluded_shards`，所有重作业随即启动 |
-| `guards` | `Guards: routing boundaries, design tokens and contract consumers` | 不筛范围的轻量守卫：`tests/ci` 路由回归、Design Token 校验、生成契约消费者绑定。只用系统 Python 与 Node，不安装项目依赖；结果被最终门禁无条件要求；与 `routing` 并行，因此不再把重作业挡在约 25 秒的串行前缀之后 |
+| `guards` | `Guards: routing boundaries, design tokens and contract consumers` | 不筛范围的轻量守卫：`tests/ci` 路由回归、Design Token 校验、生成契约消费者绑定。只装 `.python-version` 钉住的解释器与 Node，不安装项目依赖：这套守卫要解析产品源码，必须跑在产品声明的解释器上——runner 的系统 `python3` 是 3.12，读不了产品已在用的 PEP 758 `except A, B:`，会把「解释器过旧」误报成「产品语法错」（#1001）。结果被最终门禁无条件要求；与 `routing` 并行，因此不再把重作业挡在约 25 秒的串行前缀之后 |
 | `python_tests`（矩阵两腿） | `Python: tests, coverage and build (part a|b)` | Python 单元、契约、CI 测试，导出四 worker 覆盖率数据集（不判定）、媒体工具链及 Python 包构建；集成标记的 Workbench/Speech PG 模块由十二个分片执行并采集覆盖数据，此作业不重复执行 |
 | `python_static` | `Python: lint, types and contract compatibility` | Ruff、mypy、模块边界、生成漂移、协议兼容与 schema 校验 |
 | `integration_plan` | `Integration plan: one collection selects every partition's tools` | 只在展开分片的路由（`full`/`web`）执行：一次 pytest 完整收集发布十二片的 `browser`/`node_contracts` 工具需求，供各分片读取；分片自身的执行与证据校验不依赖它 |
@@ -178,8 +178,8 @@ Python 测试作业是两个矩阵腿：每腿执行 `python-coverage.py run --w
 # 路由输出：pure-Web 改动应为 web，并排除 0–3 片
 python3 scripts/dev-env/ci-routing.py --event pull_request --base <sha> --output /tmp/route
 cat /tmp/route    # mode=web / excluded_shards=[{"shard": 0}, ..., {"shard": 3}]
-# 门禁与矩阵形状的结构回归（不安装项目依赖）
-python3 -m unittest discover -s tests/ci -v
+# 门禁与矩阵形状的结构回归（不安装项目依赖；用 `.python-version` 的 3.14）
+python -m unittest discover -s tests/ci -v
 ```
 
 三条反例与一次同改动的 `web` 路由实跑（都在 PR 阶段完成，运行记录长期可用；承载它们的一次性分支已删除）：
@@ -593,12 +593,13 @@ uv run python scripts/dev-env/python-coverage.py combine \
 - 对比事件的准确 base SHA 与实际 checkout 的合并结果；路径用 NUL 分隔，不按换行拆分，也不使用 API 文件列表截断后的子集。
 - 重命名同时考虑旧/新路径。将 Python 文件移入文档目录或删除源码仍须全量。
 - 基线不可用时回退全量；路由或轻量回归失败时阻止合并。不要用 `continue-on-error` 或缺失输出兜底放行。
-- 轻量入口使用 runner 的系统 Python 3.12+，只依赖标准库；Ruff 对该脚本及 `tests/ci/` 固定 `py312`，产品代码继续遵循项目 Python 版本。
+- 轻量入口使用 runner 的系统 Python 3.12+，只依赖标准库；`guards` 是例外，它把 `tests/ci` 跑在 `.python-version` 钉住的解释器上（当前 3.14），因为这些守卫要解析产品源码，而系统 3.12 读不了 PEP 758。Ruff 对轻量入口及 `tests/ci/` 仍固定 `py312`（守卫自身保持 3.12 可解析），产品代码继续遵循项目 Python 版本。
 
 从仓库根目录验证变更：
 
 ```sh
-python3 -m unittest discover -s tests/ci -v
+# `python` 必须是 `.python-version` 的 3.14：更旧的解释器会跳过语法判定而不是判红
+python -m unittest discover -s tests/ci -v
 uv run pytest tests/ci tests/contract/test_ci_workflow.py tests/unit/test_integration_shards.py -q --no-cov
 ```
 

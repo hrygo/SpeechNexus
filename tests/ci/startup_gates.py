@@ -22,8 +22,9 @@ in a pytest module. ``#920``'s failure mode was a test that mocked the entry ins
 of starting it; naming the case here keeps the promise and its evidence together.
 
 This module is text and standard library only: it never imports the backend, touches
-PostgreSQL or starts a container, so ``python3 -m unittest discover -s tests/ci``
-runs it under the system interpreter like every other guard in this directory.
+PostgreSQL or starts a container, so ``python -m unittest discover -s tests/ci``
+runs it under the interpreter ``.python-version`` pins, like every other guard in
+this directory.
 """
 
 from __future__ import annotations

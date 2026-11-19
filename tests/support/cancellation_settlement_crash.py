@@ -133,7 +133,15 @@ class _DiesBeforeRelease(CancellationCapacity):
             ).fetchall()
         finally:
             connection.close()
-        if job is None or job["state"] != "cancelled" or len(leases) != 1:
+        # The probe refuses to die anywhere but the intended point: the settlement must
+        # have committed *and* the lease must still be held, otherwise the crash would
+        # prove nothing about the gap between the two transactions.
+        unheld = (
+            len(leases) != 1
+            or leases[0]["lease_state"] != "reserved"
+            or leases[0]["budget_released_at_us"] is not None
+        )
+        if job is None or job["state"] != "cancelled" or unheld:
             print(
                 json.dumps(
                     {

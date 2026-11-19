@@ -12,6 +12,13 @@ deterministic.
 A second child interpreter then runs the normal bounded pass and must converge on
 ``cancelled`` + released capacity without settling the same cancellation twice.
 
+Scope: this is the reconciliation *worker's* recovery path. It needs
+``SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_ENABLED=true``, and the default
+deployment starts no progressor, so this proves what happens once a pass is enabled --
+not that a default deployment heals itself. It also pins a code position, not signal
+delivery: ``os._exit`` cannot land inside the release transaction, so a kill whose
+commit outcome is unknown is out of scope.
+
 Counterexample (run manually, never committed): in
 ``job_cancellation_runtime.py``, replace ``_PublicJobsSettlement.settle_cancelled``'s
 ``if job.state == "cancelled": return self._release(job_id)`` with ``return True``.
@@ -91,6 +98,42 @@ def _last_json(completed: subprocess.CompletedProcess[str]) -> dict[str, Any]:
     return payload
 
 
+def _count_settlement_statements(db: JobSandbox, schema: str) -> None:
+    """Count the settlement UPDATE at statement level, so a no-op replay still counts.
+
+    The settlement UPDATE is guarded by ``AND j.state = 'cancelling'``, so a second
+    settlement of an already ``cancelled`` Job would update zero rows and leave no trace
+    at all -- no ``updated_at_us`` change, no event row. A row-level counter cannot see
+    that either, because it never fires for zero rows. A statement-level trigger does,
+    which turns "the same cancellation was not settled twice" from a claim about visible
+    effects into a count of the statements that ran.
+    """
+
+    db.admin.execute(f'CREATE TABLE "{schema}".settlement_statements (count INTEGER NOT NULL)')
+    db.admin.execute(f'INSERT INTO "{schema}".settlement_statements VALUES (0)')
+    db.admin.execute(
+        f'CREATE FUNCTION "{schema}".count_settlement() RETURNS trigger '
+        f"LANGUAGE plpgsql AS $$ BEGIN "
+        f'UPDATE "{schema}".settlement_statements SET count = count + 1; RETURN NULL; END $$'
+    )
+    db.admin.execute(
+        f'CREATE TRIGGER count_settlement AFTER UPDATE ON "{schema}".speech_jobs '
+        f"FOR EACH STATEMENT EXECUTE FUNCTION "
+        f'"{schema}".count_settlement()'
+    )
+    # The settlement runs as the Job writer, so it must be allowed to run the counter:
+    # without these the trigger would turn a legitimate settlement into a permission
+    # error and the pass would retry instead of settling.
+    db.admin.execute(f'GRANT SELECT, UPDATE ON "{schema}".settlement_statements TO "{db.role}"')
+    db.admin.execute(f'GRANT EXECUTE ON FUNCTION "{schema}".count_settlement() TO "{db.role}"')
+
+
+def _settlement_statements(db: JobSandbox, schema: str) -> int:
+    rows = db.query(f'SELECT count FROM "{schema}".settlement_statements')
+    assert len(rows) == 1, rows
+    return int(rows[0]["count"])
+
+
 def _ledger(db: JobSandbox, job_id: str) -> dict[str, Any]:
     rows = db.query(
         "SELECT attempts, next_check_at_us, last_outcome, settled_at_us "
@@ -109,6 +152,7 @@ async def test_a_kill_between_settlement_and_release_converges_in_a_new_process(
         job_id, request_id="req-crash-1", idempotency_key="synthetic-crash-key-1"
     ).accepted_now
     _seed_reserved_lease(crash_db, job_id)
+    _count_settlement_statements(crash_db, crash_db.schema)
     assert crash_db.count("speech_job_cancellations") == 1
     assert crash_db.count("speech_job_cancellation_fences") == 1
     assert _lease_row(crash_db, job_id) == {"lease_state": "reserved", "cleanup_state": "pending"}
@@ -160,7 +204,7 @@ async def test_a_kill_between_settlement_and_release_converges_in_a_new_process(
     ) == [{"budget_released_at_us": None}]
     assert _held_rows(crash_db) == ([{"held_slots": 1}], [{"held_attempts": 1}])
 
-    # 3. A third interpreter (a new process, not a reopened pool) runs the normal
+    # 3. A second interpreter (a new process, not a reopened pool) runs the normal
     # bounded pass past the crashed claim's lease. It must return the capacity.
     recovered = _run_probe(_probe_env(crash_db, job_id, SN1032_NOW_US=str(started_us + 61_000_000)))
     assert recovered.returncode == 0, recovered.stderr
@@ -196,6 +240,10 @@ async def test_a_kill_between_settlement_and_release_converges_in_a_new_process(
     ) == [{"n": 1}]
     assert crash_db.count("speech_job_cancellations") == 1
     assert crash_db.count("speech_job_cancellation_fences") == 1
+    # One settlement statement for the whole sequence: the recovery process returned
+    # the capacity without issuing a settlement UPDATE at all, which the row-level
+    # assertions above cannot show (a zero-row UPDATE leaves no trace).
+    assert _settlement_statements(crash_db, crash_db.schema) == 1
 
     # 4. One more fresh process has nothing left to claim: the replay is a no-op,
     # not a second settlement or a second release.
@@ -205,3 +253,4 @@ async def test_a_kill_between_settlement_and_release_converges_in_a_new_process(
     assert _ledger(crash_db, job_id)["settled_at_us"] == settled["settled_at_us"]
     assert _lease_row(crash_db, job_id) == {"lease_state": "released", "cleanup_state": "complete"}
     assert _held_rows(crash_db) == ([{"held_slots": 0}], [{"held_attempts": 0}])
+    assert _settlement_statements(crash_db, crash_db.schema) == 1

@@ -33,7 +33,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     raise RuntimeError(
-        "Deletion ledger history requires preservation: rows record completed, "
+        "0063 deletion ledger history requires preservation: rows record completed, "
         "queued, blocked and failed deletions and their replay identity; dropping "
         "the reason or narrowing the recorded target kinds would let a restore "
         "replay an old plan as a new deletion; an operator must confirm and handle "

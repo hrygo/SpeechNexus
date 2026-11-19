@@ -572,8 +572,11 @@ class PostgresPublicJobs:
                 now_us = _database_now_us(connection)
                 with connection.admission_cursor() as cursor:
                     return load_admission_readiness(cursor, workspace_id, now_us=now_us)
-        except UnclassifiedRefusalError, ValueError:
-            raise PublicJobUnavailableError from None
+        except (UnclassifiedRefusalError, ValueError) as error:
+            # The cause stays chained: an unclassified probe refusal is a defect an
+            # operator must be able to read, and the answer is still the declared
+            # storage outage rather than a fabricated verdict.
+            raise PublicJobUnavailableError from error
         except psycopg.Error:
             raise PublicJobUnavailableError from None
 

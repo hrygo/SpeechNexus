@@ -38,6 +38,7 @@ def test_packaged_http_surface_is_closed_and_matches_real_operations() -> None:
     source = yaml.safe_load((ROOT / "contracts/speech-openapi.yaml").read_text())
     actual = create_app(settings=_settings()).openapi()
     assert set(actual["paths"]) == PATHS | ARTIFACT_PATHS | {
+        "/v1/nexus/jobs/admission-readiness",
         "/v1/nexus/deletion-plans",
         "/v1/nexus/deletions",
         "/v1/nexus/deletions/{deletion_id}",

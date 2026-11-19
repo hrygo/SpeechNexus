@@ -30,6 +30,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 from tests.integration.test_coordination_foundation import foundation as foundation
 from tests.integration.test_production_admission import AdmissionDatabase
 from tests.integration.test_production_admission import admission_database as admission_database
@@ -40,7 +41,11 @@ from tests.integration.test_production_runtime_intents import (
 from tests.integration.test_public_job_admission_http_pg import (
     HOST_NODE,
     INSTANCE,
+    PREFIX,
     WORKSPACE,
+    _app,
+    _body,
+    _error,
 )
 from tests.integration.test_public_job_atomic_admission_pg import _job, _seed, _store
 
@@ -54,6 +59,15 @@ REPORT_CAUSE_BY_CREATE_CODE: dict[str, str] = {
     "workspace_not_configured": "workspace_not_configured",
     "job_unavailable": "storage_unavailable",
 }
+
+
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.parametrize("database", ["postgresql"], indirect=True),
+]
+
+
+REPORT_PATH = PREFIX + "/admission-readiness"
 
 
 def _query(db: Any, statement: str, parameters: tuple[object, ...] = ()) -> None:
@@ -148,10 +162,17 @@ def test_the_report_and_a_create_answer_the_same_refusal(
     elif mutation is not None:
         mutation(db, admission_database.runtime.now())
     store = _store(admission_database)
-    created = store.create(_job())
+    # The report is read first: a create reserves the attempt and the slot, so the
+    # comparison must be two answers to the same instant, not one answer and then a
+    # deployment another create has already filled.
     report = store.admission_readiness(WORKSPACE)
+    created = store.create(_job())
     # `status` and `cause` are one answer split in two.
     assert (report.status == "admitting") is (report.cause is None)
+    print(
+        f"ROW {row_id:<20} create={created.error_code or created.outcome:<26} "
+        f"status={report.status.value:<9} cause={report.cause.value if report.cause else None}"
+    )
     if create_code is None:
         assert created.outcome == "created", (row_id, created.error_code)
         assert report.status == "admitting", (row_id, report.cause)
@@ -200,6 +221,55 @@ def test_the_report_lists_the_ready_instances_with_their_receipt_window(
     assert row.remaining_seconds is not None and row.remaining_seconds < 0
     assert row.max_slots >= row.held_slots + row.quarantined_slots
     assert report.quota is not None and report.quota.max_attempts == 2
+
+
+WORKSPACE_ROWS = (
+    (
+        "workspace-disabled",
+        "UPDATE speech_workspaces SET workspace_state = 'disabled' WHERE workspace_id = %s",
+        (WORKSPACE,),
+        "workspace_disabled",
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    ("row_id", "statement", "parameters", "code"),
+    WORKSPACE_ROWS,
+    ids=[row[0] for row in WORKSPACE_ROWS],
+)
+@pytest.mark.anyio
+async def test_a_workspace_refusal_is_answered_by_both_surfaces_over_http(
+    admission_database: AdmissionDatabase,
+    row_id: str,
+    statement: str,
+    parameters: tuple[object, ...],
+    code: str,
+) -> None:
+    # These two refusals are decided before admission is consulted, so they are
+    # pinned on the HTTP surface: the create answers its own 4xx code and the
+    # report names the same class. A report that named a different workspace state
+    # than the create refused on would be the same defect at a different layer.
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    db.query(statement, parameters)
+    async with AsyncClient(
+        transport=ASGITransport(app=_app(admission_database)), base_url="http://test"
+    ) as client:
+        created = await client.post(
+            PREFIX, json=_body(), headers={"Idempotency-Key": "readiness-" + row_id}
+        )
+        report_response = await client.get(REPORT_PATH, params={"workspace_id": WORKSPACE})
+    assert report_response.status_code == 200, report_response.text
+    report = report_response.json()
+    answered, _, _ = _error(created)
+    print(
+        f"ROW {row_id:<20} create={answered:<26} "
+        f"status={report['status']:<9} cause={report['cause']}"
+    )
+    assert answered == code, (row_id, answered)
+    assert report["status"] == "degraded", (row_id, report)
+    assert report["cause"] == code, (row_id, report)
 
 
 def test_an_unknown_workspace_is_reported_by_its_own_name(

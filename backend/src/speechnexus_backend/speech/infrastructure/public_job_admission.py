@@ -54,7 +54,11 @@ from speechnexus_backend.speech.domain.public_jobs import (
     canonical_digest,
     identifier,
 )
-from speechnexus_backend.speech.domain.runtime_intents import ApprovedRuntimePlan, RuntimeHost
+from speechnexus_backend.speech.domain.runtime_intents import (
+    ApprovedRuntimePlan,
+    RuntimeHost,
+    RuntimeRejectedError,
+)
 from speechnexus_backend.speech.domain.speech_synthesis import SpeechFormat, SpeechPlan
 from speechnexus_backend.speech.domain.transcription import TranscriptFormat
 from speechnexus_backend.speech.domain.voice_capability_evidence import VoiceMaterial
@@ -1186,10 +1190,13 @@ def _readiness_candidates(cursor: _Cursor) -> list[dict[str, Any]]:
     intent) is not a candidate in either path.
     """
     cursor.execute(
-        "SELECT instance_id, instance_generation, host_node_id, pool_id "
-        "FROM engine_instances WHERE instance_state='ready' "
-        "AND instance_generation IS NOT NULL "
-        "ORDER BY instance_id, instance_generation"
+        "SELECT i.instance_id, i.instance_generation, i.host_node_id, i.pool_id "
+        "FROM engine_instances AS i "
+        "JOIN runtime_instance_heads AS h ON h.instance_id = i.instance_id "
+        "AND h.current_generation = i.instance_generation "
+        "WHERE i.instance_state='ready' AND i.instance_generation IS NOT NULL "
+        "AND h.current_prepare_intent_id IS NOT NULL "
+        "ORDER BY i.instance_id, i.instance_generation"
     )
     return cursor.fetchall()
 
@@ -1402,7 +1409,13 @@ def load_admission_readiness(
     for candidate in _readiness_candidates(cursor):
         try:
             runtime, host, readiness_state = _readiness_runtime(cursor, candidate, now_us=now_us)
-        except PublicJobAdmissionRejectedError, ValueError, TypeError, KeyError:
+        except (
+            PublicJobAdmissionRejectedError,
+            RuntimeRejectedError,
+            ValueError,
+            TypeError,
+            KeyError,
+        ):
             # A stored intent admission cannot decode is an engine-side state the
             # create path refuses; the per-instance row still reports what was seen.
             reports.append(

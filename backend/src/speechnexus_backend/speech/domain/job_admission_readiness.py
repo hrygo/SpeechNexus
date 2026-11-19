@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from speechnexus_backend.speech.domain.admission import (
+    CAPACITY_REJECTION_CODES,
     PUBLIC_ADMISSION_CODES,
     AdmissionQuota,
 )
@@ -116,6 +117,10 @@ class UnclassifiedRefusalError(Exception):
     verdict to publish.
     """
 
+    def __init__(self, code: str) -> None:
+        super().__init__(f"unclassified admission refusal: {code!r}")
+        self.code = code
+
 
 def cause_for_refusal(code: str) -> AdmissionReadinessCause:
     """Name the cause behind one internal admission refusal code.
@@ -125,7 +130,13 @@ def cause_for_refusal(code: str) -> AdmissionReadinessCause:
     (``CAUSE_BY_PUBLIC_CODE``), so both directions use the shipped tables instead
     of a second list that could drift.
     """
-    public = PUBLIC_ADMISSION_CODES.get(code, code)
+    # The capacity class is the one group with no entry in the internal->public
+    # table: a create answers it as the 429 ``job_capacity_exhausted`` code, so the
+    # report folds it through that same declared code instead of restating it.
+    if code in CAPACITY_REJECTION_CODES:
+        public = "job_capacity_exhausted"
+    else:
+        public = PUBLIC_ADMISSION_CODES.get(code, code)
     cause = CAUSE_BY_PUBLIC_CODE.get(public)
     if cause is None:
         raise UnclassifiedRefusalError(code)

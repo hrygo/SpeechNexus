@@ -69,8 +69,10 @@ _HELD = _OPEN + _IN_WINDOW
 #: Their index depth -- not their row count -- is the only thing a growing seed may move.
 _KEY_DESCENTS_PER_LEASE = 5
 #: A tenfold table can deepen one of those indexes by one level, i.e. one more page per
-#: descent; two levels leaves headroom for a split that is not a level. A read that
-#: followed the history instead would pay for its rows, i.e. thousands of pages.
+#: descent. The budget is two so that a planner or page-layout difference between
+#: PostgreSQL versions cannot fail a read that stayed bounded; it is not a claim that a
+#: split costs a level. A read that followed the history instead would pay for its rows,
+#: i.e. thousands of pages -- an order of magnitude past this budget.
 _MAX_EXTRA_INDEX_LEVELS = 2
 #: (settled ledger rows, exhausted ledger rows, released leases) -- each term 10x.
 _SCALES = ((10_000, 100, 10_000), (100_000, 1_000, 100_000))
@@ -383,10 +385,12 @@ def _scans(plan: Mapping[str, Any], relation: str) -> list[dict[str, Any]]:
 #:   -- one row per accepted cancellation;
 #: * ``speech_jobs`` -- one row per Job.
 #:
-#: Bounded relations the reads touch stay out. ``host_nodes``, ``resource_pools``,
-#: ``workspace_quotas`` and ``engine_instances`` are the deployment's own configuration (a
-#: fixed number of rows), and ``admission_attempts`` is not joined by either debt read, so
-#: no plan for those reads can scan it.
+#: Everything else stays out because neither debt read joins it: ``host_nodes``,
+#: ``resource_pools``, ``workspace_quotas`` and ``engine_instances`` are the deployment's own
+#: fixed configuration, and ``admission_attempts`` never appears in these two reads at all --
+#: so the list is exactly the union of the two reads' FROM/JOIN relations, not a sample of
+#: them. ``test_the_growth_relations_are_exactly_the_relations_the_two_reads_join`` keeps
+#: that equality honest in both directions.
 _GROWTH_RELATIONS = (
     "admission_leases",
     "execution_stop_evidence",
@@ -605,14 +609,19 @@ def test_the_permanent_reads_cost_does_not_follow_the_histories() -> None:
                     "exhausted": float(exhausted),
                     "released": float(released),
                     "ms": float(permanent["Actual Total Time"]),
-                    "blocks": float(permanent.get("Shared Hit Blocks", 0)),
+                    # Both counters: the two scales are seeded into separate schemas, so a
+                    # cold second scale would otherwise hide its reads in this number.
+                    "blocks": float(
+                        permanent.get("Shared Hit Blocks", 0)
+                        + permanent.get("Shared Read Blocks", 0)
+                    ),
                     "rows": float(permanent["Actual Rows"]),
                 }
             )
 
     print(f"\nscaling: {readings}")
     assert [reading["rows"] for reading in readings] == [_HELD, _HELD]
-    # The tenfold seed adds roughly 270 000 rows across the five histories, and the read's
+    # The tenfold seed adds roughly 543 000 rows across the six histories, and the read's
     # only per-row cost is one key descent per held lease per joined relation. A tenfold
     # table deepens such an index by at most one level, so the buffer growth that is still
     # a bounded read is bounded by those descents -- not by the rows.

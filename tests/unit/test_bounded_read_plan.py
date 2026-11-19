@@ -22,10 +22,15 @@ the assertion must name.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import pytest
 
+from speechnexus_backend.speech.infrastructure.readiness import (
+    _LEFT_CANCELLING_DEBT,
+    _PERMANENT_DEBT,
+)
 from tests.integration.test_permanent_debt_plans_pg import (
     _BOUNDED_LIMIT,
     _GROWTH_RELATIONS,
@@ -314,3 +319,29 @@ def test_the_row_count_needs_a_limit_that_cannot_truncate_the_window() -> None:
     for limit in (_IN_WINDOW, _IN_WINDOW - 1):
         with pytest.raises(AssertionError, match="must fit strictly inside limit"):
             _assert_bounded_read(_fence_driven(), expected_rows=_IN_WINDOW, limit=limit)
+
+
+#: A table name after `FROM`/`JOIN`; the two debt reads use no subqueries over tables.
+_JOINED_TABLE = re.compile(r"\b(?:FROM|JOIN)\s+(?:ONLY\s+)?([a-z_][a-z0-9_]*)", re.IGNORECASE)
+
+
+def _joined_relations(sql: str) -> set[str]:
+    body = "\n".join(line.split("--", 1)[0] for line in sql.splitlines())
+    return set(_JOINED_TABLE.findall(body))
+
+
+def test_the_growth_relations_are_exactly_the_relations_the_two_reads_join() -> None:
+    """The table must track the SQL, not the other way round.
+
+    Parameterising the matrix over ``_GROWTH_RELATIONS`` keeps the guard honest for every
+    relation it lists, but it goes quiet in both directions it was built for: dropping a
+    relation from the list removes its cases, and a read that joins a new growing table
+    keeps the list green because nothing compares the two. This closes both by deriving
+    the expected set from the reads themselves.
+    """
+
+    joined = _joined_relations(_PERMANENT_DEBT) | _joined_relations(_LEFT_CANCELLING_DEBT)
+    assert joined == set(_GROWTH_RELATIONS), (
+        f"tabled but not joined: {sorted(set(_GROWTH_RELATIONS) - joined)}; "
+        f"joined but not tabled: {sorted(joined - set(_GROWTH_RELATIONS))}"
+    )

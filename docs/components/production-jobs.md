@@ -557,6 +557,15 @@ Job 已是 `cancelled` 是另一条分支，判定它的是**容量结论而不�
    明细、四个账本标记与 `retrying at attempt ceiling`）；同族的 `stop_evidence_debt` 不读
    这两列，不受影响。
 
+   这条约束由真库集成测试
+   [`test_role_grant_coverage_pg.py`](../../tests/integration/test_role_grant_coverage_pg.py)
+   守护：它以该只读身份执行钻取明细、`/readyz` 汇总与 `stop_evidence_debt` 三条读面，
+   把账本授权退回四列（`#1038` 之前的形状）时，明细与汇总两条用例变红并指名缺
+   `speech_job_cancellation_reconciliations.attempts`，`stop_evidence_debt` 仍绿。
+   因此「该 grant 函数是否仍覆盖这三条读面」不再靠单测比对 DDL 文本。它**不**回答
+   「线上那个角色是否重跑过该函数」：测试自己建角色并重放函数，线上授权是否已更新仍属
+   部署核对的范围（升级清单与 `role_privileges_missing` 报文）。
+
    探针复用一条连接（`application_name=speechnexus-readiness-debt`），不随每次 `/readyz`
    轮询新建会话；查询后回滚以保持会话空闲。
 
@@ -1108,6 +1117,62 @@ Job/outbox SELECT 和创建所需列的 INSERT；没有 UPDATE、DELETE、持久
 池通过显式 schema 配置定位这些表，不接收客户端命名空间。
 数据库级 PUBLIC TEMP 与其他继承授权按[存储/角色基线](../operations/production-coordination-storage.md)
 单独核对；共享池显式将 `pg_temp` 置于末尾，防止同名临时表覆盖权威表。
+
+### 授权覆盖面：以受限身份真读每个面
+
+授权够不够只能由「以那个身份执行那条语句」回答；比对 grant 函数与 SQL 里的列名会漏，
+`#1038` 漏的就是一列。集成测试
+[`test_role_grant_coverage_pg.py`](../../tests/integration/test_role_grant_coverage_pg.py)
+用参考 provisioning 在真 PG 上建出下列角色，再以该角色连库执行各面的生产查询，断言
+语句成功且返回预期形状；失败信息指名面、缺的表或列，以及应重跑的 grant 函数。四条用例
+分别覆盖：每个面以自己的身份成功、回退某角色对某表的 `SELECT` 只让读该表的用例变红、
+只保留声明中的授权也足以跑通该面、schema 内没有会兜底的 `PUBLIC` 授权。
+
+| 面 | 运行身份 | 授权函数 |
+| --- | --- | --- |
+| `cancellation_debt` 钻取明细（`_DEBT`、`_LEFT_CANCELLING_DEBT`、`_PERMANENT_DEBT`） | 取消债只读身份（`SPEECHNEXUS_READINESS_CANCELLATION_DSN`） | `cancellation_debt_reader_grants` |
+| `cancellation_debt` 的 `/readyz` 汇总（Job 级读与探针 detail） | 同上 | `cancellation_debt_reader_grants` |
+| `stop_evidence_debt`（派发门禁挂住的 Job） | 同上 | `cancellation_debt_reader_grants` |
+| 准入就绪报告的行读取 | admission（`SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL`） | `public_job_admission_grants` |
+| 巡检 `open()` 的 `REQUIRED_TABLES` 自检 | admission | `public_job_admission_grants` |
+| 执行派发领取（`claim_due`，含认领列 UPDATE） | dispatch（`SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL`） | `job_runtime_grants`、`job_dispatch_grants`、`public_job_grants`、`coordination_runtime_grants` |
+| Job/outbox 认领（`create_in_transaction` 的重放分支读 outbox，加 `claim_in_transaction`） | Job writer（`SPEECHNEXUS_JOB_WRITER_DATABASE_URL`） | `job_runtime_grants` 与该脚本的 writer baseline |
+| 绑定停用协调（原始 intent、target、lease 读取） | 停用协调身份 | `disable_coordinator_grants` |
+| 资产检查（`PostgresAssetMetadata.get`、`.object`） | 资产面身份；参考部署由 API 身份 `sn_api` 承载 | `asset_runtime_grants` |
+
+三处边界必须与代码一致；测试按真实授权运行，不放宽：
+
+- **Job writer 的认领列**：`coordination_jobs` 的 `claim_owner_id`、`claim_expires_at_us`、
+  `claim_version`、`job_state` UPDATE **不在赋予 writer 的任何 grant 组里**
+  （`job_runtime_grants` 按创建面刻意不给 UPDATE），只由
+  `scripts/dev-env/provision-job-roles.py` 的 `WRITER_BASELINE_UPDATE` 安装；dispatch 拿到
+  的同类 `UPDATE` 来自 `coordination_runtime_grants`（见上表「执行派发领取」一行）。只装
+  `job_runtime_grants` 的 writer 能读到认领行，写回认领列会被拒成 `42501`；运行时报文与
+  [`compose-minimal.md`](../operations/compose-minimal.md) 的 `role_privileges_missing`
+  都指向重跑该脚本。建 writer 必须跑脚本，不能只跑函数。
+- **资产面没有独立角色**：参考部署把 `asset_runtime_grants` 直接授给 API 身份
+  （[`compose-minimal.md`](../operations/compose-minimal.md) §6 的
+  `asset_runtime_grants(schema, "sn_api")`），没有单独资产角色。测试用一个只装该函数的
+  更窄专用角色，因此该面成立的是「这条语句只需要这些列」，不是「线上一定是这个身份」。
+- **admission 的两条读面**：准入就绪报告与巡检 `REQUIRED_TABLES` 自检读的是**同一组**
+  13 张关系，全部由 `public_job_admission_grants` 的表级 `SELECT` 覆盖，没有额外授权。
+  巡检若用 writer 身份启动就会读不到其中 8 张（`#1041`），这正是该自检放在 `open()` 里、
+  失败即 exit 2 的原因：它是启动期失败，不是轮询期的 `unavailable`。
+
+### 声明是读集下界，不是授权等式
+
+每个面声明的是「这条语句读到的关系与列」。测试撤销该身份持有的全部关系权限，只授权声明
+再跑一遍，证明声明**充分**（能跑通）且没有靠更宽的 grant 兜绿。它**不**证明声明等于
+生产授权：debt 面的声明与 `cancellation_debt_reader_grants` 逐列相等，但 admission 面是
+13 张声明对 `_READ_TABLES` 的 30 张，dispatch/writer 面各对 80+ 条 grant 语句，asset 面
+对 8 张表。这是有意的取舍——一个身份服务整条创建路径，断言等式会又脆又错。所以本测试防的
+是「生产 grant 比语句窄」（`#1038` 与 `#1041` 的形态），不防「生产 grant 比声明宽」；
+授权面是否过大由各 grant 函数的声明审查与
+[存储/角色基线](../operations/production-coordination-storage.md)负责。
+
+它还有一层抓不到：测试**自己建角色并重放 grant 函数**，回答的是「该函数是否仍覆盖语句」，
+不是「线上角色是否重跑过函数」；后者只能由部署核对。schema 内若存在 `PUBLIC` 授权，
+按角色的 `REVOKE` 撤不掉，声明用例会被兜绿，因此测试单独断言 schema 内没有 `PUBLIC` ACL。
 
 ## 证据与保护范围
 

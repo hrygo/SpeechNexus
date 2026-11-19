@@ -229,3 +229,42 @@ def test_the_ceiling_fact_is_counted_per_job_not_per_lease(
     assert "held leases: execution-unknown=2" in detail
     assert f"{RETRY_AT_ATTEMPT_CEILING}: 1" in detail
     assert "retrying on schedule: 1" in detail
+
+
+def test_an_exhausted_row_is_never_counted_as_retrying(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``exhausted`` and "at attempt ceiling" cannot describe the same ledger row.
+
+    ``exhausted`` promises the claim predicate will never select the row again; the
+    ceiling scope says the retries keep happening and only their answer cannot change.
+    Both cannot be true of one row, and the read face must not emit them side by side
+    (#1038 review). The worker cannot produce the pair -- it records ``exhausted`` only
+    where it will stop claiming -- but ``_PERMANENT_DEBT`` exists precisely because
+    ledger rows written before #1036, or edited by hand, can hold it: ``cancelled`` Job,
+    ``reserved`` lease, ``exhausted`` ledger, ``attempts`` at the bound. So the row is
+    driven to saturation by the real reconciler and then rewritten into that shape,
+    which is the only way to reach it, and the detail must name exactly one of the two.
+    """
+    with _sandbox((LEASE, QUARANTINED_DOCUMENT_STATE)) as box:
+        _settle_job(box, "cancelled")
+        _accept_recently(box, age_us=ACCEPT_AGE_SECONDS * SECOND_US)
+        _install_client(monkeypatch, box.job_id)
+        reconciler = _retrying_reconciler(box)
+        now_us = _database_now(box)
+        for _ in range(ATTEMPT_CEILING):
+            asyncio.run(reconciler.run_once(now_us=now_us))
+            now_us = int(_ledger(box)["next_check_at_us"])
+        assert _ledger(box)["attempts"] == ATTEMPT_CEILING
+        # The legacy shape: a row the worker will never claim again, still at the bound.
+        box.execute(
+            f"UPDATE {RECONCILIATION_TABLE} SET last_outcome = 'exhausted' WHERE job_id = %s",
+            (box.job_id,),
+        )
+        detail = _detail(box)
+
+    assert "never claimable (exhausted): 1" in detail
+    # The one sentence the row owns, and nothing that contradicts it.
+    assert RETRY_AT_ATTEMPT_CEILING not in detail
+    assert "retrying on schedule" not in detail
+    assert "[retrying:" not in detail
+    # The Job still holds capacity, so the Job-state label stays: it is a different fact.
+    assert f"{LEFT_CANCELLING_HOLDING_CAPACITY}: 1" in detail

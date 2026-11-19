@@ -96,19 +96,19 @@ EXECUTION_UNKNOWN = "execution-unknown"
 _LEASE_CLASSES = (COMPLETED_WITHOUT_RELEASE, EXECUTION_UNKNOWN)
 #: The Job-level labels, used when the lease itself cannot be read.
 _JOB_CLASSES = ("lease-unread", "no-held-lease")
-#: The Job-state side fact reported in addition to the three ledger marks: the
-#: cancellation is still unsettled and the Job has *left* ``cancelling`` while one of
-#: its leases still holds capacity. It is a fact about the Job row, not about the
-#: ledger's schedule, so it is a fourth scope and never joins the three marks above --
-#: a Job may carry both a ledger mark and this label (#852 residual, read-face blind
-#: spot).
+#: The Job-state side fact reported beside the four ledger marks: the cancellation is
+#: still unsettled and the Job has *left* ``cancelling`` while one of its leases still
+#: holds capacity. It is a fact about the Job row, not about the ledger's schedule, so
+#: it is counted beside the marks and never as one of them -- a Job may carry both a
+#: ledger mark and this label: one Job row, one lease still reserved, one blind spot
+#: on the read face (#852 residual).
 LEFT_CANCELLING_HOLDING_CAPACITY = "left-cancelling-holding-capacity"
 #: The unbounded sibling of :data:`LEFT_CANCELLING_HOLDING_CAPACITY`: the same
 #: accepted-cancellation-and-held-lease fact, read from the held leases instead of the
-#: Job state or the fence's acceptance age, so the debt that aged out of the fourth
-#: read is named again (#1008). It is a fifth scope and, like the fourth, never joins
-#: the three ledger marks: it states which read named the Job, not what the ledger can
-#: still advance. A Job is tagged here only when no other read named it, i.e. the
+#: Job state or the fence's acceptance age, so the debt that aged out of the bounded
+#: read is named again (#1008). Like the other labels it is counted beside the four
+#: ledger marks, never as one of them: it says which read named the Job, not what the
+#: ledger can still advance. Tagged here only when no other read named it, i.e. the
 #: bounded read had stopped. The three shapes it catches are "the worker never claimed
 #: the acceptance" (no ledger row at all), "the ledger is past its schedule" (unsettled,
 #: outside the window) and "the ledger can never be claimed again" (``exhausted``) --
@@ -128,10 +128,12 @@ RETRY_AT_ATTEMPT_CEILING = "retrying at attempt ceiling"
 #: mutually exclusive on one acceptance, and each states a fact about the durable
 #: ledger as of this read -- never about a process: the probe cannot see whether a
 #: worker is running or whether reconciliation is enabled. Naming them is what stops
-#: "still holds capacity" from reading as progress (#852). The fourth, ``scheduled``,
-#: is the state the query already computed and the report used to drop: "the ledger
-#: has a future claim time" (#1038). It is what separates a backoff that is running
-#: from a worker that stopped claiming (which leaves the row ``due``).
+#: "still holds capacity" from reading as progress (#852). The last entry,
+#: ``scheduled``, is the state the query already computed and the report used to
+#: drop: "the ledger has a future claim time" (#1038). It is what separates a backoff
+#: that is running from a worker that stopped claiming (which leaves the row
+#: ``due``). It sits last because it is the only non-terminal schedule: the others
+#: are the ledger's answer, and this one is its next attempt.
 _SCHEDULE_SCOPES: tuple[tuple[str, str], ...] = (
     ("never_claimed", "never claimed"),
     ("exhausted", "never claimable (exhausted)"),
@@ -168,8 +170,8 @@ _SCHEDULE_STATE_SQL = """CASE
            WHEN r.next_check_at_us <= now_clock.now_us THEN 'due'
            ELSE 'scheduled'
        END"""
-#: The two retry columns every debt read carries at the same positions (9 and 10), so
-#: the report reads one shape: the ledger's persisted attempt count, and the whole
+#: The two retry columns every debt read ends with, in this order, so the report reads
+#: one shape: the ledger's persisted attempt count, and the whole
 #: seconds until the next scheduled claim. ``NULL`` for both is "no ledger row" (never
 #: claimed). ``retry_in_seconds`` rounds up and is ``NULL`` unless the claim time is
 #: strictly in the future, i.e. exactly when the schedule state is ``scheduled``: a
@@ -246,7 +248,9 @@ class CancellationDebtProbe:
     left; it is the mirror of ``never claimable (exhausted)`` on the read face (#1038).
     It is counted beside the marks and never as one of them: a saturated row is also
     ``due now`` or ``retrying on schedule``. It does not say the worker stopped -- it
-    says the retries it performs can no longer change the answer.
+    says the retries it performs can no longer change the answer. An ``exhausted`` row
+    is never counted here either: that mark already says no automatic claim is left,
+    and one row must not say two contradictory things about whether it is retried.
 
     A further scope names the Job-state side fact, not a ledger fact:
     ``left-cancelling-holding-capacity: N`` counts Jobs that already left
@@ -306,13 +310,13 @@ class CancellationDebtProbe:
 
     ``grace_seconds`` is deliberately larger than the default confirmation window
     plus backoff so an in-flight judgement is not reported as debt.
-    ``left_cancelling_window_seconds`` bounds only the fourth, age-indexed read. It
-    must exceed ``grace_seconds``: every reported acceptance is already older than
-    the grace, so a window no larger than that would always select nothing. The
-    default (24 h) is far past the confirmation window plus backoff, so an
-    acceptance is never reported before its judgement can complete. The fifth read
-    takes no lookback window: it is index-bounded by the held leases, so nothing it
-    names depends on how long the debt has existed.
+    ``left_cancelling_window_seconds`` bounds only the age-indexed read. It must
+    exceed ``grace_seconds``: every reported acceptance is already older than the
+    grace, so a window no larger than that would always select nothing. The default
+    (24 h) is far past the confirmation window plus backoff, so an acceptance is
+    never reported before its judgement can complete. The unbounded read takes no
+    lookback window: it is index-bounded by the held leases, so nothing it names
+    depends on how long the debt has existed.
     """
 
     def __init__(
@@ -515,21 +519,23 @@ def _describe_debt(rows: Sequence[tuple[Any, ...]], *, missing: str | None = Non
     """One bounded sentence: two named units, the schedule split, then the drill-down.
 
     The sentence counts accepted cancellations (Jobs); the parenthetical counts the
-    leases or the unreadable Jobs it is actually classifying, plus the four ledger
-    facts that say what can still advance each Job. Naming the units is what stops a
+    leases or the unreadable Jobs it is actually classifying, plus the ledger facts
+    that say what can still advance each Job. Naming the units is what stops a
     multi-stage Job from making "3 cancellations" sit next to four subclass counts,
     and what stops "still holds capacity" from reading as progress (#852).
 
-    The tenth column carries the ledger's ``attempts`` and the eleventh the whole
-    seconds to its next claim, both written by :data:`_RETRY_COLUMNS_SQL`. They are
-    used twice: a ``scheduled`` row is also named in the drill-down as ``[retrying:
-    attempts=N, next in Ts]``, and a row at the storage bound is counted in
-    ``retrying at attempt ceiling`` so "retried 64 times and still failing" stops
-    looking like a healthy backoff (#1038). The ceiling is a counter fact, so it is
-    counted beside the schedule marks -- a saturated row still carries its own mark --
-    and it is counted per Job, like every other scope here.
+    The last two columns carry the ledger's ``attempts`` and then the whole seconds to
+    its next claim, both written by :data:`_RETRY_COLUMNS_SQL`. They are used twice: a
+    ``scheduled`` row is also named in the drill-down as ``[retrying: attempts=N, next
+    in Ts]``, and a row at the storage bound is counted in ``retrying at attempt
+    ceiling`` so "retried 64 times and still failing" stops looking like a healthy
+    backoff (#1038). The ceiling is a counter fact, so it is counted beside the
+    schedule marks -- a saturated row still carries its own mark -- and it is counted
+    per Job, like every other scope here. An ``exhausted`` row is never counted at the
+    ceiling: the two marks would contradict each other, so the row keeps only the one
+    that is true of it.
 
-    A row whose ninth column is :data:`LEFT_CANCELLING_HOLDING_CAPACITY` also
+    A row whose ``debt_class`` is :data:`LEFT_CANCELLING_HOLDING_CAPACITY` also
     contributes to the ``left-cancelling-holding-capacity`` scope. That scope is
     counted per Job from the Job row, appended after the ledger scopes, and is
     never one of them: those describe the ledger, the label describes the Job's
@@ -572,7 +578,14 @@ def _describe_debt(rows: Sequence[tuple[Any, ...]], *, missing: str | None = Non
         # Job repeats them and must not read as several retries.
         attempts = row[9] if len(row) > 9 else None
         if isinstance(attempts, int):
-            if attempts >= job_cancellation_fence_schema.ATTEMPT_CEILING:
+            # ``exhausted`` already says "no automatic claim will ever select this row",
+            # so counting it as a retry would contradict that in the same sentence
+            # (#1038 review). The union is only reachable through pre-#1036 rows or
+            # hand-edited data, but the read face must still say one thing about it.
+            if (
+                attempts >= job_cancellation_fence_schema.ATTEMPT_CEILING
+                and schedule != "exhausted"
+            ):
                 ceiling_jobs.add(job_id)
             if schedule == "scheduled" and job_id not in retry_notes:
                 next_in = row[10] if len(row) > 10 else None

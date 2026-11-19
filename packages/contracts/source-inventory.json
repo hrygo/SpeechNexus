@@ -88,7 +88,7 @@
     "version": null
   },
   "shared/deletion.schema.json": {
-    "sha256": "fb67340b3142bd911d962610ea4bd79fa7c310f47abb2b96b983a7753a8fab2d",
+    "sha256": "e1ef7f057febdff84392d517aba6e1bc48e54b7c5a71d645273d634a83454d11",
     "version": null
   },
   "shared/errors.schema.json": {
@@ -144,7 +144,7 @@
     "version": null
   },
   "workbench-openapi.yaml": {
-    "sha256": "dcf5d6014670c63c3785306d48c1ccdde7dc8461179b203955556e11ed2d775f",
+    "sha256": "9db36080e07a14e50c3a235ca96c80c8fd673044a8ed65663695515a6d69ca45",
     "version": "0.1.0.dev2"
   }
 }

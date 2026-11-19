@@ -1657,6 +1657,14 @@ paths:
         This endpoint owns only workbench resources. Another owner returns
         422 deletion_owner_mismatch. Plans pin all dependencies and expire;
         execution rechecks the complete snapshot atomically. See data-deletion.md.
+      # Deletion-specific codes only; shared envelope codes of this operation
+      # (resource_not_found, idempotency_conflict, ...) stay on their responses.
+      x-speechnexus-errors:
+        deletion_owner_mismatch: 422
+        deletion_resource_unsupported: 422
+        deletion_plan_changed: 409
+        deletions_unavailable: 503
+      x-speechnexus-retryable-errors: []
       parameters:
         - $ref: "#/components/parameters/WorkspaceIdQuery"
         - name: Idempotency-Key
@@ -1717,6 +1725,16 @@ paths:
         This endpoint owns only workbench resources. Another owner returns
         422 deletion_owner_mismatch. Plans pin all dependencies and expire;
         execution rechecks the complete snapshot atomically. See data-deletion.md.
+      # Deletion-specific codes only; shared envelope codes of this operation
+      # (resource_not_found, idempotency_conflict, ...) stay on their responses.
+      x-speechnexus-errors:
+        deletion_owner_mismatch: 422
+        deletion_confirmation_mismatch: 422
+        deletion_plan_expired: 409
+        deletion_plan_changed: 409
+        deletion_dependency_conflict: 409
+        deletions_unavailable: 503
+      x-speechnexus-retryable-errors: []
       parameters:
         - $ref: "#/components/parameters/WorkspaceIdQuery"
         - name: Idempotency-Key
@@ -1777,6 +1795,10 @@ paths:
         This endpoint owns only workbench resources. Another owner returns
         422 deletion_owner_mismatch. Plans pin all dependencies and expire;
         execution rechecks the complete snapshot atomically. See data-deletion.md.
+      # Deletion-specific codes only; resource_not_found stays on its response.
+      x-speechnexus-errors:
+        deletions_unavailable: 503
+      x-speechnexus-retryable-errors: []
       parameters:
         - $ref: "#/components/parameters/WorkspaceIdQuery"
         - name: deletion_id

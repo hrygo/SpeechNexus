@@ -9,6 +9,8 @@ every case here builds its own throw-away git repository and pins the exit code:
 * a migration added after the tag with no entry -> red, and the file is named;
 * the entry row deleted while a passing sentence keeps the name -> red (an entry is
   a line of its own, not any occurrence);
+* a name that survives only inside a fenced block of expected output -> red, because
+  that is the most natural way for the row to disappear and the check to stay green;
 * a changed `*_grants` file whose new function is unnamed -> red;
 * the same repository with nothing added since the tag -> green, because a guard
   that fails when there is nothing to check gets disabled;
@@ -127,6 +129,24 @@ class UnreleasedNotesGateTest(unittest.TestCase):
         completed = _run(self.repo)
         self.assertEqual(1, completed.returncode, completed.stdout + completed.stderr)
         self.assertIn("migration 0058_lease_debt_index", completed.stdout)
+
+    def test_a_name_inside_a_fenced_block_is_not_an_entry(self) -> None:
+        # The row an operator reads is deleted; the name is left in the expected
+        # output block, where quoting a migration id is completely natural. Skipping
+        # fenced lines is what keeps this red instead of a silent pass.
+        _write(self.repo, f"{MIGRATIONS}/0058_lease_debt_index.py", '"""new revision"""\n')
+        _write(
+            self.repo,
+            NOTES,
+            "# Unreleased\n\n| change | what |\n| --- | --- |\n"
+            "| `0057_seed` | seed revision |\n"
+            "| `alpha_grants` | seed grants |\n"
+            "\nExpected output:\n\n```text\n0058_lease_debt_index\n```\n",
+        )
+        completed = _run(self.repo)
+        self.assertEqual(1, completed.returncode, completed.stdout + completed.stderr)
+        self.assertIn("migration 0058_lease_debt_index", completed.stdout)
+        self.assertIn("fenced block does not count", completed.stdout)
 
     def test_a_changed_grants_file_requires_every_function_name(self) -> None:
         _write(

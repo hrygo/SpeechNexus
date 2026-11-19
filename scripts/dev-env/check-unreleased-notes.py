@@ -12,16 +12,18 @@ rotting one merge later.
 Judged against the most recent release tag:
 
   * every migration file added or modified since that tag must have its file name
-    (without the `versions/` prefix and `.py`) start a line of the notes — a table
-    row, a list item or a bullet;
+    (without the `versions/` prefix and `.py`) start a line of the notes outside a
+    fenced code block — a table row's first cell, a list item or a bullet;
   * every file that defines a `*_grants` function and was added or modified since
-    that tag must have each of those function names start a line of the notes.
+    that tag must have each of those function names start such a line.
 
 "Start a line" instead of "appear somewhere": a name that survives only in a
 passing sentence is not the entry an operator reads, and searching for any
-occurrence would leave the check green after the row itself was deleted. Prose that
-merely mentions the name does not count; the failure message says which shape is
-required.
+occurrence would leave the check green after the row itself was deleted. The notes
+also quote expected CLI output, and a migration name inside such a fence is the most
+natural place for a false green to appear, so fenced blocks are skipped entirely.
+Prose that merely mentions the name does not count either; the run prints the
+required shape and names every missing entry.
 
 The grant rule is deliberately file-scoped rather than diff-scoped: a `*_grants`
 file whose only change is a docstring still asks for the name, because telling a
@@ -67,7 +69,7 @@ import argparse
 import re
 import subprocess
 import sys
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -85,6 +87,15 @@ PRODUCT_SOURCE = re.compile(r"(?:^|/)src/.*\.py$")
 # otherwise deleting the row an operator reads would leave the check green on a
 # passing reference somewhere else.
 ENTRY_PREFIX = re.compile(r"^\s*(?:[|>*+-]+\s*)*[`*_]*")
+SHAPE = (
+    "each required name needs a line of its own that starts with it: a table row's "
+    "first cell or a list item; a mention mid-sentence, in a later cell, or inside a "
+    "fenced block does not count"
+)
+# An opening fence: up to three spaces of indent, then three or more backticks or
+# tildes, then an optional info string. Closing the same block needs the same
+# character and at least the same run length, with nothing after it.
+FENCE = re.compile(r"^\s{0,3}(`{3,}|~{3,})(.*)$")
 
 
 class GateUnavailableError(Exception):
@@ -190,9 +201,41 @@ def grant_definitions(root: Path, paths: Sequence[str]) -> tuple[Changed, ...]:
     return tuple(found)
 
 
-def has_entry(text: str, name: str) -> bool:
-    """Whether ``name`` starts a table row or list item, not just a sentence."""
+def outside_fences(text: str) -> Iterator[str]:
+    """The lines a reader sees as prose or as a table, never a fenced block.
+
+    The notes quote expected CLI output, and a migration name inside such a block is
+    the most natural place for it to appear — counting those lines would make the
+    check green while the row an operator reads is gone. An unterminated fence
+    swallows the rest, which is how a Markdown renderer treats it too.
+    """
+    fence: tuple[str, int] | None = None
     for line in text.splitlines():
+        match = FENCE.match(line)
+        if fence is None:
+            if match is None:
+                yield line
+                continue
+            marker, info = match.group(1), match.group(2)
+            if marker[0] == "`" and "`" in info:
+                # An inline run of three backticks in prose, not a fence opener.
+                yield line
+                continue
+            fence = (marker[0], len(marker))
+            continue
+        if (
+            match is not None
+            and match.group(1)[0] == fence[0]
+            and len(match.group(1)) >= fence[1]
+            and not match.group(2).strip()
+        ):
+            fence = None
+        continue
+
+
+def has_entry(text: str, name: str) -> bool:
+    """Whether ``name`` starts a line that is not inside a fenced block."""
+    for line in outside_fences(text):
         entry = ENTRY_PREFIX.sub("", line, count=1)
         if not entry.startswith(name):
             continue
@@ -220,15 +263,15 @@ def check(root: Path, notes: Path) -> Report:
     else:
         text = ""
         problems.append(f"{label} is missing: every unreleased change must be listed there")
-    hint = "needs an entry line (a table row or list item) that starts with the name"
     for name in migrations:
         if not has_entry(text, name):
-            problems.append(f"migration {name} (since {tag}) {hint} in {label}")
+            problems.append(f"migration {name} (since {tag}) has no entry line in {label}")
     for change in changed:
         for name in change.grants:
             if not has_entry(text, name):
                 problems.append(
-                    f"grant function {name} ({change.path}, since {tag}) {hint} in {label}"
+                    f"grant function {name} ({change.path}, since {tag}) has no entry line "
+                    f"in {label}"
                 )
     return Report(tag=tag, migrations=migrations, changed=changed, problems=tuple(problems))
 
@@ -267,6 +310,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"FAIL unreleased-notes: cannot read the change set: {error}")
         return 2
     if report.problems:
+        print(SHAPE)
         for problem in report.problems:
             print(f"FAIL {problem}")
         print(f"RESULT FAIL {len(report.problems)} problem(s) since {report.tag}")

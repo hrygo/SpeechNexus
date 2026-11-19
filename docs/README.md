@@ -18,6 +18,7 @@
 | [验证规则](validation/README.md) | CI 调度与契约变更结构检查的范围和限制 |
 | [上线前检查脚本](operations/release-preflight.md) | C0–C11 局部检查和 C12 独立验收要求；默认不写产品数据库，但会加载 shell 配置，可能访问网络及写缓存；另有历史候选假设 |
 | [MVP 0.1.0 发布说明](releases/mvp-0.1.0.md) | 版本标识（镜像 tag、包版本、契约 `info.version`、`contract_digest`）及其关系、已取证能力、部署入口、升级与回滚步骤（含迁移不可回退的核实过程）、11 条已知限制及逐条处置 |
+| [未发布变更清单](releases/unreleased.md) | 从 `v0.1.0` 升到当前 `main` 的运维动作：六个迁移、必须重跑的授权函数、新增 profile 与环境变量、行为变化与逐条证据；清单由 `check-unreleased-notes.py` 守门，漏登记即 CI 红 |
 | [产品与架构设计](speechnexus-product-architecture.md)                                               | 产品范围、AdminUI / 工作台、领域与模块、场景预设、共享访问、部署与验收          |
 | [整体技术方案](architecture/technical-blueprint.md)                                                 | 技术基线、内部协议、执行配方、事务 / 迁移、Web / 内网 LLM、观测、发布与工程交接 |
 | [部署单元与平台规划](architecture/deployment-units.md) | 独立服务、平台与节点边界、当前入口/缺口及跨平台和多机验收 |

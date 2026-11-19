@@ -8,6 +8,22 @@
 每个迁移文件、每个 `*_grants` 定义函数，都必须在本页有以它开头的一行（表格行或列表项），
 正文里顺带提一次不算。缺一条即 CI 红，因此下面的迁移与授权函数清单不是手抄的。
 
+条目行的写法是固定的：表格行的**首列**以名字开头（`| 名字 | 说明 |`），或列表项以名字开头
+（`- 名字 说明`），名字本身可以带反引号。名字放在句子中间、表格的后续列、或代码围栏（包括
+「期望输出」块）里都不算条目；门禁变红时会先打印这条写法要求，再逐条点名缺了什么。
+
+这条检查与「`路径:行号` 引用校验」共用 `Docs: path:line references` 作业：PR 的检查列表只有
+一个状态，它变红可能是引用失效，也可能是本页漏登记，点进去看是 `check-doc-refs.py` 还是
+`check-unreleased-notes.py` 那一步。改发布标签流程（打 tag、改 `git describe` 语义、或不打注
+解标签）时要想到它：基线来自 `git describe --tags --abbrev=0`，取不到标签就以 2 退出，不会
+被当成「没有变化」。
+
+换镜像这一步不在下面的清单里：发布镜像由 `.github/workflows/release-images.yml` 在发布 tag 上
+构建并推送到 GHCR，digest 清单 `speechnexus-<tag>-images.txt` 挂在同一个 GitHub Release 上
+（[#1035](https://github.com/hrygo/SpeechNexus/pull/1035)）。没有这份资产的 tag 没有发布镜像，
+只能从源码构建；要消费发布镜像就按 `deploy/README.md` 的 Published release images 一节按 digest
+固定。
+
 ## 运维必须做
 
 ### 1. 迁移到 `0063_deletion_targets_blocked`
@@ -86,9 +102,12 @@ PY
 `unavailable (permission)`，而是账本事实对应的标记
 
 ```bash
-curl -sS http://127.0.0.1:8000/readyz \
+set -a; . deploy/compose.env; set +a
+curl -sS "http://127.0.0.1:${SPEECHNEXUS_API_HOST_PORT:-8000}/readyz" \
   | python3 -c 'import json, sys; print([c["detail"] for c in json.load(sys.stdin)["checks"] if c["name"] == "cancellation_debt"][0])'
 ```
+
+端口取自 `SPEECHNEXUS_API_HOST_PORT`（默认 `8000`），改过宿主端口的部署不用改命令。
 
 核实：**实跑**。2026-11-20 在临时 PostgreSQL 上以真实 `cancellation_debt_reader_grants`
 授权后 `REVOKE SELECT (attempts)`，用该角色执行探针同形的
@@ -181,7 +200,9 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 
 ### 本次变动的授权函数
 
-门禁按文件判定，所以下面九个函数都必须在本页出现；只有标「变」的需要重跑。
+门禁按文件判定，所以下面九个函数都必须在本页出现。**只有标「变」与「新增」的需要动作**：
+标「变」的只要配置了对应身份就要重跑；标「新增」的只在要用删除能力的部署上需要（第 3 条）；
+标「未变」的只是被同一个文件带到本页，不需要重跑。
 
 | 函数 | 文件 | 变了什么 |
 | --- | --- | --- |
@@ -260,7 +281,8 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
   不覆盖真实间隔、告警阈值与日志量。
 - **门禁的判据是名字，不是语义。**它不检查本页写的命令是否还能执行，也不判断函数签名或
   授权列是否与描述一致；`job_cancellation_fence_grants` 这类「同文件变了、函数没变」的条目
-  靠本页标注区分。
+  靠本页标注区分。条目行只认表格首列与列表项，名字写在表格后续列或代码围栏里会红——这是
+  判据的取舍（开头已写明写法），不是遗漏。
 - **列级授权面从被 import 的常量模块派生**（例如 `deletion_ledger_schema.py` 供
   `deletion_execution_grants` 使用）。这些模块不定义 `*_grants` 函数，它们单独变动不会让
   门禁变红，只会让授权面与文档同时失真。

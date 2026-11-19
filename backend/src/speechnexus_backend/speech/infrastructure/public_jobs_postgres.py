@@ -33,14 +33,18 @@ from speechnexus_backend.speech.domain.job_admission_readiness import (
 from speechnexus_backend.speech.domain.job_prerequisites import prerequisite_detail
 from speechnexus_backend.speech.domain.public_jobs import (
     CANCELLATION_UNCONFIRMED,
+    JOB_KIND_PROFILES,
     JOB_STATES,
     TERMINAL_STATES,
+    VOICE_DRAFT_JOB_KINDS,
+    VOICE_JOB_DRAFT_KINDS,
     JobArtifactFact,
     JobCancellationReceipt,
     JobCancellationResult,
     JobCreateResult,
     JobEventFact,
     JobIntent,
+    JobKind,
     JobProgressFact,
     JobState,
     JobSubmission,
@@ -789,8 +793,8 @@ class PostgresPublicJobs:
                 ).fetchone()
                 if row is None or row["workspace_id"] != job.workspace_id:
                     return RevisionCreateResult("not_found")
-                draft_kind = "design" if job.kind == "voice_design" else "clone"
-                if row["kind"] != draft_kind:
+                draft_kind = VOICE_JOB_DRAFT_KINDS.get(job.kind)
+                if draft_kind is None or row["kind"] != draft_kind:
                     return RevisionCreateResult("conflict", error_code="draft_kind_mismatch")
                 if row["status"] in ("published", "preview_only"):
                     return RevisionCreateResult("conflict", error_code="draft_not_generatable")
@@ -1211,12 +1215,12 @@ def _job_is_terminal(job: PublicJob) -> bool:
 
 
 def _binding_is_still_selected(
-    connection: _Executor, kind: str, model_id: str, configuration_json: str
+    connection: _Executor, kind: JobKind, model_id: str, configuration_json: str
 ) -> bool:
     """Serialize a new Job write with lifecycle selection changes."""
     try:
         configuration = json.loads(configuration_json)
-        reference = configuration["models"]["voice" if kind.startswith("voice_") else kind]
+        reference = configuration["models"][JOB_KIND_PROFILES[kind].model_slot]
         if (
             not isinstance(reference, dict)
             or reference.get("id") != model_id
@@ -1350,7 +1354,7 @@ def _lock_validation_target(connection: _Executor, job: NewPublicJob) -> str | N
     try:
         resolve_voice_previews(
             workspace_id=job.workspace_id,
-            kind="voice_" + row["draft_kind"],
+            kind=VOICE_DRAFT_JOB_KINDS[row["draft_kind"]],
             state=row["generation_state"],
             result_json=row["generation_result"],
             artifact=_locked_artifact_reader(connection),
@@ -1401,12 +1405,17 @@ def _validate_pinned_create(connection: _Executor, job: NewPublicJob) -> None:
         raise ModelBindingError("model_binding_not_published")
     reference = (expected.object_id, expected.revision)
     intent = json.loads(job.request_document)
-    if job.kind == "tts":
-        task, model_key = "tts_file", "tts"
-    elif job.kind == "voice_validation":
-        task, model_key = "voice_validation", "voice"
-    elif job.kind == "voice_preview":
-        # A preview runs on the draft kind's task, still under the pinned binding.
+    profile = JOB_KIND_PROFILES[job.kind]
+    if not profile.pinned:
+        # A kind that cannot carry a pin never reaches this function: the
+        # contract, ``_prepare_job`` and ``NewPublicJob`` each refuse the shape
+        # first (#1040). Keep the closed failure rather than answering a request
+        # error for a fact that no caller can produce.
+        raise PublicJobUnavailableError
+    task = profile.task
+    if task is None:
+        # Only a preview has no task of its own: it runs on the draft kind's
+        # task, still under the pinned binding.
         request_input = intent.get("input")
         if not isinstance(request_input, dict) or not isinstance(
             request_input.get("voice_draft_id"), str
@@ -1418,12 +1427,7 @@ def _validate_pinned_create(connection: _Executor, job: NewPublicJob) -> None:
         ).fetchone()
         if row is None:
             raise ModelBindingError("model_binding_not_current")
-        task, model_key = (
-            ("voice_design" if row["kind"] == "design" else "voice_clone"),
-            "voice",
-        )
-    else:
-        raise PublicJobUnavailableError
+        task = VOICE_DRAFT_JOB_KINDS[row["kind"]]
     binding = require_pinned_binding(
         _pinned_binding(
             connection.execute(_PINNED_BINDING_QUERY, (reference[0], str(reference[1]))).fetchall()
@@ -1439,7 +1443,7 @@ def _validate_pinned_create(connection: _Executor, job: NewPublicJob) -> None:
         intent.get("kind") != job.kind
         or intent.get("model", job.model_id) != job.model_id
         or intent.get("model_binding") != expected.reference
-        or configuration.get("models", {}).get(model_key) != expected.reference
+        or configuration.get("models", {}).get(profile.model_slot) != expected.reference
     ):
         raise ModelBindingError("model_binding_mismatch")
 

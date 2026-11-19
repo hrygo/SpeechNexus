@@ -11,7 +11,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 import rfc8785
 
@@ -23,21 +23,114 @@ JobState = Literal[
 JobKind = Literal["asr", "tts", "voice_design", "voice_clone", "voice_preview", "voice_validation"]
 ProgressUnit = Literal["audio_ms", "text_codepoints", "items"]
 
-# The task a binding must declare for each Job kind. ``require_pinned_binding`` and
-# the unpinned ``latest_binding`` resolution both check it, and the readiness
-# report's admissible-binding filter reads this same map instead of a second copy.
-JOB_KIND_TASK: dict[JobKind, str] = {
-    "asr": "asr_file",
-    "tts": "tts_file",
-    "voice_design": "voice_design",
-    "voice_clone": "voice_clone",
-    "voice_validation": "voice_validation",
+# The closed public Job vocabulary, in contract declaration order. Every kind
+# list in the runtime is a view of this tuple or of ``JOB_KIND_PROFILES`` below,
+# so a kind cannot be added to one reader only.
+JOB_KINDS: tuple[JobKind, ...] = get_args(JobKind)
+
+
+@dataclass(frozen=True, slots=True)
+class JobKindProfile:
+    """One Job kind's runtime derivations; each reader consults this row only.
+
+    ``task`` is the binding task the kind itself declares. It is ``None`` for
+    ``voice_preview`` on purpose: a preview runs on its target draft's task, and
+    that layer is ``VOICE_DRAFT_JOB_KINDS`` rather than a second copy of this
+    column. ``model_slot`` is the key under ``effective_configuration.models``;
+    the voice family names ``voice`` explicitly instead of stripping a prefix,
+    so a future ``voice_*`` kind must declare its slot here. ``progress_unit``
+    is ``items`` for the voice family (one produced item per unit of progress)
+    and ``audio_ms`` otherwise. ``command_kind`` is the stored command kind
+    admission freezes; a kind without one keeps the legacy path and is therefore
+    outside the admission universe. ``pinned`` says the create may carry an
+    expected binding: ``tts`` accepts an explicit reference, while the voice
+    kinds derive it from the target draft.
+    """
+
+    task: str | None
+    model_slot: str
+    progress_unit: ProgressUnit
+    command_kind: str | None
+    pinned: bool
+
+
+JOB_KIND_PROFILES: dict[JobKind, JobKindProfile] = {
+    "asr": JobKindProfile(
+        task="asr_file",
+        model_slot="asr",
+        progress_unit="audio_ms",
+        command_kind="asr",
+        pinned=False,
+    ),
+    "tts": JobKindProfile(
+        task="tts_file",
+        model_slot="tts",
+        progress_unit="audio_ms",
+        command_kind="tts",
+        pinned=True,
+    ),
+    "voice_design": JobKindProfile(
+        task="voice_design",
+        model_slot="voice",
+        progress_unit="items",
+        command_kind=None,
+        pinned=False,
+    ),
+    "voice_clone": JobKindProfile(
+        task="voice_clone",
+        model_slot="voice",
+        progress_unit="items",
+        command_kind=None,
+        pinned=False,
+    ),
+    "voice_preview": JobKindProfile(
+        task=None,
+        model_slot="voice",
+        progress_unit="items",
+        command_kind=None,
+        pinned=True,
+    ),
+    "voice_validation": JobKindProfile(
+        task="voice_validation",
+        model_slot="voice",
+        progress_unit="items",
+        command_kind="voiceclone",
+        pinned=True,
+    ),
 }
 
-# The kinds ``build_public_job_admission`` turns into a complete command. The other
-# Job kinds keep the legacy path and are therefore outside the readiness verdict's
-# universe: no admission transaction reads them.
-ADMITTED_JOB_KINDS: tuple[JobKind, ...] = ("asr", "tts", "voice_validation")
+# Draft kind (``speech_voice_drafts.kind``) -> the Job kind that drafts it. A
+# preview and a validation resolve their task through this mapping, and a
+# revision append resolves the inverse; both directions are one relation.
+VOICE_DRAFT_JOB_KINDS: dict[str, JobKind] = {
+    "design": "voice_design",
+    "clone": "voice_clone",
+}
+VOICE_JOB_DRAFT_KINDS: dict[JobKind, str] = {
+    kind: draft_kind for draft_kind, kind in VOICE_DRAFT_JOB_KINDS.items()
+}
+
+# The task a binding must declare for each Job kind that has one of its own.
+# ``require_pinned_binding`` and the unpinned ``latest_binding`` resolution both
+# check it, and the readiness report's admissible-binding filter reads this same
+# map instead of a second copy. ``voice_preview`` is absent because its task is
+# the draft's (see ``VOICE_DRAFT_JOB_KINDS``).
+JOB_KIND_TASK: dict[JobKind, str] = {
+    kind: profile.task for kind, profile in JOB_KIND_PROFILES.items() if profile.task is not None
+}
+
+# The kinds ``build_public_job_admission`` turns into a complete command, i.e.
+# exactly the kinds with a stored command kind. The other Job kinds keep the
+# legacy path and are outside the readiness verdict's universe: no admission
+# transaction reads them.
+ADMITTED_JOB_KINDS: tuple[JobKind, ...] = tuple(
+    kind for kind, profile in JOB_KIND_PROFILES.items() if profile.command_kind is not None
+)
+
+# The kinds whose create may carry an expected binding.
+PINNED_JOB_KINDS: frozenset[JobKind] = frozenset(
+    kind for kind, profile in JOB_KIND_PROFILES.items() if profile.pinned
+)
 
 CleanupState = Literal["not_required", "pending", "complete", "quarantined"]
 
@@ -196,14 +289,7 @@ class PublicJob:
     def __post_init__(self) -> None:
         identifier(self.job_id)
         identifier(self.workspace_id)
-        if self.kind not in (
-            "asr",
-            "tts",
-            "voice_design",
-            "voice_clone",
-            "voice_preview",
-            "voice_validation",
-        ):
+        if self.kind not in JOB_KINDS:
             raise ValueError("Invalid public Job kind")
         if not isinstance(self.model_id, str) or not 1 <= len(self.model_id) <= 128:
             raise ValueError("Invalid public Job model")
@@ -248,14 +334,7 @@ class NewPublicJob:
     def __post_init__(self) -> None:
         identifier(self.job_id)
         identifier(self.workspace_id)
-        if self.kind not in (
-            "asr",
-            "tts",
-            "voice_design",
-            "voice_clone",
-            "voice_preview",
-            "voice_validation",
-        ):
+        if self.kind not in JOB_KINDS:
             raise ValueError("Invalid public Job kind")
         if not isinstance(self.model_id, str) or not 1 <= len(self.model_id) <= 128:
             raise ValueError("Invalid public Job model")
@@ -285,7 +364,7 @@ class NewPublicJob:
         if ("model_binding" in decoded or self.expected_binding is not None) and (
             self.expected_binding is None
             or self.expected_binding.kind != "binding"
-            or self.kind not in ("tts", "voice_preview", "voice_validation")
+            or self.kind not in PINNED_JOB_KINDS
             or decoded.get("kind") != self.kind
             or decoded.get("model", self.model_id) != self.model_id
             or (

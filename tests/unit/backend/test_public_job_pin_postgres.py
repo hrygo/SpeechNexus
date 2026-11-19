@@ -7,11 +7,20 @@ from dataclasses import replace
 from typing import Any, cast
 
 import pytest
+import rfc8785
 
 from speechnexus_backend.speech.application.public_jobs import ModelBindingError
-from speechnexus_backend.speech.domain.public_jobs import NewPublicJob
+from speechnexus_backend.speech.domain.public_jobs import (
+    JobSubmission,
+    NewPublicJob,
+    canonical_digest,
+)
+from speechnexus_backend.speech.domain.publications import Publication
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
-from speechnexus_backend.speech.infrastructure.public_jobs_postgres import PostgresPublicJobs
+from speechnexus_backend.speech.infrastructure.public_jobs_postgres import (
+    PostgresPublicJobs,
+    _validate_pinned_create,
+)
 from tests.unit.backend.test_public_jobs import BINDING, NOW, _pin_facts, _pinned_body, _service
 
 
@@ -187,3 +196,80 @@ def test_stored_revision_identity_changed_fails_closed() -> None:
 def test_domain_refuses_dropped_pin_expectation() -> None:
     with pytest.raises(ValueError, match="binding disagrees"):
         replace(_request(), expected_binding=None)
+
+
+PREVIEW_BINDING = Publication("binding", "voice-model", 1, "binding-preview", 1)
+
+
+def _preview_job() -> NewPublicJob:
+    """A pinned preview whose task must come from the target draft, not its row."""
+    document: dict[str, Any] = {
+        "kind": "voice_preview",
+        "model": "voice-model",
+        "model_binding": PREVIEW_BINDING.reference,
+        "input": {"voice_draft_id": "voice-draft", "draft_revision": "1", "text": "hello"},
+        "workspace_id": "workspace-default",
+    }
+    return NewPublicJob(
+        job_id="job-preview",
+        workspace_id="workspace-default",
+        kind="voice_preview",
+        model_id="voice-model",
+        request_digest=canonical_digest(document),
+        request_document=rfc8785.dumps(document).decode(),
+        initial_event_digest="sha256:" + "a" * 64,
+        idempotency_key_digest=None,
+        submission=JobSubmission(
+            request_id="req-preview",
+            client_reference=None,
+            effective_configuration_json=json.dumps(
+                {"models": {"voice": PREVIEW_BINDING.reference}}
+            ),
+            execution_revision=1,
+            progress_unit="items",
+            progress_total=None,
+            submitted_at_us=NOW,
+        ),
+        expected_binding=PREVIEW_BINDING,
+    )
+
+
+class _PinnedRows:
+    def __init__(self, draft_kind: str, tasks: list[str]) -> None:
+        self.draft_kind, self.tasks = draft_kind, tasks
+        self.calls: list[str] = []
+
+    def execute(self, query: str, parameters: tuple[object, ...] = ()) -> Rows:
+        self.calls.append(query)
+        if query.startswith("SELECT kind FROM speech_voice_drafts"):
+            return Rows([{"kind": self.draft_kind}])
+        return Rows(
+            [
+                {
+                    "kind": "binding",
+                    "object_id": PREVIEW_BINDING.object_id,
+                    "revision": str(PREVIEW_BINDING.revision),
+                    "revision_id": PREVIEW_BINDING.revision_id,
+                    "published_at_us": PREVIEW_BINDING.published_at_us,
+                    "definition_json": json.dumps(
+                        {"logical_model": "voice-model", "tasks": self.tasks}
+                    ),
+                    "is_current": True,
+                    "is_retired": False,
+                }
+            ]
+        )
+
+
+def test_a_preview_is_validated_against_the_draft_task_and_the_voice_slot() -> None:
+    connection = _PinnedRows("clone", ["voice_clone"])
+    _validate_pinned_create(cast(Any, connection), _preview_job())
+    assert any(
+        query.startswith("SELECT kind FROM speech_voice_drafts") for query in connection.calls
+    )
+
+
+def test_a_preview_on_a_design_draft_needs_the_design_task() -> None:
+    connection = _PinnedRows("design", ["voice_clone"])
+    with pytest.raises(ModelBindingError, match="model_binding_task_not_supported"):
+        _validate_pinned_create(cast(Any, connection), _preview_job())

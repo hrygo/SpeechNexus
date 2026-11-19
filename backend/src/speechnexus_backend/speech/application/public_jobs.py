@@ -27,7 +27,10 @@ from speechnexus_backend.speech.domain.admission import (
 from speechnexus_backend.speech.domain.job_admission_readiness import AdmissionReadiness
 from speechnexus_backend.speech.domain.public_jobs import (
     CANCELLATION_UNCONFIRMED,
+    JOB_KIND_PROFILES,
     JOB_KIND_TASK,
+    JOB_KINDS,
+    VOICE_DRAFT_JOB_KINDS,
     JobArtifactFact,
     JobCancellationReceipt,
     JobCancellationResult,
@@ -632,14 +635,10 @@ class PublicJobs:
         idempotency_key: str | None,
     ) -> PublicJob:
         kind = payload.get("kind")
-        if kind not in (
-            "asr",
-            "tts",
-            "voice_design",
-            "voice_clone",
-            "voice_preview",
-            "voice_validation",
-        ):
+        # The contract parser rejects unknown kinds at the boundary; the service
+        # still guards its own dispatch so a non-contract caller cannot reach a
+        # handler by name. The accepted set is the domain vocabulary itself.
+        if kind not in JOB_KINDS:
             raise UnsupportedJobKindError
         typed_kind: JobKind = kind
         workspace_id = payload.get("workspace_id", DEFAULT_WORKSPACE)
@@ -808,7 +807,8 @@ class PublicJobs:
         raw_model = payload.get("model")
         model_id: str
         pin: tuple[str, int] | None
-        required_task = JOB_KIND_TASK.get(typed_kind)
+        kind_profile = JOB_KIND_PROFILES[typed_kind]
+        required_task = kind_profile.task
         if typed_kind == "voice_validation":
             pin, derived_model = self._validation_binding(payload, workspace_id)
             if raw_model is None:
@@ -885,9 +885,7 @@ class PublicJobs:
         if catalog_revision < 1:
             raise ModelNotPublishedError
         configuration = effective_configuration(
-            models={
-                "voice" if typed_kind.startswith("voice_") else typed_kind: binding.publication
-            },
+            models={kind_profile.model_slot: binding.publication},
             policy_revision=workspace.policy_revision,
             catalog_revision=catalog_revision,
             profile=profile_publication,
@@ -903,7 +901,7 @@ class PublicJobs:
             execution_revision=1,
             # Voice creation counts produced items. ASR/TTS use the durable
             # generated-audio watermark, never request text length as progress.
-            progress_unit="items" if typed_kind.startswith("voice_") else "audio_ms",
+            progress_unit=kind_profile.progress_unit,
             progress_total=None,
             submitted_at_us=self._now_us(),
         )
@@ -1013,13 +1011,13 @@ class PublicJobs:
             raise VoiceDraftStaleRevisionError
         if fact.state != "succeeded":
             raise VoiceDraftNotCandidateError
-        if fact.kind not in ("design", "clone"):
+        if fact.kind not in VOICE_DRAFT_JOB_KINDS:
             raise PublicJobUnavailableError
         # A succeeded generation is not enough: the preview receipt and every
         # ready artifact must agree, or the validation target is not authoritative.
         resolve_voice_previews(
             workspace_id=fact.workspace_id,
-            kind="voice_" + fact.kind,
+            kind=VOICE_DRAFT_JOB_KINDS[fact.kind],
             state=fact.state,
             result_json=fact.result_json,
             artifact=self._store.artifact,
@@ -1087,7 +1085,7 @@ class PublicJobs:
         explicit = self._binding_reference(payload.get("model_binding"))
         if explicit is not None and explicit != fact.binding:
             raise ModelBindingError("model_binding_mismatch")
-        if fact.kind not in ("design", "clone"):
+        if fact.kind not in VOICE_DRAFT_JOB_KINDS:
             raise VoiceInputInvalidError
         if fact.head_revision != revision:
             raise VoiceDraftStaleRevisionError
@@ -1097,7 +1095,7 @@ class PublicJobs:
         # must already have committed its receipt and every ready preview.
         resolve_voice_previews(
             workspace_id=fact.workspace_id,
-            kind="voice_" + fact.kind,
+            kind=VOICE_DRAFT_JOB_KINDS[fact.kind],
             state=fact.state,
             result_json=fact.result_json,
             artifact=self._store.artifact,
@@ -1108,7 +1106,7 @@ class PublicJobs:
         logical = binding.definition.get("logical_model")
         if not isinstance(logical, str):
             raise ModelBindingError("model_binding_not_published")
-        return fact.binding, logical, "voice_" + fact.kind
+        return fact.binding, logical, VOICE_DRAFT_JOB_KINDS[fact.kind]
 
     def _submit_new(
         self,

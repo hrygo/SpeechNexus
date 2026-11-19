@@ -331,3 +331,62 @@ async def test_pinned_job_replays_original_after_binding_head_changes(
         for role in (writer_role, admission_role):
             db.query(f'DROP OWNED BY "{role}"')
             db.query(f'DROP ROLE IF EXISTS "{role}"')
+
+
+def _asr_pin_payload() -> dict[str, Any]:
+    """An ``asr`` create carrying an explicit binding (#1040 reproduction)."""
+    return {
+        "kind": "asr",
+        "workspace_id": WORKSPACE,
+        "model": "listener-asr",
+        "model_binding": {"id": "tts-quality", "revision": "2"},
+        "input": {"audio_asset_id": "asset-synthetic-asr"},
+    }
+
+
+@pytest.mark.parametrize("database", ["postgresql"], indirect=True)
+async def test_asr_with_an_explicit_pin_is_a_request_shape_refusal(
+    admission_database: AdmissionDatabase, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The pinned-create fallback stays unreachable instead of answering 503.
+
+    The contract's ``AsrJobCreate`` has no ``model_binding`` property, and
+    ``_prepare_job`` refuses a pin on any kind other than ``tts`` (the voice
+    kinds derive theirs from the draft) before the store is asked. Reaching
+    ``_validate_pinned_create`` with ``asr`` would answer ``job_unavailable``,
+    i.e. present an invalid request as a storage outage. Pin the two real
+    answers so that fallback cannot become the public one by accident.
+    """
+    db = admission_database.runtime.foundation.database
+    _seed(db)
+    writer, admission, writer_role, admission_role = _roles(db)
+    try:
+        app = create_app(
+            settings=_settings_for(
+                make_conninfo(db.url, user=writer, password=PASSWORD),
+                make_conninfo(db.url, user=admission, password=PASSWORD),
+                db.schema,
+                monkeypatch,
+            )
+        )
+        payload = _asr_pin_payload()
+        async with (
+            app.router.lifespan_context(app),
+            AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client,
+        ):
+            refused = await client.post(PREFIX, json=payload, headers={})
+            assert refused.status_code == 422, refused.text
+            assert refused.json()["error"]["code"] == "unsupported_parameter"
+            assert refused.json()["error"]["type"] == "invalid_request_error"
+
+            # One layer below the contract parser the service guard answers, and
+            # it is not the storage answer.
+            with pytest.raises(ValueError, match="Invalid model binding"):
+                app.state.job_runtime.jobs.submit(
+                    payload, request_id="req-asr-pin", idempotency_key=None
+                )
+        assert db.query("SELECT count(*) AS n FROM speech_jobs")[0]["n"] == 0
+    finally:
+        for role in (writer_role, admission_role):
+            db.query(f'DROP OWNED BY "{role}"')
+            db.query(f'DROP ROLE IF EXISTS "{role}"')

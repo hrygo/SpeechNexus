@@ -2603,9 +2603,12 @@ export interface components {
        */
       detail: string | null;
       /**
-       * @description Every `ready` engine instance with the receipt admission would check, in
-       *     ascending `(instance_id, instance_generation)` order. Empty when the
-       *     store could not be read.
+       * @description The one instance a create would pin for each published binding — the same
+       *     selection rule a create applies, one row per `binding_revision_id` — in
+       *     ascending `(binding_revision_id, instance_id, instance_generation)` order.
+       *     Empty when the store could not be read. An instance reachable only through
+       *     a second generation of the same binding is not listed: a create does not
+       *     fall back to it.
        */
       instances: components["schemas"]["AdmissionReadinessInstance"][];
       /**

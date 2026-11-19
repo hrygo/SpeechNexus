@@ -102,13 +102,14 @@ class ModelCatalogRuntime:
                 # admission question; live answers are the create response and the
                 # contract's admission-readiness route (#863).
                 #
-                # Wiring live facts would not satisfy the contract either (#941).
-                # contracts/speech-openapi.yaml:4063-4070 defines admission_state as a
-                # live verdict ("currently admissible" / "cannot be admitted now") and
-                # :53-54 promises "current admission facts", but admission is computed
-                # per workspace (public_job_admission.py:695, :514) while /v1/models
-                # carries no workspace (models.py:42). Structurally unsatisfiable, not
-                # pending wiring; tracked as the contract defect #941.
+                # Wiring live facts would not change this answer, and the contract now
+                # says so (#941): admission_state is a static projection, not a live
+                # verdict for a workspace. Admission is computed per workspace
+                # (public_job_admission.py:695, :514) while /v1/models carries
+                # no workspace (models.py:42), so this block reports the projection
+                # that the contract describes -- `unavailable` until per-workspace
+                # facts exist -- rather than a currently admissible answer it could
+                # never produce. The readiness route is still a placeholder (#863).
                 self.catalogue = PostgresModelCatalog(
                     pool, timeout_seconds=self._settings.model_catalog_read_timeout_seconds
                 )

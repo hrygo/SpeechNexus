@@ -488,16 +488,16 @@ curl -sS http://127.0.0.1:8000/v1/models
 准入依赖的 `engine_instances`、`workspace_quotas`、`speech_assets` 都在其外，放宽授权会在启动时被拒，
 而现场只见通用文案（具体原因被 `from None` 吞掉，见装配注释）。
 
-**不要把上面这段读成「等接入实时事实就对上了」**：契约把 `admission_state` 定义成实时准入判据
-（`contracts/speech-openapi.yaml:4063-4070` 的「currently admissible」/「cannot be admitted now」，
-另见 `:53-54` 的 `current admission facts`）。但准入按 workspace 计
+**不要把上面这段读成「等接入实时事实就对上了」**：契约已把 `admission_state` 定义成**静态投影**
+（`contracts/speech-openapi.yaml` 的 `ModelReadiness.admission_state`：它表示本部署是否建立了按
+workspace 的准入事实面，**不是某个 workspace 此刻能否被准入**）。但准入按 workspace 计
 （`backend/src/speechnexus_backend/speech/infrastructure/public_job_admission.py:695`、`:514`），
 本端点没有 workspace 维度（`backend/src/speechnexus_backend/speech/interfaces/http/models.py:42`；
-契约 `:56-63` 只有 `X-Request-ID` 与 `If-None-Match`），所以
-**二者结构性不符，接入多少实时事实都满足不了该定义**。这是**契约缺陷**，按 `#941` 跟踪
-（改口径 / 加 `workspace_id` / 把消费者指向实时面），**不是待接入项**。实时准入不由该端点承载：
-判「现在能不能建 Job」看 `POST /v1/nexus/jobs` 的实际应答码（第 11 节），契约声明的实时报告是
-`GET /v1/nexus/jobs/admission-readiness`（带 `workspace_id`，当前仍是占位、跟踪 `#863`）。
+契约 `:59-68` 只有 `X-Request-ID` 与 `If-None-Match`），所以这个字段**接不进实时准入**——接入多少
+实时事实都改变不了这一点。口径已按 `#941` 订正为静态投影，**消费者不需要改**。实时准入不由该端点
+承载：判「现在能不能建 Job」看 `POST /v1/nexus/jobs` 的实际应答码（第 11 节），按 workspace 的
+实时报告是 `GET /v1/nexus/jobs/admission-readiness`（带 `workspace_id`，当前仍是占位、跟踪
+`#863`）。
 
 `DEL-535`（基线 `origin/main` `c0172a22`）当时在这里拿到的是 `503 model_catalogue_unavailable`，
 **不是角色没配**：catalog 要求定义里的 `binding_id` 等于发布的 `object_id`

@@ -187,14 +187,14 @@ class DocumentedCapabilityGuardTests(unittest.TestCase):
         )
         self._assert_red("catalogue-readiness-projection")
 
-    def test_dropping_the_structural_mismatch_turns_red(self) -> None:
+    def test_dropping_the_static_projection_turns_red(self) -> None:
         """The "wait for live facts" reading is what shipped the contract defect (#941)."""
         self._rewrite(
             RUNBOOK,
-            "**二者结构性不符，接入多少实时事实都满足不了该定义**",
+            "接不进实时准入",
             "接入实时事实之后就对上了",
         )
-        self._assert_red("二者结构性不符")
+        self._assert_red("接不进实时准入")
 
     def test_a_deleted_projection_comment_turns_red(self) -> None:
         """The comment argument is what keeps the projection static; deleting it reverts."""
@@ -220,8 +220,8 @@ class DocumentedCapabilityGuardTests(unittest.TestCase):
         """A correct paragraph with one reverse assertion added (#939 M5)."""
         self._rewrite(
             RUNBOOK,
-            "**不是待接入项**。",
-            "**不是待接入项**。实测：实例 `ready` 后本端点会上报 `available`。",
+            "**消费者不需要改**。",
+            "**消费者不需要改**。实测：实例 `ready` 后本端点会上报 `available`。",
         )
         self._assert_red("实例 `ready` 后本端点会上报 `available`")
 
@@ -229,8 +229,8 @@ class DocumentedCapabilityGuardTests(unittest.TestCase):
         """The same reversal parked outside the paragraph (#939 M8)."""
         self._rewrite(
             RUNBOOK,
-            "**不是待接入项**。",
-            "**不是待接入项**。实例变成 `ready` 后该字段会跟着变。",
+            "**消费者不需要改**。",
+            "**消费者不需要改**。实例变成 `ready` 后该字段会跟着变。",
         )
         self._assert_red("实例变成 `ready` 后该字段会跟着变")
 
@@ -246,11 +246,32 @@ class DocumentedCapabilityGuardTests(unittest.TestCase):
         )
         self._assert_green()
 
+    def test_the_retired_projection_comment_wording_turns_red(self) -> None:
+        """Reinstating any of the three claims the contract no longer makes must fail (#941)."""
+        self._rewrite(
+            CATALOG_RUNTIME,
+            "                # facts exist -- rather than a currently admissible answer it could\n",
+            "                # Structurally unsatisfiable, not pending wiring.\n"
+            "                # facts exist -- rather than a currently admissible answer it could\n",
+        )
+        self._assert_red("still says 'Structurally unsatisfiable, not'")
+
+    def test_a_corrective_mention_of_the_retired_wording_stays_green(self) -> None:
+        """A later correction may name the old reading; only the assertion is forbidden."""
+        self._rewrite(
+            CATALOG_RUNTIME,
+            "                # facts exist -- rather than a currently admissible answer it could\n",
+            "                # This was once recorded as a contract defect (#941); the\n"
+            "                # contract now defines the same projection.\n"
+            "                # facts exist -- rather than a currently admissible answer it could\n",
+        )
+        self._assert_green()
+
     def test_a_negated_reference_to_the_stale_wording_stays_green(self) -> None:
         """Forbidding whole asserting clauses must not reject a negation (#939 M4)."""
         self._rewrite(
             RUNBOOK,
-            "**不是待接入项**。",
-            "**不是待接入项**。本端点不是反映实时状态的通道。",
+            "**消费者不需要改**。",
+            "**消费者不需要改**。本端点不是反映实时状态的通道。",
         )
         self._assert_green()

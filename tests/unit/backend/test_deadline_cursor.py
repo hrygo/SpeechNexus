@@ -2,14 +2,23 @@
 
 Eleven copied implementations of one pattern live under ``backend/src``. Each one
 must (a) refuse to touch the database once its deadline has passed and (b) install
-a server-side ``statement_timeout`` bounded by the remaining time. Both halves are
-invisible to the rest of the suite: deleting the guard still passes the functional
-tests, and deleting ``set_config`` makes a real transaction wait instead of fail.
-These tests therefore pin the two behaviours on every copy.
+a server-side ``statement_timeout`` bounded by the remaining time. Most of those
+copies had no test that could tell the guard was there -- deleting one still left
+the functional suite green, and deleting ``set_config`` makes a real transaction
+wait instead of fail. A handful were already pinned indirectly
+(``engine_registration``'s guard and ``set_config``, and ``voice_capability_evidence``'s
+guard, through their own tests), which is exactly why the copies that were not are
+worth pinning on every implementation rather than one at a time.
 
 Two further ``_Cursor`` declarations are ``typing.Protocol`` stubs, not bounded
 implementations; they are listed separately so the discovery guard still counts
 all thirteen declarations in the backend.
+
+The discovery guard matches the literal name ``_Cursor``. The same pattern also
+appears under other names (``_DeadlineCursor`` is declared five times, plus
+``_DeadlineConnection``); those have their own budget tests and are deliberately
+out of this file's scope, so this guard must not be read as "every deadline
+budget in the backend is covered".
 """
 
 from __future__ import annotations
@@ -25,7 +34,7 @@ import pytest
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3] / "backend"
 SOURCE_ROOT = BACKEND_ROOT / "src"
-CURSOR_DECLARATION = re.compile(r"^class _Cursor\b", re.MULTILINE)
+CURSOR_DECLARATION = re.compile(r"^\s*class _Cursor\b", re.MULTILINE)
 
 QUERY = "SELECT payload FROM example WHERE identity = %s"
 PARAMETERS = ("row-a",)

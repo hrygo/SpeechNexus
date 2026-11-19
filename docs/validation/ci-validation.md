@@ -52,7 +52,7 @@ Skill 的说明、参考、合成评测数据及展示元数据不参与产品�
 
 作业级条件让不适用项明确显示 skipped；最终 CI 门禁用 `always()` 执行，核对路由成功和各项实际结果。非法/缺失路由、失败、取消或本应执行却跳过均失败。不适用不表示业务验证已通过。
 
-正文范围的 Markdown 代码块格式由独立作业 `docs_format` 把关。Ruff 的格式化器会解析并重排 Markdown 内标记为 `python` 的代码块，而 `docs` 范围不执行 `python_static`，`uv run ruff format --check .` 因而在这条路径上从未运行：PR #659、#661 是单文件 `docs/reviews/` 新增（路由输出 `{"mode": "docs"}`），CI 显示 lint 作业 skipping 后正常合并，随后 `main` 的 push 运行在 `Check Python formatting with Ruff` 上变红（`docs/reviews/2026-11-13-ci-acceptance-gate.md:399`、`docs/reviews/2026-11-13-reference-acceptance-rework.md:399`），并让 #662 的同类红被误判为它自身的问题（#673）。该作业只检出仓库并用 `uvx --from "ruff==${RUFF_VERSION}"` 安装锁定版本（与 `uv.lock` 的 `ruff` 版本一致，`tests/ci/test_ci_ruff_pin.py` 双向核对这一处钉住的版本），不安装项目依赖；命令与 `python_static` 的格式步骤逐字相同（`ruff format --check .`），所以检查的文件集合不会比全量道窄，也不存在第二份会与路由白名单漂移的路径清单。范围映射：`docs` 期望 success，`web`／`no-db`／`full` 期望 skipped——这三种范围已由 `python_static` 执行同一命令，重复运行只增加固定开销；`Gate: required checks for this change` 按此映射核对，`docs` 上失败、取消或意外跳过都使门禁失败。
+正文范围的 Markdown 代码块格式由独立作业 `docs_format` 把关。Ruff 的格式化器会解析并重排 Markdown 内标记为 `python` 的代码块，而 `docs` 范围不执行 `python_static`，`uv run ruff format --check .` 因而在这条路径上从未运行：PR #659、#661 是单文件 `docs/reviews/` 新增（路由输出 `{"mode": "docs"}`），CI 显示 lint 作业 skipping 后正常合并，随后 `main` 的 push 运行在 `Check Python formatting with Ruff` 上变红（`docs/reviews/2026-11-13-ci-acceptance-gate.md:8`（该行须含 `本片只新增本报告`）、`docs/reviews/2026-11-13-reference-acceptance-rework.md:548`（该行须含 `新增文件仅`）），并让 #662 的同类红被误判为它自身的问题（#673）。该作业只检出仓库并用 `uvx --from "ruff==${RUFF_VERSION}"` 安装锁定版本（与 `uv.lock` 的 `ruff` 版本一致，`tests/ci/test_ci_ruff_pin.py` 双向核对这一处钉住的版本），不安装项目依赖；命令与 `python_static` 的格式步骤逐字相同（`ruff format --check .`），所以检查的文件集合不会比全量道窄，也不存在第二份会与路由白名单漂移的路径清单。范围映射：`docs` 期望 success，`web`／`no-db`／`full` 期望 skipped——这三种范围已由 `python_static` 执行同一命令，重复运行只增加固定开销；`Gate: required checks for this change` 按此映射核对，`docs` 上失败、取消或意外跳过都使门禁失败。
 
 **覆盖边界**：这只覆盖 Ruff 能解析的代码块，即标记为 `python`（或 `py`）的围栏；标记为 `text`、`bash`、`yaml`、`json`、`sql` 的围栏从不解析，其中的错误命令、失效路径、非法 JSON／YAML 仍可通过。`ruff check` 不检查 Markdown，因此代码块内的 lint 级问题（未使用变量、导入顺序、命名）也不在范围内。文档结构、普通 Markdown 链接、双语 README 一致性、`.agents/skills/` 内 JSON／YAML 的有效性同样无人检查；`路径:行号` 引用由独立作业 `docs_refs` 把关（见[文档引用门禁](#文档引用门禁)），它的判据不覆盖上述项目，也不证明引用目标行的内容与文档描述相符。格式检查只保证「能解析且排版一致」，不证明代码块内容可执行、输出正确或与实现同步，仍需人工审查。
 
@@ -607,16 +607,31 @@ uv run pytest tests/ci tests/contract/test_ci_workflow.py tests/unit/test_integr
 
 ## 文档引用门禁
 
-[check-doc-refs.py](../../scripts/dev-env/check-doc-refs.py) 校验 `docs/` 内 `路径:行号` 引用的目标是否存在、行号是否越界。判据只有三种，都是机械的：路径在仓库里不存在（`MISSING`）、行号超过文件总行数（`OUT_OF_RANGE`）、只写裸文件名且仓库里同名文件不止一个（`AMBIGUOUS`）。行内标注「外部依赖」的引用不计入问题。
+[check-doc-refs.py](../../scripts/dev-env/check-doc-refs.py) 校验 `docs/` 与 `deploy/` 内 `路径:行号` 引用的目标是否存在、行号是否越界，以及指向 Markdown 的引用所带的内容断言是否仍在目标行附近。判据五种，都是机械的：路径在仓库里不存在（`MISSING`）、行号超过文件总行数（`OUT_OF_RANGE`）、只写裸文件名且仓库里同名文件不止一个（`AMBIGUOUS`）、断言片段不在目标行 ±15 行内（`DRIFT`）、指向 Markdown 的终态引用没写断言（`UNASSERTED`）。行内标注「外部依赖」的引用不计入问题。
 
 ### 终态文档与过程记录
 
 | 类别 | 范围 | 处置 |
 | --- | --- | --- |
-| 终态文档 | `docs/` 下除过程记录外的全部 Markdown（`architecture/`、`operations/`、`components/`、`design/`、`decisions/`、`plans/`、`prd.md`、各级 `README.md`、`validation/` 下的非 dated 文件等） | 全量门禁，一条问题即红 |
-| 过程记录 | `docs/reviews/**`、`docs/archive/**`、`docs/validation/YYYY-MM-DD-*.md` | 只计数，不门禁；按基线报增量 |
+| 终态文档 | `docs/` 下除过程记录外的全部 Markdown（`architecture/`、`operations/`、`components/`、`design/`、`decisions/`、`plans/`、`prd.md`、各级 `README.md`、`validation/` 下的非 dated 文件等）与 `deploy/README.md` | 全量门禁，一条问题即红 |
+| 过程记录 | `docs/reviews/**`、`docs/archive/**`、`docs/validation/YYYY-MM-DD-*.md`、`docs/audits/YYYY-MM-DD-*.md` | 只计数，不门禁；按基线报增量 |
 
 依据是 [AGENTS.md](../../AGENTS.md)「文档终态与事实化」对两者的区分。过程记录按约定保留原时点事实：审查报告引用的是当时的代码行、临时 worktree 绝对路径（`/private/tmp/sn772/...`）和从未提交的探针文件，这些引用失效本身就是证据，改动它们等于篡改证据。而长期 `RESULT FAIL` 的检查等于没有检查：接入 CI 前全量扫描的 138 条问题里 137 条出自 `docs/reviews/`、1 条出自 dated 验证记录、**0 条出自终态文档**，真正的终态文档漂移会被这套噪音淹没。判不准的路径一律按终态文档处理，宁可让它变红。
+
+### 内容断言：行号漂移必红
+
+`MISSING` 与 `OUT_OF_RANGE` 只回答「行号在不在」，不回答「那一行是不是被描述的那件事」。行号是序数：目标文档在上方插一段，它下面所有行号整体后移，而引用字面仍然合法。#1038 的 6 处指针就是这样在 `compose-minimal.md`（+129 行）、`deploy/README.md`（+243 行）之后偏了 74–142 行，门禁照旧 PASS。
+
+所以指向 Markdown 的终态引用必须带内容断言，把「那一行是哪件事」写进引用本身：
+
+- 形式：`` `deploy/README.md:1270`（该行须含 `check-public-job-execution-defaults.sql`） ``；
+- 判据：片段必须出现在目标行 **±15 行**内，否则 `DRIFT`，并报出最近命中行与相差行数；
+- 只有终态文档判定；过程记录连断言都不校验（冻结）；
+- 代码目标的引用允许暂时不带断言，报告用 `ASSERT ... unasserted_code=` 计数——那是待补的欠账，不是失败条件。
+
+窗口取 ±15 的取舍：容忍同文件上方的小幅插入（一段话、几行表格），而 74–142 行的整体漂移必然超出；窗口取 0 会让「在文档顶部加一句话」把下方引用全部判红，重演 #859 那种长期红、最后被无视的检查。边界（15 绿 / 16 红）由 `tests/ci/test_doc_refs_ratchet.py` 的子进程用例钉住。
+
+片段由作者从目标行附近挑，必须是该行真实存在的内容。门禁只校验存在性，不判断它是不是「该行最重要的那件事」，也不证明指针的语义正确——那仍要人读。片段不要带小节序号（`## 7.` 之类）：内容没变、只是重新编号时，带序号的断言会红。
 
 `docs/reviews/` 的豁免有内容守卫，判据两项，都作用在文件自身而不是路径可见性：
 
@@ -718,11 +733,11 @@ RESULT FAIL
 
 ### 覆盖边界
 
-- 只判「路径存在、行号不越界、裸名不歧义」，不证明目标行内容与文档描述相符；`--show` 打印被引用行原文供人工核对。
-- 只判文件与行号，不判断言：门禁不检查被引用文件里文档所说的符号、断言或行为是否还在。保留被引用文件、只删掉它里面的一条断言、使后续内容仍在原行号范围内，不会变红；这类漂移靠 `--show` 人工核对或语义门禁补位（`check-doc-statements.py` 只钉住少数已经漂移过的陈述）。来源：#935 的审查。
+- 只判「路径存在、行号不越界、裸名不歧义」与「断言片段在目标行 ±15 行内」，不证明指针的语义正确：片段可以在窗口内另一行命中，也可能被挑成一句稳定但无关的原文。`--show` 只打印问题项及其被引用行原文，供人工核对。
+- 断言只钉「片段仍在这一行附近」，不判断言：它证明不了被引用文件里文档所说的符号、断言或行为还在。保留被引用文件、只删掉一条断言而后续内容仍落在原行号窗口内，不会变红；这类漂移靠人读或语义门禁补位（`check-doc-statements.py` 只钉住少数已经漂移过的陈述）。来源：#935 的审查。
 - `AMBIGUOUS` 是写法不足以定位，不是错误路径；判据不解引用符号，也不看被引用文件是否还承担文档所说的职责（行号合法但指向错符号的漂移对它隐形）。
 - 围栏内的 `路径:行号` 完全不可见，包括把真实引用写进围栏的情况；终态文档这部分计入 `fenced_terminal=`（当前 4 条，全部来自本节证据块），把围栏排除收窄到只对过程记录生效是未做的后续项——证据块自身要在围栏里贴失败输出。
-- 只扫 `docs/` 下的 Markdown：根目录与各子目录的 `README`／`AGENTS.md`、`.agents/` 下文档、代码注释里的引用不在范围内（`--path` 可临时扩大）。
+- 只扫 `docs/` 与 `deploy/` 下的 Markdown（默认根）：仓库根目录的 `README`／`AGENTS.md`、`.agents/` 下文档、代码注释里的引用不在范围内（`--path` 可覆盖或扩大）。
 - 只认脚本列出的扩展名（`.py/.sql/.ts/.tsx/.js/.mjs/.sh/.toml/.yaml/.yml/.json/.md`），无扩展名路径、`#L12` 形式与普通 Markdown 链接不在判据内；目标必须在 git 索引中，未跟踪文件不算存在。
 - 过程记录的计数不是门禁：增长不阻塞合并，这是「保留原时点事实」的取舍，不是遗漏。
 

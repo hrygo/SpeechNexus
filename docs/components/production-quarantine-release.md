@@ -41,7 +41,7 @@ date: 2026-11-13
 | 租约 `quarantined/quarantined`，其提交意图 `unknown_quarantined/quarantined`，无机器停止证据 | 本入口适用 | 契约正文 `contracts/admin-openapi.yaml:1128` |
 | 租约已由后台消费者释放，请求证据与已存释放事实一致 | 只读幂等查询，200 且 `idempotent_replay: true` | 契约 `contracts/admin-openapi.yaml:1144` |
 | 租约已由后台消费者用机器证据释放 | `409 quarantine_release_conflict` | §6.2 |
-| 提交意图已 `aborted/complete` 且停止证据来源是网关或控制器 | 不进本入口；走既有 `release_lease` | `docs/architecture/runtime-governance.md:96` |
+| 提交意图已 `aborted/complete` 且停止证据来源是网关或控制器 | 不进本入口；走既有 `release_lease` | `docs/architecture/runtime-governance.md:96`（该行须含 `隔离账目覆盖物理内存`） |
 | 提交意图仍 `submitting`/`executing`，或租约未隔离 | 拒绝；本入口不制造停止结论 | §3.2 步骤 6 |
 | 只想知道租约状态 | 用 `query_outcome(lease)` 只读查询 | `production-leases.md` |
 
@@ -763,7 +763,7 @@ worker 的边界相同，运维侧须把授权变更纳入发布检查。
 - §2.2 的 DDL 草案与触发器原样执行成功；合法行可写入；`reason` 空白、`evidence_kind`
   非运维种类、`observed_at > budget_released_at` 三种写入被拒；`UPDATE`/`DELETE` 被
   触发器拒绝。
-- `docs` 内 `路径:行号` 引用全部有效（`scripts/dev-env/check-doc-refs.py`）。
+- `docs` 与 `deploy` 内指向文档的 `路径:行号` 引用全部带内容断言且在目标行 ±15 行内命中，其余引用全部有效（`scripts/dev-env/check-doc-refs.py`）。
 
 本卡**未**验证、需由实现卡取证的项：
 

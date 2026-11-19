@@ -52,7 +52,7 @@ J1 已修复；历史表保留原时点响应。保留 #466 的契约测试和 #
   【复核 3951718e】该段是基线事实：`retryJob`/`streamJobEvents` 已注册，不再返回"路由不存在"的 `job_not_found`。
   复核基线时 21 个未注册操作中，18 个返回默认 404，`listJobs` 返回 405，两条集合级读音路由返回 400（§6.1）。
   【#473】已过期：21 条全部注册为占位路由并返回 `503 operation_not_implemented`，实测与理由见 §6.2。
-- **401 在全表都是"声明未使用"**：公开语音处理器没有实现共享服务密钥校验（`docs/architecture/openai-compatibility.md:91`），
+- **401 在全表都是"声明未使用"**：公开语音处理器没有实现共享服务密钥校验（`docs/architecture/openai-compatibility.md:91`（该行须含 `OpenAI SDK 的必填构造参数`）），
   源码中不存在任何 401 产生路径。
   【复核 3951718e】仍成立：`backend/src/speechnexus_backend/speech/interfaces/http/artifacts.py::create_artifact_router`
   的两处 401 仍只是 OpenAPI 响应声明；新增的 4 个操作同样只声明 401、不产生 401。
@@ -254,7 +254,7 @@ code 覆盖 `voice_catalogue_unavailable` / `voice_retirement_unavailable`；503
 公开语音处理器不校验共享服务密钥，源码中没有 401 的响应分支：唯一的 401 出现是
 `backend/src/speechnexus_backend/speech/interfaces/http/artifacts.py:95,124` 的 OpenAPI 响应声明与工作台客户端的响应分类
 （`workbench/infrastructure/public_speech_render_jobs.py:83`），
-`docs/architecture/openai-compatibility.md:91` 已明确"当前公开语音处理器没有实现该密钥的验证"。
+`docs/architecture/openai-compatibility.md:91`（该行须含 `OpenAI SDK 的必填构造参数`） 已明确"当前公开语音处理器没有实现该密钥的验证"。
 17 条基线已实现操作全部声明 401，但均不可达；消费者不能把 401 当作访问保护已生效的证据。
 【复核 3951718e】仍成立；新增的 4 个操作同样只声明 401（§3.1）。
 
@@ -351,7 +351,7 @@ Starlette 307 到规范路径（复核实测见
 是生产消费者的路径常量，`PublicVoiceCatalogue.list_summaries`/`get_revision` 据此调用 `/v1/nexus/voices`；
 `backend/src/speechnexus_backend/workbench/infrastructure/public_speech_render_jobs.py::PublicSpeechRenderJobs.submit` 调用 `POST /v1/nexus/jobs`，
 `backend/src/speechnexus_backend/workbench/infrastructure/public_speech_render_jobs.py::PublicSpeechRenderJobs.read_job` 调用 `GET /v1/nexus/jobs/{job_id}`（后者已实现）。
-`docs/archive/plans/2026-10-24-team-c-goal.md:78` 也记录了"音色运行时尚未实现这些路由"这一已知缺口。
+`docs/archive/plans/2026-10-24-team-c-goal.md:78`（该行须含 `音色切片第一步`） 也记录了"音色运行时尚未实现这些路由"这一已知缺口。
 
 ### 6.1 未实现操作
 

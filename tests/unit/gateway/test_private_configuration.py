@@ -20,9 +20,20 @@ tests/`` had no hits, and deleting ``hide_input_in_errors`` or relaxing ``extra`
 fails.
 
 The census is rooted at ``execution-gateway/src``: a fifth declaration without an entry in
-``COPIES`` fails the last test. The rendered-message assertions below cover ``str(error)``
-(the pydantic surface that reaches logs); ``ValidationError.errors()``/``.json()`` still
-carry ``input`` by pydantic design and are not used as the leak boundary here.
+``COPIES`` fails the last test. The rendered-message assertions below cover ``str(error)``;
+``ValidationError.errors()``/``.json()`` still carry ``input`` by pydantic design and are not
+used as the leak boundary here.
+
+``hide_input_in_errors`` is defence in depth, not the only guard. All four loaders currently
+normalise a validation failure with ``raise ValueError("<generic>") from None``, so the
+rendered message never reaches a log today; this file pins the pydantic side so that a future
+handler which logs ``str(error)`` still cannot echo a rejected endpoint.
+
+Two rendering facts shape the assertions. pydantic truncates a rendered ``input_value`` in the
+middle once its repr passes 50 characters, keeping the first 24 and the last 23 -- a probe
+value long enough to be truncated can therefore hide the very credential it is testing for.
+The probes here are short enough to survive, and ``test_a_revealing_configuration_does_render
+_the_probe`` turns that assumption into a loud failure if a future pydantic narrows the window.
 """
 
 from __future__ import annotations
@@ -34,7 +45,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from pydantic import ValidationError
+from pydantic import ConfigDict, ValidationError
 
 GATEWAY_ROOT = Path(__file__).resolve().parents[3] / "execution-gateway"
 SOURCE_ROOT = GATEWAY_ROOT / "src"
@@ -222,6 +233,37 @@ def test_rejected_endpoint_does_not_render_its_credentials(entry: Copy) -> None:
     assert "string_type" in message, f"{entry.module} accepted a list endpoint: {message!r}"
     assert CREDENTIAL not in message, (
         f"{entry.module} rendered endpoint credentials in its validation error"
+    )
+
+
+@pytest.mark.parametrize("entry", COPIES, ids=copy_id)
+def test_a_revealing_configuration_does_render_the_probe(entry: Copy) -> None:
+    """Positive control for the credential assertions above.
+
+    Those assertions pass in two very different worlds: the switch works, or the probe value
+    never survives pydantic's middle truncation of a rendered ``input_value``. Flipping the
+    switch off on a subclass of the same model must make the credential appear; if it does
+    not, the negative assertions have gone quiet and need a shorter probe.
+    """
+
+    revealing = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        strict=True,
+        allow_inf_nan=False,
+        hide_input_in_errors=False,
+    )
+    revealed = type(
+        f"Revealed{copy_id(entry)}",
+        (objects_class(entry),),
+        {"model_config": revealing},
+    )
+    with pytest.raises(ValidationError) as raised:
+        revealed(**{**entry.objects, "endpoint": [CREDENTIAL]})
+
+    assert CREDENTIAL in str(raised.value), (
+        f"{entry.module}: the credential probe cannot be rendered at all, so the "
+        f"redaction assertions below are vacuous: {str(raised.value)!r}"
     )
 
 

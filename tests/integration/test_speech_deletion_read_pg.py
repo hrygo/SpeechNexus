@@ -192,7 +192,7 @@ def _confirmation(plan: DeletionPlan) -> DeletionRequest:
 
 async def test_get_projects_the_ledger_after_a_real_execution(sandbox: Sandbox) -> None:
     """The read answers what the execution committed, and a GET writes nothing."""
-    application, pool, objects = _app(sandbox)
+    application, pool, objects, _ = _app(sandbox)
     try:
         plan = await _preview(application, "asset", ASSET, 3, "key-read-plan-exec")
         executed = await _execute(application, _confirm(plan), "key-read-exec")
@@ -228,7 +228,7 @@ async def test_a_fresh_pool_and_service_return_the_same_bytes(sandbox: Sandbox) 
     Same interpreter, new pool, new service, new app: nothing but PostgreSQL
     carries the row. A genuine second OS process was verified manually.
     """
-    first_app, first_pool, _ = _app(sandbox)
+    first_app, first_pool, _, _ = _app(sandbox)
     plan = await _preview(first_app, "asset", ASSET, 3, "key-read-restart-plan")
     executed = await _execute(first_app, _confirm(plan), "key-read-restart-exec")
     assert executed.status_code == 202, executed.text
@@ -237,7 +237,7 @@ async def test_a_fresh_pool_and_service_return_the_same_bytes(sandbox: Sandbox) 
     assert first.status_code == 200, first.text
     first_pool.close()
 
-    second_app, second_pool, objects = _app(sandbox)
+    second_app, second_pool, objects, _ = _app(sandbox)
     try:
         second = await _get(second_app, deletion_id)
         assert second.status_code == 200, second.text
@@ -250,7 +250,7 @@ async def test_a_fresh_pool_and_service_return_the_same_bytes(sandbox: Sandbox) 
 
 
 async def test_an_unknown_deletion_is_the_declared_404(sandbox: Sandbox) -> None:
-    application, pool, _ = _app(sandbox)
+    application, pool, _, _ = _app(sandbox)
     try:
         response = await _get(application, UNKNOWN, request_id=READ_REQUEST_ID)
         assert response.status_code == 404, response.text
@@ -282,7 +282,7 @@ async def test_another_workspaces_deletion_is_not_found_without_leaking(
         (OTHER_DELETION,),
     ) == [{"workspace_id": OTHER_WORKSPACE, "status": "succeeded"}]
 
-    application, pool, _ = _app(sandbox)
+    application, pool, _, _ = _app(sandbox)
     try:
         cross_workspace = await _get(application, OTHER_DELETION, request_id=READ_REQUEST_ID)
         absent = await _get(application, UNKNOWN, request_id=READ_REQUEST_ID)
@@ -306,7 +306,7 @@ async def test_a_claimed_but_unfinished_row_reports_the_ledger_cleanup_state(
     project ``queued``/``pending``; only ``cleanup_state`` reports progress, and it
     must equal the ledger. Adding a field is a contract change, not this slice.
     """
-    application, pool, _ = _app(sandbox)
+    application, pool, _, _ = _app(sandbox)
     try:
         plan = _plan(pool, "asset", ASSET, 3, "key-read-claim-plan")
         executions = PostgresDeletionExecutions(pool)
@@ -317,6 +317,8 @@ async def test_a_claimed_but_unfinished_row_reports_the_ledger_cleanup_state(
             key_digest=idempotency_key_digest(key),
             intent_digest=deletion_intent_digest(request),
             purge_available=True,
+            artifact_purge_available=True,
+            request_id="read-claim",
             workspace_id=WORKSPACE,
         )
         # The claim is committed and the object is deliberately left unpurged.
@@ -379,7 +381,7 @@ async def test_the_provisioned_writer_role_can_read_the_deletion(sandbox: Sandbo
             schema=sandbox.schema,
         )
         pool.open()
-        application, _, _ = _app(sandbox, pool=pool)
+        application, _, _, _ = _app(sandbox, pool=pool)
         plan = await _preview(application, "asset", ASSET, 3, "key-read-role-plan")
         executed = await _execute(application, _confirm(plan), "key-read-role-exec")
         assert executed.status_code == 202, executed.text
@@ -396,7 +398,7 @@ async def test_a_reader_with_only_the_ledger_select_serves_the_read(
     sandbox: Sandbox,
 ) -> None:
     """The read does not need the executor's write columns or any other table."""
-    writer_app, writer_pool, _ = _app(sandbox)
+    writer_app, writer_pool, _, _ = _app(sandbox)
     try:
         plan = await _preview(writer_app, "asset", ASSET, 3, "key-read-reader-plan")
         executed = await _execute(writer_app, _confirm(plan), "key-read-reader-exec")

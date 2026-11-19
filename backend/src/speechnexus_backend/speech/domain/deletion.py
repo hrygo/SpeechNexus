@@ -388,13 +388,14 @@ def deletion_intent_digest(request: DeletionRequest) -> str:
     return hashlib.sha256(canonical_bytes(document)).hexdigest()
 
 
-def confirm(plan: DeletionPlan, request: DeletionRequest, *, now: datetime) -> None:
+def confirm_scope(plan: DeletionPlan, request: DeletionRequest, *, now: datetime) -> None:
     """Refuse any confirmation that is not exactly this plan's live scope.
 
     Checked in the order the contract distinguishes: revision and digest identify
-    *this* plan, expiry is the plan's own window, blockers are a dependency
-    conflict, and only then is the target set compared. A stale plan therefore
-    reports why it is stale instead of hiding it behind a scope mismatch.
+    *this* plan, expiry is the plan's own window, and then the target set is
+    compared. The dependency verdict is deliberately *not* raised here: execution
+    records an ineligible plan as a ``blocked`` Deletion with its reason instead
+    of answering an HTTP refusal that would look the same as a transient error.
     """
     if request.expected_plan_revision != plan.revision:
         raise DeletionPlanChangedError
@@ -402,10 +403,19 @@ def confirm(plan: DeletionPlan, request: DeletionRequest, *, now: datetime) -> N
         raise DeletionPlanChangedError
     if now >= plan.expires_at:
         raise DeletionPlanExpiredError
-    if not plan.eligible:
-        raise DeletionDependencyConflictError
     if set(request.targets) != set(confirmed_targets(plan)):
         raise DeletionConfirmationMismatchError
+
+
+def confirm(plan: DeletionPlan, request: DeletionRequest, *, now: datetime) -> None:
+    """``confirm_scope`` plus the dependency verdict as a refusal.
+
+    Kept for callers that answer a refusal (the Workbench owner and the domain
+    tests); the Speech execution route records the blocked Deletion instead.
+    """
+    confirm_scope(plan, request, now=now)
+    if not plan.eligible:
+        raise DeletionDependencyConflictError
 
 
 @dataclass(frozen=True, slots=True)
@@ -425,13 +435,52 @@ class DeletionResult:
             raise ValueError("A retained copy is never reported as deleted")
 
 
+_ERROR_CODE = re.compile(r"^[a-z][a-z0-9_]{2,63}$")
+_ERROR_TYPES = ("invalid_request_error", "api_error")
+
+
+@dataclass(frozen=True, slots=True)
+class DeletionFailure:
+    """Why a Deletion is ``blocked`` or ``failed``, in the public error shape.
+
+    The refusal catalogue describes non-2xx answers; this value travels inside a
+    successful Deletion resource (202/200), so it is declared separately by
+    ``x-speechnexus-resource-errors``.
+    """
+
+    code: str
+    type: str
+    message: str
+    param: str | None
+    request_id: str
+    retryable: bool
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.code, str) or _ERROR_CODE.fullmatch(self.code) is None:
+            raise ValueError("Invalid deletion error code")
+        if self.type not in _ERROR_TYPES:
+            raise ValueError("Invalid deletion error type")
+        if not isinstance(self.message, str) or not 1 <= len(self.message) <= 2000:
+            raise ValueError("Invalid deletion error message")
+        if self.param is not None and (
+            not isinstance(self.param, str) or not 1 <= len(self.param) <= 128
+        ):
+            raise ValueError("Invalid deletion error parameter")
+        if not isinstance(self.request_id, str) or not 1 <= len(self.request_id) <= 128:
+            raise ValueError("Invalid deletion error request identity")
+        if not isinstance(self.retryable, bool):
+            raise ValueError("Invalid deletion error retryability")
+
+
 @dataclass(frozen=True, slots=True)
 class DeletionRecord:
     """Durable projection of one accepted deletion.
 
     ``result`` is present exactly when the content removal is confirmed; an
     interrupted execution keeps the same record with ``queued / pending`` and is
-    completed by replaying the original key.
+    completed by replaying the original key. A ``blocked`` record carries the one
+    reason it could not proceed and no result; it is terminal for its key, so
+    resolving the dependency means a new preview and a new key.
     """
 
     id: str
@@ -442,6 +491,7 @@ class DeletionRecord:
     created_at: datetime
     updated_at: datetime
     result: DeletionResult | None = None
+    error: DeletionFailure | None = None
 
     def __post_init__(self) -> None:
         identifier(self.id)
@@ -458,6 +508,9 @@ class DeletionRecord:
         complete = self.status == "succeeded"
         if complete != (self.result is not None):
             raise ValueError("A succeeded deletion carries its result and no other status does")
+        stopped = self.status in ("blocked", "failed")
+        if stopped != (self.error is not None):
+            raise ValueError("A blocked or failed deletion carries its reason and no other does")
         expected = "complete" if complete else None
         if expected is not None and self.cleanup_state != expected:
             raise ValueError("A succeeded deletion has completed cleanup")
@@ -476,6 +529,17 @@ def result_payload(result: DeletionResult) -> dict[str, object]:
     }
 
 
+def failure_payload(failure: DeletionFailure) -> dict[str, object]:
+    return {
+        "code": failure.code,
+        "type": failure.type,
+        "message": failure.message,
+        "param": failure.param,
+        "request_id": failure.request_id,
+        "retryable": failure.retryable,
+    }
+
+
 def deletion_payload(record: DeletionRecord) -> dict[str, object]:
     return {
         "id": record.id,
@@ -487,7 +551,7 @@ def deletion_payload(record: DeletionRecord) -> dict[str, object]:
         "created_at": _time(record.created_at),
         "updated_at": _time(record.updated_at),
         "result": result_payload(record.result) if record.result is not None else None,
-        "error": None,
+        "error": failure_payload(record.error) if record.error is not None else None,
     }
 
 
@@ -498,6 +562,7 @@ __all__ = [
     "DeletionConfirmationMismatchError",
     "DeletionDependencyConflictError",
     "DeletionError",
+    "DeletionFailure",
     "DeletionIdempotencyConflictError",
     "DeletionLedgerConfigurationError",
     "DeletionLedgerUnavailableError",
@@ -517,11 +582,13 @@ __all__ = [
     "Dependency",
     "canonical_bytes",
     "confirm",
+    "confirm_scope",
     "confirmed_targets",
     "deletion_intent_digest",
     "deletion_payload",
     "dependency_snapshot",
     "digest",
+    "failure_payload",
     "idempotency_key_digest",
     "intent_digest",
     "plan_digest",

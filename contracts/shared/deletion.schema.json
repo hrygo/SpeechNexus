@@ -502,7 +502,7 @@
       ]
     }
   },
-  "$comment": "x-speechnexus-errors is the exhaustive catalogue of stable error.code values the three Speech deletion operations (speechCreateDeletionPlan, speechCreateDeletion, speechGetDeletion) can answer in a non-2xx refusal, mapped to their HTTP status; x-speechnexus-retryable-errors names the subset answered with error.retryable=true. Codes carried inside a successful Deletion resource (Deletion.error for blocked/failed) are not refusals: x-speechnexus-resource-errors declares them separately, and a reserved entry there has no producer yet. A refusal code omitted from the first map is not reachable, and a refusal code listed without an emitting call site is stale. scripts/dev-env/check-route-conformance.py compares both refusal maps against the emitting call sites (deletion_errors.py, deletions.py, raises in the speech deletion modules) in both directions, keeps the resource map disjoint from them, and reports each drift with its file:line. Codes composed indirectly (constants, f-strings) are outside this static scan; the runtime map still collapses them to a declared refusal.",
+  "$comment": "x-speechnexus-errors is the exhaustive catalogue of stable error.code values the three Speech deletion operations (speechCreateDeletionPlan, speechCreateDeletion, speechGetDeletion) can answer in a non-2xx refusal, mapped to their HTTP status; x-speechnexus-retryable-errors names the subset answered with error.retryable=true. Codes carried inside a successful Deletion resource (Deletion.error for blocked/failed) are not refusals: x-speechnexus-resource-errors declares them separately: one entry is produced when a confirmed execution is blocked by a live dependency, and the reserved stop-coordination entry still has no producer. A refusal code omitted from the first map is not reachable, and a refusal code listed without an emitting call site is stale. scripts/dev-env/check-route-conformance.py compares both refusal maps against the emitting call sites (deletion_errors.py, deletions.py, raises in the speech deletion modules) in both directions, keeps the resource map disjoint from them, and reports each drift with its file:line. Codes composed indirectly (constants, f-strings) are outside this static scan; the runtime map still collapses them to a declared refusal.",
   "x-speechnexus-errors": {
     "resource_not_found": 404,
     "deletion_plan_changed": 409,
@@ -534,6 +534,14 @@
       ],
       "status": "reserved",
       "description": "Active execution stop or resource release is unconfirmed, so the deletion stays blocked/quarantined with capacity retained. It is carried inside a successful Deletion resource, never as an HTTP refusal, and its producer belongs to the pending execution slice; no route emits it yet."
+    },
+    "deletion_target_in_use": {
+      "surface": "Deletion.error",
+      "states": [
+        "blocked"
+      ],
+      "status": "produced",
+      "description": "A live dependency still references the confirmed target, so the deletion is recorded as blocked with this code instead of removing the content. Execution of an ineligible plan writes it; resolving the dependency needs a new preview (the plan is single-use)."
     }
   }
 }

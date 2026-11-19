@@ -46,6 +46,7 @@ from tests.unit.backend.test_health import _settings
 from speechnexus_backend.app import create_app
 from speechnexus_backend.job_runtime import _verify_privileges
 from speechnexus_backend.speech.application.deletions import SpeechDeletions
+from speechnexus_backend.speech.domain.artifacts import ArtifactError
 from speechnexus_backend.speech.domain.assets import AssetError, VerifiedObject
 from speechnexus_backend.speech.domain.deletion import (
     DeletionIdempotencyConflictError,
@@ -92,6 +93,7 @@ JOB = "job-exec-free"
 JOB_DRAFT = "job-exec-draft"
 DRAFT = "draft-exec-pg"
 ARTIFACT = "artifact-exec-pg"
+REV2_JOB = "job-exec-rev2"
 ASSET_KEY = "private/assets/asset-exec-pg/0123456789abcdef0123456789abcdef"
 ASSET_REF_KEY = "private/assets/asset-exec-ref/0123456789abcdef0123456789abcdef"
 ASSET_WRITING_KEY = "private/assets/asset-exec-writing/0123456789abcdef0123456789abcdef"
@@ -128,6 +130,20 @@ class FakeObjects:
             self.failures += 1
             raise AssetError("asset_object_storage_unavailable")
         self.versions.append(proof.version_id)
+
+
+class FakeArtifactPurge:
+    """The Artifact bucket identity; records the pinned object version it purged."""
+
+    def __init__(self, *, fail_first: bool = False) -> None:
+        self.pinned: list[tuple[str, str]] = []
+        self.fail_first = fail_first
+
+    def delete_pinned(self, object_key: str, version_id: str) -> None:
+        if self.fail_first:
+            self.fail_first = False
+            raise ArtifactError("artifact_cleanup_unconfirmed")
+        self.pinned.append((object_key, version_id))
 
 
 def _admin(url: str) -> psycopg.Connection[dict[str, Any]]:
@@ -323,19 +339,77 @@ def sandbox() -> Iterator[Sandbox]:
 
 
 def _app(
-    sandbox: Sandbox, objects: FakeObjects | None = None, pool: Any = None
-) -> tuple[Any, Any, FakeObjects]:
+    sandbox: Sandbox,
+    objects: FakeObjects | None = None,
+    pool: Any = None,
+    artifact_objects: FakeArtifactPurge | None = None,
+) -> tuple[Any, Any, FakeObjects, FakeArtifactPurge]:
     if pool is None:
         pool = speech_pool(sandbox.url, schema=sandbox.schema)
         pool.open()
     objects = objects or FakeObjects()
+    artifact_objects = artifact_objects or FakeArtifactPurge()
     service = SpeechDeletions(
         PostgresDeletionPlans(pool),
         workspace_id=WORKSPACE,
         executions=PostgresDeletionExecutions(pool),
         purge=objects,
+        artifact_purge=artifact_objects,
     )
-    return create_app(settings=_settings(), deletions=service), pool, objects
+    return create_app(settings=_settings(), deletions=service), pool, objects, artifact_objects
+
+
+def _seed_unreferenced_revision(sandbox: Sandbox, revision: str = "2") -> None:
+    """One draft revision that is not the head and nothing references yet."""
+    with psycopg.connect(sandbox.url, autocommit=True, row_factory=dict_row) as admin:
+        admin.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
+        admin.execute("SET TIME ZONE 'UTC'")
+        admin.execute(
+            """INSERT INTO speech_jobs (job_id, workspace_id, kind, model_id,
+                request_digest, state, status_version, result_json, created_at_us, updated_at_us)
+            VALUES (%s, %s, 'tts', 'tts-synthetic', %s, 'succeeded', 2,
+                    '{"synthetic":true}', %s, %s)""",
+            (REV2_JOB, WORKSPACE, sha("3"), NOW_US, NOW_US),
+        )
+        admin.execute(
+            """INSERT INTO speech_voice_draft_revisions (draft_id, revision, kind,
+                generation_job_id, input_json, binding_json, created_at_us)
+            VALUES (%s, %s, 'design', %s, '{"text":"synthetic two"}',
+                    '{"model":"tts-synthetic"}', %s)""",
+            (DRAFT, revision, REV2_JOB, NOW_US),
+        )
+
+
+def _seed_job_intent_referencing(sandbox: Sandbox, revision: str = "2") -> None:
+    """A retained public Job intent naming the draft revision (#540 surface)."""
+    document = (
+        '{"model":"tts-synthetic","input":{"voice_draft_id":"' + DRAFT + '",'
+        '"draft_revision":"' + revision + '"}}'
+    )
+    with psycopg.connect(sandbox.url, autocommit=True, row_factory=dict_row) as admin:
+        admin.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
+        admin.execute(
+            """INSERT INTO speech_job_intents (job_id, request_digest, request_document,
+                recorded_at_us) VALUES (%s, %s, %s, %s)""",
+            (REV2_JOB, sha("4"), document, NOW_US),
+        )
+
+
+def _seed_evidence_reporting_the_artifact(sandbox: Sandbox) -> None:
+    """Real execution evidence whose report Artifact is the deletion target."""
+    with psycopg.connect(sandbox.url, autocommit=True, row_factory=dict_row) as admin:
+        admin.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
+        admin.execute(
+            """INSERT INTO speech_voice_capability_evidence (
+                evidence_id, draft_id, draft_revision, validation_job_id, validation_id,
+                binding_revision_id, report_artifact_id, report_sha256, report_receipt_id,
+                evidence_kind, measured_by, measured_at_us, capabilities, coverage,
+                evidence_digest)
+            VALUES (%s, %s, '2', %s, 'validation-exec', 'binding-exec', %s, %s,
+                    'receipt-exec', 'validation_run', 'synthetic-evaluator', %s,
+                    '{}'::jsonb, '{}'::jsonb, %s)""",
+            ("vce-" + REV2_JOB, DRAFT, REV2_JOB, ARTIFACT, sha("9"), NOW_US, sha("5")),
+        )
 
 
 def _body(kind: str, identifier: str, revision: int) -> dict[str, Any]:
@@ -428,7 +502,7 @@ async def test_asset_execution_purges_the_pinned_version_and_records_the_ledger(
     sandbox: Sandbox,
 ) -> None:
     """Deletes the object version the plan pinned; the ledger says exactly that."""
-    app, pool, objects = _app(sandbox)
+    app, pool, objects, _artifacts = _app(sandbox)
     try:
         plan = await _preview(app, "asset", ASSET, 3, "key-plan-asset")
         response = await _execute(app, _confirm(plan), "key-exec-asset")
@@ -491,7 +565,7 @@ async def test_asset_execution_purges_the_pinned_version_and_records_the_ledger(
 
 
 async def test_the_same_key_returns_the_same_row_and_never_purges_twice(sandbox: Sandbox) -> None:
-    app, pool, objects = _app(sandbox)
+    app, pool, objects, _artifacts = _app(sandbox)
     try:
         plan = await _preview(app, "asset", ASSET, 3, "key-plan-idem")
         body = _confirm(plan)
@@ -520,7 +594,7 @@ async def test_the_same_key_returns_the_same_row_and_never_purges_twice(sandbox:
 
 
 async def test_a_moved_scope_is_refused_without_touching_content(sandbox: Sandbox) -> None:
-    app, pool, objects = _app(sandbox)
+    app, pool, objects, _artifacts = _app(sandbox)
     try:
         plan = await _preview(app, "asset", ASSET, 3, "key-plan-moved")
         # A writer bumps the asset between preview and execution: the plan's pinned
@@ -546,7 +620,7 @@ async def test_a_moved_scope_is_refused_without_touching_content(sandbox: Sandbo
 
 async def test_a_tampered_plan_digest_is_refused_with_409(sandbox: Sandbox) -> None:
     """The digest is recomputed, never trusted: it identifies the exact plan."""
-    app, pool, objects = _app(sandbox)
+    app, pool, objects, _artifacts = _app(sandbox)
     try:
         plan = await _preview(app, "asset", ASSET, 3, "key-plan-digest")
         body = _confirm(plan)
@@ -565,7 +639,7 @@ async def test_a_tampered_plan_digest_is_refused_with_409(sandbox: Sandbox) -> N
 
 
 async def test_a_confirmation_must_be_set_equal_to_the_plan_scope(sandbox: Sandbox) -> None:
-    app, pool, objects = _app(sandbox)
+    app, pool, objects, _artifacts = _app(sandbox)
     try:
         plan = await _preview(app, "asset", ASSET, 3, "key-plan-set")
         extra = {
@@ -596,7 +670,7 @@ async def test_an_expired_plan_is_refused_with_409(sandbox: Sandbox) -> None:
     the table's CHECK keeps the window fixed, so the fixture issues a real plan
     whose window already closed, exactly as a six-minute-old plan would look.
     """
-    app, pool, objects = _app(sandbox)
+    app, pool, objects, _artifacts = _app(sandbox)
     try:
         preview = await _preview(app, "asset", ASSET, 3, "key-plan-expired")
         stored = _read(
@@ -659,14 +733,25 @@ async def test_an_expired_plan_is_refused_with_409(sandbox: Sandbox) -> None:
         pool.close()
 
 
-async def test_an_ineligible_plan_and_a_second_key_are_both_refused(sandbox: Sandbox) -> None:
-    app, pool, objects = _app(sandbox)
+async def test_an_ineligible_plan_is_recorded_as_blocked(sandbox: Sandbox) -> None:
+    app, pool, objects, _artifacts = _app(sandbox)
     try:
         blocked = await _preview(app, "asset", ASSET_REF, 1, "key-plan-blocked")
         assert blocked["eligible"] is False
         response = await _execute(app, _confirm(blocked), "key-exec-blocked")
-        assert response.status_code == 409, response.text
-        assert response.json()["error"]["code"] == "deletion_dependency_conflict"
+        assert response.status_code == 202, response.text
+        payload = response.json()
+        _deletion_validator("Deletion").validate(payload)
+        assert payload["status"] == "blocked"
+        assert payload["cleanup_state"] == "pending"
+        assert payload["result"] is None
+        assert payload["error"]["code"] == "deletion_target_in_use"
+        assert payload["error"]["retryable"] is False
+        assert "voice-exec-pg@2" in payload["error"]["message"]
+        assert objects.versions == []
+        assert _read(
+            sandbox, "SELECT asset_state FROM speech_assets WHERE asset_id = %s", (ASSET_REF,)
+        ) == [{"asset_state": "ready"}]
 
         # An issued plan is a single-use credential: a second key cannot spend it.
         plan = await _preview(app, "asset", ASSET, 3, "key-plan-once")
@@ -675,7 +760,7 @@ async def test_an_ineligible_plan_and_a_second_key_are_both_refused(sandbox: San
         second = await _execute(app, _confirm(plan), "key-exec-once-b")
         assert second.status_code == 409, second.text
         assert second.json()["error"]["code"] == "deletion_plan_changed"
-        assert len(_read(sandbox, "SELECT id FROM speech_deletion_ledger")) == 1
+        assert len(_read(sandbox, "SELECT id FROM speech_deletion_ledger")) == 2
         assert objects.versions == ["minio-asset-exec-1"]
     finally:
         pool.close()
@@ -683,7 +768,7 @@ async def test_an_ineligible_plan_and_a_second_key_are_both_refused(sandbox: San
 
 async def test_a_failed_purge_stays_queued_and_the_same_key_resumes(sandbox: Sandbox) -> None:
     """Success is never claimed without a confirmed purge; the row is resumable."""
-    app, pool, objects = _app(sandbox, FakeObjects(fail_first=True))
+    app, pool, objects, _artifacts = _app(sandbox, FakeObjects(fail_first=True))
     try:
         plan = await _preview(app, "asset", ASSET, 3, "key-plan-resume")
         first = await _execute(app, _confirm(plan), "key-exec-resume")
@@ -712,24 +797,114 @@ async def test_a_failed_purge_stays_queued_and_the_same_key_resumes(sandbox: San
 
 
 async def test_a_restart_replays_the_stored_result(sandbox: Sandbox) -> None:
-    """A new process, pool and service still answer the same key from the ledger."""
-    app, pool, objects = _app(sandbox)
+    """A new pool and service in this process still answer the same key."""
+    app, pool, objects, _artifacts = _app(sandbox)
     plan = await _preview(app, "asset", ASSET, 3, "key-plan-restart")
     first = await _execute(app, _confirm(plan), "key-exec-restart")
     assert first.status_code == 202, first.text
     pool.close()
 
-    restarted_app, restarted_pool, restarted_objects = _app(sandbox)
+    restarted_app, restarted_pool, restarted_objects, _restarted_artifacts = _app(sandbox)
     try:
         replay = await _execute(restarted_app, _confirm(plan), "key-exec-restart")
         assert replay.status_code == 202, replay.text
         assert replay.json() == first.json()
-        # Nothing was deleted twice: the fresh process purged nothing.
+        # Nothing was deleted twice: the restarted service read the stored ledger
+        # row and did not touch the object version again.
         assert restarted_objects.versions == []
         assert objects.versions == ["minio-asset-exec-1"]
         assert len(_ledger(sandbox, "key-exec-restart")) == 1
     finally:
         restarted_pool.close()
+
+
+async def test_a_live_purge_claim_answers_503_until_the_crash_lease_expires(
+    sandbox: Sandbox,
+) -> None:
+    """A crashed executor's claim is a wait, not a second purge.
+
+    Acceptance and the object purge are separate transactions. If the process dies
+    after acceptance, the ledger row is ``queued`` with a live ``purge_claimed_at``
+    and no completion. A same-key replay inside the 120 s lease waits, then answers
+    ``503 deletion_unavailable`` without touching the Artifact. Once the lease has
+    expired the same key reclaims the row and finishes the purge.
+    """
+    app, pool, _objects, artifacts = _app(sandbox)
+    try:
+        plan = await _preview(app, "artifact", ARTIFACT, 1, "key-plan-crash-lease")
+        body = _confirm(plan)
+        target = plan["target"]
+        request = DeletionRequest(
+            plan["id"],
+            int(plan["plan_revision"]),
+            plan["plan_digest"],
+            (
+                DeletionTarget(
+                    "speech",
+                    target["kind"],
+                    target["resource"]["id"],
+                    int(target["resource"]["revision"]),
+                ),
+            ),
+        )
+        key = "key-exec-crash-lease"
+        key_digest = hashlib.sha256(key.encode()).hexdigest()
+        with pool.connection(timeout=5) as connection:
+            transaction = _Transaction(connection, time.monotonic() + 5, WORKSPACE)
+            accepted = _DeletionExecution(transaction, WORKSPACE).accept(
+                request,
+                key_digest=key_digest,
+                intent_digest=deletion_intent_digest(request),
+                purge_available=True,
+                artifact_purge_available=True,
+                request_id="crash-lease",
+            )
+            assert accepted.record.status == "queued"
+            connection.commit()
+        assert artifacts.pinned == []
+        claimed = _read(
+            sandbox,
+            "SELECT status, purge_claimed_at IS NOT NULL AS live "
+            "FROM speech_deletion_ledger WHERE id = %s",
+            (accepted.record.id,),
+        )
+        assert claimed == [{"status": "queued", "live": True}]
+
+        replay = await _execute(app, body, key)
+        assert replay.status_code == 503, replay.text
+        assert replay.json()["error"]["code"] == "deletion_unavailable"
+        assert replay.json()["error"]["retryable"] is True
+        assert artifacts.pinned == []
+        assert _read(
+            sandbox,
+            "SELECT count(*) AS n FROM speech_deletion_ledger WHERE id = %s AND status = 'queued'",
+            (accepted.record.id,),
+        ) == [{"n": 1}]
+
+        with psycopg.connect(sandbox.url, autocommit=True, row_factory=dict_row) as admin:
+            admin.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
+            admin.execute(
+                "UPDATE speech_deletion_ledger "
+                "SET purge_claimed_at = clock_timestamp() - interval '121 seconds', "
+                "created_at = clock_timestamp() - interval '122 seconds' "
+                "WHERE id = %s",
+                (accepted.record.id,),
+            )
+
+        resumed = await _execute(app, body, key)
+        assert resumed.status_code == 202, resumed.text
+        payload = resumed.json()
+        _deletion_validator("Deletion").validate(payload)
+        assert payload["status"] == "succeeded"
+        assert payload["id"] == accepted.record.id
+        assert artifacts.pinned == [("artifacts/artifact-exec-pg.wav", "minio-artifact-exec-1")]
+        assert _read(
+            sandbox,
+            "SELECT count(*) AS n FROM speech_deletion_ledger WHERE id = %s",
+            (accepted.record.id,),
+        ) == [{"n": 1}]
+    finally:
+        pool.close()
 
 
 async def test_operation_content_deletes_the_intent_and_keeps_the_evidence(
@@ -742,7 +917,7 @@ async def test_operation_content_deletes_the_intent_and_keeps_the_evidence(
     state events, the admission lease and fencing identity, and the output
     artifact (a separate resource with its own plan).
     """
-    app, pool, objects = _app(sandbox)
+    app, pool, objects, _artifacts = _app(sandbox)
     try:
         plan = await _preview(app, "operation_content", JOB, 4, "key-plan-job")
         assert plan["eligible"] is True
@@ -812,7 +987,7 @@ async def test_execution_evidence_and_settlement_are_unchanged(sandbox: Sandbox)
     real negative: those rows exist before the delete and must still exist, byte
     for byte, afterwards.
     """
-    app, pool, objects = _app(sandbox)
+    app, pool, objects, _artifacts = _app(sandbox)
     try:
         before = _evidence(sandbox)
         assert before["leases"] and before["attempts"] and before["settlement"]
@@ -870,7 +1045,7 @@ async def test_a_concurrent_same_key_request_replays_the_winner(sandbox: Sandbox
     purge the same pinned version a second time, which is exactly the assertion
     below.
     """
-    app, pool, objects = _app(sandbox)
+    app, pool, objects, _artifacts = _app(sandbox)
     plan = await _preview(app, "asset", ASSET, 3, "key-plan-concurrent")
     body = _confirm(plan)
     purging = threading.Event()
@@ -926,7 +1101,7 @@ def test_the_unique_key_race_falls_back_to_the_winning_row(sandbox: Sandbox) -> 
     instead of the ordinary replay path. A different intent under the same key is
     a conflict, not a second deletion.
     """
-    _app_instance, pool, _objects = _app(sandbox)
+    _app_instance, pool, _objects, _artifact_objects = _app(sandbox)
     asset_plan = _plan(pool, "asset", ASSET, 3, "key-plan-race-fallback")
     job_plan = _plan(pool, "operation_content", JOB, 4, "key-plan-race-other")
     asset_request = _confirmation_of(asset_plan)
@@ -942,6 +1117,8 @@ def test_the_unique_key_race_falls_back_to_the_winning_row(sandbox: Sandbox) -> 
                 key_digest=key_digest,
                 intent_digest=deletion_intent_digest(job_request),
                 purge_available=True,
+                artifact_purge_available=True,
+                request_id="race-fallback",
                 workspace_id=WORKSPACE,
             )
         except BaseException as error:
@@ -955,6 +1132,8 @@ def test_the_unique_key_race_falls_back_to_the_winning_row(sandbox: Sandbox) -> 
                 key_digest=key_digest,
                 intent_digest=deletion_intent_digest(asset_request),
                 purge_available=True,
+                artifact_purge_available=True,
+                request_id="race-fallback",
             )
             assert accepted.record.status == "queued" or accepted.record.status == "succeeded"
             loser = threading.Thread(target=lose)
@@ -977,7 +1156,7 @@ def test_the_unique_key_race_falls_back_to_the_winning_row(sandbox: Sandbox) -> 
 
 
 async def test_a_writing_asset_is_refused_at_execution_time(sandbox: Sandbox) -> None:
-    app, pool, objects = _app(sandbox)
+    app, pool, objects, _artifacts = _app(sandbox)
     try:
         plan = await _preview(app, "asset", ASSET_WRITING, 1, "key-plan-writing")
         response = await _execute(app, _confirm(plan), "key-exec-writing")
@@ -991,7 +1170,7 @@ async def test_a_writing_asset_is_refused_at_execution_time(sandbox: Sandbox) ->
 
 async def test_execution_and_the_asset_writer_do_not_deadlock(sandbox: Sandbox) -> None:
     """Workspace first, then asset: the same order every asset writer takes."""
-    app, pool, objects = _app(sandbox)
+    app, pool, objects, _artifacts = _app(sandbox)
     plan = await _preview(app, "asset", ASSET, 3, "key-plan-race")
     started, published = threading.Event(), threading.Event()
     failures: list[BaseException] = []
@@ -1079,13 +1258,13 @@ async def test_the_provisioned_writer_role_can_execute_both_targets(sandbox: San
             schema=sandbox.schema,
         )
         pool.open()
-        app, _, objects = _app(sandbox, pool=pool)
+        app, _, objects, artifacts = _app(sandbox, pool=pool)
         asset_plan = await _preview(app, "asset", ASSET, 3, "key-role-plan-asset")
         asset = await _execute(app, _confirm(asset_plan), "key-role-exec-asset")
         assert asset.status_code == 202, asset.text
         assert asset.json()["status"] == "succeeded"
         assert objects.versions == ["minio-asset-exec-1"]
-        # The writer identity may DELETE only the confirmable intent relation.
+        # The writer identity keeps the operation intent until it is the target.
         assert _read(
             sandbox, "SELECT count(*) AS n FROM speech_job_intents WHERE job_id = %s", (JOB,)
         ) == [{"n": 1}]
@@ -1096,6 +1275,23 @@ async def test_the_provisioned_writer_role_can_execute_both_targets(sandbox: San
         assert _read(
             sandbox, "SELECT count(*) AS n FROM speech_job_intents WHERE job_id = %s", (JOB,)
         ) == [{"n": 0}]
+
+        # The same identity owns the two target kinds this slice adds.
+        _seed_unreferenced_revision(sandbox)
+        artifact_plan = await _preview(app, "artifact", ARTIFACT, 1, "key-role-plan-artifact")
+        artifact = await _execute(app, _confirm(artifact_plan), "key-role-exec-artifact")
+        assert artifact.status_code == 202, artifact.text
+        assert artifact.json()["status"] == "succeeded"
+        assert artifacts.pinned == [("artifacts/artifact-exec-pg.wav", "minio-artifact-exec-1")]
+        revision_plan = await _preview(app, "voice_revision", DRAFT, 2, "key-role-plan-rev")
+        revision = await _execute(app, _confirm(revision_plan), "key-role-exec-rev")
+        assert revision.status_code == 202, revision.text
+        assert revision.json()["status"] == "succeeded"
+        assert _read(
+            sandbox,
+            "SELECT revision FROM speech_voice_draft_revisions WHERE draft_id = %s",
+            (DRAFT,),
+        ) == [{"revision": "1"}]
     finally:
         if pool is not None:
             pool.close()
@@ -1119,13 +1315,15 @@ async def test_missing_execution_grants_fail_the_route_not_the_process(sandbox: 
             schema=sandbox.schema,
         )
         pool.open()
-        app, _, objects = _app(sandbox, pool=pool)
+        app, _, objects, _artifacts = _app(sandbox, pool=pool)
         plan = await _preview(app, "asset", ASSET, 3, "key-nogrant-plan")
         response = await _execute(app, _confirm(plan), "key-nogrant-exec")
         assert response.status_code == 503, response.text
         error = response.json()["error"]
         assert error["code"] == "deletion_not_configured"
         assert error["retryable"] is False
+        # Transport replay stays safe even though retrying cannot fix the gap.
+        assert response.headers["x-should-retry"] == "true"
         assert "GRANT" in error["message"] or "apply" in error["message"]
         assert objects.versions == []
         assert _read(sandbox, "SELECT count(*) AS n FROM speech_deletion_ledger") == [{"n": 0}]
@@ -1135,3 +1333,425 @@ async def test_missing_execution_grants_fail_the_route_not_the_process(sandbox: 
         admin.execute(f'DROP OWNED BY "{role}"')
         admin.execute(f'DROP ROLE IF EXISTS "{role}"')
         admin.close()
+
+
+async def test_artifact_execution_purges_the_pinned_version_and_marks_it_deleted(
+    sandbox: Sandbox,
+) -> None:
+    """A committed Artifact is content: purge its pinned version, then record it."""
+    app, pool, objects, artifacts = _app(sandbox)
+    try:
+        # An Artifact has no revision column; only revision 1 names a row.
+        missing = await _post(
+            app,
+            "/v1/nexus/deletion-plans",
+            _body("artifact", ARTIFACT, 2),
+            "key-artifact-plan-2",
+        )
+        assert missing.status_code == 404, missing.text
+        plan = await _preview(app, "artifact", ARTIFACT, 1, "key-artifact-plan")
+        assert plan["eligible"] is True
+        assert plan["target"]["kind"] == "artifact"
+        assert plan["target"]["resource"]["revision"] == "1"
+
+        response = await _execute(app, _confirm(plan), "key-artifact-exec")
+        assert response.status_code == 202, response.text
+        payload = response.json()
+        _deletion_validator("Deletion").validate(payload)
+        assert payload["status"] == "succeeded"
+        assert payload["cleanup_state"] == "complete"
+        assert payload["error"] is None
+        assert payload["result"]["deleted"] == [plan["target"]]
+        assert artifacts.pinned == [("artifacts/artifact-exec-pg.wav", "minio-artifact-exec-1")]
+        # The asset object identity was never asked to purge the Artifact.
+        assert objects.versions == []
+
+        row = _read(
+            sandbox,
+            "SELECT artifact_state, deleted_at_us, sha256, object_key, storage_version_id "
+            "FROM speech_artifacts WHERE artifact_id = %s",
+            (ARTIFACT,),
+        )
+        assert len(row) == 1
+        assert row[0]["artifact_state"] == "deleted"
+        assert row[0]["deleted_at_us"] is not None
+        assert row[0]["sha256"] == sha("9")
+        assert row[0]["object_key"] == "artifacts/artifact-exec-pg.wav"
+        assert row[0]["storage_version_id"] == "minio-artifact-exec-1"
+        assert _read(sandbox, "SELECT count(*) AS n FROM speech_deletion_ledger") == [{"n": 1}]
+    finally:
+        pool.close()
+
+
+async def test_an_artifact_referenced_by_execution_evidence_is_blocked(
+    sandbox: Sandbox,
+) -> None:
+    """The validation report of a retained execution is not deletable."""
+    _seed_unreferenced_revision(sandbox)
+    _seed_evidence_reporting_the_artifact(sandbox)
+    app, pool, _objects, artifacts = _app(sandbox)
+    try:
+        plan = await _preview(app, "artifact", ARTIFACT, 1, "key-artifact-evidence-plan")
+        assert plan["eligible"] is False
+        assert [item["target"]["kind"] for item in plan["dependencies"]] == ["operation_content"]
+
+        response = await _execute(app, _confirm(plan), "key-artifact-evidence-exec")
+        assert response.status_code == 202, response.text
+        payload = response.json()
+        _deletion_validator("Deletion").validate(payload)
+        assert payload["status"] == "blocked"
+        assert payload["cleanup_state"] == "pending"
+        assert payload["result"] is None
+        assert payload["error"]["code"] == "deletion_target_in_use"
+        assert payload["error"]["retryable"] is False
+        assert REV2_JOB in payload["error"]["message"]
+        assert artifacts.pinned == []
+        assert _read(
+            sandbox,
+            "SELECT artifact_state FROM speech_artifacts WHERE artifact_id = %s",
+            (ARTIFACT,),
+        ) == [{"artifact_state": "ready"}]
+
+        # The same key answers the same blocked record, not a second row.
+        replay = await _execute(app, _confirm(plan), "key-artifact-evidence-exec")
+        assert replay.json()["id"] == payload["id"]
+        assert _read(sandbox, "SELECT count(*) AS n FROM speech_deletion_ledger") == [{"n": 1}]
+    finally:
+        pool.close()
+
+
+async def test_voice_revision_execution_deletes_only_that_revision(sandbox: Sandbox) -> None:
+    _seed_unreferenced_revision(sandbox)
+    app, pool, objects, artifacts = _app(sandbox)
+    try:
+        plan = await _preview(app, "voice_revision", DRAFT, 2, "key-revision-plan")
+        assert plan["eligible"] is True
+        assert plan["target"]["resource"] == {"id": DRAFT, "revision": "2"}
+
+        response = await _execute(app, _confirm(plan), "key-revision-exec")
+        assert response.status_code == 202, response.text
+        payload = response.json()
+        _deletion_validator("Deletion").validate(payload)
+        assert payload["status"] == "succeeded"
+        assert payload["result"]["deleted"] == [plan["target"]]
+        assert objects.versions == []
+        assert artifacts.pinned == []
+        assert _read(
+            sandbox,
+            "SELECT revision FROM speech_voice_draft_revisions "
+            "WHERE draft_id = %s ORDER BY revision",
+            (DRAFT,),
+        ) == [{"revision": "1"}]
+        assert _read(
+            sandbox, "SELECT head_revision FROM speech_voice_drafts WHERE draft_id = %s", (DRAFT,)
+        ) == [{"head_revision": "1"}]
+        # The generation job is execution evidence, not content of the revision.
+        assert _read(sandbox, "SELECT job_id FROM speech_jobs WHERE job_id = %s", (REV2_JOB,)) == [
+            {"job_id": REV2_JOB}
+        ]
+
+        # The same key repeats the same record, byte for byte: it says already
+        # done (same id and completion time), not just done again.
+        replay = await _execute(app, _confirm(plan), "key-revision-exec")
+        assert replay.status_code == 202
+        assert replay.json() == payload
+        assert _read(sandbox, "SELECT count(*) AS n FROM speech_deletion_ledger") == [{"n": 1}]
+    finally:
+        pool.close()
+
+
+def _wait_for_lock(sandbox: Sandbox, query_fragment: str, wait_fragment: str) -> bool:
+    """Observe one backend actually waiting on the named row lock."""
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        rows = _read(
+            sandbox,
+            "SELECT count(*) AS n FROM pg_stat_activity "
+            "WHERE wait_event_type = 'Lock' AND strpos(query, %s) > 0 "
+            "AND strpos(query, %s) > 0",
+            (query_fragment, wait_fragment),
+        )
+        if rows and rows[0]["n"]:
+            return True
+        time.sleep(0.02)
+    return False
+
+
+async def test_voice_revision_deletion_serializes_with_a_concurrent_intent(
+    sandbox: Sandbox,
+) -> None:
+    """The deletion locks the draft before it re-reads, so a racing intent wins or loses.
+
+    The second connection holds the admission's ``FOR SHARE`` on the draft and has
+    already read the revision, exactly where admission sits before it inserts its
+    intent. The deletion must wait on ``FOR UPDATE``; when the intent commits, the
+    post-lock re-read sees it and answers ``409 deletion_plan_changed``. Removing
+    the deletion lock lets the DELETE commit first and leaves an intent pointing
+    at a missing revision, which is the dangling state this test forbids.
+    """
+    _seed_unreferenced_revision(sandbox)
+    app, pool, _objects, _artifacts = _app(sandbox)
+    admission = psycopg.connect(sandbox.url, row_factory=dict_row)
+    responses: list[httpx.Response] = []
+    try:
+        plan = await _preview(app, "voice_revision", DRAFT, 2, "key-race-plan")
+        body = _confirm(plan)
+        admission.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
+        admission.execute("SET TIME ZONE 'UTC'")
+        admission.execute(
+            "SELECT 1 FROM speech_voice_drafts WHERE draft_id = %s FOR SHARE", (DRAFT,)
+        )
+        admission.execute(
+            "SELECT input_json FROM speech_voice_draft_revisions "
+            "WHERE draft_id = %s AND revision = '2'",
+            (DRAFT,),
+        )
+        thread = threading.Thread(
+            target=lambda: responses.append(asyncio.run(_execute(app, body, "key-race-exec")))
+        )
+        thread.start()
+        waited = _wait_for_lock(sandbox, "speech_voice_drafts", "FOR UPDATE")
+        if not waited:
+            # No lock means the deletion already won; let it finish before the
+            # admission-shaped insert so the resulting dangling row is stable.
+            thread.join(5)
+            assert not thread.is_alive()
+        admission.execute(
+            "INSERT INTO speech_job_intents "
+            "(job_id, request_digest, request_document, recorded_at_us) "
+            "VALUES (%s, %s, %s, %s)",
+            (
+                REV2_JOB,
+                sha("4"),
+                '{"model":"tts-synthetic","input":{"voice_draft_id":"'
+                + DRAFT
+                + '","draft_revision":"2"}}',
+                NOW_US,
+            ),
+        )
+        admission.commit()
+        thread.join(30)
+        assert not thread.is_alive()
+        assert len(responses) == 1
+        assert responses[0].status_code == 409, responses[0].text
+        assert responses[0].json()["error"]["code"] == "deletion_plan_changed"
+        # The losing request left the revision for the intent it now names.
+        assert _read(
+            sandbox,
+            "SELECT count(*) AS n FROM speech_voice_draft_revisions "
+            "WHERE draft_id = %s AND revision = '2'",
+            (DRAFT,),
+        ) == [{"n": 1}]
+        assert _read(
+            sandbox,
+            "SELECT count(*) AS n FROM speech_job_intents WHERE job_id = %s",
+            (REV2_JOB,),
+        ) == [{"n": 1}]
+    finally:
+        admission.rollback()
+        admission.close()
+        thread.join(5)
+        pool.close()
+
+
+async def test_a_voice_revision_content_change_is_refused(sandbox: Sandbox) -> None:
+    """The digest pins the two content columns, not only the row identity."""
+    _seed_unreferenced_revision(sandbox)
+    app, pool, _objects, _artifacts = _app(sandbox)
+    try:
+        plan = await _preview(app, "voice_revision", DRAFT, 2, "key-content-plan")
+        with psycopg.connect(sandbox.url, autocommit=True, row_factory=dict_row) as admin:
+            admin.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
+            admin.execute(
+                "UPDATE speech_voice_draft_revisions SET input_json = %s "
+                "WHERE draft_id = %s AND revision = '2'",
+                ('{"text":"changed after preview"}', DRAFT),
+            )
+        response = await _execute(app, _confirm(plan), "key-content-exec")
+        assert response.status_code == 409, response.text
+        assert response.json()["error"]["code"] == "deletion_plan_changed"
+        assert _read(sandbox, "SELECT count(*) AS n FROM speech_deletion_ledger") == [{"n": 0}]
+        assert _read(
+            sandbox,
+            "SELECT revision FROM speech_voice_draft_revisions "
+            "WHERE draft_id = %s ORDER BY revision",
+            (DRAFT,),
+        ) == [{"revision": "1"}, {"revision": "2"}]
+    finally:
+        pool.close()
+
+
+async def test_the_draft_head_revision_is_blocked_and_replays_idempotently(
+    sandbox: Sandbox,
+) -> None:
+    app, pool, _objects, _artifacts = _app(sandbox)
+    try:
+        plan = await _preview(app, "voice_revision", DRAFT, 1, "key-head-plan")
+        assert plan["eligible"] is False
+        blocked = await _execute(app, _confirm(plan), "key-head-exec")
+        assert blocked.status_code == 202, blocked.text
+        payload = blocked.json()
+        _deletion_validator("Deletion").validate(payload)
+        assert payload["status"] == "blocked"
+        assert payload["error"]["code"] == "deletion_target_in_use"
+        assert "draft-exec-pg@1" in payload["error"]["message"]
+        assert _read(
+            sandbox,
+            "SELECT revision FROM speech_voice_draft_revisions WHERE draft_id = %s",
+            (DRAFT,),
+        ) == [{"revision": "1"}]
+
+        replay = await _execute(app, _confirm(plan), "key-head-exec")
+        assert replay.status_code == 202
+        assert replay.json()["id"] == payload["id"]
+        assert _read(sandbox, "SELECT count(*) AS n FROM speech_deletion_ledger") == [{"n": 1}]
+
+        # Resolving the dependency queued a new preview; the old key stays blocked
+        # and the new plan deletes the now-unreferenced revision.
+        _seed_unreferenced_revision(sandbox)
+        with psycopg.connect(sandbox.url, autocommit=True, row_factory=dict_row) as admin:
+            admin.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
+            admin.execute(
+                "UPDATE speech_voice_drafts SET head_revision = '2' WHERE draft_id = %s",
+                (DRAFT,),
+            )
+        fresh = await _preview(app, "voice_revision", DRAFT, 1, "key-head-plan-2")
+        assert fresh["eligible"] is True
+        done = await _execute(app, _confirm(fresh), "key-head-exec-2")
+        assert done.status_code == 202, done.text
+        assert done.json()["status"] == "succeeded"
+        assert _read(
+            sandbox,
+            "SELECT revision FROM speech_voice_draft_revisions "
+            "WHERE draft_id = %s ORDER BY revision",
+            (DRAFT,),
+        ) == [{"revision": "2"}]
+    finally:
+        pool.close()
+
+
+async def test_a_voice_revision_moved_between_preview_and_execution_is_refused(
+    sandbox: Sandbox,
+) -> None:
+    """The dependency set is part of the pinned scope, not a preview hint."""
+    _seed_unreferenced_revision(sandbox)
+    app, pool, _objects, _artifacts = _app(sandbox)
+    try:
+        plan = await _preview(app, "voice_revision", DRAFT, 2, "key-moved-plan")
+        assert plan["eligible"] is True
+        with psycopg.connect(sandbox.url, autocommit=True, row_factory=dict_row) as admin:
+            admin.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
+            admin.execute(
+                "UPDATE speech_voice_drafts SET head_revision = '2' WHERE draft_id = %s",
+                (DRAFT,),
+            )
+        response = await _execute(app, _confirm(plan), "key-moved-exec")
+        assert response.status_code == 409, response.text
+        assert response.json()["error"]["code"] == "deletion_plan_changed"
+        assert _read(sandbox, "SELECT count(*) AS n FROM speech_deletion_ledger") == [{"n": 0}]
+        assert _read(
+            sandbox,
+            "SELECT revision FROM speech_voice_draft_revisions "
+            "WHERE draft_id = %s ORDER BY revision",
+            (DRAFT,),
+        ) == [{"revision": "1"}, {"revision": "2"}]
+    finally:
+        pool.close()
+
+
+async def test_a_retained_job_intent_blocks_the_revision_it_names(sandbox: Sandbox) -> None:
+    """#540 is not covered: the intent is not deleted, so the revision is blocked."""
+    _seed_unreferenced_revision(sandbox)
+    _seed_job_intent_referencing(sandbox)
+    app, pool, _objects, _artifacts = _app(sandbox)
+    try:
+        plan = await _preview(app, "voice_revision", DRAFT, 2, "key-intent-plan")
+        assert plan["eligible"] is False
+        assert [item["target"]["kind"] for item in plan["dependencies"]] == ["operation_content"]
+        response = await _execute(app, _confirm(plan), "key-intent-exec")
+        assert response.status_code == 202, response.text
+        payload = response.json()
+        _deletion_validator("Deletion").validate(payload)
+        assert payload["status"] == "blocked"
+        assert payload["error"]["code"] == "deletion_target_in_use"
+        assert REV2_JOB in payload["error"]["message"]
+        assert _read(
+            sandbox,
+            "SELECT revision FROM speech_voice_draft_revisions "
+            "WHERE draft_id = %s ORDER BY revision",
+            (DRAFT,),
+        ) == [{"revision": "1"}, {"revision": "2"}]
+    finally:
+        pool.close()
+
+
+async def test_an_artifact_purge_failure_resumes_after_a_restart(sandbox: Sandbox) -> None:
+    """The interrupted attempt leaves a queued row; a fresh service finishes it."""
+    app, pool, _objects, artifacts = _app(
+        sandbox, artifact_objects=FakeArtifactPurge(fail_first=True)
+    )
+    plan = await _preview(app, "artifact", ARTIFACT, 1, "key-artifact-restart-plan")
+    first = await _execute(app, _confirm(plan), "key-artifact-restart-exec")
+    assert first.status_code == 202, first.text
+    queued = first.json()
+    _deletion_validator("Deletion").validate(queued)
+    assert queued["status"] == "queued"
+    assert queued["cleanup_state"] == "pending"
+    assert queued["result"] is None
+    assert artifacts.pinned == []
+    assert _read(
+        sandbox, "SELECT artifact_state FROM speech_artifacts WHERE artifact_id = %s", (ARTIFACT,)
+    ) == [{"artifact_state": "ready"}]
+    ledger_id = queued["id"]
+    pool.close()
+
+    # A new pool and a new service object: the durable row, not process memory,
+    # carries the replay identity and the pinned object version.
+    restarted_app, restarted_pool, _objects, restarted_artifacts = _app(sandbox)
+    try:
+        resumed = await _execute(restarted_app, _confirm(plan), "key-artifact-restart-exec")
+        assert resumed.status_code == 202, resumed.text
+        payload = resumed.json()
+        _deletion_validator("Deletion").validate(payload)
+        assert payload["id"] == ledger_id
+        assert payload["status"] == "succeeded"
+        assert restarted_artifacts.pinned == [
+            ("artifacts/artifact-exec-pg.wav", "minio-artifact-exec-1")
+        ]
+        assert _read(sandbox, "SELECT count(*) AS n FROM speech_deletion_ledger") == [{"n": 1}]
+        assert _read(
+            sandbox,
+            "SELECT artifact_state FROM speech_artifacts WHERE artifact_id = %s",
+            (ARTIFACT,),
+        ) == [{"artifact_state": "deleted"}]
+    finally:
+        restarted_pool.close()
+
+
+async def test_artifact_and_revision_deletion_leave_every_evidence_fact_intact(
+    sandbox: Sandbox,
+) -> None:
+    _seed_unreferenced_revision(sandbox)
+    before = _evidence(sandbox)
+    jobs_before = _read(sandbox, "SELECT * FROM speech_jobs ORDER BY job_id")
+    intents_before = _read(sandbox, "SELECT * FROM speech_job_intents ORDER BY job_id")
+    events_before = _read(sandbox, "SELECT * FROM speech_job_events ORDER BY job_id, event_seq")
+    app, pool, _objects, _artifacts = _app(sandbox)
+    try:
+        artifact_plan = await _preview(app, "artifact", ARTIFACT, 1, "key-evidence-artifact")
+        assert (
+            await _execute(app, _confirm(artifact_plan), "key-evidence-artifact")
+        ).status_code == 202
+        revision_plan = await _preview(app, "voice_revision", DRAFT, 2, "key-evidence-revision")
+        assert (
+            await _execute(app, _confirm(revision_plan), "key-evidence-revision")
+        ).status_code == 202
+        assert _evidence(sandbox) == before
+        assert _read(sandbox, "SELECT * FROM speech_jobs ORDER BY job_id") == jobs_before
+        assert _read(sandbox, "SELECT * FROM speech_job_intents ORDER BY job_id") == intents_before
+        assert (
+            _read(sandbox, "SELECT * FROM speech_job_events ORDER BY job_id, event_seq")
+            == events_before
+        )
+    finally:
+        pool.close()

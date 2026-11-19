@@ -16,15 +16,17 @@ from speechnexus_backend.speech.application.public_jobs import PublicJobs
 from speechnexus_backend.speech.application.voice_drafts import VoiceDrafts
 from speechnexus_backend.speech.application.voice_publications import VoicePublications
 from speechnexus_backend.speech.domain.job_prerequisites import ADMISSION_DSN
+from speechnexus_backend.speech.infrastructure.artifacts_minio import MinioArtifactRemoval
 from speechnexus_backend.speech.infrastructure.assets_minio import MinioAssetObjects
 from speechnexus_backend.speech.infrastructure.deletion_executions_postgres import (
     PostgresDeletionExecutions,
 )
 from speechnexus_backend.speech.infrastructure.deletion_ledger_schema import (
+    ARTIFACT_UPDATE_COLUMNS,
     ASSET_UPDATE_COLUMNS,
     CONTENT_DELETION_UPDATE_COLUMNS,
+    DELETION_DELETE_TABLES,
     DELETION_LEDGER_UPDATE_COLUMNS,
-    JOB_INTENT_DELETE_TABLES,
     LEGACY_INTENT_UPDATE_COLUMNS,
 )
 from speechnexus_backend.speech.infrastructure.deletion_plans_postgres import (
@@ -107,6 +109,10 @@ DELETION_PREVIEW_TABLES = (
     "speech_asset_objects",
     "speech_asset_references",
     "speech_deletion_plans",
+    # The artifact and voice_revision snapshots read the execution evidence and
+    # the immutable published revision to decide what still references the target.
+    "speech_voice_capability_evidence",
+    "speech_voice_revisions",
 )
 # The execution route (0059) adds its own ledger and reuses the asset content
 # deletion machine's two relations. None is a startup requirement.
@@ -201,6 +207,9 @@ _JOB_UPDATE_SURFACE: dict[str, tuple[str, ...]] = {
     # probe names any missing column instead of failing at request time.
     "speech_workspaces": ("metadata_revision",),
     "speech_assets": ASSET_UPDATE_COLUMNS,
+    # A confirmed Artifact deletion writes the same `deleted` record 0054's
+    # retention path does; it never rewrites the object identity or deadline.
+    "speech_artifacts": ARTIFACT_UPDATE_COLUMNS,
     "speech_deletion_ledger": DELETION_LEDGER_UPDATE_COLUMNS,
     "speech_content_deletions": CONTENT_DELETION_UPDATE_COLUMNS,
     # Operation-content deletion tombstones the legacy private command copy
@@ -222,9 +231,10 @@ _JOB_UPDATE_SURFACE: dict[str, tuple[str, ...]] = {
 }
 _JOB_REQUIRED_UPDATE = frozenset(REQUIRED_UPDATE_COLUMNS)
 # The deletion executor removes exactly the authoritative public Job intent row of
-# the confirmed operation (#540). Every other declared relation still refuses
-# DELETE/TRUNCATE, and the assertion below is what keeps that surface one table.
-_JOB_DELETE_TABLES = frozenset(JOB_INTENT_DELETE_TABLES)
+# the confirmed operation (#540) and one unreferenced voice draft revision. Every
+# other declared relation still refuses DELETE/TRUNCATE, and the assertion below
+# keeps that surface to the two relations the SQL actually names.
+_JOB_DELETE_TABLES = frozenset(DELETION_DELETE_TABLES)
 assert set(_JOB_DECLARED_TABLES) >= _JOB_DELETE_TABLES, (
     "The deletion DELETE surface names a relation outside the declared writer surface"
 )
@@ -270,6 +280,7 @@ class JobRuntime:
         self.jobs: PublicJobs | None = None
         self.deletion_plans: SpeechDeletions | None = None
         self.deletion_objects: MinioAssetObjects | None = None
+        self.artifact_deletion_objects: MinioArtifactRemoval | None = None
         self.voice_drafts: VoiceDrafts | None = None
         self.voice_publications: VoicePublications | None = None
         # The single release object the immediate cancellation and the
@@ -388,11 +399,13 @@ class JobRuntime:
                         ", ".join(execution_missing),
                     )
                 self.deletion_objects = self._open_deletion_objects()
+                self.artifact_deletion_objects = self._open_artifact_deletion_objects()
                 self.deletion_plans = SpeechDeletions(
                     deletion_store,
                     workspace_id=self._settings.capability_default_workspace_id,
                     executions=deletion_executions,
                     purge=self.deletion_objects,
+                    artifact_purge=self.artifact_deletion_objects,
                 )
                 self.voice_drafts = VoiceDrafts(self.jobs, PostgresVoiceDrafts(pool))
                 self.voice_publications = (
@@ -453,6 +466,29 @@ class JobRuntime:
         ):
             return None
         return MinioAssetObjects(
+            str(settings.object_storage_endpoint),
+            settings.object_storage_bucket,
+            settings.object_storage_access_key.get_secret_value(),
+            settings.object_storage_secret_key.get_secret_value(),
+        )
+
+    def _open_artifact_deletion_objects(self) -> MinioArtifactRemoval | None:
+        """The Artifact bucket identity a confirmed deletion purges with.
+
+        It is the same private bucket the Artifact publisher and the retention
+        sweep use; no separate deployment unit or credential is introduced. A
+        deployment without object storage keeps preview and answers
+        ``503 deletion_object_storage_unconfigured`` when an Artifact execution
+        would otherwise claim a purge it cannot perform.
+        """
+        settings = self._settings
+        if (
+            settings.object_storage_access_key is None
+            or settings.object_storage_secret_key is None
+            or settings.object_storage_endpoint is None
+        ):
+            return None
+        return MinioArtifactRemoval(
             str(settings.object_storage_endpoint),
             settings.object_storage_bucket,
             settings.object_storage_access_key.get_secret_value(),

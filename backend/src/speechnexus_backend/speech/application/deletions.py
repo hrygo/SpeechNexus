@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import Protocol
 from uuid import uuid4
 
+from speechnexus_backend.speech.domain.artifacts import ArtifactError
 from speechnexus_backend.speech.domain.assets import AssetError, VerifiedObject
 from speechnexus_backend.speech.domain.deletion import (
     DeletionError,
@@ -75,10 +76,16 @@ class DeletionPlanStore(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class AcceptedDeletion:
-    """One accepted execution plus the object version still awaiting its purge."""
+    """One accepted execution plus the object version still awaiting its purge.
+
+    ``pending_object`` is the asset identity; ``pending_artifact`` is the pinned
+    ``(object_key, storage_version_id)`` of a committed Artifact. At most one is
+    present: they are different object stores with different removal proofs.
+    """
 
     record: DeletionRecord
-    pending_object: VerifiedObject | None
+    pending_object: VerifiedObject | None = None
+    pending_artifact: tuple[str, str] | None = None
 
 
 class DeletionExecutionStore(Protocol):
@@ -89,6 +96,8 @@ class DeletionExecutionStore(Protocol):
         key_digest: str,
         intent_digest: str,
         purge_available: bool,
+        artifact_purge_available: bool,
+        request_id: str,
         workspace_id: str,
     ) -> AcceptedDeletion: ...
 
@@ -113,10 +122,18 @@ class DeletionObjectPurge(Protocol):
     def delete_version(self, proof: VerifiedObject) -> None: ...
 
 
+class DeletionArtifactPurge(Protocol):
+    """The Artifact object-store step: remove one pinned version and prove it gone."""
+
+    def delete_pinned(self, object_key: str, version_id: str) -> None: ...
+
+
 class DeletionPlanner(Protocol):
     def preview(self, target: DeletionTarget, mode: str, idempotency_key: str) -> DeletionPlan: ...
 
-    def execute(self, request: DeletionRequest, idempotency_key: str) -> DeletionRecord: ...
+    def execute(
+        self, request: DeletionRequest, idempotency_key: str, request_id: str
+    ) -> DeletionRecord: ...
 
     def read(self, deletion_id: str) -> DeletionRecord: ...
 
@@ -131,11 +148,13 @@ class SpeechDeletions:
         workspace_id: str,
         executions: DeletionExecutionStore | None = None,
         purge: DeletionObjectPurge | None = None,
+        artifact_purge: DeletionArtifactPurge | None = None,
     ) -> None:
         self._store = store
         self._workspace_id = workspace_id
         self._executions = executions
         self._purge = purge
+        self._artifact_purge = artifact_purge
 
     def preview(self, target: DeletionTarget, mode: str, idempotency_key: str) -> DeletionPlan:
         if target.owner != "speech":
@@ -171,7 +190,9 @@ class SpeechDeletions:
                 content_snapshot=snapshot.content_snapshot,
             )
 
-    def execute(self, request: DeletionRequest, idempotency_key: str) -> DeletionRecord:
+    def execute(
+        self, request: DeletionRequest, idempotency_key: str, request_id: str
+    ) -> DeletionRecord:
         """Execute the confirmed scope, or resume the row the same key accepted."""
         for target in request.targets:
             if target.owner != "speech":
@@ -187,17 +208,22 @@ class SpeechDeletions:
             key_digest=key_digest,
             intent_digest=deletion_intent_digest(request),
             purge_available=self._purge is not None,
+            artifact_purge_available=self._artifact_purge is not None,
+            request_id=request_id,
             workspace_id=self._workspace_id,
         )
         record = accepted.record
-        if accepted.pending_object is None:
-            if record.status == "succeeded":
+        if accepted.pending_object is None and accepted.pending_artifact is None:
+            if record.status in ("succeeded", "blocked", "failed"):
                 return record
             # Another request owns this row's purge. Answer that same deletion
             # once it commits instead of purging the pinned version a second time.
             return executions.await_completion(
                 record.id, key_digest=key_digest, workspace_id=self._workspace_id
             )
+        if accepted.pending_artifact is not None:
+            return self._purge_artifact(executions, accepted, key_digest)
+        assert accepted.pending_object is not None
         if self._purge is None:
             # Accepted and durable, but the object identity is not configured: the
             # record stays queued instead of claiming a purge nobody performed.
@@ -218,6 +244,31 @@ class SpeechDeletions:
             # This attempt is over: free the claim so a retry is not blocked by the
             # crash-recovery lease, then let the caller see the real failure.
             self._release(executions, record.id, key_digest)
+            raise
+
+    def _purge_artifact(
+        self,
+        executions: DeletionExecutionStore,
+        accepted: AcceptedDeletion,
+        key_digest: str,
+    ) -> DeletionRecord:
+        assert accepted.pending_artifact is not None
+        if self._artifact_purge is None:
+            # Accepted and durable, but the Artifact bucket identity is absent: the
+            # record stays queued instead of claiming a purge nobody performed.
+            return executions.release_claim(
+                accepted.record.id, key_digest=key_digest, workspace_id=self._workspace_id
+            )
+        try:
+            self._artifact_purge.delete_pinned(*accepted.pending_artifact)
+        except ArtifactError:
+            return self._release(executions, accepted.record.id, key_digest)
+        try:
+            return executions.complete(
+                accepted.record.id, key_digest=key_digest, workspace_id=self._workspace_id
+            )
+        except BaseException:
+            self._release(executions, accepted.record.id, key_digest)
             raise
 
     def read(self, deletion_id: str) -> DeletionRecord:
@@ -254,6 +305,7 @@ class SpeechDeletions:
 
 __all__ = [
     "AcceptedDeletion",
+    "DeletionArtifactPurge",
     "DeletionExecutionStore",
     "DeletionObjectPurge",
     "DeletionPlanStore",

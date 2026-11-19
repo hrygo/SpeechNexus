@@ -416,6 +416,13 @@ def _custom_voice(
         raise PublicJobAdmissionRejectedError("job_binding_incomplete") from None
     if material.media_type != "audio/wav":
         raise PublicJobAdmissionRejectedError("job_binding_incomplete")
+    # Serialize with confirmed deletion: the deleter takes FOR UPDATE on this same
+    # draft before it re-reads this revision, so a shared lock here decides whether
+    # this admission pins the revision into an intent or observes it deleted. The
+    # intent has no foreign key to the revision, so this row lock is the only
+    # serialization point. Lock order is draft row first, then the revision/asset
+    # reads, matching the deletion path.
+    cursor.execute("SELECT 1 FROM speech_voice_drafts WHERE draft_id=%s FOR SHARE", (draft_id,))
     cursor.execute(
         "SELECT asset_state, purpose, object_key, sha256, bytes, expires_at_us "
         "FROM speech_assets WHERE workspace_id=%s AND asset_id=%s",
@@ -857,14 +864,29 @@ def build_public_job_admission(
             business_value["model_binding"] = public_pin
     else:
         draft_id, draft_revision = _validation_target(intent)
-        row = _one(
-            cursor,
+        # Same serialization point as the custom-voice path. A pinned create
+        # already holds FOR UPDATE from ``_lock_validation_target``, but an
+        # unpinned create reaches this read first; taking FOR SHARE here covers
+        # both and keeps deletion from removing the revision between this read and
+        # the intent insert.
+        cursor.execute("SELECT 1 FROM speech_voice_drafts WHERE draft_id=%s FOR SHARE", (draft_id,))
+        # A revision that is gone is a binding the caller can fix by pinning a new
+        # one, not a store that refused the read, so it must not answer
+        # ``job_unavailable`` -- that code is reserved for a genuinely unavailable
+        # store (see the contract's "Job store refusing the read or the write") and
+        # it tells the client not to retry. The custom-voice sibling above answers
+        # ``job_binding_incomplete`` for the same condition.
+        cursor.execute(
             "SELECT r.kind, r.input_json, r.binding_json, j.workspace_id "
             "FROM speech_voice_draft_revisions AS r "
             "JOIN speech_jobs AS j ON j.job_id = r.generation_job_id "
             "WHERE r.draft_id=%s AND r.revision=%s",
             (draft_id, draft_revision),
         )
+        rows = cursor.fetchall()
+        if len(rows) != 1:
+            raise PublicJobAdmissionRejectedError("job_binding_incomplete")
+        row = rows[0]
         if row["workspace_id"] != job.workspace_id or row["kind"] != "clone":
             raise PublicJobAdmissionRejectedError("voice_draft_not_candidate")
         try:

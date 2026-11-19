@@ -2874,13 +2874,22 @@ paths:
               $ref: "./shared/deletion.schema.json#/$defs/DeletionPlanRequest"
       responses:
         "200":
-          description: Immutable plan or original asynchronous deletion record.
+          description: Pinned, immutable deletion plan for the requested target.
           content:
             application/json:
               schema:
                 $ref: "./shared/deletion.schema.json#/$defs/DeletionPlan"
         "404":
           description: Target, plan or deletion resource not found.
+          headers:
+            X-Should-Retry:
+              required: true
+              description: |
+                This refusal is deterministic for the submitted request; replaying
+                the same key or body cannot change it.
+              schema:
+                type: string
+                const: "false"
           content:
             application/json:
               schema:
@@ -2889,18 +2898,81 @@ paths:
           $ref: "#/components/responses/MethodNotAllowed"
         "409":
           description: Dependency, revision, plan expiry or idempotency conflict.
+          headers:
+            X-Should-Retry:
+              required: true
+              description: |
+                This refusal is deterministic for the submitted request; replaying
+                the same key or body cannot change it.
+              schema:
+                type: string
+                const: "false"
           content:
             application/json:
               schema:
                 $ref: "./shared/errors.schema.json#/$defs/ErrorResponse"
         "422":
           description: Invalid target owner or confirmation scope.
+          headers:
+            X-Should-Retry:
+              required: true
+              description: |
+                This refusal is deterministic for the submitted request; replaying
+                the same key or body cannot change it.
+              schema:
+                type: string
+                const: "false"
           content:
             application/json:
               schema:
                 $ref: "./shared/errors.schema.json#/$defs/ErrorResponse"
         "503":
-          $ref: "#/components/responses/OperationNotImplemented"
+          description: >-
+            The preview is implemented; this is an outage or a deployment gap, never
+            a permanently unimplemented operation. `deletion_plans_unavailable`
+            (`retryable: true`) means storage could not answer; retrying the same
+            key is safe. `deletion_plans_not_configured` (`retryable: false`) names
+            missing preview grants. `deletion_reference_unsupported`
+            (`retryable: true`) means a live dependency cannot be judged by this
+            release and is never silently dropped.
+          headers:
+            Cache-Control:
+              required: true
+              schema:
+                type: string
+                const: "no-store"
+            X-Should-Retry:
+              required: true
+              description: |
+                Replaying the same key is transport-safe: a plan replays its
+                stored row. This is not a claim that a configuration gap fixes
+                itself; `error.retryable` carries that per code.
+              schema:
+                type: string
+                const: "true"
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [error]
+                properties:
+                  error:
+                    $ref: "./shared/errors.schema.json#/$defs/ErrorBody"
+                allOf:
+                  - $ref: "#/components/schemas/ErrorResponse"
+                  - properties:
+                      error:
+                        properties:
+                          code:
+                            enum:
+                              - deletion_plans_unavailable
+                              - deletion_plans_not_configured
+                              - deletion_reference_unsupported
+                          type:
+                            const: service_unavailable_error
+                          retryable:
+                            enum: [true, false]
   /v1/nexus/deletions:
     post:
       operationId: speechCreateDeletion
@@ -2925,13 +2997,22 @@ paths:
               $ref: "./shared/deletion.schema.json#/$defs/DeletionCreateRequest"
       responses:
         "202":
-          description: Immutable plan or original asynchronous deletion record.
+          description: 'Stored Deletion for this Idempotency-Key: `queued` or `running` while content removal is pending, `blocked` when a live dependency prevents it, and `succeeded` once removal is confirmed.'
           content:
             application/json:
               schema:
                 $ref: "./shared/deletion.schema.json#/$defs/Deletion"
         "404":
           description: Target, plan or deletion resource not found.
+          headers:
+            X-Should-Retry:
+              required: true
+              description: |
+                This refusal is deterministic for the submitted request; replaying
+                the same key or body cannot change it.
+              schema:
+                type: string
+                const: "false"
           content:
             application/json:
               schema:
@@ -2940,18 +3021,82 @@ paths:
           $ref: "#/components/responses/MethodNotAllowed"
         "409":
           description: Dependency, revision, plan expiry or idempotency conflict.
+          headers:
+            X-Should-Retry:
+              required: true
+              description: |
+                This refusal is deterministic for the submitted request; replaying
+                the same key or body cannot change it.
+              schema:
+                type: string
+                const: "false"
           content:
             application/json:
               schema:
                 $ref: "./shared/errors.schema.json#/$defs/ErrorResponse"
         "422":
           description: Invalid target owner or confirmation scope.
+          headers:
+            X-Should-Retry:
+              required: true
+              description: |
+                This refusal is deterministic for the submitted request; replaying
+                the same key or body cannot change it.
+              schema:
+                type: string
+                const: "false"
           content:
             application/json:
               schema:
                 $ref: "./shared/errors.schema.json#/$defs/ErrorResponse"
         "503":
-          $ref: "#/components/responses/OperationNotImplemented"
+          description: >-
+            Execution is implemented; this is an outage or a deployment gap, never
+            a permanently unimplemented operation. `deletion_unavailable`
+            (`retryable: true`) means storage could not answer, so the same key is
+            replayed. `deletion_not_configured` (`retryable: false`) names missing
+            execution grants. `deletion_object_storage_unconfigured`
+            (`retryable: false`) means artifact content cannot be confirmed removed
+            because the route has no object-store identity; the ledger is not
+            advanced and no success is claimed.
+          headers:
+            Cache-Control:
+              required: true
+              schema:
+                type: string
+                const: "no-store"
+            X-Should-Retry:
+              required: true
+              description: |
+                Replaying the same key is transport-safe: the ledger row is the
+                replay identity. This is not a claim that a configuration gap
+                fixes itself; `error.retryable` carries that per code.
+              schema:
+                type: string
+                const: "true"
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [error]
+                properties:
+                  error:
+                    $ref: "./shared/errors.schema.json#/$defs/ErrorBody"
+                allOf:
+                  - $ref: "#/components/schemas/ErrorResponse"
+                  - properties:
+                      error:
+                        properties:
+                          code:
+                            enum:
+                              - deletion_unavailable
+                              - deletion_not_configured
+                              - deletion_object_storage_unconfigured
+                          type:
+                            const: service_unavailable_error
+                          retryable:
+                            enum: [true, false]
   /v1/nexus/deletions/{deletion_id}:
     get:
       operationId: speechGetDeletion
@@ -2968,13 +3113,22 @@ paths:
             $ref: "./shared/identifiers.schema.json#/$defs/Identifier"
       responses:
         "200":
-          description: Immutable plan or original asynchronous deletion record.
+          description: Stored Deletion for this Idempotency-Key, including `blocked` with its reason when content was not removed.
           content:
             application/json:
               schema:
                 $ref: "./shared/deletion.schema.json#/$defs/Deletion"
         "404":
           description: Target, plan or deletion resource not found.
+          headers:
+            X-Should-Retry:
+              required: true
+              description: |
+                This refusal is deterministic for the submitted request; replaying
+                the same key or body cannot change it.
+              schema:
+                type: string
+                const: "false"
           content:
             application/json:
               schema:
@@ -2983,18 +3137,78 @@ paths:
           $ref: "#/components/responses/MethodNotAllowed"
         "409":
           description: Dependency, revision, plan expiry or idempotency conflict.
+          headers:
+            X-Should-Retry:
+              required: true
+              description: |
+                This refusal is deterministic for the submitted request; replaying
+                the same key or body cannot change it.
+              schema:
+                type: string
+                const: "false"
           content:
             application/json:
               schema:
                 $ref: "./shared/errors.schema.json#/$defs/ErrorResponse"
         "422":
           description: Invalid target owner or confirmation scope.
+          headers:
+            X-Should-Retry:
+              required: true
+              description: |
+                This refusal is deterministic for the submitted request; replaying
+                the same key or body cannot change it.
+              schema:
+                type: string
+                const: "false"
           content:
             application/json:
               schema:
                 $ref: "./shared/errors.schema.json#/$defs/ErrorResponse"
         "503":
-          $ref: "#/components/responses/OperationNotImplemented"
+          description: >-
+            The read is implemented; this is an outage or a deployment gap, never a
+            permanently unimplemented operation. `deletion_unavailable`
+            (`retryable: true`) means ledger storage could not answer.
+            `deletion_not_configured` (`retryable: false`) names the missing ledger
+            read grant.
+          headers:
+            Cache-Control:
+              required: true
+              schema:
+                type: string
+                const: "no-store"
+            X-Should-Retry:
+              required: true
+              description: |
+                A read is transport-safe to repeat. This is not a claim that a
+                configuration gap fixes itself; `error.retryable` carries that
+                per code.
+              schema:
+                type: string
+                const: "true"
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [error]
+                properties:
+                  error:
+                    $ref: "./shared/errors.schema.json#/$defs/ErrorBody"
+                allOf:
+                  - $ref: "#/components/schemas/ErrorResponse"
+                  - properties:
+                      error:
+                        properties:
+                          code:
+                            enum:
+                              - deletion_unavailable
+                              - deletion_not_configured
+                          type:
+                            const: service_unavailable_error
+                          retryable:
+                            enum: [true, false]
 components:
   securitySchemes:
     SharedServiceKey:

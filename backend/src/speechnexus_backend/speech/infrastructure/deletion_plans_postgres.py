@@ -1,7 +1,8 @@
-"""Short PostgreSQL plan transactions; one locked snapshot, one immutable row."""
+"""Short PostgreSQL plan transactions; one snapshot, one immutable row."""
 
 from __future__ import annotations
 
+import hashlib
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -25,6 +26,7 @@ from speechnexus_backend.speech.domain.deletion import (
     DeletionTarget,
     DeletionTargetUnsupportedError,
     Dependency,
+    canonical_bytes,
     plan_digest,
 )
 from speechnexus_backend.speech.infrastructure.deletion_plan_schema import (
@@ -38,6 +40,8 @@ _ACTIVE_JOB_STATES = frozenset({"pending", "running", "cancelling"})
 # startup gate: a deployment that never serves deletion preview must still boot.
 _PRIVILEGES = (
     ("SELECT", "speech_assets", None),
+    ("SELECT", "speech_voice_capability_evidence", None),
+    ("SELECT", "speech_voice_revisions", None),
     ("SELECT", "speech_workspaces", None),
     ("SELECT", "speech_asset_objects", None),
     ("SELECT", "speech_asset_references", None),
@@ -45,6 +49,7 @@ _PRIVILEGES = (
     ("SELECT", "speech_job_intents", None),
     ("SELECT", "speech_artifacts", None),
     ("SELECT", "speech_voice_draft_revisions", None),
+    ("SELECT", "speech_voice_drafts", None),
     ("INSERT", "speech_deletion_plans", "*"),
     # Both row locks require UPDATE; the columns are never assigned.
     ("UPDATE", "speech_assets", "version"),
@@ -148,6 +153,10 @@ def snapshot_target(
         return asset_snapshot(reader, workspace_id, target, exclusive=exclusive)
     if target.kind == "operation_content":
         return job_snapshot(reader, workspace_id, target, exclusive=exclusive)
+    if target.kind == "artifact":
+        return artifact_snapshot(reader, workspace_id, target, exclusive=exclusive)
+    if target.kind == "voice_revision":
+        return voice_revision_snapshot(reader, workspace_id, target)
     raise DeletionTargetUnsupportedError
 
 
@@ -304,6 +313,196 @@ def job_snapshot(
                 for intent in intents
             ],
         },
+    )
+
+
+def artifact_snapshot(
+    reader: DeletionRows,
+    workspace_id: str,
+    target: DeletionTarget,
+    *,
+    exclusive: bool = False,
+) -> PlanSnapshot | None:
+    """Pin one committed Artifact row and the execution evidence that references it.
+
+    An Artifact is immutable and has no revision column, so its public revision is
+    always ``1``; the content identity (digest, object key and storage version)
+    lives in ``target_digest`` and the private snapshot instead. A row the
+    retention path already marked ``deleted`` is not a target any more.
+    """
+    if target.revision != 1:
+        # An Artifact has no revision column: revision 2 is not a newer artifact,
+        # it is a different resource that does not exist.
+        return None
+    if not lock_workspace(reader, workspace_id):
+        return None
+    # Preview reads without a row lock, so it needs only SELECT. Execution takes
+    # FOR UPDATE to keep the row from moving between the recheck and the purge.
+    rows = reader.rows(
+        "SELECT artifact_id, workspace_id, artifact_kind, artifact_state, media_type, "
+        "bytes, sha256, object_key, storage_version_id "
+        "FROM speech_artifacts "
+        "WHERE artifact_id = %s AND workspace_id = %s " + ("FOR UPDATE" if exclusive else ""),
+        (target.resource_id, workspace_id),
+    )
+    if not rows:
+        return None
+    row = rows[0]
+    if row["artifact_state"] == "deleted":
+        return None
+    dependencies = tuple(
+        Dependency(
+            DeletionTarget(
+                "speech",
+                "operation_content",
+                cast(str, evidence["validation_job_id"]),
+                _number(evidence["status_version"], "validation job revision"),
+            ),
+            "persistent_reference",
+            "blocks",
+        )
+        for evidence in reader.rows(
+            "SELECT e.validation_job_id, j.status_version "
+            "FROM speech_voice_capability_evidence AS e "
+            "JOIN speech_jobs AS j ON j.job_id = e.validation_job_id "
+            "WHERE e.report_artifact_id = %s ORDER BY e.validation_job_id",
+            (target.resource_id,),
+        )
+    )
+    return PlanSnapshot(
+        target=DeletionTarget("speech", "artifact", target.resource_id, 1),
+        dependencies=dependencies,
+        target_digest=cast(str, row["sha256"]),
+        content_snapshot={
+            "artifact_id": row["artifact_id"],
+            "workspace_id": row["workspace_id"],
+            "artifact_kind": row["artifact_kind"],
+            "media_type": row["media_type"],
+            "bytes": row["bytes"],
+            "sha256": row["sha256"],
+            "object_key": row["object_key"],
+            "storage_version_id": row["storage_version_id"],
+        },
+    )
+
+
+def _content_digest(value: str) -> str:
+    return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def voice_revision_snapshot(
+    reader: DeletionRows,
+    workspace_id: str,
+    target: DeletionTarget,
+) -> PlanSnapshot | None:
+    """Pin one draft revision plus every live dependency this release can judge.
+
+    The public identity is ``(draft_id, revision)``: the identifier is the draft
+    and the revision number is the revision, matching how the pre-existing Job
+    snapshot names a draft revision. The private snapshot stores only digests of
+    the two content columns, never their text.
+    """
+    rows = reader.rows(
+        "SELECT r.draft_id, r.revision, r.kind, r.generation_job_id, r.input_json, "
+        "r.binding_json, d.head_revision, j.state AS job_state, "
+        "j.status_version, j.workspace_id "
+        "FROM speech_voice_draft_revisions AS r "
+        "JOIN speech_voice_drafts AS d ON d.draft_id = r.draft_id "
+        "JOIN speech_jobs AS j ON j.job_id = r.generation_job_id "
+        "WHERE r.draft_id = %s AND r.revision = %s AND j.workspace_id = %s",
+        (target.resource_id, str(target.revision), workspace_id),
+    )
+    if not rows:
+        return None
+    row = rows[0]
+    me = DeletionTarget(
+        "speech", "voice_revision", cast(str, row["draft_id"]), int(row["revision"])
+    )
+    dependencies: list[Dependency] = []
+    if str(row["head_revision"]) == str(row["revision"]):
+        # The draft still points here; deleting the head would leave that pointer
+        # with no row to resolve, so the target blocks on itself by name.
+        dependencies.append(Dependency(me, "persistent_reference", "blocks"))
+    if row["job_state"] in _ACTIVE_JOB_STATES:
+        dependencies.append(
+            Dependency(
+                DeletionTarget(
+                    "speech",
+                    "operation_content",
+                    cast(str, row["generation_job_id"]),
+                    _number(row["status_version"], "job revision"),
+                ),
+                "active_execution",
+                "blocks",
+            )
+        )
+    # Evidence and immutable published revisions hold the same FK reference, so
+    # either one makes the row undeletable; both are execution evidence this route
+    # must not touch.
+    for reference in reader.rows(
+        "SELECT validation_job_id, j.status_version "
+        "FROM speech_voice_capability_evidence AS e "
+        "JOIN speech_jobs AS j ON j.job_id = e.validation_job_id "
+        "WHERE e.draft_id = %s AND e.draft_revision = %s ORDER BY e.validation_job_id",
+        (target.resource_id, str(target.revision)),
+    ):
+        dependencies.append(
+            Dependency(
+                DeletionTarget(
+                    "speech",
+                    "operation_content",
+                    cast(str, reference["validation_job_id"]),
+                    _number(reference["status_version"], "validation job revision"),
+                ),
+                "persistent_reference",
+                "blocks",
+            )
+        )
+    if reader.rows(
+        "SELECT 1 FROM speech_voice_revisions WHERE draft_id = %s AND draft_revision = %s",
+        (target.resource_id, str(target.revision)),
+    ):
+        dependencies.append(Dependency(me, "persistent_reference", "blocks"))
+    # The public Job intent is not deleted by this release (#540). A revision a
+    # retain intent still names must be reported, not removed into a dangling
+    # body.
+    for intent in reader.rows(
+        "SELECT i.job_id, j.status_version "
+        "FROM speech_job_intents AS i "
+        "JOIN speech_jobs AS j ON j.job_id = i.job_id "
+        "WHERE i.request_document IS JSON "
+        "AND (i.request_document::jsonb -> 'input' ->> 'voice_draft_id') = %s "
+        "AND (i.request_document::jsonb -> 'input' ->> 'draft_revision') = %s "
+        "ORDER BY i.job_id",
+        (target.resource_id, str(target.revision)),
+    ):
+        dependencies.append(
+            Dependency(
+                DeletionTarget(
+                    "speech",
+                    "operation_content",
+                    cast(str, intent["job_id"]),
+                    _number(intent["status_version"], "job revision"),
+                ),
+                "persistent_reference",
+                "blocks",
+            )
+        )
+    input_sha = _content_digest(cast(str, row["input_json"]))
+    binding_sha = _content_digest(cast(str, row["binding_json"]))
+    identity = {
+        "draft_id": row["draft_id"],
+        "revision": row["revision"],
+        "kind": row["kind"],
+        "generation_job_id": row["generation_job_id"],
+        "input_sha256": input_sha,
+        "binding_sha256": binding_sha,
+    }
+    return PlanSnapshot(
+        target=me,
+        dependencies=tuple(dependencies),
+        target_digest="sha256:" + hashlib.sha256(canonical_bytes(identity)).hexdigest(),
+        content_snapshot=identity,
     )
 
 

@@ -29,6 +29,7 @@ DELETION_LEDGER_INSERT_COLUMNS = (
     "intent_digest",
     "deleted",
     "retained",
+    "error",
     "status",
     "cleanup_state",
     "content_ledger_id",
@@ -70,6 +71,8 @@ DELETION_LEDGER_DDL = (
             CHECK (intent_digest ~ '^[0-9a-f]{64}$'),
         -- The exact public scope this row authorized, as
         -- [[owner, kind, id, revision], ...]; never a re-derived current set.
+        -- This is authorization scope, not a completion result: ``status`` and
+        -- ``result`` state what was actually removed.
         deleted JSONB NOT NULL CHECK (
             jsonb_typeof(deleted) = 'array' AND jsonb_array_length(deleted) >= 1),
         retained JSONB NOT NULL CHECK (jsonb_typeof(retained) = 'array'),
@@ -105,6 +108,7 @@ DELETION_LEDGER_DDL = (
 DELETION_LEDGER_UPDATE_COLUMNS = (
     "status",
     "cleanup_state",
+    "error",
     "updated_at",
     "completed_at",
     # The purge claim is the one-executor CAS; granting it is part of execution.
@@ -145,6 +149,41 @@ LEGACY_INTENT_UPDATE_COLUMNS = (
     "command_deletion_evidence_digest",
     "version",
 )
-# The one table this writer may DELETE from: the authoritative public Job intent
-# row of the confirmed operation (#540). Nothing else in the declared surface.
+# The asset state machine's Artifact sibling: a confirmed deletion moves the row
+# to ``deleted`` and records when, in the same statement, exactly like 0054's
+# retention path. It never rewrites the object identity or the deadline.
+ARTIFACT_UPDATE_COLUMNS = ("artifact_state", "deleted_at_us")
+# The relations this writer may DELETE from: the authoritative public Job intent
+# row of the confirmed operation (#540) and one unreferenced voice draft revision
+# (the voice_revision target). Nothing else in the declared surface.
 JOB_INTENT_DELETE_TABLES = ("speech_job_intents",)
+DELETION_DELETE_TABLES = (*JOB_INTENT_DELETE_TABLES, "speech_voice_draft_revisions")
+# 0063 widens the frozen 0059 shape: two more target kinds and the ``blocked`` /
+# ``failed`` statuses, which must carry the public ErrorBody they are reported
+# with. The existing status/cleanup/result checks still hold for them (no
+# completed_at, cleanup pending), so only the two value CHECKs and one column
+# change.
+# Every statement is replay-safe. The migration tests walk the version stamp back
+# below a later revision and upgrade to head again, so a CREATE/ADD that already
+# happened must not fail when the chain is replayed over the same schema.
+DELETION_LEDGER_TARGETS_DDL = (
+    """ALTER TABLE speech_deletion_ledger
+        DROP CONSTRAINT IF EXISTS speech_deletion_ledger_target_kind_check""",
+    """ALTER TABLE speech_deletion_ledger
+        ADD CONSTRAINT speech_deletion_ledger_target_kind_check CHECK
+        (target_kind IN ('asset','artifact','voice_revision','operation_content'))""",
+    """ALTER TABLE speech_deletion_ledger
+        DROP CONSTRAINT IF EXISTS speech_deletion_ledger_status_check""",
+    """ALTER TABLE speech_deletion_ledger
+        ADD CONSTRAINT speech_deletion_ledger_status_check CHECK
+        (status IN ('queued','running','blocked','succeeded','failed'))""",
+    """ALTER TABLE speech_deletion_ledger
+        ADD COLUMN IF NOT EXISTS error JSONB
+        CHECK (error IS NULL OR jsonb_typeof(error) = 'object')""",
+    """ALTER TABLE speech_deletion_ledger
+        DROP CONSTRAINT IF EXISTS speech_deletion_ledger_failure_reason_check""",
+    """ALTER TABLE speech_deletion_ledger
+        ADD CONSTRAINT speech_deletion_ledger_failure_reason_check CHECK (
+            (status IN ('blocked','failed')) = (error IS NOT NULL)
+        )""",
+)

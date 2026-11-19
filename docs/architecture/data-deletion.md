@@ -56,15 +56,26 @@ deletion_object_storage_unconfigured` 是部署缺口（`retryable=false`）：�
    资源不存在返回 `404 resource_not_found`。部署/工作空间仍遵循当前入口规则。
 2. 所有者在短事务中读取目标版本与完整依赖快照，建立不可变 plan。依赖按
    `(owner,kind,id,revision,relation)` 排序，不得重复同一关系。
-   Speech 侧当前支持 `asset` 与 `operation_content` 目标，且与资产写路径保持同一
-   锁序：先以 `FOR KEY SHARE` 锁 `speech_workspaces` 行，再以 `FOR SHARE` 锁目标行，
-   最后插入计划行，避免与资产写路径反向加锁而死锁。`asset` 固定资产版本、摘要、
-   对象版本，并把未释放的资产引用作为 `persistent_reference / blocks` 依赖；
-   `operation_content` 固定 Job 的 `status_version` 与请求摘要，活跃 Job 以自身
-   `active_execution / blocks` 阻断，引用该 Job 的声音草稿 revision 以
+   Speech 侧支持 `asset`、`artifact`、`voice_revision` 与 `operation_content` 目标。
+   `asset`、`artifact` 与 `operation_content` 和资产写路径保持同一锁序：先以
+   `FOR KEY SHARE` 锁 `speech_workspaces` 行，再以 `FOR SHARE` 锁目标行，最后插入
+   计划行，避免与资产写路径反向加锁而死锁；`voice_revision` 只锁
+   `speech_voice_drafts` 行（执行 `FOR UPDATE`、准入 `FOR SHARE`），不触碰 workspace
+   行。`asset`
+   固定资产版本、摘要、对象版本，并把未释放的资产引用作为 `persistent_reference /
+   blocks` 依赖；`operation_content` 固定 Job 的 `status_version` 与请求摘要，活跃 Job
+   以自身 `active_execution / blocks` 阻断，引用该 Job 的声音草稿 revision 以
    `persistent_reference / blocks` 阻断，Artifact 与 intent 只进入私有内容快照。
-   `artifact`、`voice_revision` 目标返回 `422 deletion_target_unsupported`；遇到本
-   版本无法判定的活跃引用类型返回 `503 deletion_reference_unsupported`，不静默丢弃依赖。
+   `artifact` 固定内容摘要、对象键与存储版本（Artifact 无 revision 列，公开 revision
+   恒为 `1`），把引用该报告的执行证据（`speech_voice_capability_evidence` 的
+   `report_artifact_id`）作为 `persistent_reference / blocks` 依赖。`voice_revision`
+   的 `id` 是 `draft_id`、`revision` 是草稿 revision；内容只以 `input_json` /
+   `binding_json` 的摘要进入私有快照，不保存正文。它把仍以该 revision 为
+   `head_revision` 的草稿、活跃生成 Job、校验证据、不可变发布版本，以及仍引用它的
+   `speech_job_intents` 正文分别报成 `persistent_reference` 或 `active_execution` 的
+   `blocks` 依赖；本版本不删除 intent（#540 留后续），因此被 intent 引用的 revision
+   只能报 blocked。遇到本版本无法判定的活跃引用类型返回
+   `503 deletion_reference_unsupported`，不静默丢弃依赖。
    删除预检的授权（`deletion_plan_grants`）由该路由自己探测：缺失时进程照常启动并在
    启动日志 WARN 点名缺项，请求返回 `503 deletion_plans_not_configured`
    （`retryable=false`），而不是让整台 API 拒绝启动或退化成笼统的存储不可用。
@@ -129,14 +140,23 @@ succeeded，或进入 blocked/failed。blocked 记录依赖或停止未确认的
 
 ### Speech 当前执行与账本
 
-Speech 的执行路由只接受 `asset` 与 `operation_content` 两类目标（`artifact`、
-`voice_revision` 仍返回 `422 deletion_target_unsupported`），并在一个事务边界内完成
-复核与写入：先以 `FOR KEY SHARE` 锁 `speech_workspaces`、再以 `FOR UPDATE` 锁目标行，
-与资产写路径同一锁序；随后依次比对计划版本、重算 `plan_digest`、检查有效期与
-`eligible`、按集合比对 `confirm_targets`，并重新读取实时快照与计划私有快照
-（目标版本/摘要、对象版本、意图与 Artifact 列表、依赖集合）逐项相等。任一不一致即
-`409 deletion_plan_changed`，过期是 `409 deletion_plan_expired`，仍存在阻断依赖是
-`409 deletion_dependency_conflict`；任何拒绝都不产生部分级联。
+Speech 的执行路由接受 `asset`、`artifact`、`voice_revision` 与 `operation_content`
+四类目标，并在一个事务边界内完成复核与写入：按集合比对 `confirm_targets`、重算
+`plan_digest`、检查有效期，并重新读取实时快照与计划私有快照（目标版本/摘要、对象
+版本、内容摘要、依赖集合）逐项相等。任一不一致即 `409 deletion_plan_changed`，过期是
+`409 deletion_plan_expired`；任何拒绝都不产生部分级联。`eligible=false` 的计划不再
+被拒绝成 HTTP 409：执行把它落成账本里的 `blocked` Deletion，`error.code` 为
+`deletion_target_in_use`，消息点名阻断依赖，`result` 为空。阻断记录是该幂等键的终态；
+解除依赖后必须重新预检、换新键。并发提交的新引用按依赖是否有外键分两类：有外键的引用
+由数据库拒绝并映射为明确的 `409 deletion_dependency_conflict`；`voice_revision` 的
+Job intent 没有 revision 外键，因此删除侧在重读依赖前对 `speech_voice_drafts` 行加
+`FOR UPDATE`，准入侧在读取 revision 前对同一行加 `FOR SHARE`，双方按“草稿行 →
+revision/依赖读取”的同一顺序串行化。后到方看到先提交的结果：删除报
+`409 deletion_plan_changed`（或预检阶段即 `blocked`），准入报 `job_binding_incomplete`
+（`422`：revision 已不存在，换一个 revision 即可，不是存储不可用），不会留下指向已删
+revision 的 intent，也不会是 500 或未知结果。这条保证依赖**写入者约定**而非数据库兜底：
+`speech_job_intents` 的正文是 TEXT，没有到 revision 的外键，因此任何新增的 intent
+写入路径都必须同样先对草稿行取 `FOR SHARE`，否则串行化对它是空的。
 
 `asset` 复用既有资产内容删除状态机，不另造一套：在同一事务内把资产推进到
 `expired`（追加 `speech_asset_events`），写入或复用 `speech_content_deletions` 行
@@ -149,6 +169,17 @@ Speech 的执行路由只接受 `asset` 与 `operation_content` 两类目标（`
 `command_redacted_at_us`、`command_deletion_job_id`、`command_deletion_evidence_digest`、
 版本加一）。执行身份、状态事件、`admission_leases`、结算与 `gateway_*` 事实不属于
 删除范围，也不被改写。
+
+`artifact` 的对象清除同样在事务外进行：接受时账本 `queued` 并固定对象键与存储版本，
+清除确认后用带身份与摘要条件的 `UPDATE` 把行推进到 `deleted / deleted_at_us`（与 0054
+的保留期路径同一记录），再把账本标成 `succeeded`；清除失败保持 `queued`，同一键重启后
+继续。`voice_revision` 没有对象存储步骤，内容只在该 revision 行里，因此在接受事务内
+`DELETE` 该行并把账本直接写成 `succeeded`；生成 Job、其事件与计量事实保留。接受事务在
+重读依赖前先对 `speech_voice_drafts` 行加 `FOR UPDATE`，准入在读取 revision 前对同一行
+加 `FOR SHARE`：intent 没有 revision 外键，只有这把行锁能让“读到 revision 后插入
+intent”与“确认无引用后删除 revision”排成一个顺序。锁序在两侧都是先草稿行、后
+revision/依赖读取；删除侧不等待 workspace 行，准入侧也不反向加锁，因此不会形成环。
+跨模块停止协调不在本实现内（跟 `#338`），已发布声音版本与执行证据仍以 blocker 呈现。
 
 `0059_speech_deletion_ledger` 是持久删除账本：一行对应一次已接受删除，记录计划身份与
 摘要、目标、删除/保留集合、幂等键摘要与意图摘要、内容账本外键与完成时间。
@@ -168,12 +199,14 @@ Speech 的执行路由只接受 `asset` 与 `operation_content` 两类目标（`
 先重放账本，返回同一 `id`、`ledger_id`、`completed_at`；进程重启后由新连接池重放同一
 行，不会二次删除或漏删。键相同而意图不同是 `409 idempotency_conflict`。
 `retained_independent_copies` 如实反映计划声明的 `retain` 依赖：当前 Speech 计划不产生
-此类依赖，跨模块独立副本由对方模块负责，故为空数组；Artifact 是独立资源、由其自有
-计划删除，不在本次删除范围内。删除执行的授权（`deletion_execution_grants`）与预检
+此类依赖，跨模块独立副本由对方模块负责，故为空数组；Workbench 保存的独立副本仍由
+Workbench 自己的计划删除。删除执行的授权（`deletion_execution_grants`）与预检
 授权同样由路由自行探测，缺失时进程照常启动、路由返回
-`503 deletion_not_configured`（`retryable=false`）。0059 的 downgrade 显式拒绝，
-删除账本是"确实删除过"的唯一证据，丢弃它会让恢复重新暴露已清除内容并让旧计划重新
-成为可用的删除凭据。
+`503 deletion_not_configured`（`retryable=false`）。探测是整体的：既有部署升级到含新
+列权限的版本后，若没有重新应用 `deletion_execution_grants`，所有删除执行（不只是
+`voice_revision`）都会以该码拒绝，而不是部分类型可用。0059 与 0063 的 downgrade 显式拒绝，
+删除账本是"确实删除过"的唯一证据，丢弃它（或 0063 记录的阻断原因）会让恢复重新暴露
+已清除内容并让旧计划重新成为可用的删除凭据。
 
 ### Speech 读面
 
@@ -182,9 +215,12 @@ Speech 的执行路由只接受 `asset` 与 `operation_content` 两类目标（`
 `error` 直接来自该行，不重算计划、不校验计划摘要、不领取对象清除认领、不写任何行，
 也不执行对象清除。因此同一 `deletion_id` 的重复读取不会改变账本，进程重启后由新连接池
 读同一行即得到与重启前逐字节一致的 body（时间戳来自 PostgreSQL，不是进程时钟）。
-当前账本只产生 `queued`（`cleanup_state=pending`、`result=null`）与 `succeeded`
-（`cleanup_state=complete`、带 result）；契约的 `running`/`blocked`/`failed` 不由这个
-读面产生，`error` 因此恒为 `null`。
+账本产生 `queued`（`cleanup_state=pending`、`result=null`）、`succeeded`
+（`cleanup_state=complete`、带 result）与 `blocked`（`cleanup_state=pending`、
+`result=null`、带 `error`）。`running` 与 `failed` 没有生产者：本实现没有后台推进器，
+也没有把清理失败判成终态的分支；失败保持 `queued` 等待同一键重试。`blocked` 的
+`error` 是 `deletion_target_in_use`，由 0063 的 `error` 列持久化，读面与创建时的
+202 逐字节一致。
 
 路由只需要 `SELECT speech_deletion_ledger`；执行授权组（`deletion_execution_grants`）
 本就包含这条 `SELECT`，读面不需要额外列、额外迁移或写入权限。缺少该 `SELECT` 时进程

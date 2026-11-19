@@ -6617,7 +6617,7 @@ export interface operations {
       };
     };
     responses: {
-      /** @description Immutable plan or original asynchronous deletion record. */
+      /** @description Pinned, immutable deletion plan for the requested target. */
       200: {
         headers: {
           [name: string]: unknown;
@@ -6629,6 +6629,11 @@ export interface operations {
       /** @description Target, plan or deletion resource not found. */
       404: {
         headers: {
+          /**
+           * @description This refusal is deterministic for the submitted request; replaying
+           *     the same key or body cannot change it.
+           */
+          "X-Should-Retry": "false";
           [name: string]: unknown;
         };
         content: {
@@ -6639,6 +6644,11 @@ export interface operations {
       /** @description Dependency, revision, plan expiry or idempotency conflict. */
       409: {
         headers: {
+          /**
+           * @description This refusal is deterministic for the submitted request; replaying
+           *     the same key or body cannot change it.
+           */
+          "X-Should-Retry": "false";
           [name: string]: unknown;
         };
         content: {
@@ -6648,13 +6658,47 @@ export interface operations {
       /** @description Invalid target owner or confirmation scope. */
       422: {
         headers: {
+          /**
+           * @description This refusal is deterministic for the submitted request; replaying
+           *     the same key or body cannot change it.
+           */
+          "X-Should-Retry": "false";
           [name: string]: unknown;
         };
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
-      503: components["responses"]["OperationNotImplemented"];
+      /** @description The preview is implemented; this is an outage or a deployment gap, never a permanently unimplemented operation. `deletion_plans_unavailable` (`retryable: true`) means storage could not answer; retrying the same key is safe. `deletion_plans_not_configured` (`retryable: false`) names missing preview grants. `deletion_reference_unsupported` (`retryable: true`) means a live dependency cannot be judged by this release and is never silently dropped. */
+      503: {
+        headers: {
+          "Cache-Control": "no-store";
+          /**
+           * @description Replaying the same key is transport-safe: a plan replays its
+           *     stored row. This is not a claim that a configuration gap fixes
+           *     itself; `error.retryable` carries that per code.
+           */
+          "X-Should-Retry": "true";
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: components["schemas"]["ErrorBody"];
+          } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+            error: {
+              /** @enum {unknown} */
+              code?:
+                | "deletion_plans_unavailable"
+                | "deletion_plans_not_configured"
+                | "deletion_reference_unsupported";
+              /** @constant */
+              type?: "service_unavailable_error";
+              /** @enum {unknown} */
+              retryable?: true | false;
+            };
+          });
+        };
+      };
     };
   };
   speechCreateDeletion: {
@@ -6672,7 +6716,7 @@ export interface operations {
       };
     };
     responses: {
-      /** @description Immutable plan or original asynchronous deletion record. */
+      /** @description Stored Deletion for this Idempotency-Key: `queued` or `running` while content removal is pending, `blocked` when a live dependency prevents it, and `succeeded` once removal is confirmed. */
       202: {
         headers: {
           [name: string]: unknown;
@@ -6684,6 +6728,11 @@ export interface operations {
       /** @description Target, plan or deletion resource not found. */
       404: {
         headers: {
+          /**
+           * @description This refusal is deterministic for the submitted request; replaying
+           *     the same key or body cannot change it.
+           */
+          "X-Should-Retry": "false";
           [name: string]: unknown;
         };
         content: {
@@ -6694,6 +6743,11 @@ export interface operations {
       /** @description Dependency, revision, plan expiry or idempotency conflict. */
       409: {
         headers: {
+          /**
+           * @description This refusal is deterministic for the submitted request; replaying
+           *     the same key or body cannot change it.
+           */
+          "X-Should-Retry": "false";
           [name: string]: unknown;
         };
         content: {
@@ -6703,13 +6757,47 @@ export interface operations {
       /** @description Invalid target owner or confirmation scope. */
       422: {
         headers: {
+          /**
+           * @description This refusal is deterministic for the submitted request; replaying
+           *     the same key or body cannot change it.
+           */
+          "X-Should-Retry": "false";
           [name: string]: unknown;
         };
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
-      503: components["responses"]["OperationNotImplemented"];
+      /** @description Execution is implemented; this is an outage or a deployment gap, never a permanently unimplemented operation. `deletion_unavailable` (`retryable: true`) means storage could not answer, so the same key is replayed. `deletion_not_configured` (`retryable: false`) names missing execution grants. `deletion_object_storage_unconfigured` (`retryable: false`) means artifact content cannot be confirmed removed because the route has no object-store identity; the ledger is not advanced and no success is claimed. */
+      503: {
+        headers: {
+          "Cache-Control": "no-store";
+          /**
+           * @description Replaying the same key is transport-safe: the ledger row is the
+           *     replay identity. This is not a claim that a configuration gap
+           *     fixes itself; `error.retryable` carries that per code.
+           */
+          "X-Should-Retry": "true";
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: components["schemas"]["ErrorBody"];
+          } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+            error: {
+              /** @enum {unknown} */
+              code?:
+                | "deletion_unavailable"
+                | "deletion_not_configured"
+                | "deletion_object_storage_unconfigured";
+              /** @constant */
+              type?: "service_unavailable_error";
+              /** @enum {unknown} */
+              retryable?: true | false;
+            };
+          });
+        };
+      };
     };
   };
   speechGetDeletion: {
@@ -6723,7 +6811,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Immutable plan or original asynchronous deletion record. */
+      /** @description Stored Deletion for this Idempotency-Key, including `blocked` with its reason when content was not removed. */
       200: {
         headers: {
           [name: string]: unknown;
@@ -6735,6 +6823,11 @@ export interface operations {
       /** @description Target, plan or deletion resource not found. */
       404: {
         headers: {
+          /**
+           * @description This refusal is deterministic for the submitted request; replaying
+           *     the same key or body cannot change it.
+           */
+          "X-Should-Retry": "false";
           [name: string]: unknown;
         };
         content: {
@@ -6745,6 +6838,11 @@ export interface operations {
       /** @description Dependency, revision, plan expiry or idempotency conflict. */
       409: {
         headers: {
+          /**
+           * @description This refusal is deterministic for the submitted request; replaying
+           *     the same key or body cannot change it.
+           */
+          "X-Should-Retry": "false";
           [name: string]: unknown;
         };
         content: {
@@ -6754,13 +6852,44 @@ export interface operations {
       /** @description Invalid target owner or confirmation scope. */
       422: {
         headers: {
+          /**
+           * @description This refusal is deterministic for the submitted request; replaying
+           *     the same key or body cannot change it.
+           */
+          "X-Should-Retry": "false";
           [name: string]: unknown;
         };
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
-      503: components["responses"]["OperationNotImplemented"];
+      /** @description The read is implemented; this is an outage or a deployment gap, never a permanently unimplemented operation. `deletion_unavailable` (`retryable: true`) means ledger storage could not answer. `deletion_not_configured` (`retryable: false`) names the missing ledger read grant. */
+      503: {
+        headers: {
+          "Cache-Control": "no-store";
+          /**
+           * @description A read is transport-safe to repeat. This is not a claim that a
+           *     configuration gap fixes itself; `error.retryable` carries that
+           *     per code.
+           */
+          "X-Should-Retry": "true";
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: components["schemas"]["ErrorBody"];
+          } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+            error: {
+              /** @enum {unknown} */
+              code?: "deletion_unavailable" | "deletion_not_configured";
+              /** @constant */
+              type?: "service_unavailable_error";
+              /** @enum {unknown} */
+              retryable?: true | false;
+            };
+          });
+        };
+      };
     };
   };
 }

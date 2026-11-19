@@ -56,7 +56,9 @@ def test_0062_indexes_the_held_leases_and_drops_the_superseded_ledger_index() ->
         assert _definition(query, LEDGER_DEBT_INDEX) is not None
         assert _definition(query, LEASE_DEBT_INDEX) is None
 
-        command.upgrade(config, "head")
+        # The refusal below is 0062's own, so stop at 0062 rather than at the
+        # current head: a later revision would refuse the downgrade first.
+        command.upgrade(config, LEASE_DEBT_INDEX_REVISION)
         # 0061's index is not left behind: nothing reads it any more, and its predicate
         # keeps every `exhausted` row forever, so keeping it would be a pure write cost
         # that grows with the deployment's failures.
@@ -86,10 +88,27 @@ def test_0062_indexes_the_held_leases_and_drops_the_superseded_ledger_index() ->
         assert _revision(query) == LEASE_DEBT_INDEX_REVISION
         assert _definition(query, LEASE_DEBT_INDEX) == definition
 
-        # And a later upgrade is still a no-op rather than a duplicate CREATE INDEX.
+        # A later upgrade to the current head keeps the index: 0063 only widens
+        # the deletion ledger and must replay over the same schema.
         command.upgrade(config, "head")
         assert _definition(query, LEASE_DEBT_INDEX) == definition
         assert _definition(query, LEDGER_DEBT_INDEX) is None
+
+
+def test_0063_refuses_its_own_downgrade_from_the_current_head() -> None:
+    """The newest revision also refuses: the ledger's blocked reason is evidence."""
+    with _isolated_schema(_url()) as (config, query):
+        command.upgrade(config, "head")
+        head = _revision(query)
+        assert head == "0063_deletion_targets_blocked"
+
+        with pytest.raises(RuntimeError) as refused:
+            command.downgrade(config, LEASE_DEBT_INDEX_REVISION)
+        message = str(refused.value)
+        assert "0063" in message
+        assert "blocked" in message
+
+        assert _revision(query) == head
 
 
 def test_0061_still_refuses_its_own_downgrade_from_the_head_0062_inherited() -> None:

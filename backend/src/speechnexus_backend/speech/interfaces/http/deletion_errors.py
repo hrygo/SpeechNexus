@@ -75,7 +75,7 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
     "deletion_object_storage_unconfigured": (
         503,
         "service_unavailable_error",
-        "Deletion execution requires the asset object-store identity.",
+        "Deletion execution requires the object-store identity.",
     ),
     "deletion_reference_unsupported": (
         503,
@@ -96,9 +96,17 @@ def deletion_error(
         # internal code to the retryable storage-unavailable answer.
         code = "deletion_plans_unavailable"
     status, kind, message = _ERRORS[code]
+    # Every deletion operation is safe to replay with the same key: a plan
+    # replays its stored row and an accepted deletion replays its ledger row. The
+    # header therefore answers the transport question ("may the SDK resend?"), not
+    # the logical one; `error.retryable` still says a configuration gap will not
+    # fix itself. The contract pins header `true` for 503 for the same reason.
     return JSONResponse(
         status_code=status,
-        headers={"Cache-Control": "no-store"},
+        headers={
+            "Cache-Control": "no-store",
+            "X-Should-Retry": "true" if status == 503 else "false",
+        },
         content=parse(
             "ErrorResponse",
             {

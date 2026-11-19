@@ -74,6 +74,12 @@ def deletion_plan_grants(schema: str, role: str) -> tuple[str, ...]:
         f'GRANT SELECT ON "{schema}".speech_asset_objects TO "{role}"',
         f'GRANT SELECT ON "{schema}".speech_asset_references TO "{role}"',
         f'GRANT SELECT ON "{schema}".speech_deletion_plans TO "{role}"',
+        # The artifact and voice_revision snapshots judge live references from
+        # the evidence ledger and the immutable published revisions; the draft
+        # row carries the current head revision they compare against.
+        f'GRANT SELECT ON "{schema}".speech_voice_capability_evidence TO "{role}"',
+        f'GRANT SELECT ON "{schema}".speech_voice_revisions TO "{role}"',
+        f'GRANT SELECT ON "{schema}".speech_voice_drafts TO "{role}"',
         # PostgreSQL requires UPDATE privilege for a row lock, not only for an
         # assignment. The planner locks the workspace (FK parent) and the asset
         # row to pin the revision; neither column is assigned, so one column per
@@ -90,22 +96,25 @@ def deletion_execution_grants(schema: str, role: str) -> tuple[str, ...]:
 
     Execution removes confirmed content: it expires and deletes an asset through
     the existing state machine (so it needs that machine's columns, not a second
-    write path) and it deletes the authoritative public Job intent row plus the
-    legacy command copy's tombstone. It gets exactly one DELETE relation and no
-    authority over execution, settlement, lease or fencing evidence.
+    write path), moves a committed Artifact to the same ``deleted`` record 0054
+    writes, deletes the authoritative public Job intent row plus the legacy
+    command copy's tombstone, and deletes one unreferenced voice draft revision.
+    Those are the only two DELETE relations; it gets no authority over execution,
+    settlement, lease or fencing evidence.
 
     Kept out of ``job_runtime_grants`` for the same reason as the preview set: an
     existing deployment that has not applied this group still boots, and only the
     deletion route answers ``503 deletion_not_configured``.
     """
     from speechnexus_backend.speech.infrastructure.deletion_ledger_schema import (
+        ARTIFACT_UPDATE_COLUMNS,
         ASSET_EVENT_INSERT_COLUMNS,
         ASSET_UPDATE_COLUMNS,
         CONTENT_DELETION_INSERT_COLUMNS,
         CONTENT_DELETION_UPDATE_COLUMNS,
+        DELETION_DELETE_TABLES,
         DELETION_LEDGER_INSERT_COLUMNS,
         DELETION_LEDGER_UPDATE_COLUMNS,
-        JOB_INTENT_DELETE_TABLES,
         LEGACY_INTENT_UPDATE_COLUMNS,
     )
 
@@ -116,6 +125,9 @@ def deletion_execution_grants(schema: str, role: str) -> tuple[str, ...]:
 
     return (
         f'GRANT SELECT ON "{schema}".speech_content_deletions TO "{role}"',
+        f'GRANT SELECT ON "{schema}".speech_voice_capability_evidence TO "{role}"',
+        f'GRANT SELECT ON "{schema}".speech_voice_revisions TO "{role}"',
+        f'GRANT SELECT ON "{schema}".speech_voice_drafts TO "{role}"',
         # The asset event append uses ON CONFLICT DO NOTHING, which PostgreSQL
         # authorizes with a read on the conflict key's relation.
         f'GRANT SELECT ON "{schema}".speech_asset_events TO "{role}"',
@@ -131,9 +143,15 @@ def deletion_execution_grants(schema: str, role: str) -> tuple[str, ...]:
         f"GRANT INSERT ({columns(ASSET_EVENT_INSERT_COLUMNS)}) "
         f'ON "{schema}".speech_asset_events TO "{role}"',
         f'GRANT UPDATE ({columns(ASSET_UPDATE_COLUMNS)}) ON "{schema}".speech_assets TO "{role}"',
+        f"GRANT UPDATE ({columns(ARTIFACT_UPDATE_COLUMNS)}) "
+        f'ON "{schema}".speech_artifacts TO "{role}"',
+        # Row lock only: execution takes FOR UPDATE on the draft to serialize with
+        # admission's FOR SHARE before it re-reads the revision dependencies. The
+        # column is never assigned by this route.
+        f'GRANT UPDATE ("head_revision") ON "{schema}".speech_voice_drafts TO "{role}"',
         f"GRANT UPDATE ({columns(LEGACY_INTENT_UPDATE_COLUMNS)}) "
         f'ON "{schema}".admission_operations TO "{role}"',
-        *(f'GRANT DELETE ON "{schema}".{table} TO "{role}"' for table in JOB_INTENT_DELETE_TABLES),
+        *(f'GRANT DELETE ON "{schema}".{table} TO "{role}"' for table in DELETION_DELETE_TABLES),
     )
 
 

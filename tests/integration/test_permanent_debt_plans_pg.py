@@ -394,9 +394,19 @@ def test_the_permanent_read_is_bounded_by_the_held_leases(
             "speech_jobs",
         ):
             _assert_no_sequential_scan(permanent, relation)
-        # The bounded fourth read is a different question and keeps its own access path.
-        assert _index_rows(bounded, "speech_job_cancellation_fence_age_scan") == _IN_WINDOW
+        # The bounded fourth read keeps its own access path. Migration 0062 gives it a
+        # second bounded path: with the held leases indexed, the planner may answer it from
+        # the lease side and reach the fences by primary key instead. Either way the read
+        # stays on an index; what must never happen is a scan of the fence history, so the
+        # assertion is "one of the two bounded indexes carried it", not "it was 0060's".
+        bounded_rows = _index_rows(bounded, "speech_job_cancellation_fence_age_scan")
+        if bounded_rows is None:
+            bounded_rows = _index_rows(bounded, LEASE_DEBT_INDEX)
+        assert bounded_rows == _IN_WINDOW, (
+            f"the bounded read must stay on a bounded path: {bounded}"
+        )
         _assert_no_sequential_scan(bounded, "speech_job_cancellation_fences")
+        _assert_no_sequential_scan(bounded, "admission_leases")
 
 
 def test_the_permanent_reads_cost_does_not_follow_the_three_histories() -> None:

@@ -635,7 +635,10 @@ LIMIT %(limit)s
 #
 #   * migration 0060 adds `speech_job_cancellation_fence_age_scan`, so the predicate
 #     below is an index range on `accepted_at_us` and the cost follows the acceptances
-#     accepted inside the window, never the settled history before it;
+#     accepted inside the window, never the settled history before it. Migration 0062
+#     indexes the held leases, which gives the planner a second bounded path for this
+#     read (lease side, then the fences by primary key); either path is an index, and
+#     the plan tests accept both while still refusing a scan of the fence history;
 #   * the window's lower edge is `now - window` and its upper edge is `now - grace`,
 #     i.e. the same "old enough to judge" rule as `_DEBT`. Its default (24 h) is far
 #     past the confirmation window plus backoff and must exceed `grace_seconds`, so it

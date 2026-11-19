@@ -348,7 +348,7 @@ Job 已是本错误码的 `failed` 时只补做隔离；他人写入的终态不
    - **Job 仍是 `cancelling`**：由迁移 `0056` 的 `speech_jobs_live_state_scan` 提供访问路径，
      不设时间窗口；
    - **Job 已离开 `cancelling`**（`cancelled`、`failed` 或其它终态）而租约仍持有容量：
-     由迁移 `0060` 的围栏受理年龄索引提供访问路径，只看受理时间落在回看窗口
+     通常由迁移 `0060` 的围栏受理年龄索引提供访问路径（迁移 `0062` 的持有租约索引同样是它的有界路径，见下），只看受理时间落在回看窗口
      （默认 24 小时，必须大于宽限）内的受理；
    - **租约仍持有容量，而有界读面不再命名这条受理**：由迁移 `0062` 的持有租约部分索引
      （`speech_job_cancellation_lease_debt_scan`，谓词
@@ -396,7 +396,7 @@ Job 已是本错误码的 `failed` 时只补做隔离；他人写入的终态不
    离开取消。`L` 按 Job 计，不按租约计，也不因租约条数重复。
    这条读法只看受理时间不早于 `now - 回看窗口` 的围栏（默认 24 小时；必须大于宽限，
    否则窗口里不可能有已超过宽限的受理）。窗口的用途只是给 5 秒轮询一个有界访问路径
-   （迁移 `0060` 的 `speech_job_cancellation_fence_age_scan`）；它不决定旧债是否可见，
+   （迁移 `0060` 的 `speech_job_cancellation_fence_age_scan`；租约侧已被 `0062` 索引时，规划器也可能从那里出发连回围栏，两者都是索引）；它不决定旧债是否可见，
    因为窗口外的形态由下面的第五个 scope 命名。
 
    第五个 scope `abandoned-holding-capacity: A` 是第四路的**无回看窗口**版本，与它并列
@@ -428,7 +428,7 @@ Job 已是本错误码的 `failed` 时只补做隔离；他人写入的终态不
 
    | scope | 时间界 | 访问路径 | 覆盖 |
    |---|---|---|---|
-   | `left-cancelling-holding-capacity` | 有：受理在回看窗口（默认 24 小时）内 | 迁移 `0060` 的围栏受理年龄索引 | Job 已离开 `cancelling` 且窗口内的持有容量 |
+   | `left-cancelling-holding-capacity` | 有：受理在回看窗口（默认 24 小时）内 | 迁移 `0060` 的围栏受理年龄索引（或 `0062` 的租约索引连回围栏） | Job 已离开 `cancelling` 且窗口内的持有容量 |
    | `abandoned-holding-capacity` | 无 | 迁移 `0062` 的持有租约部分索引 | 租约仍持有容量、且有界读面不再命名的受理：`exhausted`、过期的未结算、以及没有账本行 |
 
    正常规模下同一个 Job 不会同时带两个标签：第五路既不做 Job 状态门禁也不设回看窗口，
@@ -562,7 +562,8 @@ ORDER BY f.accepted_at_us, f.job_id, l.lease_id;
 （`cancelled` 后释放被拒、或被他人写成 `failed` 而租约仍 `reserved`）由轮询读面的
 第四路覆盖：以未结算受理与仍持有容量的租约为起点、不设 Job 状态条件、只看受理时间落在
 回看窗口（默认 24 小时）内的行，访问路径是迁移 `0060` 的
-`speech_job_cancellation_fence_age_scan`；detail 里的
+`speech_job_cancellation_fence_age_scan`（规划器也可能改从 `0062` 的持有租约索引出发再
+按主键连回围栏，同样有界）；detail 里的
 `left-cancelling-holding-capacity: N` 就是这一路的计数。
 **租约仍持有容量、受理已超出该窗口**（或账本已 `exhausted`、或根本没有账本行）的形态由
 第五路（`_PERMANENT_DEBT`）命名，访问路径是迁移 `0062` 的

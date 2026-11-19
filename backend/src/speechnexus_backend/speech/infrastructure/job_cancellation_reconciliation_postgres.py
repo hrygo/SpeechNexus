@@ -12,6 +12,7 @@ from speechnexus_backend.speech.application.job_cancellation_reconciliation impo
     ReconciliationOutcome,
 )
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
+    ATTEMPT_CEILING,
     NOT_SUBMITTED_TABLE,
     RECONCILIATION_TABLE,
     TABLE,
@@ -19,8 +20,11 @@ from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema imp
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 
 _MAX_TIMESTAMP_US = 253_402_300_799_999_999
-# Matches the ``attempts`` CHECK bound in ``job_cancellation_fence_schema``.
-_MAX_ATTEMPTS = 64
+# The schema's ``attempts`` CHECK bound, imported rather than restated: the DDL and this
+# claim clamp must be one number. A local literal would let them drift silently --- a claim
+# bound below the CHECK never lets the read face name a spent row, one above it makes the
+# claim ``UPDATE`` violate the CHECK and the row stops being retried at all.
+_MAX_ATTEMPTS = ATTEMPT_CEILING
 
 
 class ReconciliationStoreUnavailableError(RuntimeError):
@@ -143,8 +147,9 @@ class PostgresCancellationReconciliationStore:
                     "accepted_before_us": accepted_before_us,
                     # The ledger is a schedule, not a give-up counter: an
                     # acceptance blocked by capacity that is still held must stay
-                    # claimable indefinitely (the CHECK upper bound is 64), so the
-                    # attempt count saturates instead of aborting the claim.
+                    # claimable indefinitely (the CHECK bound is
+                    # ``ATTEMPT_CEILING``), so the attempt count saturates instead
+                    # of aborting the claim.
                     "max_attempts": _MAX_ATTEMPTS,
                 },
             ).fetchall()

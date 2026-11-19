@@ -74,6 +74,7 @@ from speechnexus_backend.speech.infrastructure.job_cancellation_fence import (
     write_cancellation_fence,
 )
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
+    ATTEMPT_CEILING,
     RECONCILIATION_TABLE,
     cancellation_debt_reader_grants,
     cancellation_reconciliation_grants,
@@ -1144,18 +1145,18 @@ def test_lease_attempts_saturate_at_64_and_stay_claimable(
 ) -> None:
     """#852 known limitation: the claim clamp must stay a schedule, not a counter.
 
-    ``LEAST(attempts + 1, 64)`` exists because a blocked acceptance must stay
-    claimable indefinitely; reverting it to ``attempts + 1`` would surface as a
-    CHECK violation hours later, when the default backoff reaches the bound.
-    Seeded at the bound so the regression is visible in one pass.
+    ``LEAST(attempts + 1, ATTEMPT_CEILING)`` exists because a blocked acceptance
+    must stay claimable indefinitely; reverting it to ``attempts + 1`` would
+    surface as a CHECK violation hours later, when the default backoff reaches the
+    bound. Seeded at the bound so the regression is visible in one pass.
     """
     with _sandbox((LEASE, ACTIVE_DOCUMENT_STATE)) as box:
         _install_client(monkeypatch, box.job_id, ACTIVE_DOCUMENT_STATE)
         reconciler = _reconciler(box, confirm_timeout_seconds=WINDOW_US / 1_000_000)
         asyncio.run(reconciler.run_once(now_us=ACCEPTED_AT_US + 1_000_000))
         box.execute(
-            f"UPDATE {RECONCILIATION_TABLE} SET attempts = 64, next_check_at_us = 0 "
-            "WHERE job_id = %s",
+            f"UPDATE {RECONCILIATION_TABLE} SET attempts = {ATTEMPT_CEILING}, "
+            "next_check_at_us = 0 WHERE job_id = %s",
             (box.job_id,),
         )
 
@@ -1165,7 +1166,7 @@ def test_lease_attempts_saturate_at_64_and_stay_claimable(
         second = asyncio.run(reconciler.run_once(now_us=ACCEPTED_AT_US + WINDOW_US + 301_000_000))
 
         assert (first.claimed, second.claimed) == (1, 1)
-        assert box.rows()["ledger"][0]["attempts"] == 64
+        assert box.rows()["ledger"][0]["attempts"] == ATTEMPT_CEILING
 
 
 def test_a_role_without_the_coordination_grants_still_names_the_job() -> None:

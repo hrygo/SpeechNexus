@@ -1325,7 +1325,8 @@ worker。拿不到停止证据时受理只写受理事实，Job 停在 `cancelli
      有界退避正按计划重试，不是放弃；它不证明会有进程按时来领取，退避到期后转为 `due now`。
      逐 Job 明细另附 `[retrying: attempts=N, next in Ts]`。
    - `retrying at attempt ceiling: C`：**并列**的重试预算事实，不是第五个时刻——账本 `attempts`
-     已达存储上界 64、仍未 `settled` 且仍持有容量。`LEAST(attempts+1,64)` 让它永远可领取，
+     已达存储上界（`ATTEMPT_CEILING`，`CHECK` 约束与 claim 共用这一个常量，当前 64）、仍未
+     `settled` 且仍持有容量。`LEAST(attempts+1, ATTEMPT_CEILING)` 让它永远可领取，
      C>0 说明重试还在继续但不可能改变答案；该行同时还是 `due now` 或 `retrying on schedule`。
    - `left-cancelling-holding-capacity: N`：**Job 状态侧**事实，不在上面四个账本标记与并列的
      重试预算 scope 之内。

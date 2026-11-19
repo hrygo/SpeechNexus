@@ -412,8 +412,9 @@ Job 已是 `cancelled` 是另一条分支，判定它的是**容量结论而不�
    自然变成 `due now`，因此这两个标记描述同一条行的两个时刻，而不是两种故障。
 
    另有一个 scope 是**重试预算**的事实而不是时刻：`retrying at attempt ceiling: C` 数的是
-   未结算、仍持有容量、且账本 `attempts` 已达存储上界（`ATTEMPT_CEILING`，`CHECK` 约束为
-   64）的 Job。这种行的领取**不会失败**——`LEAST(attempts + 1, 64)` 把计数夹在上界，所以
+   未结算、仍持有容量、且账本 `attempts` 已达存储上界（`ATTEMPT_CEILING`，`CHECK` 约束与
+   claim 的 clamp 共用这一个常量，当前 64）的 Job。这种行的领取**不会失败**——
+   `LEAST(attempts + 1, ATTEMPT_CEILING)` 把计数夹在上界，所以
    它永远可领取、永远按同一退避重领，同时每一次领取都只是把同一次失败再记一遍。它就是
    `never claimable (exhausted)` 在读面上的镜像：后者说「不会再有自动领取」，前者说
    「自动领取还在继续，但不可能改变答案」。因此它与四个标记**并列**计数、绝不替代其中

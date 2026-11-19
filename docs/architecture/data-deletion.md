@@ -152,8 +152,11 @@ Speech 的执行路由接受 `asset`、`artifact`、`voice_revision` 与 `operat
 Job intent 没有 revision 外键，因此删除侧在重读依赖前对 `speech_voice_drafts` 行加
 `FOR UPDATE`，准入侧在读取 revision 前对同一行加 `FOR SHARE`，双方按“草稿行 →
 revision/依赖读取”的同一顺序串行化。后到方看到先提交的结果：删除报
-`409 deletion_plan_changed`（或预检阶段即 `blocked`），准入报 `job_unavailable` /
-`job_binding_incomplete`，不会留下指向已删 revision 的 intent，也不会是 500 或未知结果。
+`409 deletion_plan_changed`（或预检阶段即 `blocked`），准入报 `job_binding_incomplete`
+（`422`：revision 已不存在，换一个 revision 即可，不是存储不可用），不会留下指向已删
+revision 的 intent，也不会是 500 或未知结果。这条保证依赖**写入者约定**而非数据库兜底：
+`speech_job_intents` 的正文是 TEXT，没有到 revision 的外键，因此任何新增的 intent
+写入路径都必须同样先对草稿行取 `FOR SHARE`，否则串行化对它是空的。
 
 `asset` 复用既有资产内容删除状态机，不另造一套：在同一事务内把资产推进到
 `expired`（追加 `speech_asset_events`），写入或复用 `speech_content_deletions` 行
@@ -199,7 +202,9 @@ revision/依赖读取；删除侧不等待 workspace 行，准入侧也不反向
 此类依赖，跨模块独立副本由对方模块负责，故为空数组；Workbench 保存的独立副本仍由
 Workbench 自己的计划删除。删除执行的授权（`deletion_execution_grants`）与预检
 授权同样由路由自行探测，缺失时进程照常启动、路由返回
-`503 deletion_not_configured`（`retryable=false`）。0059 与 0063 的 downgrade 显式拒绝，
+`503 deletion_not_configured`（`retryable=false`）。探测是整体的：既有部署升级到含新
+列权限的版本后，若没有重新应用 `deletion_execution_grants`，所有删除执行（不只是
+`voice_revision`）都会以该码拒绝，而不是部分类型可用。0059 与 0063 的 downgrade 显式拒绝，
 删除账本是"确实删除过"的唯一证据，丢弃它（或 0063 记录的阻断原因）会让恢复重新暴露
 已清除内容并让旧计划重新成为可用的删除凭据。
 

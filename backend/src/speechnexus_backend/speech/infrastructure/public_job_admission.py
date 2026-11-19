@@ -870,14 +870,23 @@ def build_public_job_admission(
         # both and keeps deletion from removing the revision between this read and
         # the intent insert.
         cursor.execute("SELECT 1 FROM speech_voice_drafts WHERE draft_id=%s FOR SHARE", (draft_id,))
-        row = _one(
-            cursor,
+        # A revision that is gone is a binding the caller can fix by pinning a new
+        # one, not a store that refused the read, so it must not answer
+        # ``job_unavailable`` -- that code is reserved for a genuinely unavailable
+        # store (see the contract's "Job store refusing the read or the write") and
+        # it tells the client not to retry. The custom-voice sibling above answers
+        # ``job_binding_incomplete`` for the same condition.
+        cursor.execute(
             "SELECT r.kind, r.input_json, r.binding_json, j.workspace_id "
             "FROM speech_voice_draft_revisions AS r "
             "JOIN speech_jobs AS j ON j.job_id = r.generation_job_id "
             "WHERE r.draft_id=%s AND r.revision=%s",
             (draft_id, draft_revision),
         )
+        rows = cursor.fetchall()
+        if len(rows) != 1:
+            raise PublicJobAdmissionRejectedError("job_binding_incomplete")
+        row = rows[0]
         if row["workspace_id"] != job.workspace_id or row["kind"] != "clone":
             raise PublicJobAdmissionRejectedError("voice_draft_not_candidate")
         try:

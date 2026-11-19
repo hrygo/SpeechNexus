@@ -799,7 +799,8 @@ def test_voice_validation_admission_waits_for_a_deletion_draft_lock(
         deleting.commit()
         thread.join(30)
         assert not thread.is_alive()
-        assert outcome in (["job_binding_incomplete"], ["job_unavailable"]), outcome
+        # One code only: the revision is gone, which is a binding the caller can fix.
+        assert outcome == ["job_binding_incomplete"], outcome
     finally:
         deleting.rollback()
         deleting.close()

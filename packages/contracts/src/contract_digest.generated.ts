@@ -1,3 +1,3 @@
 // Generated from contracts/bindings.json; do not edit.
 export const CONTRACT_DIGEST =
-  "sha256:e8c7ad60f27a4e6107cf8b6026be61ac68ed4e7973f8a6ad9f1e57326b26ac39";
+  "sha256:d70e506e153b6c6db67e25f9796b3123d6890daa76ae0290025f04aee848cc94";

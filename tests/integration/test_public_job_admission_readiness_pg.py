@@ -20,11 +20,15 @@ carrying the one instance a create for it would pin. The cases after the rows bu
 the deployment shapes the single-instance fixture cannot express -- two ready
 instances behind one binding, two bindings, a published binding with no instance, a
 ready instance behind an unpublished binding, a superseded second revision whose
-engine is stopped, and a ``voice_validation`` binding with no execution defaults --
-because the report used to start from ``engine_instances`` and answer ``admitting``
-from a healthy sibling of the instance a create would pin (#857 third round, #863),
-from a binding that had no instance at all, from a revision no create can name, or
-from dropping a nameable binding whose kind needs no execution block.
+engine is stopped, a ``voice_validation`` binding with no execution defaults, the
+three binding shapes a create refuses before admission (file-TTS commit mode,
+audio delivery, and a plan the binding's recipe disagrees with), and a pool whose
+owner has no fencing token -- because the report used to start from
+``engine_instances`` and answer ``admitting`` from a healthy sibling of the instance
+a create would pin (#857 third round, #863), from a binding that had no instance at
+all, from a revision no create can name, from dropping a nameable binding whose kind
+needs no execution block, or from checking only that a binding had a block instead
+of the gates a create applies to it.
 
 Boundaries: PostgreSQL with the shipped schema and roles. The rows that need a
 second instance or a second binding build them through the product's own
@@ -753,6 +757,147 @@ def test_a_voice_validation_binding_without_defaults_stays_in_the_universe(
     assert report.status == "degraded", report.cause
     assert report.cause is not None and report.cause.value == "capacity_exhausted"
     # It contributes the verdict, not a row: there is no instance to report.
+    assert [row.instance_id for row in report.instances] == ["instance-new"]
+
+
+def _mutate_definition(
+    admission: AdmissionDatabase, mutate: Callable[[dict[str, Any]], None]
+) -> None:
+    """Rewrite the stored definition of the fixture's published binding.
+
+    The product never updates a revision in place, but every other fact must stay
+    the healthy fixture's for the row to isolate "the definition a create refuses":
+    the publication, the head, the instance, and the stored plan are untouched.
+    """
+    db = admission.runtime.foundation.database
+    definition = json.loads(
+        db.query(
+            "SELECT definition_json FROM speech_binding_revisions "
+            "WHERE binding_id = %s AND revision = '1'",
+            (BINDING,),
+        )[0]["definition_json"]
+    )
+    mutate(definition)
+    db.query(
+        "UPDATE speech_binding_revisions SET definition_json = %s "
+        "WHERE binding_id = %s AND revision = '1'",
+        (json.dumps(definition), BINDING),
+    )
+
+
+def _report_and_create(admission: AdmissionDatabase, row_id: str) -> tuple[Any, Any]:
+    store = _store(admission)
+    report = store.admission_readiness(WORKSPACE)
+    created = store.create(_job())
+    print(
+        f"ROW {row_id:<20} create={created.error_code or created.outcome:<26} "
+        f"status={report.status.value:<9} "
+        f"cause={report.cause.value if report.cause else None} "
+        f"instances={[row.instance_id for row in report.instances]}"
+    )
+    return report, created
+
+
+def test_a_tts_commit_mode_outside_the_file_semantics_is_not_admissible(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """A binding the file path refuses at request time is outside the universe.
+
+    The create validates the execution block's presence and timeout first, then the
+    file-TTS semantics: a block whose ``text_commit_mode`` is not ``explicit``
+    answers the request-shaped ``job_binding_incomplete``. The report used to stop
+    at the block's existence, so it answered ``admitting`` while that create was
+    refused. ``job_binding_incomplete`` is request-shaped in the contract, so no
+    cause may name it: the binding leaves the universe, and with no admissible
+    binding left the report answers ``capacity_exhausted``.
+    """
+    _seed(admission_database)
+
+    def mutate(definition: dict[str, Any]) -> None:
+        # The fixture binding declares ASR too, and an ASR create would still be
+        # admitted; narrow the declaration so the broken TTS gate is the binding's
+        # only path to admission.
+        definition["tasks"] = ["tts_file"]
+        definition["execution_defaults"]["tts"]["text_commit_mode"] = "buffered"
+
+    _mutate_definition(admission_database, mutate)
+    report, created = _report_and_create(admission_database, "tts-commit-mode")
+    assert created.outcome == "rejected"
+    assert created.error_code == "job_binding_incomplete"
+    assert report.status == "degraded"
+    assert report.cause is not None and report.cause.value == "capacity_exhausted"
+    assert report.instances == ()
+
+
+def test_a_tts_delivery_mode_outside_the_file_semantics_is_not_admissible(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """The second half of the same gate: ``audio_delivery`` must be ``complete``."""
+    _seed(admission_database)
+
+    def mutate(definition: dict[str, Any]) -> None:
+        definition["tasks"] = ["tts_file"]
+        definition["execution_defaults"]["tts"]["audio_delivery"] = "chunked"
+
+    _mutate_definition(admission_database, mutate)
+    report, created = _report_and_create(admission_database, "tts-audio-delivery")
+    assert created.outcome == "rejected"
+    assert created.error_code == "job_binding_incomplete"
+    assert report.status == "degraded"
+    assert report.cause is not None and report.cause.value == "capacity_exhausted"
+    assert report.instances == ()
+
+
+def test_a_plan_that_disagrees_with_the_binding_is_not_admissible(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """A stored plan and the binding's recipe naming different manifests.
+
+    ``build_public_job_admission`` compares the approved plan with the definition
+    (revision, manifest, pool, gateway, node) and answers
+    ``job_binding_incomplete`` on any disagreement. The report's probe rebuilds its
+    command from the plan and never read the definition, so it answered
+    ``admitting`` while every create for the binding was refused. The binding is
+    request-shaped-refused and therefore outside the universe.
+    """
+    _seed(admission_database)
+    _mutate_definition(
+        admission_database,
+        lambda definition: definition["execution_recipe"].update(
+            capacity_manifest_id="manifest-other"
+        ),
+    )
+    report, created = _report_and_create(admission_database, "recipe-manifest")
+    assert created.outcome == "rejected"
+    assert created.error_code == "job_binding_incomplete"
+    assert report.status == "degraded"
+    assert report.cause is not None and report.cause.value == "capacity_exhausted"
+    assert report.instances == ()
+
+
+def test_a_pool_whose_owner_has_no_fencing_token_is_disabled_on_both_surfaces(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """The create's disabled predicate has two halves; the report mirrored one.
+
+    ``build_public_job_admission`` answers ``engine_resource_disabled`` when the
+    pool has no owner *or* its fencing token is not positive. The report only
+    checked the owner, and a non-owner pool row with a zero token is not even a
+    constructible ``PoolOwnership``: the store mapped that ``ValueError`` to 503
+    ``job_unavailable``. Both surfaces now name the same disabled class.
+    """
+    _seed(admission_database)
+    _query(
+        admission_database.runtime.foundation.database,
+        "UPDATE resource_pools SET fencing_token = 0 WHERE pool_id = %s",
+        (RUNTIME_PLAN.binding.pool_id,),
+    )
+    report, created = _report_and_create(admission_database, "pool-owner-token")
+    assert created.outcome == "rejected"
+    assert created.error_code == "engine_resource_disabled"
+    assert report.status == "degraded"
+    assert report.cause is not None
+    assert report.cause.value == REPORT_CAUSE_BY_CREATE_CODE[created.error_code]
     assert [row.instance_id for row in report.instances] == ["instance-new"]
 
 

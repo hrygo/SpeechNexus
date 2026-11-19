@@ -547,12 +547,15 @@ export interface paths {
      *     create for every admissible binding sent now would be admitted. "Admissible"
      *     is a property of the binding, not of this response: the current publication
      *     head of a published, unretired binding that a create could actually name --
-     *     one whose `execution_defaults` validate for a declared `asr`/`tts` kind, or
-     *     one that declares `voice_validation`, which carries no execution block. A
-     *     create naming a binding outside that set is refused before admission runs (a
-     *     superseded revision is `model_binding_not_current`; defaults that validate
-     *     for none of the declared kinds are `job_binding_incomplete`), so those
-     *     bindings are neither a cause nor an `instances` row here. The create path
+     *     one whose declared kinds pass every binding gate the create applies before
+     *     admission: the execution block and its timeout, the file-TTS request
+     *     semantics, and the stored plan's agreement with the binding on revision,
+     *     manifest, pool, gateway and node. `voice_validation` needs no execution
+     *     block, so it is admissible on the published binding alone. A create naming a
+     *     binding outside that set is refused before admission runs (a superseded
+     *     revision is `model_binding_not_current`; a binding whose declared kinds all
+     *     fail those gates is `job_binding_incomplete`), so those bindings are neither
+     *     a cause nor an `instances` row here. The create path
      *     answers one code, so a report naming several could only invent a precedence
      *     the API does not have -- which of the observed refusals a create reached
      *     first -- and would let the report describe a class the create never returns.

@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -94,6 +95,7 @@ from speechnexus_backend.speech.infrastructure.qualified_speech_facts_postgres i
 )
 from speechnexus_backend.speech.infrastructure.readiness import (
     _LEFT_CANCELLING_DEBT,
+    RETRY_AT_ATTEMPT_CEILING,
     CancellationDebtProbe,
 )
 
@@ -411,7 +413,12 @@ def _install_client(
 
 
 def _reconciler(
-    box: CancelSandbox, *, confirm_timeout_seconds: float = 300, max_attempts: int = 3
+    box: CancelSandbox,
+    *,
+    confirm_timeout_seconds: float = 300,
+    max_attempts: int = 3,
+    base_backoff_seconds: float = 1,
+    max_backoff_seconds: float = 4,
 ) -> JobCancellationReconciler:
     jobs, capacity = box.jobs(), box.capacity()
     return JobCancellationReconciler(
@@ -425,8 +432,8 @@ def _reconciler(
         batch_size=8,
         min_age_seconds=0,
         confirm_timeout_seconds=confirm_timeout_seconds,
-        base_backoff_seconds=1,
-        max_backoff_seconds=4,
+        base_backoff_seconds=base_backoff_seconds,
+        max_backoff_seconds=max_backoff_seconds,
         budget_seconds=10,
     )
 
@@ -918,6 +925,12 @@ def test_a_future_check_is_not_due_now_and_not_claimable_yet(
     non-NULL schedule as due would still pass every positive case, because those
     rows are all in the past. The row is also not ``never claimed`` (a ledger row
     exists) and not ``never claimable (exhausted)`` (the worker will select it).
+
+    It *is* ``retrying on schedule``: #1038 found this fourth ledger state computed
+    by the query and then dropped by the report, which left a bounded backoff and a
+    worker that never claims again saying the same thing. The drill-down carries the
+    same fact per Job -- the attempt count and the wait left -- because the ledger
+    row, not the lease, is what those two numbers describe.
     """
     with _sandbox((LEASE, ACTIVE_DOCUMENT_STATE)) as box:
         # One hour past the database clock, which is the clock both the probe's
@@ -936,8 +949,12 @@ def test_a_future_check_is_not_due_now_and_not_claimable_yet(
         assert "due now" not in scheduled
         assert "never claimed" not in scheduled
         assert "never claimable" not in scheduled
-        # No schedule scope at all: the drill-down follows the lease scope directly.
-        assert "(held leases: execution-unknown=1): " in scheduled
+        # The scheduled state is named, in its fixed place after the three marks.
+        assert "(held leases: execution-unknown=1; retrying on schedule: 1): " in scheduled
+        # One attempt spent, one hour of backoff left: the drill-down says both.
+        assert re.search(r"\[retrying: attempts=1, next in (3599|3600|3601)s\]", scheduled)
+        # A retry that still has budget is not the saturated shape.
+        assert RETRY_AT_ATTEMPT_CEILING not in scheduled
 
         _install_client(monkeypatch, box.job_id, ACTIVE_DOCUMENT_STATE)
         reconciler = _reconciler(box)

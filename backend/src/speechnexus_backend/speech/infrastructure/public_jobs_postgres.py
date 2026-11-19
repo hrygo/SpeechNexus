@@ -61,7 +61,10 @@ from speechnexus_backend.speech.infrastructure.catalog_revision_schema import (
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence import (
     write_cancellation_fence,
 )
-from speechnexus_backend.speech.infrastructure.leases_postgres import _DeadlineCursor
+from speechnexus_backend.speech.infrastructure.leases_postgres import (
+    _BudgetExpiredError,
+    _DeadlineCursor,
+)
 from speechnexus_backend.speech.infrastructure.postgres_pool import (
     SpeechConnection,
     SpeechPool,
@@ -661,6 +664,13 @@ class PostgresPublicJobs:
                     continue
                 return JobCreateResult("unknown", error_code="outcome_unknown")
             except PublicJobUnavailableError, psycopg.OperationalError, psycopg.InterfaceError:
+                return JobCreateResult("unknown", error_code="outcome_unknown")
+            except _BudgetExpiredError:
+                # ``admission_cursor`` lends out the leases module's bounded cursor,
+                # whose budget refusal has its own type instead of this module's
+                # ``PublicJobUnavailableError``. It means the same thing here: the
+                # transaction rolled back, so answer "unknown" rather than let the
+                # refusal escape as an unhandled exception or call it a rejection.
                 return JobCreateResult("unknown", error_code="outcome_unknown")
             except psycopg.errors.QueryCanceled:
                 return JobCreateResult("unknown", error_code="outcome_unknown")

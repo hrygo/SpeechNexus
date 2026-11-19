@@ -1,0 +1,516 @@
+name: Release images
+
+# Publishes the deployment images for a release tag and attaches their digests to
+# that tag's GitHub Release. Until this file existed the repository had no
+# publication path at all: `deploy/README.md` said release images "must still be
+# pinned by digest before publication", `v0.1.0` shipped with zero release assets,
+# and every deployment built from source.
+#
+# Build inputs are exactly the ones `deploy/compose.yaml` uses, one image per
+# distinct build input:
+#
+#   ghcr.io/hrygo/speechnexus-python          deploy/images/python.Dockerfile
+#     — the single image the 12 `build: *python-build` services share
+#   ghcr.io/hrygo/speechnexus-web-admin       deploy/images/web.Dockerfile APP_NAME=admin
+#   ghcr.io/hrygo/speechnexus-web-workbench   deploy/images/web.Dockerfile APP_NAME=workbench
+#   ghcr.io/hrygo/speechnexus-node-controller deploy/images/node-controller.Dockerfile
+#   ghcr.io/hrygo/speechnexus-asset-inspector asset-inspector/Dockerfile
+#
+# `execution-gateway` has no Dockerfile of its own — the compose `gateway` service
+# builds `*python-build` — so it ships inside `speechnexus-python` rather than as a
+# sixth image. `minio` is deliberately not published here: compose's `minio` service
+# carries both `image:` and `build: deploy/images/minio.Dockerfile`, so a deployment
+# still builds it locally from GitHub Releases, `api.github.com` and
+# `raw.githubusercontent.com` — the download path `#900` records failing on a
+# throttled host. Pinning every other service by digest does not remove that build.
+#
+# Multi-architecture without QEMU: amd64 and arm64 build natively on the
+# `ubuntu-24.04` / `ubuntu-24.04-arm` pair this repository already uses for image
+# evidence, are pushed under per-architecture tags, and are merged into one
+# manifest list per repository. The reference deployment is aarch64 (MegaCube), so
+# an emulated arm64 build running `uv sync --all-packages` and
+# `pnpm install && pnpm build` under QEMU is exactly the wrong place to save time.
+# Nothing here falls back to amd64-only: if either architecture fails, the manifest
+# job never runs and the release gets no asset.
+#
+# The manifest job re-reads every published tag from the registry and compares that
+# digest with the digest it wrote into `speechnexus-<tag>-images.txt`. That
+# comparison is why this workflow exists at all: a digest on the release page that
+# cannot be pulled is worse than the empty release page it replaces.
+#
+# Existing release assets are never overwritten by a plain run: the metadata job
+# stops before any image is built when the tag already carries them, and the upload
+# step does not pass `--clobber`. Replacing a published record requires the explicit
+# `republish` input *and* approval of the `release` environment the manifest job
+# declares. Queue time is not bounded by `timeout-minutes`: a mistyped runner label
+# leaves the job waiting for a runner for up to 24 hours, and because
+# `cancel-in-progress` is false the next dispatch queues behind it — cancel the
+# stuck run by hand before a re-run can start.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Release tag to publish (its GitHub Release must already exist)
+        required: true
+        default: v0.1.0
+        type: string
+      republish:
+        description: Overwrite assets that this tag's release already carries
+        required: false
+        default: false
+        type: boolean
+  push:
+    tags: ["v*"]
+
+# `contents: write` uploads the digest manifest to the Release; `packages: write`
+# pushes to GHCR. No `id-token`/attestation scope: this workflow publishes images,
+# it does not sign them, and provenance attestations are disabled below.
+permissions:
+  contents: write
+  packages: write
+
+# A publication is never cancelled in flight. A run stopped after the images but
+# before the release assets would leave a release page claiming nothing while GHCR
+# holds orphaned tags for a commit nobody can identify from the page.
+concurrency:
+  group: release-images-${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  # Resolves the tag once and refuses to start a publication that cannot finish. A
+  # missing release or a tag that is not the checked-out commit would otherwise
+  # fail after the images were already pushed.
+  metadata:
+    name: "Release: resolve tag and image list"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      version: ${{ steps.resolve.outputs.version }}
+      short_sha: ${{ steps.resolve.outputs.short_sha }}
+      commit: ${{ steps.resolve.outputs.commit }}
+      images: ${{ steps.resolve.outputs.images }}
+      republish: ${{ steps.resolve.outputs.republish }}
+    steps:
+      - name: Check out the publication ref
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref_name }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Resolve tag, version and image list
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_REF: ${{ inputs.ref }}
+          REF_NAME: ${{ github.ref_name }}
+          REPUBLISH: ${{ inputs.republish || false }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$REF_NAME"
+          if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
+            tag="$INPUT_REF"
+          fi
+          # A publication is keyed by a version tag. Publishing an arbitrary branch
+          # would put a moving target behind an immutable-looking digest record.
+          # `+` is deliberately absent from the accepted build-metadata separator:
+          # Docker rejects it in a tag, so `v1.2.3+build.5` would pass every check
+          # here, build and push both architectures, and only then fail at the
+          # manifest merge, leaving per-architecture tags behind in GHCR.
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$tag' is not a version tag (expected vMAJOR.MINOR.PATCH[-prerelease])"
+            exit 1
+          fi
+          version="${tag#v}"
+
+          # The checked-out commit must be the tag itself: `workflow_dispatch` takes
+          # any ref, and a branch checkout must not be published as a release.
+          # A checkout of the tag already has the ref; only a dispatch on a branch
+          # needs the fetch, and that path then fails the comparison below.
+          if ! git rev-parse -q --verify "refs/tags/${tag}" >/dev/null 2>&1; then
+            if ! git fetch --no-tags --depth=1 origin \
+                "refs/tags/${tag}:refs/tags/${tag}" 2>/dev/null; then
+              echo "::error::Release tag '$tag' does not exist on origin"
+              exit 1
+            fi
+          fi
+          tagged_commit="$(git rev-parse --verify "refs/tags/${tag}^{commit}")"
+          head_commit="$(git rev-parse HEAD)"
+          if [[ "$tagged_commit" != "$head_commit" ]]; then
+            echo "::error::Checked out $head_commit but '$tag' is $tagged_commit"
+            exit 1
+          fi
+
+          # Assets attach to an existing Release. This workflow does not create one:
+          # cutting the release (title, notes, target) stays a human decision made
+          # before publication, so a stray tag push cannot publish anything by itself.
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName >/dev/null; then
+            echo "::error::No GitHub Release for '$tag'; run 'gh release create $tag --verify-tag ...' first"
+            exit 1
+          fi
+
+          # A published record is immutable unless someone says otherwise. A tag
+          # force-pushed to a tree with a different Dockerfile would otherwise rebuild
+          # every check green and replace the three assets, leaving a fresh but
+          # self-consistent digest list — `SHA256SUMS` would verify against itself and
+          # the page would show no sign that the record changed. Stop here, before a
+          # single image is built, when the tag already carries assets.
+          assets="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+          conflicts=()
+          for suffix in images.txt SHA256SUMS compose.yaml; do
+            if grep -qx "speechnexus-${tag}-${suffix}" <<< "$assets"; then
+              conflicts+=("speechnexus-${tag}-${suffix}")
+            fi
+          done
+          if (( ${#conflicts[@]} > 0 )) && [[ "$REPUBLISH" != true ]]; then
+            echo "::error::${tag} already carries ${conflicts[*]}; re-run with republish=true to overwrite that record"
+            exit 1
+          fi
+          if (( ${#conflicts[@]} > 0 )); then
+            echo "::warning::Overwriting ${conflicts[*]} on ${tag} (republish=true)"
+          fi
+
+          cat > "${RUNNER_TEMP}/images.json" <<'JSON'
+          [
+            {
+              "name": "python",
+              "repository": "speechnexus-python",
+              "dockerfile": "deploy/images/python.Dockerfile",
+              "build_args": ""
+            },
+            {
+              "name": "web-admin",
+              "repository": "speechnexus-web-admin",
+              "dockerfile": "deploy/images/web.Dockerfile",
+              "build_args": "APP_NAME=admin"
+            },
+            {
+              "name": "web-workbench",
+              "repository": "speechnexus-web-workbench",
+              "dockerfile": "deploy/images/web.Dockerfile",
+              "build_args": "APP_NAME=workbench"
+            },
+            {
+              "name": "node-controller",
+              "repository": "speechnexus-node-controller",
+              "dockerfile": "deploy/images/node-controller.Dockerfile",
+              "build_args": ""
+            },
+            {
+              "name": "asset-inspector",
+              "repository": "speechnexus-asset-inspector",
+              "dockerfile": "asset-inspector/Dockerfile",
+              "build_args": ""
+            }
+          ]
+          JSON
+          # The image list is emitted as one JSON line so both the build matrix and
+          # the manifest job read the same definition instead of a second copy.
+          images="$(jq -c . "${RUNNER_TEMP}/images.json")"
+          if [[ "$(jq 'length' <<< "$images")" != 5 ]]; then
+            echo "::error::Expected 5 image definitions, got $(jq 'length' <<< "$images")"
+            exit 1
+          fi
+
+          {
+            echo "tag=${tag}"
+            echo "version=${version}"
+            echo "short_sha=$(git rev-parse --short=12 HEAD)"
+            echo "commit=${head_commit}"
+            echo "images=${images}"
+            echo "republish=${REPUBLISH}"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Release ${tag}"
+            echo
+            echo "- commit: \`${head_commit}\`"
+            echo "- version tag: \`${version}\`, short tag: \`sha-$(git rev-parse --short=12 HEAD)\`"
+            echo "- republish: \`${REPUBLISH}\`"
+            echo "- images: $(jq -r '[.[].repository] | join(", ")' <<< "$images")"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # One native build per architecture and image. The arm64 runner is the same
+  # `ubuntu-24.04-arm` label the existing image workflows use, so a full arm64
+  # build here proves the reference architecture builds, not that an emulated one
+  # eventually finished.
+  image:
+    name: "Build: ${{ matrix.image.name }} (${{ matrix.arch.name }})"
+    needs: [metadata]
+    runs-on: ${{ matrix.arch.runner }}
+    timeout-minutes: 45
+    strategy:
+      # A failure on one platform must not hide the other's result; the manifest job
+      # only runs when every matrix entry succeeded, so an incomplete pair publishes
+      # nothing.
+      fail-fast: false
+      matrix:
+        arch:
+          - name: amd64
+            runner: ubuntu-24.04
+            platform: linux/amd64
+          - name: arm64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+        image: ${{ fromJSON(needs.metadata.outputs.images) }}
+    steps:
+      - name: Check out the published tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: refs/tags/${{ needs.metadata.outputs.tag }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Set up BuildKit
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build and push ${{ matrix.image.name }} (${{ matrix.arch.name }})
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: .
+          file: ${{ matrix.image.dockerfile }}
+          platforms: ${{ matrix.arch.platform }}
+          push: true
+          # Single-platform image manifests only. Provenance/SBOM attestations would
+          # make each per-architecture push an index of its own; merging two such
+          # indexes leaves a child the registry reports as `unknown/unknown`, so the
+          # platform set the read-back requires gains an entry it will not accept.
+          # Signing is out of scope here and `id-token` is deliberately not granted.
+          provenance: false
+          sbom: false
+          tags: ghcr.io/hrygo/${{ matrix.image.repository }}:${{ needs.metadata.outputs.short_sha }}-${{ matrix.arch.name }}
+          build-args: ${{ matrix.image.build_args }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ needs.metadata.outputs.commit }}
+            org.opencontainers.image.version=${{ needs.metadata.outputs.version }}
+            org.speechnexus.source.commit=${{ needs.metadata.outputs.commit }}
+            org.speechnexus.release.tag=${{ needs.metadata.outputs.tag }}
+            org.speechnexus.app=${{ matrix.image.name }}
+
+  # Merges the two platform manifests per repository, reads the result back from
+  # the registry, writes the release assets, and uploads them.
+  manifest:
+    name: "Manifest: merge, read back, publish assets"
+    needs: [metadata, image]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # The one human gate on the publication path. Declaring the environment here
+    # means a run waits for approval before it can replace anything on the release
+    # page; the images themselves are already pushed by `image`, which is why the
+    # gate sits on the job that writes the durable record. Referencing the name is
+    # not enough on its own: the approval requirement lives in the repository's
+    # `release` environment settings, so this line is only a gate once reviewers are
+    # configured there.
+    environment: release
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.metadata.outputs.tag }}
+      VERSION: ${{ needs.metadata.outputs.version }}
+      SHORT_SHA: ${{ needs.metadata.outputs.short_sha }}
+      IMAGE_PREFIX: ghcr.io/hrygo
+      IMAGES: ${{ needs.metadata.outputs.images }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Check out the published tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: refs/tags/${{ needs.metadata.outputs.tag }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Merge the platform manifests into one image per repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Resolve the list before the loop: `jq` inside a process substitution runs
+          # in a subshell whose failure `set -e` cannot see, so a malformed or empty
+          # IMAGES value used to skip the whole merge and exit 0.
+          repositories="$(jq -er 'if length == 0 then error("no image definitions") else .[].repository end' <<< "$IMAGES")"
+          if [[ -z "$repositories" ]]; then
+            echo "::error::No images to merge into ${TAG}"
+            exit 1
+          fi
+          while IFS= read -r repository; do
+            base="${IMAGE_PREFIX}/${repository}"
+            amd64_digest="$(docker buildx imagetools inspect "${base}:${SHORT_SHA}-amd64" --format '{{.Manifest.Digest}}')"
+            arm64_digest="$(docker buildx imagetools inspect "${base}:${SHORT_SHA}-arm64" --format '{{.Manifest.Digest}}')"
+            for digest in "$amd64_digest" "$arm64_digest"; do
+              if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+                echo "::error::${base}: unreadable platform digest '$digest'"
+                exit 1
+              fi
+            done
+            # The merge consumes the platform manifests by digest, so the index can
+            # only ever reference the bytes those builds actually pushed.
+            docker buildx imagetools create \
+              -t "${base}:${TAG}" \
+              -t "${base}:${VERSION}" \
+              -t "${base}:sha-${SHORT_SHA}" \
+              "${base}@${amd64_digest}" \
+              "${base}@${arm64_digest}"
+          done <<< "$repositories"
+      - name: Write the digest manifest and verify it against the registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
+
+          prefix = os.environ["IMAGE_PREFIX"]
+          tag = os.environ["TAG"]
+          images = json.loads(os.environ["IMAGES"])
+          if not images:
+              print("::error::No image definitions to publish", file=sys.stderr)
+              sys.exit(1)
+          expected_platforms = {"linux/amd64", "linux/arm64"}
+          index_media_types = {
+              "application/vnd.oci.image.index.v1+json",
+              "application/vnd.docker.distribution.manifest.list.v2+json",
+          }
+          problems: list[str] = []
+
+          def run(*argv: str) -> str:
+              return subprocess.run(
+                  argv, check=True, capture_output=True, text=True
+              ).stdout
+
+          def manifest_digest(ref: str) -> str:
+              return run(
+                  "docker", "buildx", "imagetools", "inspect", ref,
+                  "--format", "{{.Manifest.Digest}}",
+              ).strip()
+
+          def manifest_bytes(ref: str) -> bytes:
+              return subprocess.run(
+                  ["docker", "buildx", "imagetools", "inspect", "--raw", ref],
+                  check=True, capture_output=True,
+              ).stdout
+
+          lines = []
+          for image in images:
+              repository = image["repository"]
+              ref = f"{prefix}/{repository}:{tag}"
+              raw = manifest_bytes(ref)
+              # The digest is recomputed from the bytes the registry serves, so a
+              # registry that reports a digest for different content is caught here
+              # rather than by whoever tries to pull it.
+              digest = "sha256:" + hashlib.sha256(raw).hexdigest()
+              reported = manifest_digest(ref)
+              if reported != digest:
+                  problems.append(f"{ref}: registry reports {reported}, bytes hash to {digest}")
+              document = json.loads(raw)
+              if document.get("mediaType") not in index_media_types:
+                  problems.append(f"{ref}: {document.get('mediaType')!r} is not an image index")
+              platforms = {
+                  f"{(entry.get('platform') or {}).get('os', '')}/"
+                  f"{(entry.get('platform') or {}).get('architecture', '')}"
+                  for entry in document.get("manifests", [])
+              }
+              if platforms != expected_platforms:
+                  problems.append(f"{ref}: platforms {sorted(platforms)} != {sorted(expected_platforms)}")
+              for entry in document.get("manifests", []):
+                  # Every platform manifest has to be readable on its own, which is
+                  # what a `docker pull --platform` resolves.
+                  run("docker", "buildx", "imagetools", "inspect", f"{prefix}/{repository}@{entry['digest']}")
+              lines.append(f"{ref}@{digest}")
+
+          path = f"speechnexus-{tag}-images.txt"
+          with open(path, "w", encoding="utf-8") as handle:
+              handle.write("\n".join(lines) + "\n")
+
+          # Read back the file that will be published, not the values computed above.
+          recorded = [line.strip() for line in open(path, encoding="utf-8") if line.strip()]
+          # `not recorded` matters on its own: with an empty image list the equality
+          # alone is `0 != 0`, which would publish an empty digest manifest.
+          if not recorded or len(recorded) != len(images):
+              problems.append(f"{path}: {len(recorded)} lines for {len(images)} images")
+          pattern = re.compile(r"(?P<ref>.+):(?P<tag>[^:@/]+)@(?P<digest>sha256:[0-9a-f]{64})")
+          for line in recorded:
+              match = pattern.fullmatch(line)
+              if match is None:
+                  problems.append(f"{path}: unparsable line {line!r}")
+                  continue
+              live = manifest_digest(f"{match['ref']}:{match['tag']}")
+              if live != match["digest"]:
+                  problems.append(f"{line}: registry now reports {live}")
+              print(f"verified {line}")
+
+          if problems:
+              for problem in problems:
+                  print(f"::error::{problem}", file=sys.stderr)
+              sys.exit(1)
+          print(f"{path}: {len(recorded)} digests read back from the registry")
+          PY
+          {
+            echo "### Published digests"
+            echo
+            echo '```'
+            cat "speechnexus-${TAG}-images.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Prepare the compose snapshot and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Same ref as the images, so the published topology and the published
+          # digests describe one commit.
+          cp deploy/compose.yaml "speechnexus-${TAG}-compose.yaml"
+          sha256sum "speechnexus-${TAG}-images.txt" "speechnexus-${TAG}-compose.yaml" \
+            > "speechnexus-${TAG}-SHA256SUMS"
+          sha256sum --check --strict "speechnexus-${TAG}-SHA256SUMS"
+          cat "speechnexus-${TAG}-SHA256SUMS"
+      - name: Upload the assets to the release
+        if: ${{ needs.metadata.outputs.republish != 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # No `--clobber`: an asset that already exists means this tag's record is
+          # already published and must not be replaced silently. The metadata job
+          # rejects that case before any image is built; this is the second,
+          # independent guard, and it is what fails if the two ever disagree.
+          gh release upload "$TAG" \
+            "speechnexus-${TAG}-images.txt" \
+            "speechnexus-${TAG}-SHA256SUMS" \
+            "speechnexus-${TAG}-compose.yaml" \
+            --repo "$GITHUB_REPOSITORY"
+      - name: Re-upload the assets to the release (explicit republish)
+        if: ${{ needs.metadata.outputs.republish == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" \
+            "speechnexus-${TAG}-images.txt" \
+            "speechnexus-${TAG}-SHA256SUMS" \
+            "speechnexus-${TAG}-compose.yaml" \
+            --clobber --repo "$GITHUB_REPOSITORY"
+      - name: Read the release page back
+        shell: bash
+        run: |
+          set -euo pipefail
+          assets="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+          for suffix in images.txt SHA256SUMS compose.yaml; do
+            if ! grep -qx "speechnexus-${TAG}-${suffix}" <<< "$assets"; then
+              echo "::error::speechnexus-${TAG}-${suffix} is missing from the ${TAG} release"
+              exit 1
+            fi
+          done
+          echo "Verified: the ${TAG} release carries the digest manifest, its checksums and the compose snapshot."

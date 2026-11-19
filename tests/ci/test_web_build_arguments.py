@@ -195,7 +195,7 @@ def service_build(service: str) -> list[str]:
     _reject_unreadable(service, services, 2, "services mapping")
     _require_single(service, keys_at(services, 2), service, "the services mapping")
     service_lines = indented_block(services, _line_index(services, service, 2), 2)
-    _reject_unreadable(service, service_lines, 4, f"{service}'s definition")
+    _reject_unreadable(service, service_lines, 4, "definition")
     build_keys = keys_at(service_lines, 4)
     build_at = _line_index(service_lines, "build", 4)
     _require_single(service, build_keys, "build", f"{service}'s definition")

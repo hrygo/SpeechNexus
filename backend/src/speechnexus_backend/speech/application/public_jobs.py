@@ -10,7 +10,7 @@ import uuid
 from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, cast, runtime_checkable
 
 import rfc8785
 
@@ -24,6 +24,7 @@ from speechnexus_backend.speech.domain.admission import (
     CAPACITY_REJECTION_CODES,
     PUBLIC_ADMISSION_CODES,
 )
+from speechnexus_backend.speech.domain.job_admission_readiness import AdmissionReadiness
 from speechnexus_backend.speech.domain.public_jobs import (
     CANCELLATION_UNCONFIRMED,
     JobArtifactFact,
@@ -604,6 +605,18 @@ class PublicJobs:
             store if isinstance(store, PublicJobArtifactBatch) else None
         )
         self._now_us = now_us or facts.now_us
+
+    def admission_readiness(self, workspace_id: str) -> AdmissionReadiness:
+        """Ask the store for one readiness verdict, never a second opinion.
+
+        The service holds no admission rule: the store calls the predicate the
+        create path calls, so this method only forwards the question. A store that
+        cannot answer refuses loudly instead of admitting by omission.
+        """
+        reader = getattr(self._store, "admission_readiness", None)
+        if reader is None:
+            raise PublicJobUnavailableError
+        return cast("AdmissionReadiness", reader(workspace_id))
 
     def submit(
         self,

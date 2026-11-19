@@ -10,6 +10,7 @@ never reads deployment settings for a value the binding must declare.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import asdict, dataclass
 from typing import Any, Protocol, cast
@@ -22,17 +23,38 @@ from speechnexus_backend.speech.domain.admission import (
     CAPACITY_REJECTION_CODES,
     PUBLIC_ADMISSION_CODES,
     AdmissionIdentity,
+    AdmissionPool,
+    AdmissionQuota,
     AdmissionRequest,
+    AdmissionRuntime,
     AdmitRecipe,
+    Admitted,
     ApprovedAdmissionRecipe,
     ApprovedStage,
+    OriginalBusinessCommand,
     StageAllocation,
+    decide_create_admission,
+)
+from speechnexus_backend.speech.domain.job_admission_readiness import (
+    DEFAULT_READINESS_WARNING_SECONDS,
+    READINESS_INVALID,
+    READINESS_MISSING,
+    AdmissionReadiness,
+    AdmissionReadinessCause,
+    ReadinessInstanceReport,
+    admitted_readiness,
+    cause_for_refusal,
+    refused_readiness,
 )
 from speechnexus_backend.speech.domain.job_dispatch import submit_intent_identity
 from speechnexus_backend.speech.domain.jobs import CreateJob
 from speechnexus_backend.speech.domain.owners import OwnerAuthority
-from speechnexus_backend.speech.domain.public_jobs import NewPublicJob, canonical_digest
-from speechnexus_backend.speech.domain.runtime_intents import ApprovedRuntimePlan
+from speechnexus_backend.speech.domain.public_jobs import (
+    NewPublicJob,
+    canonical_digest,
+    identifier,
+)
+from speechnexus_backend.speech.domain.runtime_intents import ApprovedRuntimePlan, RuntimeHost
 from speechnexus_backend.speech.domain.speech_synthesis import SpeechFormat, SpeechPlan
 from speechnexus_backend.speech.domain.transcription import TranscriptFormat
 from speechnexus_backend.speech.domain.voice_capability_evidence import VoiceMaterial
@@ -41,6 +63,12 @@ from speechnexus_backend.speech.infrastructure.admission_codec import (
     business_command_from_value,
     prepare_admission,
 )
+from speechnexus_backend.speech.infrastructure.admission_sql import (
+    _pool as _admission_pool_row,
+)
+from speechnexus_backend.speech.infrastructure.admission_sql import (
+    _quota as _admission_quota_row,
+)
 from speechnexus_backend.speech.infrastructure.catalog_revision_schema import RETIREMENT_TABLE
 from speechnexus_backend.speech.infrastructure.qualification_source_evidence import (
     STATE_EVIDENCED,
@@ -48,6 +76,18 @@ from speechnexus_backend.speech.infrastructure.qualification_source_evidence imp
     source_refusal_detail,
 )
 from speechnexus_backend.speech.infrastructure.runtime_codec import decode_record
+from speechnexus_backend.speech.infrastructure.runtime_observation_codec import (
+    decode_observation,
+    validate_stored_readiness,
+)
+from speechnexus_backend.speech.infrastructure.runtime_sql import (
+    _head,
+    _host,
+    _record,
+)
+from speechnexus_backend.speech.infrastructure.runtime_sql import (
+    _instance as _runtime_instance,
+)
 from speechnexus_backend.speech.infrastructure.transcription_submit import build_asr_submit
 from speechnexus_backend.speech.infrastructure.tts_submit import build_tts_submit_from_parameters
 from speechnexus_backend.speech.infrastructure.voice_validation_submit import (
@@ -190,7 +230,8 @@ def _quota(cursor: _Cursor, workspace_id: str) -> dict[str, Any]:
     before admission.
     """
     cursor.execute(
-        "SELECT q.policy_revision, q.version, q.held_attempts, q.quarantined_attempts, "
+        "SELECT q.workspace_id, q.policy_revision, q.version, q.held_attempts, "
+        "q.quarantined_attempts, q.max_attempts, "
         "w.policy_revision AS workspace_policy_revision "
         "FROM workspace_quotas AS q JOIN speech_workspaces AS w "
         "ON w.workspace_id=q.workspace_id WHERE q.workspace_id=%s",
@@ -265,7 +306,11 @@ def _runtime_plan(cursor: _Cursor, instance: dict[str, Any]) -> ApprovedRuntimeP
     try:
         _, plan, _ = decode_record(row["request_document"])
     except Exception:  # The codec has already validated every stored immutable fact.
-        raise PublicJobAdmissionRejectedError("job_unavailable") from None
+        # A stored intent admission cannot decode is a state it must reconcile, not a
+        # store that refused the read: the transaction already answers
+        # ``reconciliation_required`` for the same row, and the readiness report names
+        # that refusal. A storage code here would make the two surfaces disagree (#863).
+        raise PublicJobAdmissionRejectedError("engine_state_mismatch") from None
     return plan
 
 
@@ -712,12 +757,12 @@ def build_public_job_admission(
         or instance["manifest_id"] != plan.binding.manifest_id
     ):
         raise PublicJobAdmissionRejectedError("job_binding_incomplete")
-    if (
-        instance["pool_state"] != "active"
-        or not isinstance(instance["owner_id"], str)
-        or int(instance["fencing_token"]) < 1
-    ):
-        raise PublicJobAdmissionRejectedError("job_capacity_exhausted")
+    # A pool without a live owner identity cannot even become an OwnerAuthority; that
+    # is the disabled class, not capacity. ``pool_state`` is decided by the converged
+    # predicate, which the report runs too, so a draining pool answers one code on
+    # both surfaces instead of the loader's old 429 (#863).
+    if not isinstance(instance["owner_id"], str) or int(instance["fencing_token"]) < 1:
+        raise PublicJobAdmissionRejectedError("engine_resource_disabled")
     deadline_at_us = now_us + max(1, round(timeout * 1_000_000))
     # A1/A3 join admission_operations.operation_id = speech_jobs.job_id.
     identity = AdmissionIdentity(job.job_id, "attempt-" + job.job_id.removeprefix("job-"))
@@ -1097,9 +1142,335 @@ def rejection_code(code: str) -> str:
         raise PublicJobAdmissionRejectedError("admission_state_invalid") from None
 
 
+# The probe command a readiness read builds carries only deployment facts: the
+# binding, plan, pool, node and quota are the stored rows a create would read, and
+# the identities below are constant so no request-shaped fact can enter the
+# verdict. The report never commits it.
+_PROBE_WORKSPACE_DEFAULT = "workspace-default"
+_PROBE_OPERATION = "probe-admission-readiness-op"
+_PROBE_ATTEMPT = "probe-admission-readiness-attempt"
+_PROBE_JOB = "probe-admission-readiness-job"
+_PROBE_EVENT = "probe-admission-readiness-event"
+_PROBE_STAGE = "probe-admission-readiness-stage"
+_PROBE_LEASE = "probe-admission-readiness-lease"
+_PROBE_BUSINESS = '{"probe":"admission-readiness"}'
+
+# A probe command is built from the rows admission itself reads, so a stored
+# disagreement it surfaces is a state mismatch rather than a request-shaped
+# ``recipe_not_admitted``: nothing about the caller's body can produce it.
+_PROBE_STATE_CODES: dict[str, AdmissionReadinessCause] = {
+    "recipe_mismatch": AdmissionReadinessCause.ENGINE_STATE_MISMATCH,
+}
+
+
+def _readiness_workspace_state(cursor: _Cursor, workspace_id: str) -> str | None:
+    cursor.execute(
+        "SELECT workspace_state FROM speech_workspaces WHERE workspace_id=%s",
+        (workspace_id,),
+    )
+    rows = cursor.fetchall()
+    if not rows:
+        return None
+    if len(rows) != 1:
+        raise PublicJobAdmissionRejectedError("job_unavailable")
+    return str(rows[0]["workspace_state"])
+
+
+def _readiness_candidates(cursor: _Cursor) -> list[dict[str, Any]]:
+    """Every ready instance, in the order a create selects one.
+
+    The create path pins the first ``ready`` instance of the requested binding by
+    ``(instance_id, instance_generation)``; the report cannot know the binding, so
+    it reads the same ordering across every ready instance and probes in that
+    order. An instance the create path would never select (not ready, no prepare
+    intent) is not a candidate in either path.
+    """
+    cursor.execute(
+        "SELECT instance_id, instance_generation, host_node_id, pool_id "
+        "FROM engine_instances WHERE instance_state='ready' "
+        "AND instance_generation IS NOT NULL "
+        "ORDER BY instance_id, instance_generation"
+    )
+    return cursor.fetchall()
+
+
+def _readiness_one(cursor: _Cursor, query: str, parameters: tuple[object, ...]) -> dict[str, Any]:
+    cursor.execute(query, parameters)
+    rows = cursor.fetchall()
+    if len(rows) != 1:
+        raise PublicJobAdmissionRejectedError("job_unavailable")
+    return rows[0]
+
+
+def _readiness_runtime(
+    cursor: _Cursor, candidate: dict[str, Any], *, now_us: int
+) -> tuple[AdmissionRuntime, RuntimeHost | None, str]:
+    """Decode one candidate exactly as the admission transaction decodes it.
+
+    Returns the admission facts, the host row (``None`` when it is missing, which
+    a create answers as a reconciliation refusal) and the readiness window state
+    the public per-instance row reports. ``missing``/``invalid`` are reported
+    rather than raised: a stored intent admission cannot decode is a fact about
+    the deployment, and dropping it would let the report answer ``admitting``
+    while every create for that instance is refused (#857).
+    """
+    instance_row = _readiness_one(
+        cursor,
+        "SELECT * FROM engine_instances WHERE instance_id=%s AND instance_generation=%s",
+        (candidate["instance_id"], candidate["instance_generation"]),
+    )
+    head = _readiness_one(
+        cursor,
+        "SELECT * FROM runtime_instance_heads WHERE instance_id=%s AND current_generation=%s",
+        (candidate["instance_id"], candidate["instance_generation"]),
+    )
+    prepare_id = head["current_prepare_intent_id"]
+    if prepare_id is None:
+        raise PublicJobAdmissionRejectedError("job_capacity_exhausted")
+    intent = _readiness_one(
+        cursor,
+        "SELECT * FROM runtime_instance_intents WHERE target_node_id=%s AND intent_id=%s",
+        (instance_row["host_node_id"], prepare_id),
+    )
+    record = _record(intent)
+    instance = _runtime_instance(instance_row, record)
+    if record.observation_document is None:
+        raise PublicJobAdmissionRejectedError("job_unavailable")
+    observation = decode_observation(record.observation_document).observation
+    if record.readiness_document is None:
+        readiness_state = READINESS_MISSING
+        readiness = None
+    else:
+        readiness = validate_stored_readiness(
+            record.readiness_document, record.request, record.approved_plan
+        )
+        readiness_state = readiness.expiry_state(
+            now_us, warning_us=DEFAULT_READINESS_WARNING_SECONDS * 1_000_000
+        )
+    cursor.execute(
+        "SELECT COALESCE(SUM(l.reserved_slots), 0) AS slots FROM admission_leases AS l "
+        "JOIN admission_attempts AS a ON a.operation_id = l.operation_id "
+        "AND a.attempt_id = l.attempt_id WHERE l.instance_id = %s "
+        "AND l.instance_generation = %s AND l.lease_state <> 'released' "
+        "AND a.service_class <> 'realtime'",
+        (instance.instance_id, instance.instance_generation),
+    )
+    batch = int(cursor.fetchall()[0]["slots"])
+    if readiness is None:
+        raise PublicJobAdmissionRejectedError("job_unavailable")
+    cursor.execute(
+        "SELECT * FROM host_nodes WHERE host_node_id=%s",
+        (instance_row["host_node_id"],),
+    )
+    host_rows = cursor.fetchall()
+    host = _host(host_rows[0]) if host_rows else None
+    return (
+        AdmissionRuntime(instance, _head(head), observation, readiness, batch),
+        host,
+        readiness_state,
+    )
+
+
+def _probe_command(
+    *,
+    workspace_id: str,
+    runtime: AdmissionRuntime,
+    pool: AdmissionPool,
+    quota: AdmissionQuota,
+    now_us: int,
+) -> AdmitRecipe:
+    """Build the command a create would hand admission, from stored rows only."""
+    instance, plan = runtime.instance, runtime.instance.plan
+    binding = plan.binding
+    duration_us = 1
+    deadline_at_us = now_us + duration_us
+    stage = StageAllocation(
+        _PROBE_STAGE,
+        _PROBE_LEASE,
+        binding.pool_id,
+        binding.target_node_id,
+        binding.gateway_id,
+        instance.instance_id,
+        instance.instance_generation,
+        instance.version,
+        1,
+    )
+    owner_id = pool.ownership.owner_id
+    if owner_id is None:
+        # A pool with no live owner identity cannot produce an authority; the caller
+        # reports it as the state the deployment must reconcile.
+        raise ValueError("pool ownership has no owner identity")
+    authority = OwnerAuthority(pool.ownership.pool_id, owner_id, pool.ownership.fencing_token)
+    business = OriginalBusinessCommand(
+        _PROBE_BUSINESS,
+        "sha256:" + hashlib.sha256(_PROBE_BUSINESS.encode()).hexdigest(),
+    )
+    request = AdmissionRequest(
+        identity=AdmissionIdentity(_PROBE_OPERATION, _PROBE_ATTEMPT),
+        workspace_id=workspace_id,
+        binding_revision_id=binding.binding_revision_id,
+        manifest_id=binding.manifest_id,
+        recipe_digest=canonical_digest(
+            {
+                "binding_revision_id": binding.binding_revision_id,
+                "manifest_id": binding.manifest_id,
+                "probe": True,
+            }
+        ),
+        policy_revision_id=quota.policy_revision_id,
+        expected_quota_version=quota.version,
+        service_class=plan.service_class,
+        authorities=(authority,),
+        stages=(stage,),
+        deadline_at_us=deadline_at_us,
+        job=CreateJob(
+            _PROBE_JOB,
+            _PROBE_OPERATION,
+            _PROBE_ATTEMPT,
+            _PROBE_EVENT,
+            canonical_digest({"probe": "admission-readiness-event"}),
+            business.request_digest,
+        ),
+    )
+    approved = ApprovedAdmissionRecipe(
+        binding.binding_revision_id,
+        binding.manifest_id,
+        request.recipe_digest,
+        quota.policy_revision_id,
+        plan.service_class,
+        (ApprovedStage(stage.stage_id, 1, plan),),
+        deadline_at_us,
+        frozenset({"concurrent_attempts"}),
+    )
+    return AdmitRecipe(request, business, approved)
+
+
+def _instance_report(
+    runtime: AdmissionRuntime, readiness_state: str, now_us: int
+) -> ReadinessInstanceReport:
+    instance = runtime.instance
+    return ReadinessInstanceReport(
+        instance.instance_id,
+        instance.instance_generation,
+        readiness_state,
+        runtime.readiness.expires_at_us,
+        (runtime.readiness.expires_at_us - now_us) // 1_000_000,
+        instance.plan.max_slots,
+        instance.held_slots,
+        instance.quarantined_slots,
+    )
+
+
+def load_admission_readiness(
+    cursor: _Cursor, workspace_id: str, *, now_us: int
+) -> AdmissionReadiness:
+    """Classify one instant by calling the create path's own predicate.
+
+    Every comparison lives in ``decide_create_admission``: this function only reads
+    the rows admission reads, builds the same command and names the one refusal it
+    returned. A condition that refuses a create therefore cannot be reported as
+    ``admitting``, and the report never recomputes a window or a counter (#863).
+    """
+    identifier(workspace_id)
+    state = _readiness_workspace_state(cursor, workspace_id)
+    if state is None:
+        return refused_readiness(
+            AdmissionReadinessCause.WORKSPACE_NOT_FOUND,
+            workspace_id=workspace_id,
+            now_us=now_us,
+        )
+    if state != "active":
+        return refused_readiness(
+            AdmissionReadinessCause.WORKSPACE_DISABLED,
+            workspace_id=workspace_id,
+            now_us=now_us,
+            workspace_state=state,
+        )
+    try:
+        quota_row = _quota(cursor, workspace_id)
+    except PublicJobAdmissionRejectedError as error:
+        if error.code != "workspace_not_configured":
+            raise
+        return refused_readiness(
+            AdmissionReadinessCause.WORKSPACE_NOT_CONFIGURED,
+            workspace_id=workspace_id,
+            now_us=now_us,
+        )
+    quota = _admission_quota_row(quota_row)
+    reports: list[ReadinessInstanceReport] = []
+    refusal: str | None = None
+    for candidate in _readiness_candidates(cursor):
+        try:
+            runtime, host, readiness_state = _readiness_runtime(cursor, candidate, now_us=now_us)
+        except PublicJobAdmissionRejectedError, ValueError, TypeError, KeyError:
+            # A stored intent admission cannot decode is an engine-side state the
+            # create path refuses; the per-instance row still reports what was seen.
+            reports.append(
+                ReadinessInstanceReport(
+                    str(candidate["instance_id"]),
+                    int(candidate["instance_generation"]),
+                    READINESS_INVALID,
+                    None,
+                    None,
+                    0,
+                    0,
+                    0,
+                )
+            )
+            refusal = refusal or "reconciliation_required"
+            continue
+        reports.append(_instance_report(runtime, readiness_state, now_us))
+        if host is None:
+            refusal = refusal or "reconciliation_required"
+            continue
+        pool_row = _readiness_one(
+            cursor,
+            "SELECT * FROM resource_pools WHERE pool_id=%s",
+            (runtime.instance.plan.binding.pool_id,),
+        )
+        pool = _admission_pool_row(pool_row)
+        try:
+            command = _probe_command(
+                workspace_id=workspace_id, runtime=runtime, pool=pool, quota=quota, now_us=now_us
+            )
+        except ValueError:
+            refusal = refusal or "reconciliation_required"
+            continue
+        verdict = decide_create_admission(
+            command,
+            quota=quota,
+            pools=(pool,),
+            hosts=(host,),
+            runtimes=(runtime,),
+            now_us=now_us,
+        )
+        if isinstance(verdict, Admitted):
+            return admitted_readiness(
+                workspace_id=workspace_id,
+                now_us=now_us,
+                instances=tuple(reports),
+                quota=quota,
+            )
+        refusal = refusal or verdict.code
+    if refusal is None:
+        # No ready instance at all: the create path selects nothing and answers the
+        # capacity refusal, so the report names the same class.
+        refusal = "job_capacity_exhausted"
+    cause = _PROBE_STATE_CODES.get(refusal) or cause_for_refusal(refusal)
+    return refused_readiness(
+        cause,
+        workspace_id=workspace_id,
+        now_us=now_us,
+        instances=tuple(reports),
+        quota=quota,
+        workspace_state=state,
+    )
+
+
 __all__ = [
     "PublicJobAdmission",
     "PublicJobAdmissionRejectedError",
     "build_public_job_admission",
+    "load_admission_readiness",
     "rejection_code",
 ]

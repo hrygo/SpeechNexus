@@ -26,6 +26,10 @@ from speechnexus_backend.speech.application.voice_drafts import (
     voice_input_shape,
 )
 from speechnexus_backend.speech.domain.admission import AdmissionRejectedError
+from speechnexus_backend.speech.domain.job_admission_readiness import (
+    AdmissionReadiness,
+    UnclassifiedRefusalError,
+)
 from speechnexus_backend.speech.domain.job_prerequisites import prerequisite_detail
 from speechnexus_backend.speech.domain.public_jobs import (
     CANCELLATION_UNCONFIRMED,
@@ -72,6 +76,7 @@ from speechnexus_backend.speech.infrastructure.postgres_pool import (
 from speechnexus_backend.speech.infrastructure.public_job_admission import (
     PublicJobAdmissionRejectedError,
     build_public_job_admission,
+    load_admission_readiness,
     rejection_code,
 )
 
@@ -552,6 +557,25 @@ class PostgresPublicJobs:
             return rejection_code(code)
         except PublicJobAdmissionRejectedError:
             return "admission_state_invalid"
+
+    def admission_readiness(self, workspace_id: str) -> AdmissionReadiness:
+        """Report one instant by calling the create path's own predicate.
+
+        The read uses the admission role because the same rows admission reads
+        must be the ones reported: the Job writer DSN cannot see the reservation
+        counters. A store that refuses the read answers the declared storage
+        outage instead of a fabricated verdict.
+        """
+        deadline = time.monotonic() + self._timeout
+        try:
+            with self._admission_transaction(deadline) as connection:
+                now_us = _database_now_us(connection)
+                with connection.admission_cursor() as cursor:
+                    return load_admission_readiness(cursor, workspace_id, now_us=now_us)
+        except UnclassifiedRefusalError, ValueError:
+            raise PublicJobUnavailableError from None
+        except psycopg.Error:
+            raise PublicJobUnavailableError from None
 
     def create(self, job: NewPublicJob) -> JobCreateResult:
         if self._require_admission and self._admission_pool is None:

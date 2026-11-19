@@ -570,6 +570,56 @@ def decide_admission(
 
 
 @dataclass(frozen=True, slots=True)
+class Admitted:
+    """The positive half of the one create-admission predicate."""
+
+    decision: AdmissionDecision
+
+
+@dataclass(frozen=True, slots=True)
+class Refused:
+    """The negative half: the one internal refusal code a create would answer."""
+
+    code: str
+
+
+def decide_create_admission(
+    command: AdmitRecipe,
+    *,
+    quota: AdmissionQuota,
+    pools: tuple[AdmissionPool, ...],
+    hosts: tuple[RuntimeHost, ...],
+    runtimes: tuple[AdmissionRuntime, ...],
+    now_us: int,
+) -> Admitted | Refused:
+    """The one predicate behind both a create and the readiness report.
+
+    A create and ``GET /v1/nexus/jobs/admission-readiness`` must answer the same
+    question about the same instant, and the only way to keep them answering the
+    same way is to make the answer exist once (#845, #863). The create path calls
+    this before it writes; the report builds a command from the same stored rows
+    and calls it without writing. Neither side re-derives a comparison, so a
+    condition this function refuses cannot be reported as ``admitting``.
+
+    ``Refused.code`` is the internal admission code, not a public one: the create
+    boundary maps it through ``PUBLIC_ADMISSION_CODES`` and the report maps it
+    through ``CAUSE_CODES``, so both name the same public answer.
+    """
+    try:
+        decision = decide_admission(
+            command,
+            quota=quota,
+            pools=pools,
+            hosts=hosts,
+            runtimes=runtimes,
+            now_us=now_us,
+        )
+    except AdmissionRejectedError as error:
+        return Refused(error.code)
+    return Admitted(decision)
+
+
+@dataclass(frozen=True, slots=True)
 class AdmissionFact:
     identity: AdmissionIdentity
     reservations: tuple[StageReservation, ...]

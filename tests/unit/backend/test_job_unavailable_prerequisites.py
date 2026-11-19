@@ -211,6 +211,15 @@ FORWARDING_CASES: tuple[tuple[str, str, str, str, str], ...] = (
     # _open_stream: the existence read, then the projection of that read.
     ("get", JOB_PATH + "/events", "get", "unavailable", SCHEMA_NOT_MIGRATED.detail),
     ("get", JOB_PATH + "/events", "get", "invalid", STORE_UNAVAILABLE.detail),
+    # _open_stream also serves the readiness report: the admission-role read is the
+    # one converting site this route owns.
+    (
+        "get",
+        "/v1/nexus/jobs/admission-readiness",
+        "admission_readiness",
+        "unavailable",
+        SCHEMA_NOT_MIGRATED.detail,
+    ),
 )
 
 
@@ -266,6 +275,10 @@ class StageRefusal:
     def retry(self, *args: Any, **kwargs: Any) -> Any:
         self._maybe("retry")
         raise AssertionError("this case must refuse in retry")
+
+    def admission_readiness(self, workspace_id: str) -> Any:
+        self._maybe("admission_readiness")
+        raise AssertionError("this case must refuse in the readiness read")
 
 
 @pytest.mark.parametrize(("method", "path", "stage", "kind", "expected"), FORWARDING_CASES)

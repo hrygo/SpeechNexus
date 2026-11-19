@@ -447,14 +447,20 @@ def test_versioned_migration_cli_is_idempotent_and_downgrade_preserves_history(
     try:
         with engine.connect() as connection:
             config.attributes["connection"] = connection
-            # 0060 refuses its own downgrade first; step below it so this test
-            # observes the deletion-ledger guard it was written for. The index is
-            # 0060's only object, so removing it reconstructs a pre-0060 database
-            # without weakening the production refusal.
+            # 0060 and 0061 refuse their own downgrade first; step below them so this
+            # test observes the deletion-ledger guard it was written for. Each index
+            # is its own revision's only object, so removing them reconstructs a
+            # pre-0060 database without weakening the production refusal.
             connection.execute(
                 text(
                     f'DROP INDEX IF EXISTS "{database.schema}".'
                     "speech_job_cancellation_fence_age_scan"
+                )
+            )
+            connection.execute(
+                text(
+                    f'DROP INDEX IF EXISTS "{database.schema}".'
+                    "speech_job_cancellation_lease_debt_scan"
                 )
             )
             connection.execute(

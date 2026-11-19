@@ -70,6 +70,10 @@ def _step_below_asr_settlement(intent_db: IntentSandbox) -> None:
     intent_db.admin.execute(
         f'DROP INDEX IF EXISTS "{intent_db.schema}".speech_job_cancellation_fence_age_scan'
     )
+    # 0061 (the permanent-debt read's partial index) also sits above this revision.
+    intent_db.admin.execute(
+        f'DROP INDEX IF EXISTS "{intent_db.schema}".speech_job_cancellation_lease_debt_scan'
+    )
     intent_db.admin.execute(
         f'UPDATE "{intent_db.schema}".alembic_version SET version_num = %s',
         ("0056_debt_probe_live_state_index",),

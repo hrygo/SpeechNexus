@@ -1393,6 +1393,9 @@ def test_downgrade_refuses_to_discard_attestation_history(
                 text(f'DROP INDEX IF EXISTS "{schema}".speech_job_cancellation_fence_age_scan')
             )
             connection.execute(
+                text(f'DROP INDEX IF EXISTS "{schema}".speech_job_cancellation_lease_debt_scan')
+            )
+            connection.execute(
                 text(
                     f'UPDATE "{schema}".alembic_version '
                     "SET version_num = '0056_debt_probe_live_state_index'"

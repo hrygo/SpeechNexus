@@ -37,6 +37,10 @@ HEAD = head_revision()
 DELETION_LEDGER_REVISION = "0059_speech_deletion_ledger"
 LEFT_CANCELLING_INDEX_REVISION = "0060_left_cancelling_debt_index"
 LEFT_CANCELLING_INDEX = "speech_job_cancellation_fence_age_scan"
+LEDGER_DEBT_INDEX_REVISION = "0061_ledger_debt_index"
+LEDGER_DEBT_INDEX = "speech_job_cancellation_ledger_debt_scan"
+LEASE_DEBT_INDEX_REVISION = "0062_lease_debt_index"
+LEASE_DEBT_INDEX = "speech_job_cancellation_lease_debt_scan"
 DELETION_PLAN_REVISION = "0058_speech_deletion_plans"
 ASR_SETTLEMENT_REVISION = "0057_asr_settlement"
 PRE_ASR_SETTLEMENT_REVISION = "0056_debt_probe_live_state_index"
@@ -54,12 +58,30 @@ def step_below_deletion_plans(connection: Any) -> None:
     # 0059's ledger references the plan rows, so it goes before them.
     execute("DROP TABLE IF EXISTS speech_deletion_ledger")
     execute("DROP TABLE IF EXISTS speech_deletion_plans")
-    # 0060 (the left-cancelling read's index) also sits above this revision and
-    # would otherwise be created a second time when the schema advances back.
+    # 0060 (the left-cancelling read's index) and 0062 (the permanent-debt read's)
+    # also sit above this revision and would otherwise be created a second time when
+    # the schema advances back. 0061's ledger index does not exist at head: 0062
+    # dropped it, so it is not restored here either.
     execute(f"DROP INDEX IF EXISTS {LEFT_CANCELLING_INDEX}")
+    execute(f"DROP INDEX IF EXISTS {LEASE_DEBT_INDEX}")
     execute(
         "UPDATE alembic_version SET version_num = %s",
         (ASR_SETTLEMENT_REVISION,),
+    )
+
+
+def step_below_ledger_debt_index(connection: Any) -> None:
+    """Start a downgrade from the pre-0061 head (the state 0060 left behind).
+
+    0061 refuses to drop its partial index, so a test that exercises 0060's own refusal
+    must first walk back past both later revisions: 0062's index and 0061's, then stamp
+    0060. This mirrors the production statements instead of weakening them.
+    """
+    step_below_lease_debt_index(connection)
+    connection.execute(f"DROP INDEX IF EXISTS {LEDGER_DEBT_INDEX}")
+    connection.execute(
+        "UPDATE alembic_version SET version_num = %s",
+        (LEFT_CANCELLING_INDEX_REVISION,),
     )
 
 
@@ -73,8 +95,9 @@ def step_below_deletion_ledger(connection: Any) -> None:
     """
     execute = connection.execute
     execute("DROP TABLE IF EXISTS speech_deletion_ledger")
-    # 0060 also sits above 0059; it only adds the age index.
+    # 0060 and 0062 also sit above 0059; they only add indexes.
     execute(f"DROP INDEX IF EXISTS {LEFT_CANCELLING_INDEX}")
+    execute(f"DROP INDEX IF EXISTS {LEASE_DEBT_INDEX}")
     execute(
         "ALTER TABLE speech_content_deletions "
         "DROP CONSTRAINT IF EXISTS speech_content_deletions_reason_check"
@@ -94,14 +117,36 @@ def step_below_left_cancelling_index(connection: Any) -> None:
 
     0060 refuses to drop its index, so a test that exercises an earlier
     revision's own refusal must first reconstruct the database a pre-0060
-    deployment has: remove the index (0060's only object) and stamp the
+    deployment has: remove the indexes 0060 and 0061 add and stamp the
     predecessor. This mirrors the production refusal instead of weakening it.
     """
     execute = connection.execute
     execute(f"DROP INDEX IF EXISTS {LEFT_CANCELLING_INDEX}")
+    execute(f"DROP INDEX IF EXISTS {LEASE_DEBT_INDEX}")
     execute(
         "UPDATE alembic_version SET version_num = %s",
         (DELETION_LEDGER_REVISION,),
+    )
+
+
+def step_below_lease_debt_index(connection: Any) -> None:
+    """Start a downgrade from the pre-0062 head (the state 0061 left behind).
+
+    0062 refuses to drop its partial index, so a test that exercises 0060's or 0061's
+    own refusal must first reconstruct the database a pre-0062 deployment has: remove
+    0062's index, restore the ledger index 0061 created (0062 dropped it), and stamp
+    0061. This mirrors the production statements instead of weakening them.
+    """
+    execute = connection.execute
+    execute(f"DROP INDEX IF EXISTS {LEASE_DEBT_INDEX}")
+    execute(
+        "CREATE INDEX IF NOT EXISTS "
+        f"{LEDGER_DEBT_INDEX} ON speech_job_cancellation_reconciliations (job_id) "
+        "WHERE settled_at_us IS NULL OR last_outcome = 'exhausted'"
+    )
+    execute(
+        "UPDATE alembic_version SET version_num = %s",
+        (LEDGER_DEBT_INDEX_REVISION,),
     )
 
 
@@ -120,9 +165,11 @@ def step_below_asr_settlement(connection: Any) -> None:
     execute("DROP TABLE IF EXISTS speech_deletion_ledger")
     execute("DROP TABLE IF EXISTS speech_deletion_plans")
     execute("DROP TABLE IF EXISTS speech_asr_settlement")
-    # 0060 also sits above 0057 and only adds an index; leave it behind and the
-    # next upgrade to head would try to create the same index twice.
+    # 0060, 0061 and 0062 also sit above 0057 and only add indexes; leave them behind
+    # and the next upgrade to head would try to create the same indexes twice.
     execute(f"DROP INDEX IF EXISTS {LEFT_CANCELLING_INDEX}")
+    execute(f"DROP INDEX IF EXISTS {LEASE_DEBT_INDEX}")
+    # 0061's ledger index was dropped by 0062, so there is nothing to drop for it here.
     execute(
         "UPDATE alembic_version SET version_num = %s",
         (PRE_ASR_SETTLEMENT_REVISION,),

@@ -112,10 +112,13 @@ def test_a_detail_with_long_identifiers_is_cut_to_a_bounded_size() -> None:
 def test_the_cancellation_detail_is_bounded_the_same_way() -> None:
     from speechnexus_backend.speech.infrastructure.readiness import _describe_debt
 
-    long_job = "job-" + "a" * 122
-    long_lease = "lease-" + "b" * 122
+    # Distinct (job, lease) pairs: the detail names each pair once, so 96 rows of the
+    # same pair would collapse to one line and never reach the 512-character bound.
+    rows = [
+        (f"job-{index:03d}" + "a" * 118, f"lease-{index:03d}" + "b" * 118) for index in range(96)
+    ]
     detail = _describe_debt(
-        [(long_job, long_lease, "reserved", "executing", None, None, None) for _ in range(96)]
+        [(job, lease, "reserved", "executing", None, None, None) for job, lease in rows]
     )
 
     assert detail is not None

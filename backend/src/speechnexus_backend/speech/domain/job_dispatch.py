@@ -50,12 +50,11 @@ def _kinds_in_lanes(*lanes: JobLane) -> tuple[str, ...]:
 
 
 # The default execution lane plans ASR and TTS only. Voice creation and
-# generation Jobs are committed with a draft, but they run in their own lane:
-# the default queue must never claim one, or converting the row into a
-# DispatchJob would abort an entire mixed batch before any supported Job is
-# dispatched. A queue that opts into the voice lane still claims only the kinds
-# its caller named. Lane membership is the table's column (#1047), not a second
-# vocabulary here.
+# generation Jobs are committed with a draft and run in their own lane, whose
+# worker is the one configured for their engine adapter; the default queue must
+# never claim one. A queue that opts into the voice lane still claims only the
+# kinds its caller named. Lane membership is the table's column (#1047), not a
+# second vocabulary here.
 DISPATCHABLE_JOB_KINDS: tuple[str, ...] = _kinds_in_lanes("default")
 VOICE_GENERATION_JOB_KINDS: tuple[str, ...] = _kinds_in_lanes("voice_generation")
 # Validation measures a candidate revision in its own lane. It is admitted
@@ -67,15 +66,18 @@ VOICE_JOB_KINDS: tuple[str, ...] = (
     *VOICE_VALIDATION_JOB_KINDS,
 )
 # Every kind a DispatchJob may represent, whether or not a queue claims it:
-# exactly the kinds with a lane. ``voice_preview`` has none, so it cannot reach
-# a row conversion and abort the batch.
+# exactly the kinds with a lane. ``voice_preview`` has none, so a queue can never
+# select it. Assigning it a lane without adding the publish-side media mapping
+# would fail at result publication (``application/results.py``), not at queue
+# construction.
 DISPATCHABLE_JOB_KIND_UNION: tuple[str, ...] = (
     *DISPATCHABLE_JOB_KINDS,
     *VOICE_JOB_KINDS,
 )
 # The narrow type of that union. It is declared in ``public_jobs`` beside the
 # table because mypy cannot compute a ``Literal`` from runtime data; the lane
-# tests hold it to ``DISPATCHABLE_JOB_KIND_UNION``.
+# tests hold it to ``DISPATCHABLE_JOB_KIND_UNION``. That equality guards the
+# alias drifting on its own; it is not the only guard on a new laned kind.
 DispatchJobKind = DispatchableJobKind
 _ERROR_CODE = re.compile(r"[a-z][a-z0-9_]{1,62}\Z")
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")

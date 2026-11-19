@@ -37,9 +37,11 @@ JOB_KINDS: tuple[JobKind, ...] = get_args(JobKind)
 # The static form of the dispatchable kinds. ``job_dispatch`` derives
 # ``DISPATCHABLE_JOB_KIND_UNION`` from the table at runtime; mypy cannot build a
 # ``Literal`` from runtime data, so the narrow type is declared beside the table
-# it must match and the lane tests assert the two name the same kinds. Without
-# that assertion a new laned kind would type-check into ``DispatchJob`` while the
-# dispatcher's own tuple had never heard of it.
+# it must match and the lane tests assert the two name the same kinds. That
+# equality is the only check for the reverse drift: hand-editing this alias
+# without touching the table keeps mypy green. A new laned kind is caught by the
+# literal dispatch pins, the union derivation, the publish-side media map and
+# this equality together, so none of them is the sole guard.
 DispatchableJobKind = Literal["asr", "tts", "voice_design", "voice_clone", "voice_validation"]
 
 
@@ -59,9 +61,14 @@ class JobKindProfile:
     outside the admission universe. ``pinned`` says the create may carry an
     expected binding: ``tts`` accepts an explicit reference, while the voice
     kinds derive it from the target draft. ``lane`` is the dispatch lane a queue
-    may claim this kind on, or ``None`` when no queue may claim it at all:
-    ``voice_preview`` is committed and readable, but no consumer dispatches it
-    yet, so it stays outside every lane instead of acquiring one by prefix.
+    may claim this kind on, or ``None`` when no queue may claim it at all: a
+    queue validates its selection against a union derived from this column, so a
+    laneless kind is never selectable. ``voice_preview`` is committed and
+    readable, but no consumer dispatches it yet, so it stays outside every lane
+    instead of acquiring one by prefix. That is a policy pin, not a dispatcher
+    guarantee: the publish-side media map has no preview entry, so assigning it
+    a lane without that mapping fails at result publication, not at queue
+    construction.
     """
 
     task: str | None

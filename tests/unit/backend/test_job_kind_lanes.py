@@ -48,8 +48,10 @@ def test_the_voice_queues_claim_exactly_the_voice_lanes() -> None:
 
 
 def test_the_default_lane_and_the_voice_lanes_never_overlap() -> None:
-    # A default queue that claimed a voice generation kind would convert the row
-    # into a DispatchJob mid-batch and abort every supported Job behind it.
+    # Voice work runs on a lane whose worker is configured for its engine
+    # adapter, so the default lane must not claim it. This is policy, not a
+    # construction-time rejection: the derived union would happily accept a
+    # kind that was given the wrong lane.
     assert set(DISPATCHABLE_JOB_KINDS) & set(VOICE_GENERATION_JOB_KINDS) == set()
     assert set(DISPATCHABLE_JOB_KINDS) & set(VOICE_VALIDATION_JOB_KINDS) == set()
     assert "voice_design" not in DISPATCHABLE_JOB_KINDS
@@ -90,8 +92,11 @@ def test_a_kind_without_a_lane_is_exactly_the_undispatched_preview() -> None:
 
 
 def test_the_dispatch_type_names_exactly_the_union() -> None:
-    # mypy cannot derive this Literal from the runtime table, so this equality
-    # is what keeps the type and the table in one vocabulary.
+    # mypy cannot derive this Literal from the runtime table. This equality is
+    # the only check for the reverse drift: editing the alias without the table
+    # keeps mypy green. A new laned kind is caught by several assertions (the
+    # literal pins, the union derivation, the publish-side media map), not by
+    # this one alone.
     assert get_args(DispatchJobKind) == DISPATCHABLE_JOB_KIND_UNION
 
 

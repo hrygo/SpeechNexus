@@ -225,8 +225,12 @@ def _binding_reaches_admission(definition_json: Any) -> bool:
     defaults = definition.get("execution_defaults")
     if not isinstance(defaults, dict):
         return False
-    for kind in ("tts", "asr"):
-        if kind not in defaults:
+    # Every kind the binding declares, not a hardcoded pair: a binding valid only
+    # for a kind this list forgot would leave the candidate universe silently, which
+    # is the same "a create is refused while the report stays green" failure in a
+    # narrower form.
+    for kind in defaults:
+        if not isinstance(kind, str):
             continue
         try:
             _admission_block(definition, kind)

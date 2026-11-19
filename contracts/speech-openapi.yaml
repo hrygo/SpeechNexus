@@ -1235,21 +1235,22 @@ paths:
         route is whether a create is admitted.
 
         The verdict is one value, never a set. `cause` is the single refusal class a
-        create for a published binding would answer right now, or null when a create
-        for every published binding would be admitted; `status` is `admitting`
-        if and only if `cause` is null, and `admitting` holds if and only if a
-        create for every published binding sent now would be admitted. The create
+        create would answer right now for the first admissible binding in revision
+        order, or null when a create for every admissible binding would be admitted;
+        `status` is `admitting` if and only if `cause` is null, and `admitting`
+        holds if and only if a create for every admissible binding sent now would be
+        admitted. "Admissible" is a property of the binding, not of this response: a
+        published, unretired binding whose execution defaults validate for at least
+        one declared kind is admissible, and a binding whose defaults validate for
+        none is not -- a create naming that one is refused by request validation
+        (`job_binding_incomplete`) before admission runs, so it is neither a cause
+        nor an `instances` row here. The create
         path answers one code, so a report naming several could only invent a
         precedence the API does not have -- which of the observed refusals a create
         reached first -- and would let the report describe a class the create never
         returns. Naming one makes "this is the code a create would answer at this
         instant" the only shape the response can take, and the two fields cannot
         disagree; the schema rejects a body that does.
-
-        A create validates the binding it names before it asks admission, so a
-        published binding that validation rejects as incomplete
-        (`job_binding_incomplete`, request-shaped) is outside this verdict: it is
-        neither a cause nor an `instances` row.
 
         Every public code that means "this deployment refuses every create" has
         exactly one cause here, and every cause names exactly one of those codes, so

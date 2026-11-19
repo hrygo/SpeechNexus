@@ -135,9 +135,7 @@ def upgrade(url: str, schema: str, revision: str) -> None:
                     text(f'DROP INDEX IF EXISTS "{schema}".speech_job_cancellation_fence_age_scan')
                 )
                 connection.execute(
-                    text(
-                        f'DROP INDEX IF EXISTS "{schema}".speech_job_cancellation_ledger_debt_scan'
-                    )
+                    text(f'DROP INDEX IF EXISTS "{schema}".speech_job_cancellation_lease_debt_scan')
                 )
                 connection.execute(
                     text(

@@ -755,7 +755,7 @@ def test_repeat_upgrade_and_refused_downgrade_preserve_history(sandbox: Sandbox)
                 text(f'DROP INDEX IF EXISTS "{s.schema}".speech_job_cancellation_fence_age_scan')
             )
             connection.execute(
-                text(f'DROP INDEX IF EXISTS "{s.schema}".speech_job_cancellation_ledger_debt_scan')
+                text(f'DROP INDEX IF EXISTS "{s.schema}".speech_job_cancellation_lease_debt_scan')
             )
             connection.execute(
                 text(f'UPDATE "{s.schema}".alembic_version SET version_num = :revision'),

@@ -460,7 +460,7 @@ def test_versioned_migration_cli_is_idempotent_and_downgrade_preserves_history(
             connection.execute(
                 text(
                     f'DROP INDEX IF EXISTS "{database.schema}".'
-                    "speech_job_cancellation_ledger_debt_scan"
+                    "speech_job_cancellation_lease_debt_scan"
                 )
             )
             connection.execute(

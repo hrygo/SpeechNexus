@@ -500,7 +500,7 @@ def test_migration_down_refuses_to_drop_nonempty_fences(fence_db: FenceSandbox) 
                 connection.execute(
                     text(
                         f'DROP INDEX IF EXISTS "{fence_db.schema}".'
-                        "speech_job_cancellation_ledger_debt_scan"
+                        "speech_job_cancellation_lease_debt_scan"
                     )
                 )
                 connection.execute(

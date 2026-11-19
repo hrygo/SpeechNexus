@@ -56,8 +56,9 @@ def test_0060_indexes_the_fence_acceptance_age_and_refuses_its_own_downgrade() -
         assert "USING btree (accepted_at_us, job_id)" in definition
         assert "WHERE" not in definition
 
-        # 0061 sits above 0060 and refuses first; reach the pre-0061 head so this
-        # test observes 0060's own guard. 0061's index is its only object.
+        # 0061 and 0062 sit above 0060 and refuse first; walk back past both (the
+        # helper removes 0062's index, removes 0061's, and stamps 0060) so this test
+        # observes 0060's own guard.
         step_below_ledger_debt_index(query)
 
         # 0060's own refusal, not 0059's: the index is a runtime safety property.

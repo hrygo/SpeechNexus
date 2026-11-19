@@ -360,22 +360,41 @@ def test_the_abandoned_label_is_not_a_ledger_mark() -> None:
     assert "due" in detail.split("(", 1)[1]
 
 
+def test_the_permanent_read_is_bounded_by_the_held_leases() -> None:
+    """#1008 review: the bound is the held leases, not an age and not the ledger.
+
+    A lease that still holds capacity is a live reservation, so the set is bounded by
+    the instance slots; every other candidate -- the ledger's open rows (0061, retired),
+    the fence history, the settled history -- grows with the deployment. The driving
+    FROM and the index predicate are asserted together because the planner can only use
+    the partial index if the query states exactly what it stores.
+    """
+    # The driving table is the lease table, and its predicate matches 0062's index.
+    assert "FROM admission_leases AS l" in _PERMANENT_DEBT
+    assert "WHERE l.lease_state NOT IN ('released', 'quarantined')" in _PERMANENT_DEBT
+    # The ledger is a LEFT JOIN so "the worker never claimed it" (no row) is included:
+    # that shape is one of the three this read exists for.
+    assert "LEFT JOIN speech_job_cancellation_reconciliations AS r" in _PERMANENT_DEBT
+    # A cancelled acceptance is required: a held lease with no cancellation is not debt.
+    assert "JOIN speech_job_cancellation_fences AS f" in _PERMANENT_DEBT
+    # A closed acceptance is not this debt, whatever its lease still holds.
+    assert "(r.job_id IS NULL OR r.settled_at_us IS NULL)" in _PERMANENT_DEBT
+    # No state gate: the read must not depend on where the Job is in its lifecycle.
+    assert "j.state" not in _PERMANENT_DEBT
+
+
 def test_the_permanent_read_takes_no_lookback_window() -> None:
     """#1008: a lookback window here is the defect, so it may not come back.
 
-    The read's bound is migration 0061's partial index -- the ledger's open rows --
-    not an age. A ``window_us`` placeholder or an ``accepted_at_us >=`` filter is how
-    the 25 h shape would silently disappear again, so neither may exist. The grace
-    premise is the one age condition every cancellation read shares, and it is an
-    upper bound only: it says the acceptance is old enough to judge, not that it is
-    recent enough to see.
+    A ``window_us`` placeholder or an ``accepted_at_us >=`` filter is how the 25 h shape
+    would silently disappear again, so neither may exist. The grace premise is the one
+    age condition every cancellation read shares, and it is an upper bound only: it says
+    the acceptance is old enough to judge, not that it is recent enough to see.
     """
     assert "%(window_us)s" not in _PERMANENT_DEBT
     assert "%(now_us)s" in _PERMANENT_DEBT  # the ``due`` branch and the grace premise
     assert "accepted_at_us >=" not in _PERMANENT_DEBT
     assert "accepted_at_us <= now_clock.now_us - %(grace_us)s" in _PERMANENT_DEBT
-    # And it reads the ledger's open rows with the index's own predicate.
-    assert "(r.settled_at_us IS NULL OR r.last_outcome = 'exhausted')" in _PERMANENT_DEBT
 
 
 def test_a_completed_execution_is_labelled_as_its_own_subclass() -> None:

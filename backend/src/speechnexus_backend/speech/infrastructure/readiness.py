@@ -104,13 +104,16 @@ _JOB_CLASSES = ("lease-unread", "no-held-lease")
 #: spot).
 LEFT_CANCELLING_HOLDING_CAPACITY = "left-cancelling-holding-capacity"
 #: The unbounded sibling of :data:`LEFT_CANCELLING_HOLDING_CAPACITY`: the same
-#: accepted-cancellation-and-held-lease fact, read from the ledger instead of the Job
-#: state and with **no** age bound, so the debt that aged out of the fourth read is
-#: named again (#1008). It is a fifth scope and, like the fourth, never joins the three
-#: ledger marks: it states which read named the Job, not what the ledger can still
-#: advance. A Job is tagged here only when no other read named it, i.e. the bounded
-#: read had stopped -- "abandoned" is about the read face's horizon, not a verdict,
-#: because only ``never claimable (exhausted)`` proves no automatic claim is left.
+#: accepted-cancellation-and-held-lease fact, read from the held leases instead of the
+#: Job state or the fence's acceptance age, so the debt that aged out of the fourth
+#: read is named again (#1008). It is a fifth scope and, like the fourth, never joins
+#: the three ledger marks: it states which read named the Job, not what the ledger can
+#: still advance. A Job is tagged here only when no other read named it, i.e. the
+#: bounded read had stopped. The three shapes it catches are "the worker never claimed
+#: the acceptance" (no ledger row at all), "the ledger is past its schedule" (unsettled,
+#: outside the window) and "the ledger can never be claimed again" (``exhausted``) --
+#: "abandoned" is about the read face's horizon, not a verdict: only ``never claimable
+#: (exhausted)`` proves no automatic claim is left.
 ABANDONED_HOLDING_CAPACITY = "abandoned-holding-capacity"
 #: Fixed report order and wording for the ledger-side schedule facts. The three are
 #: mutually exclusive on one acceptance, and each states a fact about the durable
@@ -211,21 +214,25 @@ class CancellationDebtProbe:
     scope below is what closed that horizon.
 
     A fifth scope is the unbounded sibling of the fourth:
-    ``abandoned-holding-capacity: N`` counts Jobs whose ledger row is unsettled or
-    ``exhausted`` while a lease they own still holds capacity, read with **no** age
-    bound. It starts from the ledger's open rows (migration 0061's partial index)
-    instead of the Job state or the fence's acceptance age, so its cost follows the
-    open debt rather than the deployment's cancellation history -- and it therefore
-    still names the oldest debt, which is the shape #1008 confirmed:
-    ``state = 'cancelled'`` + ``lease_state = 'reserved'`` +
-    ``last_outcome = 'exhausted'`` with an acceptance older than the fourth read's
-    window. No other read names it: the two Job-state reads need ``cancelling``, the
-    fourth read is bounded, and the ledger is never claimed again once ``exhausted``.
-    The label stays beside the fourth and never folds into it -- the fourth is
-    bounded, this one is not, and an acceptance that ages out of the window moves
-    from ``left-cancelling-holding-capacity`` to ``abandoned-holding-capacity`` -- and
-    it is likewise not a verdict: only ``never claimable (exhausted)`` proves that no
-    automatic claim is left, an unsettled row stays claimable by the worker.
+    ``abandoned-holding-capacity: N`` counts Jobs that hold capacity through a lease
+    whose acceptance no bounded read names any more, read with **no** lookback window
+    and no Job-state gate. It starts from the held leases (migration 0062's partial
+    index over ``admission_leases``) instead of the Job state, the fence's acceptance
+    age or the ledger row -- so its cost is bounded by the capacity that is reserved,
+    a number the deployment cannot exceed, rather than by its cancellation history,
+    its ledger history or its uptime. It therefore still names the oldest debt, which
+    is the shape #1008 confirmed: ``state = 'cancelled'`` + ``lease_state =
+    'reserved'`` + ``last_outcome = 'exhausted'`` with an acceptance older than the
+    fourth read's window; and it also names the shape the ledger-driven attempt could
+    not, where the worker never claimed the acceptance and there is no ledger row at
+    all. A ``settled`` ledger row is excluded: the acceptance is closed, and capacity
+    still held under it belongs to the release path. The label stays beside the fourth
+    and never folds into it -- the fourth is bounded, this one is not, and an
+    acceptance that ages out of the window moves from
+    ``left-cancelling-holding-capacity`` to ``abandoned-holding-capacity``. It is not
+    a verdict either: only ``never claimable (exhausted)`` proves that no automatic
+    claim is left; an unsettled row stays claimable by the worker when reconciliation
+    is enabled, and a row with no ledger row at all is one the worker never claimed.
 
     The detail degrades instead of failing, in three observable shapes:
 
@@ -255,8 +262,8 @@ class CancellationDebtProbe:
     the grace, so a window no larger than that would always select nothing. The
     default (24 h) is far past the confirmation window plus backoff, so an
     acceptance is never reported before its judgement can complete. The fifth read
-    takes no lookback window: it is index-bounded by the open ledger rows, so nothing
-    it names depends on how long the debt has existed.
+    takes no lookback window: it is index-bounded by the held leases, so nothing it
+    names depends on how long the debt has existed.
     """
 
     def __init__(
@@ -674,34 +681,41 @@ LIMIT %(limit)s
 """
 
 # The fifth read: the same acceptance-and-held-lease fact with **no lookback window**, which is
-# what makes it see the permanent shape (#1008). A Job that closed as `cancelled` while
-# its release was refused, and whose ledger was then recorded as `exhausted`, holds
-# capacity that
+# what makes it see the permanent debt (#1008). A Job that closed as `cancelled` while its
+# release was refused holds capacity that
 #
 #   * `_DEBT` cannot see -- the Job is no longer `cancelling`;
 #   * `_LEFT_CANCELLING_DEBT` cannot see once the acceptance is older than its window,
-#     which is exactly the oldest and worst debt.
+#     which is exactly the oldest and worst debt;
+#   * and no read sees at all when the worker never claimed the acceptance, so there is
+#     no ledger row to start from (`_LEFT_CANCELLING_DEBT`'s ledger join is LEFT, but its
+#     window still excludes the old ones).
 #
-# So the bound has to come from somewhere other than time, and it comes from the debt
-# itself: migration 0061 adds `speech_job_cancellation_ledger_debt_scan`, a partial index
-# on the ledger's open rows (`settled_at_us IS NULL OR last_outcome = 'exhausted'`). This
-# read starts there -- not at the Job table, not at the fence history -- so its cost
-# follows the size of the *open* ledger, and a deployment with a long cancellation history
-# pays for that history nowhere. The predicate below is stated exactly as the index is, so
-# the planner can prove the query implies the index.
+# So the bound comes from the debt itself: the leases that still hold capacity. That set is
+# bounded by the deployment's instance slots -- capacity it cannot exceed, since a lease is
+# what reserves that capacity -- so it does not grow with the ledger, the fence table, the
+# Job table or uptime. Migration 0062 adds `speech_job_cancellation_lease_debt_scan`, a
+# partial index on `admission_leases (operation_id) WHERE lease_state NOT IN ('released',
+# 'quarantined')`, and this read starts there.
 #
-# Why the ledger and not the fence: `speech_job_cancellation_fences` keeps one row per
-# accepted cancellation for the deployment's whole life, so a fence-driven unbounded read
-# is the whole-history scan migrations 0056/0060 exist to avoid. The ledger's open rows
-# are the only rows that can describe capacity nobody returned, and there are few of them
-# even on a busy deployment -- the settled majority is what the partial predicate excludes.
+# Why not the ledger (migration 0061's first attempt, superseded): an `exhausted` row keeps
+# `settled_at_us IS NULL` forever -- nothing in the codebase ever settles it -- so every
+# exhausted acceptance after a refused release is a *permanent* member of that partial index
+# even when its lease was released long ago. The index therefore grows with the deployment's
+# failures, not with the capacity still held: measured 0.058 ms with 10 open rows, 0.879 ms
+# with 100 exhausted history rows (the read falls back to a sequential scan of the fence
+# table), 1.204 ms with 2 000. The lease-driven read measures 0.06-0.08 ms on all three.
 #
-# `exhausted` is included on purpose: the claim predicate excludes it
-# (`last_outcome IS DISTINCT FROM 'exhausted'`), so an exhausted row is exactly the debt
-# no automatic pass will ever revisit. Including the merely unsettled rows costs nothing
-# -- they are in the same partial index -- and they are the same shape one failure later.
-# A `settled` row is not read here: the ledger says the acceptance is closed, so capacity
-# that is still held in that shape is the release path's business, not this diagnostic's.
+# Why not the fence table, and why the lease is the right driver: `_LEFT_CANCELLING_DEBT` is
+# fence-driven and needs its window for exactly that reason -- `speech_job_cancellation_fences`
+# keeps one row per accepted cancellation for the deployment's whole life. A held lease, by
+# contrast, is a live resource, and the capacity it consumes is what makes the debt matter.
+#
+# The ledger is a LEFT JOIN, not the source: a cancellation the worker never claimed has no
+# ledger row at all, and that shape (accepted, released refusal, no ledger) is one of the
+# three the bounded reads cannot name. `settled` rows are excluded: the ledger says the
+# acceptance is closed, so a lease that still holds capacity in that shape is the release
+# path's business, not this diagnostic's.
 _PERMANENT_DEBT = f"""
 SELECT j.job_id, l.lease_id, l.lease_state, i.execution_state,
        e.evidence_kind, e.execution_stopped, e.resources_released,
@@ -709,30 +723,34 @@ SELECT j.job_id, l.lease_id, l.lease_state, i.execution_state,
        -- the two labels describe one sentence, so no read may classify a row its own way.
        {_SCHEDULE_STATE_SQL} AS schedule_state,
        '{ABANDONED_HOLDING_CAPACITY}' AS debt_class
--- The open ledger is the driving table: its partial index is this read's bound.
-FROM {job_cancellation_fence_schema.RECONCILIATION_TABLE} AS r
-JOIN {job_cancellation_fence_schema.TABLE} AS f ON f.job_id = r.job_id
--- The Job row is not filtered (there is no state gate here), but it must exist and the
--- detail prints its id, exactly as in the other reads.
-JOIN {public_job_schema.JOBS} AS j ON j.job_id = r.job_id
+-- The held leases are the driving set and the bound: migration 0062's partial index holds
+-- exactly these rows, and their number is bounded by the instance slots that reserve them.
+FROM admission_leases AS l
 -- The database clock is read once by the probe and passed here, so the `due` branch
 -- above judges the schedule at the same instant as the fourth read.
 CROSS JOIN (SELECT %(now_us)s::BIGINT AS now_us) AS now_clock
--- Capacity that is still held is the blocker, and only such a lease makes this debt:
--- a released or quarantined lease returned its capacity and is accounted for.
-JOIN admission_leases AS l
-  ON l.operation_id = r.job_id
- AND l.lease_state NOT IN ('released', 'quarantined')
+-- The Job row is not filtered (there is no state gate here), but it must exist and the
+-- detail prints its id, exactly as in the other reads.
+JOIN {public_job_schema.JOBS} AS j ON j.job_id = l.operation_id
+-- Only an accepted cancellation is cancellation debt: a lease held by a Job whose
+-- cancellation was never requested is a different fact, and the other probe reports it.
+JOIN {job_cancellation_fence_schema.TABLE} AS f ON f.job_id = l.operation_id
+-- LEFT, not JOIN: "the worker never claimed this acceptance" is one of the shapes this
+-- read exists for, and an inner join would silently drop it.
+LEFT JOIN {job_cancellation_fence_schema.RECONCILIATION_TABLE} AS r
+  ON r.job_id = l.operation_id
 LEFT JOIN submit_intents AS i ON i.lease_id = l.lease_id
 LEFT JOIN execution_stop_evidence AS e ON e.submit_intent_id = i.submit_intent_id
--- Stated exactly as migration 0061's partial index states it, so the planner proves the
--- implication and reads the index instead of the deployment's whole ledger.
-WHERE (r.settled_at_us IS NULL OR r.last_outcome = 'exhausted')
+-- Stated exactly as migration 0062's partial index states it, so the planner proves the
+-- implication and reads the index instead of the whole lease table.
+WHERE l.lease_state NOT IN ('released', 'quarantined')
+  -- A closed acceptance is not this debt, whatever its lease still holds.
+  AND (r.job_id IS NULL OR r.settled_at_us IS NULL)
   -- Only the shared premise, and only as an upper bound: the acceptance is past the
   -- grace every cancellation read requires. There is deliberately no lower bound --
   -- no lookback window -- which is the whole difference from the fourth read.
   AND f.accepted_at_us <= now_clock.now_us - %(grace_us)s
-ORDER BY f.accepted_at_us, r.job_id, l.lease_id
+ORDER BY f.accepted_at_us, j.job_id, l.lease_id
 LIMIT %(limit)s
 """
 

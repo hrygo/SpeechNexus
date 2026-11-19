@@ -1323,12 +1323,17 @@ worker。拿不到停止证据时受理只写受理事实，Job 停在 `cancelli
      该受理的 Job 已离开 `cancelling`（`cancelled`、`failed` 或其它终态），账本仍未 `settled`，
      租约仍持有容量。没有这一路时，这类容量对轮询读面完全不可见。它只统计受理时间在回看
      窗口（默认 24 小时，必须大于宽限）内的行。
-   - `abandoned-holding-capacity: A`：与上一路并列、**不设回看窗口**的读法。该受理的账本仍未
-     `settled` 或已 `exhausted`，租约仍持有容量，受理多老都会被点名——这正是上一路窗口
-     漏掉的永久形态（`cancelled` + 租约 `reserved` + 账本 `exhausted`，受理超过 24 小时）。
+   - `abandoned-holding-capacity: A`：与上一路并列、**不设回看窗口**的读法，从**持有中的
+     租约**出发（迁移 `0062` 的部分索引，谓词 `lease_state NOT IN ('released','quarantined')`），
+     账本是 `LEFT JOIN`。它覆盖上一路窗口漏掉的三类永久形态：账本已 `exhausted`
+     （`cancelled` + 租约 `reserved` + `exhausted` + 受理超过 24 小时的原始 bug）、账本未结算
+     但已过期、以及**账本根本没有行**（worker 从未领取，默认关闭对账时无人会领取）。
      两路的分工只有一条：`left-cancelling-holding-capacity` 有时界、`abandoned-holding-capacity`
      没有；同一个 Job 只归先命名它的那一路，随受理老化从前者移到后者，所以两者**都**缺失
-     才说明不再持有容量。`A` 本身不证明没有推进者，`exhausted` 的行才只能走操作员出口。
+     才说明不再持有容量（`released` = 容量已归还；`quarantined` = 仍被隔离占用，但已由隔离/
+     释放流程记账）。`A` 本身不证明没有推进者，`exhausted` 的行才只能走操作员出口。
+     账本里的 `exhausted` 行会永久保留（删除证据的一部分），从 `0062` 起不再参与成本上界；
+     操作员出口归还容量后账本仍保持 `exhausted`，这是已知有意的残留。
    - 有阻塞明细（`job -> lease(lease=…, execution=…, subclass=…)`）：只说明租约仍持有容量、
      执行处于什么状态，**不**说明 worker 在跑；`subclass=completed-without-release` 走有界
      操作员出口，其余走隔离/停止路径。

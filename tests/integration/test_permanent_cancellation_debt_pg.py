@@ -218,6 +218,56 @@ def test_an_acceptance_inside_the_grace_is_not_abandoned(
     assert detail is None
 
 
+def test_a_cancellation_the_worker_never_claimed_is_named_too() -> None:
+    """The shape a ledger-driven read cannot see: accepted, held, and no ledger row.
+
+    Default deployments run with reconciliation disabled, so a refused release may never
+    be claimed at all -- no ledger row exists, and once the acceptance is past the fourth
+    read's window nothing names it. The fifth read starts from the held lease, so it does.
+    """
+    with _sandbox((LEASE, QUARANTINED_DOCUMENT_STATE)) as box:
+        box.execute(
+            "UPDATE speech_jobs SET state = 'cancelled', status_version = 3 WHERE job_id = %s",
+            (box.job_id,),
+        )
+        _accepted_before(box, age_us=25 * HOUR_US)
+        # No ledger row exists: the worker never claimed the acceptance.
+        assert box.rows()["ledger"] == []
+        assert _left_read(box) == []
+
+        detail = asyncio.run(_debt_probe(box).check())
+
+    assert detail is not None
+    assert detail.startswith(
+        "cancellation_debt: 1 accepted cancellation(s) still hold capacity over 1 held lease(s)"
+    )
+    # The mark that says the deployment never drove this acceptance, and the label that
+    # says no bounded read names it any more.
+    assert "never claimed: 1" in detail
+    assert f"{ABANDONED_HOLDING_CAPACITY}: 1" in detail
+    assert LEFT_CANCELLING_HOLDING_CAPACITY not in detail
+    assert "unavailable" not in detail
+
+
+def test_a_held_lease_without_an_accepted_cancellation_is_not_debt() -> None:
+    """Capacity held by a Job nobody asked to cancel is a different fact.
+
+    The fifth read joins the fence, so a lease of a live Job -- no accepted cancellation
+    -- is not cancellation debt even though it holds capacity.
+    """
+    with _sandbox((LEASE, QUARANTINED_DOCUMENT_STATE)) as box:
+        box.execute(
+            "UPDATE speech_jobs SET state = 'cancelled', status_version = 3 WHERE job_id = %s",
+            (box.job_id,),
+        )
+        _accepted_before(box, age_us=25 * HOUR_US)
+        box.execute("DELETE FROM speech_job_cancellation_fences WHERE job_id = %s", (box.job_id,))
+
+        detail = asyncio.run(_debt_probe(box).check())
+
+    assert detail is None
+
+
 def test_a_cancelling_job_is_not_tagged_abandoned() -> None:
     """The fifth tag means "no read named it", so a live ``cancelling`` Job never has it.
 

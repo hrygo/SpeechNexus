@@ -87,8 +87,9 @@ ENVELOPE_KEYS = frozenset({"code", "type", "message", "param", "request_id", "re
 # implements revision generation and validation: 15 -> 13; #495 implements
 # fixed-revision preview: 13 -> 12; #484 implements the pronunciation-set
 # collection read and draft creation: 12 -> 10; #519 implements voice draft
-# publication: 10 -> 9; #819 implements speech deletion preview, execution and
-# read in slices A-C: 9 -> 7 with no deletion placeholder left.
+# publication: 10 -> 9; #819 implements the speech deletion preview (A): 10 -> 9,
+# its execution and ledger (B): 9 -> 8, and the read route (C): 8 -> 7. The list
+# below is what still has no producer.
 KNOWN_UNIMPLEMENTED_OPERATIONS: dict[str, str] = {
     # Operation coordination is declared but has no producer.
     "getOperation": "operation read route is not implemented",

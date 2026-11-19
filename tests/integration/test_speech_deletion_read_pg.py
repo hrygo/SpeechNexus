@@ -3,7 +3,9 @@
 The write side is slice B; this module pins the read surface:
 
 * a 200 body is exactly the 202 body the execution committed, byte for byte, and
-  a new process with a new pool returns the same bytes (the read depends on PG);
+  a second app built over a fresh pool and ledger service returns the same bytes
+  (the read depends on PostgreSQL alone; a real second OS process was checked by
+  hand and is not reproduced here);
 * an unknown id, an id that is not a deletion id and another workspace's real
   deletion all answer the same declared 404, so existence cannot be inferred;
 * a queued row keeps ``cleanup_state=pending`` whether or not its object purge is
@@ -220,8 +222,12 @@ async def test_get_projects_the_ledger_after_a_real_execution(sandbox: Sandbox) 
         pool.close()
 
 
-async def test_a_restarted_process_returns_the_same_bytes(sandbox: Sandbox) -> None:
-    """A new process and pool answer the same id from PostgreSQL alone."""
+async def test_a_fresh_pool_and_service_return_the_same_bytes(sandbox: Sandbox) -> None:
+    """A fresh pool and ledger service answer the same id from PostgreSQL alone.
+
+    Same interpreter, new pool, new service, new app: nothing but PostgreSQL
+    carries the row. A genuine second OS process was verified manually.
+    """
     first_app, first_pool, _ = _app(sandbox)
     plan = await _preview(first_app, "asset", ASSET, 3, "key-read-restart-plan")
     executed = await _execute(first_app, _confirm(plan), "key-read-restart-exec")

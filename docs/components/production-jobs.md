@@ -550,6 +550,13 @@ Job 已是 `cancelled` 是另一条分支，判定它的是**容量结论而不�
    明细、四个账本标记与 `retrying at attempt ceiling`）；同族的 `stop_evidence_debt` 不读
    这两列，不受影响。
 
+   这条约束由真库集成测试
+   [`test_role_grant_coverage_pg.py`](../../tests/integration/test_role_grant_coverage_pg.py)
+   守护：它以该只读身份执行钻取明细、`/readyz` 汇总与 `stop_evidence_debt` 三条读面，
+   把账本授权退回四列（`#1038` 之前的形状）时，明细与汇总两条用例变红并指名缺
+   `speech_job_cancellation_reconciliations.attempts`，`stop_evidence_debt` 仍绿。
+   因此「部署是否真的重跑过该函数」不再靠单测比对 DDL 文本。
+
    探针复用一条连接（`application_name=speechnexus-readiness-debt`），不随每次 `/readyz`
    轮询新建会话；查询后回滚以保持会话空闲。
 
@@ -1101,6 +1108,42 @@ Job/outbox SELECT 和创建所需列的 INSERT；没有 UPDATE、DELETE、持久
 池通过显式 schema 配置定位这些表，不接收客户端命名空间。
 数据库级 PUBLIC TEMP 与其他继承授权按[存储/角色基线](../operations/production-coordination-storage.md)
 单独核对；共享池显式将 `pg_temp` 置于末尾，防止同名临时表覆盖权威表。
+
+### 授权覆盖面：以受限身份真读每个面
+
+授权够不够只能由「以那个身份执行那条语句」回答；比对 grant 函数与 SQL 里的列名会漏，
+`#1038` 漏的就是一列。集成测试
+[`test_role_grant_coverage_pg.py`](../../tests/integration/test_role_grant_coverage_pg.py)
+用参考 provisioning 在真 PG 上建出下列角色，再以该角色连库执行各面的生产查询，断言
+语句成功且返回预期形状；失败信息指名面、缺的表或列，以及应重跑的 grant 函数。三条用例
+分别覆盖：每个面以自己的身份成功、回退某角色对某表的 `SELECT` 只让读该表的用例变红、
+只保留声明中的授权也足以跑通该面。
+
+| 面 | 运行身份 | 授权函数 |
+| --- | --- | --- |
+| `cancellation_debt` 钻取明细（`_DEBT`、`_LEFT_CANCELLING_DEBT`、`_PERMANENT_DEBT`） | 取消债只读身份（`SPEECHNEXUS_READINESS_CANCELLATION_DSN`） | `cancellation_debt_reader_grants` |
+| `cancellation_debt` 的 `/readyz` 汇总（Job 级读与探针 detail） | 同上 | `cancellation_debt_reader_grants` |
+| `stop_evidence_debt`（派发门禁挂住的 Job） | 同上 | `cancellation_debt_reader_grants` |
+| 准入就绪报告的行读取 | admission（`SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL`） | `public_job_admission_grants` |
+| 巡检 `open()` 的 `REQUIRED_TABLES` 自检 | admission | `public_job_admission_grants` |
+| 执行派发领取（`claim_due`，含认领列 UPDATE） | dispatch（`SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL`） | `job_runtime_grants`、`job_dispatch_grants`、`public_job_grants`、`coordination_runtime_grants` |
+| Job/outbox 认领（`claim_in_transaction` 与 outbox 读取） | Job writer（`SPEECHNEXUS_JOB_WRITER_DATABASE_URL`） | `job_runtime_grants` 与该脚本的 writer baseline |
+| 绑定停用协调（原始 intent、target、lease 读取） | 停用协调身份 | `disable_coordinator_grants` |
+| 资产检查（`PostgresAssetMetadata.get`、`.object`） | 资产运行身份 | `asset_runtime_grants` |
+
+两处边界需要写明（前者是安装路径，后者是覆盖范围）；测试按真实授权运行，不放宽：
+
+- **Job writer 的认领列**：`coordination_jobs` 的 `claim_owner_id`、`claim_expires_at_us`、
+  `claim_version`、`job_state` UPDATE 只由 `scripts/dev-env/provision-job-roles.py` 的
+  `WRITER_BASELINE_UPDATE` 安装，任何 `*_grants` 函数都不声明它（`job_runtime_grants`
+  按创建面刻意不给 UPDATE）。只装 `job_runtime_grants` 的 writer 能读到认领行，结算认领
+  时会被拒成 `42501`；运行时报文与
+  [`compose-minimal.md`](../operations/compose-minimal.md) 的 `role_privileges_missing`
+  都指向重跑该脚本。建 writer 必须跑脚本，不能只跑函数。
+- **admission 的两条读面**：准入就绪报告与巡检 `REQUIRED_TABLES` 自检读的是同一组关系
+  （13 张，自检是其中子集），全部由 `public_job_admission_grants` 的表级 `SELECT` 覆盖，
+  没有额外授权。巡检若用 writer 身份启动就会读不到其中 8 张（`#1041`），这正是该自检
+  放在 `open()` 里、失败即 exit 2 的原因：它是启动期失败，不是轮询期的 `unavailable`。
 
 ## 证据与保护范围
 

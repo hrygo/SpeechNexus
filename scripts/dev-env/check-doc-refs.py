@@ -68,7 +68,7 @@
   scripts/dev-env/check-doc-refs.py --write-baseline scripts/dev-env/doc-refs-baseline.json
   scripts/dev-env/check-doc-refs.py --path docs/operations --path deploy
   scripts/dev-env/check-doc-refs.py --show-records   # 逐条打印过程记录的问题
-  scripts/dev-env/check-doc-refs.py --show           # 连被引用行的原文一起打印
+  scripts/dev-env/check-doc-refs.py --show           # 只打印问题项, 并附被引用行的原文
   scripts/dev-env/check-doc-refs.py --json
 
 默认扫描 `docs` 与 `deploy`:`deploy/README.md` 是终态文档,它自己的引用和指向它的引用
@@ -110,7 +110,9 @@ RECORD = "record"
 # 过程记录目录:这些目录下的 Markdown 保留原时点事实,不参与终态门禁.
 RECORD_PREFIXES = ("docs/reviews/", "docs/archive/")
 # dated 记录:`docs/validation/2026-11-14-job-workspace-default.md` 形态的验证记录.
-DATED_RECORD = re.compile(r"^docs/validation/\d{4}-\d{2}-\d{2}-.+\.md$")
+# `docs/audits/` 同样按 dated 命名放时点审计:今天没有这样的文件,但把 dated 审查报告
+# 直接丢进 `docs/audits/` 会绕开下面 `docs/reviews/` 的内容守卫,所以一并按记录处理.
+DATED_RECORD = re.compile(r"^docs/(validation|audits)/\d{4}-\d{2}-\d{2}-.+\.md$")
 # `docs/reviews/` 只放审查报告,否则过程记录的豁免就成了藏文档的地方.判据有两层,
 # 都作用在文件自身:`<YYYY-MM-DD>-*.md` 的文件名,加上「一级标题写明是审查/复核/
 # 核对,且开头 400 字符引用 issue/PR 编号」的内容特征.只查文件名挡不住「把终态
@@ -409,7 +411,7 @@ def main() -> int:
     ap.add_argument(
         "--show",
         action="store_true",
-        help="在每条引用后打印被引用行的原文；用于判断内容是否与文档描述相符",
+        help="只打印问题项并附被引用行的原文；用于判断内容是否与文档描述相符",
     )
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
@@ -586,8 +588,10 @@ def main() -> int:
         return 1 if new_keys or layout_offenders else 0
 
     if args.show:
+        # 排障模式:只打印问题项。全量打印会把 DRIFT 之类埋在几千行 OK 里,
+        # 而 OK 行没有排障价值——要核对某条 OK 引用时直接看那处文档。
         for r in results:
-            if r["verdict"] != "EXTERNAL":
+            if r["verdict"] not in ("OK", "EXTERNAL"):
                 print_ref(r, show=True)
     else:
         for r in new_terminal:

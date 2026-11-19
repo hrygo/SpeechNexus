@@ -57,6 +57,26 @@ def job_block(job_id: str) -> str:
     ]
 
 
+def bare_code_reference_count() -> int:
+    """Terminal references to non-Markdown targets that still carry no assertion.
+
+    Mirrors the counter in `main`, so the report is checked against the tree
+    instead of a pinned number. The debt is supposed to reach zero; asserting
+    `> 0` would turn red on the day it is finally paid off.
+    """
+    total = 0
+    for root in ("docs", "deploy"):
+        for doc in sorted((ROOT / root).rglob("*.md")):
+            if CHECK.scope_of(doc.relative_to(ROOT).as_posix()) != CHECK.TERMINAL:
+                continue
+            refs, _ = CHECK.scan_document(doc)
+            for _, line, ref_path, _, assertion in refs:
+                if "外部依赖" in line or assertion or ref_path.endswith(".md"):
+                    continue
+                total += 1
+    return total
+
+
 class Repository:
     """A throwaway git repository the script can be pointed at."""
 
@@ -251,7 +271,40 @@ class AssertionTests(unittest.TestCase):
         repo.track()
         result = repo.run()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        # The counter proves the ref was parsed and asserted, not merely ignored:
+        # a broken parser would also print RESULT PASS.
+        self.assertIn("ASSERT doc_refs=1 asserted=1", result.stdout)
         self.assertIn("RESULT PASS", result.stdout)
+
+    def test_fifteen_inserted_lines_are_still_inside_the_window(self) -> None:
+        # Content lands on 45, the last line the +-15 window covers: green. This
+        # pins the constant's meaning, not just "a large drift is red".
+        repo = Repository(self)
+        repo.write(TERMINAL_DOC, f"见 `{DOC_TARGET}:30`（该行须含 `TARGET_30`）。\n")
+        repo.write(
+            DOC_TARGET,
+            "".join(f"FILLER_{number}\n" for number in range(1, 16))
+            + "".join(f"TARGET_{number} = {number}\n" for number in range(1, 61)),
+        )
+        repo.track()
+        result = repo.run()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("RESULT PASS", result.stdout)
+
+    def test_sixteen_inserted_lines_are_one_past_the_window(self) -> None:
+        # Content lands on 46: one line outside, so DRIFT and the exact distance.
+        repo = Repository(self)
+        repo.write(TERMINAL_DOC, f"见 `{DOC_TARGET}:30`（该行须含 `TARGET_30`）。\n")
+        repo.write(
+            DOC_TARGET,
+            "".join(f"FILLER_{number}\n" for number in range(1, 17))
+            + "".join(f"TARGET_{number} = {number}\n" for number in range(1, 61)),
+        )
+        repo.track()
+        result = repo.run()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("[DRIFT]", result.stdout)
+        self.assertIn("最近在第 46 行（+16 行）", result.stdout)
 
     def test_the_window_catches_the_real_drift(self) -> None:
         # Forty inserted lines put the content at 70, outside +-15: red. #1038's
@@ -289,6 +342,18 @@ class AssertionTests(unittest.TestCase):
         self.assertIn("SCOPE terminal problems=0", result.stdout)
         self.assertIn("RESULT PASS", result.stdout)
 
+    def test_a_dated_audit_file_is_a_record(self) -> None:
+        # `docs/audits/` takes dated point-in-time files; a bare reference there
+        # must not gate, or a dated audit report could dodge the review-title guard
+        # simply by living in the audit directory.
+        repo = Repository(self)
+        repo.write("docs/audits/2026-11-20-once.md", f"# 探针\n\n见 `{DOC_TARGET}:30`。\n")
+        repo.track()
+        result = repo.run()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("SCOPE terminal problems=0", result.stdout)
+        self.assertIn("RESULT PASS", result.stdout)
+
     def test_deploy_is_scanned_by_default(self) -> None:
         # `deploy/README.md` is a terminal document; its own references rot like
         # any other, so the default roots cover it without a flag.
@@ -299,6 +364,22 @@ class AssertionTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("[UNASSERTED]", result.stdout)
         self.assertIn("deploy/README.md", result.stdout)
+
+
+class ShowModeTests(unittest.TestCase):
+    """`--show` is a troubleshooting view: problems with their target line."""
+
+    def test_show_prints_problems_but_not_ok_references(self) -> None:
+        repo = Repository(self)
+        repo.write(TERMINAL_DOC, f"实现见 `{REAL_SOURCE}:3`。\n见 `{GHOST_REF}`。\n")
+        repo.track()
+        result = repo.run("--show")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        # The missing target is printed with its own line...
+        self.assertIn("ghost.py:7", result.stdout)
+        # ...and the healthy reference is not, so a DRIFT is not buried among the
+        # thousands of OK rows the old `--show` printed.
+        self.assertNotIn(REAL_SOURCE, result.stdout)
 
 
 class RatchetTests(unittest.TestCase):
@@ -388,13 +469,17 @@ class CommittedStateTests(unittest.TestCase):
         self.assertIsNotNone(match, result.stdout)
         assert match is not None
         doc_refs, asserted, window, unasserted_code = (int(value) for value in match.groups())
+        # Scale-independent: ten references and a thousand both pass as long as
+        # every document reference carries an assertion, and a corpus that shrank
+        # to nothing cannot pass by being trivially consistent.
         self.assertEqual(doc_refs, asserted, result.stdout)
-        self.assertGreaterEqual(doc_refs, 50, result.stdout)
+        self.assertGreater(doc_refs, 0, result.stdout)
         # The window is a documented number, not an accident of the default.
         self.assertEqual(window, CHECK.ASSERTION_WINDOW)
-        # Code targets are still the open debt; the number is reported, not gated,
-        # so it may only go down as references gain assertions.
-        self.assertGreater(unasserted_code, 0)
+        # The debt counter is a count, not a threshold: compare it with the tree
+        # itself, so paying the debt down (365 bare code refs today) never turns
+        # this red. A fixed `> 0` would fail exactly on the day the work finishes.
+        self.assertEqual(unasserted_code, bare_code_reference_count(), result.stdout)
 
     def test_the_committed_baseline_keeps_terminal_documents_fully_gated(self) -> None:
         payload = json.loads(BASELINE.read_text(encoding="utf-8"))

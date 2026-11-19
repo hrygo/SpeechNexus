@@ -60,7 +60,7 @@ date: 2026-11-16
 宿主端口全部走环境文件的既有变量，没有改 Compose 定义。这些改动只存在于测后已删除的
 worktree 运行态，不进入本 PR，也不是从零手册的额外步骤。
 
-另外一项外部输入：`compose-minimal.md:246`（该行须含 `SPEECHNEXUS_GATEWAY_LOCK_DIR`） 要求把已批准的 Silero ONNX 文件放进私有目录。
+另外一项外部输入：`compose-minimal.md:383`（该行须含 `把已批准的 Silero ONNX 普通文件放到私有目录`） 要求把已批准的 Silero ONNX 文件放进私有目录。
 本机没有该受控制品，用的是本机另一项目已存在的同一开源 Silero VAD ONNX
 （2,327,524 字节，`sha256 597d30b3ec076608d059477bb14cfeffdf951bf5cae370d38f65d33bbfe82004`），
 按文档流程写入 `vad_model_sha256`。仓库钉在 `deploy/engines/file-asr-audio/artifact-pin.json:139`
@@ -87,7 +87,7 @@ api
 ```
 
 与 `compose-minimal.md:54`（该行须含 `显式点名服务时 Compose 只构建点到的镜像`） 的预期集合一致；`--profile job-dispatch config --services` 输出
-`api gateway job-dispatch-worker minio minio-init postgres`，与 `async-job-runbook.md:109`（该行须含 `job-dispatch-worker`）
+`api gateway job-dispatch-worker minio minio-init postgres`，与 `async-job-runbook.md:104`（该行须含 `预期输出（顺序可不同）`）
 一致。
 
 ### 4.2 第 2 节：环境文件
@@ -144,7 +144,7 @@ $ docker exec sn878-postgres-1 psql -U speechnexus -d speechnexus -Atc \
 0054_artifact_deleted_ledger
 ```
 
-与 `compose-minimal.md:366`（该行须含 `SPEECHNEXUS_EXECUTION_RESULT_BUCKET`） 声明的当前 head 一致。文档同处的
+与 `compose-minimal.md:515`（该行须含 `仓库当前迁移链的 head`） 声明的当前 head 一致。文档同处的
 `docker exec speechnexus-postgres-1 …` 在独立项目名下失败，见 §7 第 1 条。
 
 ### 4.6 第 6 节：非 owner 角色、授权与 Job 角色
@@ -244,7 +244,7 @@ job dispatch startup gate: OK
 
 ## 5. 为什么到不了 Job 创建
 
-`async-job-runbook.md:704`（该行须含 `select workspace_id, max_attempts`） 与第 11 节假设"六项前置满足后 `POST /v1/nexus/jobs` 才不再返回
+`async-job-runbook.md:705`（该行须含 `select workspace_id, max_attempts`） 与第 11 节假设"六项前置满足后 `POST /v1/nexus/jobs` 才不再返回
 503"。本轮六项里只剩引擎未满足，但创建仍然不可达，真实顺序是：
 
 1. 创建请求先解析模型与 binding。参考部署没有任何已发布 binding
@@ -256,7 +256,7 @@ job dispatch startup gate: OK
    之后才是实例容量（`…:219` 的 `429 job_capacity_exhausted`）；
 3. 这两类输入都不在这两份手册的步骤里：`compose-minimal.md` 第 6 节会写回
    `SPEECHNEXUS_BINDING_WRITER_DATABASE_URL`，但没有"创建草稿 revision 并发布"的步骤；
-   手册只把"已发布 binding"当作既有事实引用（`async-job-runbook.md:319`（该行须含 `FAILED: %s`））。
+   手册只把"已发布 binding"当作既有事实引用（`async-job-runbook.md:34`（该行须含 `且该 binding 已发布`））。
 
 实测原文：
 
@@ -291,16 +291,16 @@ HTTP/1.1 422 Unprocessable Content
 
 ## 7. 文档与实际不符（缺陷清单）
 
-这些不必在本记录同轮全修，按位置立卡即可。行号为 2026-11-16 的 `origin/main` `25c96360`。
+这些不必在本记录同轮全修，按位置立卡即可。行号为 2026-11-16 的 `origin/main` `25c96360`；D1 的引用已按当前树重指并在该行注明。
 
 | 编号 | 位置 | 现象 | 建议 |
 | --- | --- | --- | --- |
-| D1 | `docs/operations/compose-minimal.md:361`（该行须含 `result_object_scope_rejected`）（同类还有 `:880`、`:920`、`:1064`、`:1077`） | 核对命令硬编码默认项目名的容器名 `speechnexus-postgres-1`；用独立 Compose 项目（本项目 Agent 约定要求）时直接 `No such container` | 改成 `"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml exec -T postgres psql …`，或在第 1 节声明项目名变量并统一使用 |
-| D2 | `deploy/compose.yaml:90`、`:850` 与 `docs/operations/compose-minimal.md:105`（该行须含 `172.28.0.0/24`） | 子网与 MinIO 静态地址硬编码；文档只说"一起调整部署配置"，没有环境变量或受支持的 override 入口。本机 `172.28.0.0/24` 已被其它项目占用，从零必须改仓库文件（含四份 private 示例） | 提供 `SPEECHNEXUS_COMPOSE_SUBNET` / `SPEECHNEXUS_MINIO_STATIC_IP` 之类的 env 键，或提供并测试一份受支持的 override 文件 |
-| D3 | `docs/operations/compose-minimal.md:246`（该行须含 `SPEECHNEXUS_GATEWAY_LOCK_DIR`） 与 `deploy/engines/file-asr-audio/artifact-pin.json:139` | VAD 模型只有一句"把已批准的 Silero ONNX 普通文件放到私有目录"：没有获取来源、没有校验命令；仓库钉的摘要是 `sha256:1a153a22…`，与常见 Silero 发行版（本轮实测 `597d30b3…`）不同。网关只校验配置里的摘要，因此"任何 Silero ONNX"都能过闸门，但没人能判断哪份是"已批准" | 在 §3 增加受控来源与 `sha256` 核对步骤（例如用 `artifact-pin.json` 的摘要校验），并说明摘要不符时网关的具体报错 |
-| D4 | `docs/operations/async-job-runbook.md:32`（该行须含 `迁移到唯一 head`） | 第 4 项写"没有实例时创建返回 `429 job_capacity_exhausted`"；从零实测先得到 `422 model_not_published`（binding 未发布），容量判定在 `public_job_admission.py:253`，排在绑定、输入资产与配额之后 | 改成"已发布 binding 且工作空间配额存在时，才由容量返回 429；从零未发布 binding 时先 422" |
-| D5 | `docs/operations/async-job-runbook.md:109`（该行须含 `job-dispatch-worker`） | "只配 writer 时创建仍返回 `503 job_unavailable`"；实测（writer 已配、admission 为空、无 binding）返回 `422 model_not_published`。只有请求走到准入时才会是 503 | 加"在有已发布 binding 的部署上"限定，并同时给出从零会先看到的 422 |
-| D6 | `docs/operations/async-job-runbook.md:319`（该行须含 `dispatch probes ok`）、`:704`，以及 `docs/operations/compose-minimal.md` 第 6 节 | 两份手册都假设"已发布 binding + 完整 execution_defaults + 工作空间配额"是既有事实，却没有任何步骤产生它们；第 6 节只写回 `SPEECHNEXUS_BINDING_WRITER_DATABASE_URL`，没有草稿/发布命令。结果是"照文档起一套"永远创建不出 Job | 二选一：补一节"从零发布一个 binding（含 manifest 与 evidence）"并纳入自检；或明确写"本参考部署不产生 binding，异步 Job 需要另按 [发布 binding](publish-binding-revision.md) 与[绑定生命周期](binding-lifecycle.md) 取证"，同时把它列为创建 Job 的前置 |
+| D1 | `docs/operations/compose-minimal.md:512`（该行须含 `因此不绑定容器名`）（`25c96360` 时在 361，现文已改为经服务名 `postgres` 进入容器；同类 `:880`、`:920`、`:1064`、`:1077` 是当时的同路径简写行号） | （`25c96360` 时）核对命令硬编码默认项目名的容器名 `speechnexus-postgres-1`；用独立 Compose 项目（本项目 Agent 约定要求）时直接 `No such container` | 改成 `"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml exec -T postgres psql …`，或在第 1 节声明项目名变量并统一使用（现文已按此改） |
+| D2 | `deploy/compose.yaml:90`、`:850` 与 `docs/operations/compose-minimal.md:105`（该行须含 `默认网络使用`） | 子网与 MinIO 静态地址硬编码；文档只说"一起调整部署配置"，没有环境变量或受支持的 override 入口。本机 `172.28.0.0/24` 已被其它项目占用，从零必须改仓库文件（含四份 private 示例） | 提供 `SPEECHNEXUS_COMPOSE_SUBNET` / `SPEECHNEXUS_MINIO_STATIC_IP` 之类的 env 键，或提供并测试一份受支持的 override 文件 |
+| D3 | `docs/operations/compose-minimal.md:383`（该行须含 `把已批准的 Silero ONNX 普通文件放到私有目录`） 与 `deploy/engines/file-asr-audio/artifact-pin.json:139` | VAD 模型只有一句"把已批准的 Silero ONNX 普通文件放到私有目录"：没有获取来源、没有校验命令；仓库钉的摘要是 `sha256:1a153a22…`，与常见 Silero 发行版（本轮实测 `597d30b3…`）不同。网关只校验配置里的摘要，因此"任何 Silero ONNX"都能过闸门，但没人能判断哪份是"已批准" | 在 §3 增加受控来源与 `sha256` 核对步骤（例如用 `artifact-pin.json` 的摘要校验），并说明摘要不符时网关的具体报错 |
+| D4 | `docs/operations/async-job-runbook.md:34`（该行须含 `429 job_capacity_exhausted`） | 第 4 项写"没有实例时创建返回 `429 job_capacity_exhausted`"；从零实测先得到 `422 model_not_published`（binding 未发布），容量判定在 `public_job_admission.py:253`，排在绑定、输入资产与配额之后 | 改成"已发布 binding 且工作空间配额存在时，才由容量返回 429；从零未发布 binding 时先 422" |
+| D5 | `docs/operations/async-job-runbook.md:122`（该行须含 `请求只有走到准入才会得到`） | "只配 writer 时创建仍返回 `503 job_unavailable`"；实测（writer 已配、admission 为空、无 binding）返回 `422 model_not_published`。只有请求走到准入时才会是 503 | 加"在有已发布 binding 的部署上"限定，并同时给出从零会先看到的 422 |
+| D6 | `docs/operations/async-job-runbook.md:324`（该行须含 `任一条失败会打印该语句并退出非零`）、`:704`，以及 `docs/operations/compose-minimal.md` 第 6 节 | 两份手册都假设"已发布 binding + 完整 execution_defaults + 工作空间配额"是既有事实，却没有任何步骤产生它们；第 6 节只写回 `SPEECHNEXUS_BINDING_WRITER_DATABASE_URL`，没有草稿/发布命令。结果是"照文档起一套"永远创建不出 Job | 二选一：补一节"从零发布一个 binding（含 manifest 与 evidence）"并纳入自检；或明确写"本参考部署不产生 binding，异步 Job 需要另按 [发布 binding](publish-binding-revision.md) 与[绑定生命周期](binding-lifecycle.md) 取证"，同时把它列为创建 Job 的前置 |
 | D7 | `deploy/job-startup-gate.py:538`（守卫 SQL 在 `backend/src/speechnexus_backend/job_dispatch_runtime.py:337` 的 `has_schema_privilege`） | 迁移未执行时，角色守卫先于 `migration_findings` 运行，`has_schema_privilege` 对不存在的 `speech` schema 抛 `InvalidSchemaName`，未捕获 → 直接 traceback 退出；手册承诺的"迁移缺失点名"不出现 | 先跑 `migration_findings`（它用 `to_regclass`，schema 缺失也安全），或给守卫 SQL 加 `to_regnamespace(schema) IS NOT NULL` 前置判断，并捕获 `InvalidSchemaName` |
 | D8 | `backend/src/speechnexus_backend/speech_runtime.py:91` → `backend/src/speechnexus_backend/speech/infrastructure/tts_settlement_preflight.py:73` | 迁移未执行时 API 启动在同步 TTS 结算预检里抛 `UndefinedTable: relation "admission_leases" does not exist`，未捕获 traceback、进程退出并进入重启循环；没有"先跑迁移"的点名拒绝 | 预检捕获缺表/缺 schema，按启动闸门的风格输出"迁移未执行，先跑 migration profile"并退出码非零 |
 | D9 | `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:788` | writer/admission 缺失时统一 `503 job_unavailable`，不点名缺哪个 DSN；这与手册写法一致，但不满足 `#572` 的"错误点名缺的是哪一个前置" | 至少在启动期日志点名哪些可选 DSN 为空，或在错误 `message` 里给出可操作提示（不回显 DSN 内容） |

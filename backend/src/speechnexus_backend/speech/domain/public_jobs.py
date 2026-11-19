@@ -22,16 +22,25 @@ JobState = Literal[
 ]
 JobKind = Literal["asr", "tts", "voice_design", "voice_clone", "voice_preview", "voice_validation"]
 ProgressUnit = Literal["audio_ms", "text_codepoints", "items"]
+# The dispatch lanes, not the whole kind vocabulary: a kind whose ``lane`` is
+# ``None`` exists on the public surface but no queue may claim it.
+JobLane = Literal["default", "voice_generation", "voice_validation"]
 
 # The closed public Job vocabulary, in contract declaration order. Every kind
 # view in this module is derived from this tuple or from ``JOB_KIND_PROFILES``
-# below, so a kind cannot be added to one reader here only. The dispatch side is
-# a separate vocabulary with a different axis: ``domain/job_dispatch.py`` still
-# owns ``DispatchJobKind`` and its ``DISPATCHABLE_JOB_KINDS`` /
-# ``VOICE_GENERATION_JOB_KINDS`` / ``VOICE_VALIDATION_JOB_KINDS`` tuples. Those
-# are not projections of this table and are not derived from it here (#1040
-# follow-up).
+# below, so a kind cannot be added to one reader here only. The dispatch
+# vocabulary is a projection of the same table: ``domain/job_dispatch.py`` reads
+# the ``lane`` column to build the queue tuples it claims, so a kind either
+# declares a lane or is deliberately left outside every queue (#1047).
 JOB_KINDS: tuple[JobKind, ...] = get_args(JobKind)
+
+# The static form of the dispatchable kinds. ``job_dispatch`` derives
+# ``DISPATCHABLE_JOB_KIND_UNION`` from the table at runtime; mypy cannot build a
+# ``Literal`` from runtime data, so the narrow type is declared beside the table
+# it must match and the lane tests assert the two name the same kinds. Without
+# that assertion a new laned kind would type-check into ``DispatchJob`` while the
+# dispatcher's own tuple had never heard of it.
+DispatchableJobKind = Literal["asr", "tts", "voice_design", "voice_clone", "voice_validation"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,7 +58,10 @@ class JobKindProfile:
     admission freezes; a kind without one keeps the legacy path and is therefore
     outside the admission universe. ``pinned`` says the create may carry an
     expected binding: ``tts`` accepts an explicit reference, while the voice
-    kinds derive it from the target draft.
+    kinds derive it from the target draft. ``lane`` is the dispatch lane a queue
+    may claim this kind on, or ``None`` when no queue may claim it at all:
+    ``voice_preview`` is committed and readable, but no consumer dispatches it
+    yet, so it stays outside every lane instead of acquiring one by prefix.
     """
 
     task: str | None
@@ -57,6 +69,11 @@ class JobKindProfile:
     progress_unit: ProgressUnit
     command_kind: str | None
     pinned: bool
+    lane: JobLane | None
+
+    def __post_init__(self) -> None:
+        if self.lane is not None and self.lane not in get_args(JobLane):
+            raise ValueError("Invalid Job kind lane")
 
 
 JOB_KIND_PROFILES: dict[JobKind, JobKindProfile] = {
@@ -66,6 +83,7 @@ JOB_KIND_PROFILES: dict[JobKind, JobKindProfile] = {
         progress_unit="audio_ms",
         command_kind="asr",
         pinned=False,
+        lane="default",
     ),
     "tts": JobKindProfile(
         task="tts_file",
@@ -73,6 +91,7 @@ JOB_KIND_PROFILES: dict[JobKind, JobKindProfile] = {
         progress_unit="audio_ms",
         command_kind="tts",
         pinned=True,
+        lane="default",
     ),
     "voice_design": JobKindProfile(
         task="voice_design",
@@ -80,6 +99,7 @@ JOB_KIND_PROFILES: dict[JobKind, JobKindProfile] = {
         progress_unit="items",
         command_kind=None,
         pinned=False,
+        lane="voice_generation",
     ),
     "voice_clone": JobKindProfile(
         task="voice_clone",
@@ -87,6 +107,7 @@ JOB_KIND_PROFILES: dict[JobKind, JobKindProfile] = {
         progress_unit="items",
         command_kind=None,
         pinned=False,
+        lane="voice_generation",
     ),
     "voice_preview": JobKindProfile(
         task=None,
@@ -94,6 +115,7 @@ JOB_KIND_PROFILES: dict[JobKind, JobKindProfile] = {
         progress_unit="items",
         command_kind=None,
         pinned=True,
+        lane=None,
     ),
     "voice_validation": JobKindProfile(
         task="voice_validation",
@@ -101,6 +123,7 @@ JOB_KIND_PROFILES: dict[JobKind, JobKindProfile] = {
         progress_unit="items",
         command_kind="voiceclone",
         pinned=True,
+        lane="voice_validation",
     ),
 }
 

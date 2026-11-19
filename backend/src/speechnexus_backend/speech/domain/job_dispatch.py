@@ -11,6 +11,11 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from speechnexus_backend.speech.domain.artifacts import is_result_artifact_identity
+from speechnexus_backend.speech.domain.public_jobs import (
+    JOB_KIND_PROFILES,
+    DispatchableJobKind,
+    JobLane,
+)
 
 DispatchState = Literal[
     "pending", "running", "cancelling", "succeeded", "failed", "cancelled", "expired"
@@ -34,28 +39,44 @@ JobOutcome = Literal[
 
 _IDENTIFIER = re.compile(r"[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]\Z")
 
+
+def _kinds_in_lanes(*lanes: JobLane) -> tuple[str, ...]:
+    """The kinds whose ``JOB_KIND_PROFILES`` row names one of these lanes.
+
+    The table order is the contract declaration order, so every dispatch tuple
+    stays stable without a second spelling of the kinds.
+    """
+    return tuple(kind for kind, profile in JOB_KIND_PROFILES.items() if profile.lane in lanes)
+
+
 # The default execution lane plans ASR and TTS only. Voice creation and
 # generation Jobs are committed with a draft, but they run in their own lane:
 # the default queue must never claim one, or converting the row into a
 # DispatchJob would abort an entire mixed batch before any supported Job is
 # dispatched. A queue that opts into the voice lane still claims only the kinds
-# its caller named.
-DISPATCHABLE_JOB_KINDS: tuple[str, ...] = ("asr", "tts")
-VOICE_GENERATION_JOB_KINDS: tuple[str, ...] = ("voice_design", "voice_clone")
+# its caller named. Lane membership is the table's column (#1047), not a second
+# vocabulary here.
+DISPATCHABLE_JOB_KINDS: tuple[str, ...] = _kinds_in_lanes("default")
+VOICE_GENERATION_JOB_KINDS: tuple[str, ...] = _kinds_in_lanes("voice_generation")
 # Validation measures a candidate revision in its own lane. It is admitted
 # atomically like ASR/TTS but executes the existing ``voiceclone`` command, so
 # it must not be conflated with the generation lane that produces a preview.
-VOICE_VALIDATION_JOB_KINDS: tuple[str, ...] = ("voice_validation",)
+VOICE_VALIDATION_JOB_KINDS: tuple[str, ...] = _kinds_in_lanes("voice_validation")
 VOICE_JOB_KINDS: tuple[str, ...] = (
     *VOICE_GENERATION_JOB_KINDS,
     *VOICE_VALIDATION_JOB_KINDS,
 )
-# Every kind a DispatchJob may represent, whether or not a queue claims it.
+# Every kind a DispatchJob may represent, whether or not a queue claims it:
+# exactly the kinds with a lane. ``voice_preview`` has none, so it cannot reach
+# a row conversion and abort the batch.
 DISPATCHABLE_JOB_KIND_UNION: tuple[str, ...] = (
     *DISPATCHABLE_JOB_KINDS,
     *VOICE_JOB_KINDS,
 )
-DispatchJobKind = Literal["asr", "tts", "voice_design", "voice_clone", "voice_validation"]
+# The narrow type of that union. It is declared in ``public_jobs`` beside the
+# table because mypy cannot compute a ``Literal`` from runtime data; the lane
+# tests hold it to ``DISPATCHABLE_JOB_KIND_UNION``.
+DispatchJobKind = DispatchableJobKind
 _ERROR_CODE = re.compile(r"[a-z][a-z0-9_]{1,62}\Z")
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _REVISION = re.compile(r"[1-9][0-9]{0,18}\Z")

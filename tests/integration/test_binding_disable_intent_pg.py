@@ -28,6 +28,7 @@ from speechnexus_backend.speech.domain.binding_lifecycle import (
     BindingLifecycleUnavailableError,
     BindingRetirementCommand,
 )
+from speechnexus_backend.speech.domain.public_jobs import JobKind
 from speechnexus_backend.speech.infrastructure import public_jobs_postgres
 from speechnexus_backend.speech.infrastructure.binding_disable_barrier import (
     lock_binding,
@@ -246,7 +247,7 @@ def test_job_write_first_commits_before_waiting_disable(
     holder_pid: list[int] = []
     original = public_jobs_postgres._binding_is_still_selected
 
-    def paused(connection: Any, kind: str, model_id: str, document: str) -> bool:
+    def paused(connection: Any, kind: JobKind, model_id: str, document: str) -> bool:
         selected = original(connection, kind, model_id, document)
         row = connection.execute("SELECT pg_backend_pid() AS pid").fetchone()
         assert row is not None and isinstance(row["pid"], int)

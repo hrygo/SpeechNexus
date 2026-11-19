@@ -33,6 +33,7 @@ from speechnexus_backend.speech.domain.job_dispatch import (
     ExecutionSubmission,
     identifier,
 )
+from speechnexus_backend.speech.domain.public_jobs import JOB_KIND_PROFILES
 from speechnexus_backend.speech.infrastructure.admission_codec import (
     request_with_business_digest,
 )
@@ -42,7 +43,6 @@ from speechnexus_backend.speech.infrastructure.transcription_submit import deadl
 _DIGEST_PREFIX = "sha256:"
 _CANCELLING_LEASE_STATES = frozenset({"quarantined"})
 _DISPATCHABLE_LEASE_STATES = frozenset({"reserved", "executing"})
-_COMMAND_KINDS = {"asr": "asr", "tts": "tts", "voice_validation": "voiceclone"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -235,7 +235,7 @@ def submission_from_admission(
     ):
         raise DispatchProtocolError("The stored command disagrees with its admission rows")
 
-    if command.get("kind") != _COMMAND_KINDS.get(job.kind):
+    if command.get("kind") != JOB_KIND_PROFILES[job.kind].command_kind:
         raise DispatchProtocolError("The stored command belongs to another Job kind")
 
     return ExecutionSubmission(submit_intent_id, cast(Mapping[str, Any], gateway))

@@ -43,6 +43,44 @@ def text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def constructor_arguments(source: str, name: str) -> str:
+    """The text between the balanced parentheses of `name(...)`.
+
+    A fixed-width window around an anchor is not a check: the slice this test used
+    to take stopped 600 characters before the anchor and ended at the first `)`,
+    which landed on `occurred_at_us = self._clock(cursor)` - the anchor itself was
+    outside the window, so the assertion was true for every possible edit. Walking
+    the parentheses keeps the whole call, nested `int(...)` included, and the
+    caller asserts the anchors are present so a mis-slice fails loudly.
+    """
+    start = source.index(f"{name}(")
+    opening = start + len(name)
+    depth = 0
+    for position in range(opening, len(source)):
+        character = source[position]
+        if character == "(":
+            depth += 1
+        elif character == ")":
+            depth -= 1
+            if depth == 0:
+                return source[opening + 1 : position]
+    raise AssertionError(f"{name}( has no balanced closing parenthesis")
+
+
+def publisher_arguments(source: str) -> str:
+    """The HTTP publisher's evidence constructor, anchored by its own arguments."""
+    arguments = constructor_arguments(source, "BindingPublicationEvidence")
+    for anchor in ('evidence_source="publish_http"', "capacity_manifest_id=", "revision_id="):
+        if anchor not in arguments:
+            raise AssertionError(f"the slice is not the publish_http call: {anchor!r} is missing")
+    return arguments
+
+
+def records_a_digest(arguments: str) -> bool:
+    """The predicate this guard is for: the evidence row carries a digest."""
+    return "digest" in arguments.lower()
+
+
 def schema_block(name: str) -> str:
     """One component schema, bounded by the next two-space component name."""
     body = text(CONTRACT)
@@ -64,11 +102,24 @@ class PublicationContractTest(unittest.TestCase):
         self.assertNotIn("digest", block.lower())
 
     def test_the_http_publisher_records_no_digest(self) -> None:
+        arguments = publisher_arguments(text(LIFECYCLE))
+        self.assertIn('evidence_source="publish_http"', arguments)
+        self.assertFalse(records_a_digest(arguments))
+
+    def test_the_no_digest_guard_notices_an_injected_digest(self) -> None:
+        # Self-check: a guard that cannot fail is worse than no guard. Injecting
+        # exactly the keyword this deployment would need must flip the predicate,
+        # which proves the slice really covers the whole constructor call.
         source = text(LIFECYCLE)
-        start = source.index('evidence_source="publish_http"') - 600
-        publish = source[start:]
-        publish = publish[: publish.index(")") + 1]
-        self.assertNotIn("digest", publish.lower())
+        arguments = publisher_arguments(source)
+        digest_line = 'capacity_manifest_digest="sha256:" + "0" * 64,'
+        injected = arguments.replace(
+            'evidence_source="publish_http",',
+            f"{digest_line}\n            " + 'evidence_source="publish_http",',
+        )
+        self.assertNotEqual(injected, arguments, "the evidence_source anchor moved")
+        mutated = source.replace(arguments, injected, 1)
+        self.assertTrue(records_a_digest(publisher_arguments(mutated)))
 
     def test_the_release_check_still_refuses_a_missing_digest(self) -> None:
         source = text(RELEASE)

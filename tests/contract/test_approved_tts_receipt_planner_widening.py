@@ -127,6 +127,105 @@ def _repository(tmp_path: Path, mutate: Any = None) -> tuple[ModuleType, str]:
     return module, baseline
 
 
+def _tighten_property(root: Path, name: str, old: int, new: int) -> None:
+    """Tighten one `VoiceDesignInput` property bound, which is a real response loss."""
+
+    path = root / SPEECH_SOURCE
+    text = path.read_text(encoding="utf-8")
+    block = (
+        f"        {name}:\n"
+        "          type: string\n"
+        "          minLength: 1\n"
+        f"          maxLength: {old}"
+    )
+    assert text.count(block) == 1, name
+    path.write_text(text.replace(block, block.replace(str(old), str(new))), encoding="utf-8")
+
+
+def _widen_a_second_bound(root: Path) -> None:
+    """A second movement in the same file set, at a pointer nobody reviewed."""
+
+    path = root / OVERRIDES_SOURCE
+    text = path.read_text(encoding="utf-8")
+    old = '              "minimum": 100,\n              "maximum": 3000'
+    assert text.count(old) == 1
+    path.write_text(text.replace(old, old.replace("3000", "5000")), encoding="utf-8")
+
+
+def _state_a_third_value(root: Path) -> None:
+    """The reviewed pointer carries a value nobody reviewed."""
+
+    path = root / SPEECH_SOURCE
+    text = path.read_text(encoding="utf-8")
+    assert text.count("maximum: 4096") == 1
+    path.write_text(text.replace("maximum: 4096", "maximum: 5000"), encoding="utf-8")
+
+
+def _rename_the_reviewed_keyword(root: Path) -> None:
+    """`maximum` becomes `minimum`: the reviewed constraint no longer exists."""
+
+    path = root / SPEECH_SOURCE
+    text = path.read_text(encoding="utf-8")
+    assert text.count("maximum: 4096") == 1
+    path.write_text(text.replace("maximum: 4096", "minimum: 4096"), encoding="utf-8")
+
+
+def test_annotation_free_keeps_a_name_that_looks_like_an_annotation() -> None:
+    """The proof may not delete a schema branch whose property is named `description`.
+
+    `VoiceDesignInput` declares exactly such a property; stripping it by key name
+    would hide a real response narrowing from the proof.
+    """
+
+    kernel = _compat_gate()
+    document = {
+        "description": "documentation",
+        "properties": {
+            "description": {"type": "string", "maxLength": 2000},
+            "examples": {"type": "string", "maxLength": 2000},
+            "preview_text": {"type": "string", "maxLength": 2000},
+        },
+    }
+
+    stripped = cast(dict[str, Any], kernel._annotation_free(document))
+
+    assert "description" not in stripped
+    assert set(stripped["properties"]) == {"description", "examples", "preview_text"}
+    assert stripped["properties"]["description"]["maxLength"] == 2000
+
+
+@pytest.mark.parametrize(
+    "mutate,tightening",
+    [
+        (lambda root: _tighten_property(root, "description", 2000, 100), True),
+        (lambda root: _tighten_property(root, "preview_text", 2000, 100), True),
+        (_widen_a_second_bound, False),
+        (_state_a_third_value, False),
+        (_rename_the_reviewed_keyword, False),
+    ],
+    ids=[
+        "property-named-description",
+        "sibling-property",
+        "a-second-bound",
+        "an-unreviewed-value",
+        "a-renamed-keyword",
+    ],
+)
+def test_anything_beside_the_reviewed_movement_keeps_the_gate_rejected(
+    tmp_path: Path, mutate: Any, tightening: bool
+) -> None:
+    module, baseline = _repository(tmp_path, mutate)
+
+    report = module.inspect_sources(baseline, surface="speech")
+
+    assert report["approved_reviewed_bound_movements"] == []
+    assert report["findings"], "an out-of-scope change must keep the gate rejected"
+    assert report["reviewed_bound_movement_problem"] is not None
+    if tightening:
+        # The gate itself still reports the response bound it lost.
+        assert any("maxLength" in finding for finding in report["findings"])
+
+
 def _other_gate(relative: str, name: str) -> ModuleType:
     return _load(name, relative)
 

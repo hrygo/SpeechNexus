@@ -868,25 +868,46 @@ _REVIEWED_BOUND_REASON = (
 )
 
 
-_NON_ACCEPTANCE_KEYS = frozenset({"title", "description", "examples", "$comment"})
+_ANNOTATION_KEYS = frozenset({"title", "description", "examples", "$comment"})
+_SCHEMA_NAME_MAPS = frozenset(
+    {"properties", "patternProperties", "$defs", "definitions", "dependentSchemas"}
+)
 
 
 def _annotation_free(value: object) -> object:
     """One contract tree with the keys that cannot change acceptance removed.
 
-    The movement proof compares whole documents, not schema positions, so it cannot
-    borrow the kernel's schema-aware shaping: it strips these keys wherever they are
-    object keys instead. Dropping them is safe by the same rule the comparison uses --
-    an annotation edit cannot change what a document accepts.
+    The movement proof compares whole documents, so it cannot call
+    `_compatibility_shape` at the root: that helper only descends through schema
+    keywords and would copy `paths` and `components` verbatim. This walks the rest of
+    the document instead, while keeping the one distinction that decides correctness:
+    inside a schema name map every key is a name, not a keyword. A schema may declare a
+    property called `description` or `examples`, and dropping it would delete a whole
+    branch of the accepted shape -- exactly the change this proof must not approve.
+    Members of a name map are therefore shaped by the kernel's own
+    `_compatibility_shape`, which removes annotations there by the same rule the
+    comparison uses. Anywhere else a key named like an annotation is an annotation.
     """
 
     mapping = _mapping(value)
     if mapping is not None:
-        return {
-            key: _annotation_free(child)
-            for key, child in mapping.items()
-            if key not in _NON_ACCEPTANCE_KEYS
-        }
+        result: dict[str, Any] = {}
+        for key, child in mapping.items():
+            if key in _SCHEMA_NAME_MAPS:
+                members = _mapping(child)
+                result[key] = (
+                    {
+                        name: _compatibility_shape(member, standard_only=False)
+                        for name, member in members.items()
+                    }
+                    if members is not None
+                    else _compatibility_shape(child, standard_only=False)
+                )
+            elif key in _ANNOTATION_KEYS:
+                continue
+            else:
+                result[key] = _annotation_free(child)
+        return result
     sequence = _sequence(value)
     if sequence is not None:
         return [_annotation_free(item) for item in sequence]

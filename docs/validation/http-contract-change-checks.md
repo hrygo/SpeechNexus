@@ -250,7 +250,12 @@ every finding in place:
   a reverted bound never matches;
 - with those values aligned, both documents are identical once annotation keys
   (`title`, `description`, `examples`, `$comment`) are removed, so no structural,
-  vocabulary or bound change may ride along.
+  vocabulary or bound change may ride along. Only keys in annotation positions are
+  removed: inside a schema name map (`properties`, `patternProperties`, `$defs`,
+  `definitions`, `dependentSchemas`) every key is a name, so a property called
+  `description` — `VoiceDesignInput` declares one — is compared like any other member
+  instead of being deleted from the tree. Member schemas are shaped by
+  `_compatibility_shape`, the same rule the comparison uses.
 
 The scope is deliberately the diff, not a path pattern: the approval can only fire
 when the reviewed movement is the *only* thing that changed in `contracts/`, which

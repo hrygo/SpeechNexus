@@ -67,14 +67,21 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 所以这件事不会自己冒出来。
 
 只有配置了只读探针身份的环境需要这一条（`SPEECHNEXUS_READINESS_CANCELLATION_DSN`；该键
-不在 `deploy/compose.yaml` 的 `environment:` 里，只有自建 override 注入时才生效）。下面的
-片段从 `deploy/compose.env` 派生 owner DSN，口令不进命令行；角色名从探针 DSN 里的用户名
-还原，所以不会把授权贴到别的身份上：
+不在 `deploy/compose.yaml` 的 `environment:` 里，只有自建 override 注入时才生效）。运行前
+备好两个 DSN：`SN_ADMIN_DSN`（owner/DDL 身份）与
+`SPEECHNEXUS_READINESS_CANCELLATION_DSN`（探针身份）。
+
+第一段只在 compose 部署上有用，口令不进命令行；`<...>` 处按部署替换：
 
 ```bash
 set -a; . deploy/compose.env; set +a
 export SN_ADMIN_DSN="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:${SPEECHNEXUS_POSTGRES_HOST_PORT:-55432}/${POSTGRES_DB}"
+export SPEECHNEXUS_READINESS_CANCELLATION_DSN='<探针角色的 DSN，URL 形式>'
+```
 
+没有 `deploy/compose.env` 的环境（CI、按[最小部署手册 §6](../operations/compose-minimal.md#6-创建非-owner-运行角色与最小授权)手工预置的库）跳过第一段，直接导出同名的两个变量。第二段是这一条的承诺，逐字执行：角色名从探针 DSN 里的用户名还原，所以不会把授权贴到别的身份上；`SN_SCHEMA` 默认 `speech`，只在与部署不同的 schema 上重放时才需要覆盖。
+
+```bash
 uv run --all-packages python - <<'PY'
 import os
 from urllib.parse import unquote, urlsplit
@@ -85,6 +92,7 @@ from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema imp
     cancellation_debt_reader_grants,
 )
 
+schema = os.environ.get("SN_SCHEMA", "speech")
 key = "SPEECHNEXUS_READINESS_CANCELLATION_DSN"
 dsn = os.environ.get(key, "").strip()
 if not dsn:
@@ -92,7 +100,7 @@ if not dsn:
 else:
     role = unquote(urlsplit(dsn).username or "")
     with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as connection:
-        for statement in cancellation_debt_reader_grants("speech", role):
+        for statement in cancellation_debt_reader_grants(schema, role):
             connection.execute(statement)
     print(f"re-applied cancellation_debt_reader_grants to {role}")
 PY
@@ -102,21 +110,30 @@ PY
 `unavailable (permission)`，而是账本事实对应的标记
 
 ```bash
-set -a; . deploy/compose.env; set +a
 curl -sS "http://127.0.0.1:${SPEECHNEXUS_API_HOST_PORT:-8000}/readyz" \
   | python3 -c 'import json, sys; print([c["detail"] for c in json.load(sys.stdin)["checks"] if c["name"] == "cancellation_debt"][0])'
 ```
 
-端口取自 `SPEECHNEXUS_API_HOST_PORT`（默认 `8000`），改过宿主端口的部署不用改命令。
+端口取自 `SPEECHNEXUS_API_HOST_PORT`（默认 `8000`），与 `deploy/compose.yaml` 的 api 端口映射
+`127.0.0.1:${SPEECHNEXUS_API_HOST_PORT:-8000}:8000` 同源，改过宿主端口的部署不用改命令。从
+`deploy/compose.env` 取值的 shell 先 `set -a; . deploy/compose.env; set +a` 再执行这一段（CI
+与已导出该变量的环境跳过）；块本身不含这一行，所以它是逐字可执行的。
 
 核实：**实跑**。2026-11-20 在临时 PostgreSQL 上以真实 `cancellation_debt_reader_grants`
 授权后 `REVOKE SELECT (attempts)`，用该角色执行探针同形的
 `SELECT job_id, settled_at_us, last_outcome, next_check_at_us, attempts` 得到
 `SQLSTATE 42501 permission denied for table speech_job_cancellation_reconciliations`；重跑
-该函数后同一条语句成功。本节片段按原文在一处临时 PostgreSQL 上执行，退出码 0。权限到
-detail 的映射读自
+该函数后同一条语句成功。权限到 detail 的映射读自
 `backend/src/speechnexus_backend/speech/infrastructure/readiness.py:465`
 （`InsufficientPrivilege` → `permission`）。
+
+上面第二段与 `curl` 那一段现在有 CI：`tests/integration/test_upgrade_path_pg.py` 在「`v0.1.0`
+的四列 ACL + head 迁移」的真库上重放这一条——撤掉 `attempts` 后断言 `42501` 与
+`unavailable (permission)`，**在重跑之前**再断言一次仍然是 `42501`，然后执行本节命令原文，
+断言读面恢复，最后用本节 `curl` 原文打一个环回 `/readyz` 核对同一句 detail。该用例从本页
+读出要执行的块，所以**把命令改坏**（例如把块里的 `connection.execute(statement)` 换成
+`pass`，或整段换成 `SELECT 1`）会让它红；换成一条**更强**的授权命令仍会绿——它守的是「照抄
+能修好」，不是「字面不许改」。
 
 ### 3. 重跑 `deletion_plan_grants` 与 `deletion_execution_grants`：两个新授权组
 
@@ -128,7 +145,14 @@ optional）：不重跑时 writer 照常启动，只有删除路由整体回
 `503 deletion_plans_not_configured` / `503 deletion_not_configured`
 （`backend/src/speechnexus_backend/speech/interfaces/http/deletion_errors.py:60`、
 `backend/src/speechnexus_backend/speech/interfaces/http/deletion_errors.py:70` 的消息直接
-点名该函数）。要用删除能力的部署必须重跑；不用的部署可以跳过。
+点名该函数）。要用删除能力的部署必须重跑；不用的部署可以跳过这一条，但「仅需」不等于
+「可以不做」：跳过的部署删不了任何东西，删除路由一直回上面那两条 503（`retryable: false`），
+直到重跑为止。这两半由
+`tests/integration/test_speech_deletion_plans_pg.py` 的
+`test_missing_deletion_grants_fail_the_route_not_the_process` 与
+`tests/integration/test_speech_deletion_execute_pg.py` 的
+`test_missing_execution_grants_fail_the_route_not_the_process` 在真库上钉住：**进程照常启动、
+路由才失败**。
 
 ```bash
 set -a; . deploy/compose.env; set +a
@@ -270,13 +294,20 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 | 对账耗尽不记 settled | `tests/integration/test_cancellation_exhausted_release_pg.py` |
 | 授权面本身 | `tests/integration/test_role_grant_coverage_pg.py`（真实库上按每个受限身份逐面核对声明的授权面）、`tests/ci/test_compose_minimal_role_provisioning.py`（授权组仍被声明） |
 | admission-watch | `tests/integration/test_admission_watch_pg.py`、`tests/integration/test_admission_watch_process_pg.py`、`tests/unit/backend/test_admission_watch.py` |
+| 第 2 条的升级重放 | `tests/integration/test_upgrade_path_pg.py`（真库上构造 v0.1.0 的四列 ACL，重放本节命令原文，并断言未重跑前仍然是坏的） |
 | 本页不会腐烂 | `scripts/dev-env/check-unreleased-notes.py` 与 `tests/ci/test_unreleased_notes_gate.py` |
 
 未覆盖，逐条点名：
 
-- **升级路径本身没有 CI。**没有任何检查在「`v0.1.0` 的 ACL + 新迁移」上跑一遍：上面的授权
-  结论来自读代码与 2026-11-20 的手工实跑，不是门禁。下一次改授权面时，门禁只保证本页点名，
-  不保证命令仍然可粘贴。
+- **升级路径只有第 2 条有 CI。**`tests/integration/test_upgrade_path_pg.py` 在「`v0.1.0`
+  的四列 ACL + head 迁移」上重放第 2 条：撤掉 `attempts` 后读到 `42501` 与
+  `unavailable (permission)`，未重跑前再断言一次仍然坏，执行本节命令原文后恢复。第 3 条
+  「缺授权只影响路由、不影响启动」由两个删除用例逐组钉住，但**不是**「旧 ACL + 新迁移」这个
+  组合形态；第 1 条的 **compose 命令与 `version_num` 核对**仍只有手工实跑——**迁移链本身有
+  CI**（`tests/integration/test_lease_debt_index_pg.py` 把链跑到 `0063_deletion_targets_blocked`，
+  `tests/integration/test_asr_settlement_migration_pg.py` 断言 0057–0059 拒绝 `downgrade`）
+  ——只是没有测试在容器里跑那两条 compose 命令并读 `speech.alembic_version`。
+  `check-unreleased-notes.py` 只保证本页点名，不保证这三处命令仍然可粘贴。
 - **`admission-watch` profile 的真实部署行为未实测**（见第 4 条）。隔离 PG 上的进程级用例
   不覆盖真实间隔、告警阈值与日志量。
 - **门禁的判据是名字，不是语义。**它不检查本页写的命令是否还能执行，也不判断函数签名或

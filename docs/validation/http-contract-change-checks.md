@@ -256,8 +256,16 @@ The scope is deliberately the diff, not a path pattern: the approval can only fi
 when the reviewed movement is the *only* thing that changed in `contracts/`, which
 is a stronger statement than "these pointers may widen". A pointer list would also
 approve a later, unrelated change at the same pointer; this proof cannot, because
-that change would make the documents differ beside the reviewed bound. The
-nonstandard surface ignores the whole movement, so its gate is unaffected.
+that change would make the documents differ beside the reviewed bound.
+
+Every contract fence reuses the proof through `apply_reviewed_bound_movement`: the
+speech and nonstandard HTTP surfaces, the coordination request/result fences, the
+realtime fence and the standard-surface comparison. One shared declaration is
+reachable from several contracts, so a single reviewed movement legitimately explains
+findings in `admin-openapi.yaml`, `workbench-openapi.yaml`,
+`internal/execution-control.openapi.yaml`, the realtime events and the coordination
+`create_submit` command. Sharing the proof is what keeps that honest: a fence keeps
+its findings whenever anything beside the movement changed.
 
 `contracts-compat` filters through the same proof: `_apply_reviewed_receipt_planner_widenings`
 accepts only the three `receipt.{requested,effective,observed}.planner.max_chars`

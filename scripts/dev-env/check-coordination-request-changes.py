@@ -164,6 +164,8 @@ def inspect_source(
         "entrypoints": list(entrypoints),
         "versions": {"base": None, "current": None},
         "findings": [],
+        "approved_reviewed_bound_movements": [],
+        "reviewed_bound_movement_problem": None,
         "unverified": list(RESULT_UNVERIFIED if is_result else UNVERIFIED),
     }
     if is_result:
@@ -205,6 +207,7 @@ def inspect_source(
             )
         except ValueError, TypeError, OSError, SchemaError, RecursionError:
             findings.append(pointer + ": reference comparison failed; not proven")
+    kernel.apply_reviewed_bound_movement(report, _ROOT, resolved)
     return report
 
 
@@ -231,6 +234,14 @@ def main() -> int:
         print(kind.capitalize() + " entrypoints: " + ", ".join(report["entrypoints"]))
         for finding in report["findings"]:
             print("  - " + finding)
+        for approval in report["approved_reviewed_bound_movements"]:
+            print("  approved reviewed planner bound widening: " + approval)
+        if report["reviewed_bound_movement_problem"]:
+            print(
+                "  reviewed planner bound widening did not cover this diff: "
+                + report["reviewed_bound_movement_problem"],
+                file=sys.stderr,
+            )
         print(
             "Known "
             + kind

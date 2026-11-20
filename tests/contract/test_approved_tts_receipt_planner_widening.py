@@ -127,6 +127,73 @@ def _repository(tmp_path: Path, mutate: Any = None) -> tuple[ModuleType, str]:
     return module, baseline
 
 
+def _other_gate(relative: str, name: str) -> ModuleType:
+    return _load(name, relative)
+
+
+def test_every_contract_surface_reuses_the_same_proof(tmp_path: Path) -> None:
+    """The shared declaration reaches admin, workbench and execution-control too.
+
+    One shared `TtsOverrides` declaration is reachable from the admin, workbench and
+    execution-control contracts as well as the speech surface, so the same movement
+    explains findings in each of them. The proof is shared: a gate whose diff differs
+    anywhere else keeps its findings.
+    """
+
+    module, baseline = _repository(tmp_path)
+
+    nonstandard = module.inspect_sources(baseline)
+    speech = module.inspect_sources(baseline, surface="speech")
+
+    assert nonstandard["findings"] == [], "\n".join(nonstandard["findings"][:3])
+    assert speech["findings"] == []
+    # One line per source with findings: admin, workbench and execution-control.
+    assert len(nonstandard["approved_reviewed_bound_movements"]) == 3
+    assert len(speech["approved_reviewed_bound_movements"]) == 1
+    for line in nonstandard["approved_reviewed_bound_movements"]:
+        assert "planner.max_chars maximum 400 -> 4096 explains" in line
+
+
+def test_the_coordination_and_realtime_fences_reuse_the_same_proof(tmp_path: Path) -> None:
+    _, baseline = _repository(tmp_path)
+
+    coordination = _other_gate(
+        "scripts/dev-env/check-coordination-request-changes.py", "coordination_fence"
+    )
+    cast(Any, coordination)._ROOT = tmp_path
+    requests = coordination.inspect_source(baseline)
+    results = coordination.inspect_source(baseline, surface="result")
+
+    realtime = _other_gate("scripts/dev-env/check-realtime-contract-changes.py", "realtime_fence")
+    cast(Any, realtime)._ROOT = tmp_path
+    events = realtime.inspect_source(baseline)
+
+    for report in (requests, results, events):
+        assert report["findings"] == [], "\n".join(report["findings"][:3])
+    assert len(requests["approved_reviewed_bound_movements"]) == 1
+    assert results["approved_reviewed_bound_movements"] == []
+    assert len(events["approved_reviewed_bound_movements"]) == 1
+
+
+def test_the_fences_keep_their_findings_when_the_proof_fails(tmp_path: Path) -> None:
+    _, baseline = _repository(tmp_path, _add_an_error_code)
+
+    coordination = _other_gate(
+        "scripts/dev-env/check-coordination-request-changes.py", "coordination_fence_fail"
+    )
+    cast(Any, coordination)._ROOT = tmp_path
+    realtime = _other_gate(
+        "scripts/dev-env/check-realtime-contract-changes.py", "realtime_fence_fail"
+    )
+    cast(Any, realtime)._ROOT = tmp_path
+
+    for report in (coordination.inspect_source(baseline), realtime.inspect_source(baseline)):
+        assert report["approved_reviewed_bound_movements"] == []
+        assert report["findings"], "an out-of-scope change must keep the fence rejected"
+        problem = report["reviewed_bound_movement_problem"]
+        assert problem is not None and "contracts/ differs in" in problem, problem
+
+
 def test_the_registry_names_only_the_reviewed_planner_bound() -> None:
     kernel = _compat_gate()
     movement = kernel._REVIEWED_BOUND_MOVEMENT

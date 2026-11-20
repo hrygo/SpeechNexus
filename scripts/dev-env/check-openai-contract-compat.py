@@ -982,6 +982,37 @@ _TTS_RECEIPT_PLANNER_POINTERS = (
 )
 
 
+def apply_reviewed_bound_movement(report: dict[str, Any], root: Path, resolved: str) -> None:
+    """Fold a gate's findings into one approval when the whole diff is the movement.
+
+    Each gate keeps its own finding semantics; this only decides whether every finding
+    it produced is explained by the reviewed movement. The proof is the same one for
+    all of them: nothing else in `contracts/` may have changed, so a gate cannot approve
+    a finding that has another cause. When the proof fails the findings stay and the
+    reason is reported beside them, never instead of them.
+    """
+
+    findings = report.get("findings")
+    if not findings:
+        return
+    problem = reviewed_bound_movement(root, resolved)
+    if problem is None:
+        report["approved_reviewed_bound_movements"] = [reviewed_bound_movement_line(len(findings))]
+        report["findings"] = []
+    else:
+        report["reviewed_bound_movement_problem"] = problem
+
+
+def reviewed_bound_movement_line(explained: int) -> str:
+    """One review line for a movement the proof showed explains every finding."""
+
+    labels = ", ".join(entry.label for entry in _REVIEWED_BOUND_MOVEMENT)
+    return (
+        f"{labels}: planner.max_chars maximum 400 -> 4096 explains {explained} "
+        f"finding(s) [{_REVIEWED_BOUND_ISSUE}: {_REVIEWED_BOUND_REASON}]"
+    )
+
+
 def _apply_reviewed_receipt_planner_widenings(
     issues: list[str],
 ) -> tuple[list[str], list[str]]:

@@ -1210,17 +1210,6 @@ def _apply_approved_response_vocabulary_widenings(
     return remaining, approved
 
 
-def _reviewed_bound_summary(kernel: ModuleType, findings: list[str]) -> str:
-    """One review line for a movement the kernel proved explains every finding."""
-
-    labels = ", ".join(entry.label for entry in kernel._REVIEWED_BOUND_MOVEMENT)
-    return (
-        f"{labels}: planner.max_chars maximum 400 -> 4096 explains "
-        f"{len(findings)} finding(s) [{kernel._REVIEWED_BOUND_ISSUE}: "
-        f"{kernel._REVIEWED_BOUND_REASON}]"
-    )
-
-
 def inspect_sources(
     base: str, *, surface: Literal["nonstandard", "speech"] = "nonstandard"
 ) -> dict[str, Any]:
@@ -1321,7 +1310,9 @@ def inspect_sources(
                     # Every finding here is explained by the one reviewed movement:
                     # the proof established that nothing else in `contracts/` changed
                     # semantically, so no finding can have another cause.
-                    approved_bound_widenings.append(_reviewed_bound_summary(kernel, detected))
+                    approved_bound_widenings.append(
+                        kernel.reviewed_bound_movement_line(len(detected))
+                    )
                     detected = []
                 else:
                     # A reviewer reads why the reviewed movement did not cover this

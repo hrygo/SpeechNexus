@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-20T10:17:25+08:00",
+  "fetched_at": "2026-11-20T10:50:00+08:00",
   "issues": [
     {
       "number": 336,
@@ -1193,7 +1193,7 @@
       "state": "open",
       "state_reason": null,
       "labels": [],
-      "parent_issue_url": null
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
     },
     {
       "number": 819,
@@ -1261,13 +1261,13 @@
       "state": "open",
       "state_reason": null,
       "labels": [],
-      "parent_issue_url": null
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/338"
     },
     {
-      "number": 1068,
-      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1068",
+      "number": 1070,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1070",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "把已挂到 Epic 的实施卡登记进矩阵：F-DELETE 的 #819",
+      "title": "把 #696 登记进 F-TTS，并让已挂父 Epic 的卡不再显示「父 Epic 未核实」",
       "state": "open",
       "state_reason": null,
       "labels": [],

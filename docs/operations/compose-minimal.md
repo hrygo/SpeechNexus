@@ -2368,6 +2368,32 @@ http=200
 具体检查项随部署配置变化，本 Compose 为 gateway 配置了独立查询数据库连接，因此包含
 `control_query_postgresql`。
 
+### 7.1 网关组件凭据的明文边界
+
+API 向执行网关出示 `SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL`。默认规则只有一句：
+**明文 HTTP 仅限 loopback**；HTTPS 放行，`http` + `localhost` / `127.0.0.1` / `::1` 放行。
+本 Compose 的 API 使用服务名 `http://gateway:8010`，它解析到网桥地址而不是 loopback，因此在
+默认规则下会被拒绝。参考部署通过下面这一行把「本部署接受组件凭据在这张网桥上明文传输」
+写成可审计的配置事实：
+
+```bash
+SPEECHNEXUS_EXECUTION_GATEWAY_ALLOW_PLAINTEXT_ORIGIN=http://gateway:8010
+```
+
+`deploy/compose.env.example` 已显式写出该行，`deploy/compose.yaml` 只把它透传给 `api`。
+它不是从 `SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL` 推导的：删掉或留空这一行，默认拒绝立即
+恢复。跨主机、跨不可信网段或与其它租户共享网络时，应改用 `https://` 而不是这一行。
+
+规则是**逐字相等**，不是前缀或网段判断：opt-in 必须是 `scheme://host[:port]` 形式、仅限
+`http`，带 path、query、fragment 或凭据一律在启动时拒绝；它必须与 API 看到的网关 origin
+完全相同（`http://gateway:8010` 与 `http://gateway:8011` 不匹配，域名大小写也不同）。
+拒绝启动时错误会点名该键，并给出让当前 origin 通过所需的完整赋值。该键对 TTS 结算 worker、
+Job 派发 worker、binding 停用 worker 与 TTS 恢复命令是同一个判定：这些入口都从同一环境读取。
+规则的 URL 形状要求比旧的恢复命令更严：**`https://` 也必须是裸 origin**。因此
+`https://gateway:8010/api` 与 `http://localhost:8010/api` 过去在 TTS 恢复命令里能通过，
+现在会在启动时拒绝；`python -m speechnexus_backend.recover_tts` 等恢复操作须给不带 path 的
+origin。同步 ASR 结算与取消对账也出示该凭据，但尚未接入这条校验（[#1084](https://github.com/hrygo/SpeechNexus/issues/1084)）。
+
 ## 8. 一次性注册引擎
 
 注册不是「起一个容器」：它在同一个事务里写入准入读取的四类事实——`host_nodes`（宿主机容量

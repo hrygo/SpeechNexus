@@ -1030,8 +1030,8 @@ Its self-check is `scripts/dev-env/check-async-job-prereqs.py`.
 
 The service shares the gateway network namespace and calls
 `http://127.0.0.1:8010`, because `JobDispatchSettings` rejects plain HTTP outside
-loopback. That is a single-host Compose property, not a multi-node transport
-design. `SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL` defaults to blank and must name a
+loopback (no origin is opted in here). That is a single-host Compose property,
+not a multi-node transport design. `SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL` defaults to blank and must name a
 non-owner worker role; a blank value fails closed before any lease is claimed.
 [production jobs](../docs/components/production-jobs.md#worker-入口与运行配置del-98)
 lists the complete variable set and its bounds; `compose.yaml` supplies explicit

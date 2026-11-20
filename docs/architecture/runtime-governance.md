@@ -188,7 +188,7 @@ queued / retry_wait → cancelled / expired
 
 系统提供 at-least-once 执行与幂等发布，不声称外部推理天然 exactly-once。仅在未向客户端交付实时输出且操作可安全重试、旧 attempt 已协调结束时自动重试；已产生部分实时音频的请求不后台自动重播。辅助步骤失败不覆盖成功正文，按 required / best_effort 策略决定整个 Job 是否成功。
 
-失败分类包括输入 / 功能策略 / 参数永久错误、可重试后端错误、容量等待、执行超时、取消状态未知。目标策略为自动重试默认最多 3 次、指数退避并加入 jitter，总自动重试窗口不超过 24 小时；永久错误不重试。quarantined engine 上的未知执行先协调，不直接换副本再跑。生产 Job planner 已在派发运行时装配（`backend/src/speechnexus_backend/job_dispatch_runtime.py:321`），上述策略不是已验证的运行默认值；派发器的 `SPEECHNEXUS_JOB_DISPATCH_MAX_ATTEMPTS` 是单独配置的派发限制，不能据此推断业务重试策略已生效。
+失败分类包括输入 / 功能策略 / 参数永久错误、可重试后端错误、容量等待、执行超时、取消状态未知。目标策略为自动重试默认最多 3 次、指数退避并加入 jitter，总自动重试窗口不超过 24 小时；永久错误不重试。quarantined engine 上的未知执行先协调，不直接换副本再跑。生产 Job planner 已在派发运行时装配（`backend/src/speechnexus_backend/job_dispatch_runtime.py:318`），上述策略不是已验证的运行默认值；派发器的 `SPEECHNEXUS_JOB_DISPATCH_MAX_ATTEMPTS` 是单独配置的派发限制，不能据此推断业务重试策略已生效。
 
 用量账本区分 reservation、consumption 与未用预留释放。输入计量按稳定 operation 下的 canonical sample 区间 / 原始 Unicode codepoint 区间去重，键不包含 attempt；同一输入的 event 重发、commit 重发和作业内重试只计一次。TTS 字符为 JSON 解码后有效 Unicode scalar values，计用户正文的首次冻结区间，不将 instructions 或发音展开重复计入。输出以只追加的 `output_sample_intervals` 为权威账本，按 `(operation_id, attempt_id, output_stream_id, sample_interval, meter_kind)` 去重；受控应用事务锁定逻辑流后拒绝同一 meter 的重叠区间，运行角色不得改写或删除区间历史，因而失败 / 重试实际重新生成仍计消耗，标量水位不会覆盖先前证据。`samples + sample_rate` 是权威计量，音频毫秒只按 floor 派生用于展示。重试 API 创建的新 Job 是新意图，重新计输入。结果统计与基础设施消耗分别展示；无实际证据时保持待协调及预留，不伪造 0 成本或重复扣减。
 

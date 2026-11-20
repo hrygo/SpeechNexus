@@ -145,7 +145,7 @@ ASR `input` 的目标是只接受所选工作空间存在、功能策略允许�
 
 `GET /v1/nexus/pronunciation-sets` 与 `POST /v1/nexus/pronunciation-sets` 由独立的 `pronunciation_sets` 契约面提供：列表按 `id` 键集分页，`head_revision` 是家族最新不可变修订，`status` 只在该精确修订存在 `speech_publications` 行时为 `published`（空集合为 200）；创建默认 `publish: true`，在同一事务写入不可变修订、发布账本行和选中 head，失败全回滚，`publish: false` 只写私有草稿。未配置发布身份时，无已提交回执的新发布请求在落库前返回 422 `pronunciation_publication_not_supported`；已提交发布按相同幂等键重放仍返回 200（只读命令回执，不新写修订或账本），并发双击发布只有一个 CAS 赢家。默认指针选择、TTS 消费和发布状态的准入过滤仍未实现，这两条路由只在成功发布时构成该修订的发布事实，不构成执行资格证据。
 
-TTS Job 可选 `model_binding={id,revision}` 固定精确版本：新意图要求该版本是当前已发布、未退役的权威指针，支持 `tts_file`，且其逻辑模型与 `model` 一致；不满足时明确拒绝，不回退其他版本。省略时当前实现将 `model` 作为 binding 对象 ID，选择其当前未退役发布版本。相同幂等键的原请求先按原身份重放，即使发布指针后来改变；结果未知时保留原键和完整请求协调，不能更换版本重试。Job 已接受不证明已执行；生产派发 planner 已在派发运行时装配（`backend/src/speechnexus_backend/job_dispatch_runtime.py:321`），完整异步链仍须在真实部署联验，见[公开 Job 派发器](../components/production-jobs.md#公开-job-派发器del-96-第一步)。以下是契约形状示例，资源和时间均为示意。
+TTS Job 可选 `model_binding={id,revision}` 固定精确版本：新意图要求该版本是当前已发布、未退役的权威指针，支持 `tts_file`，且其逻辑模型与 `model` 一致；不满足时明确拒绝，不回退其他版本。省略时当前实现将 `model` 作为 binding 对象 ID，选择其当前未退役发布版本。相同幂等键的原请求先按原身份重放，即使发布指针后来改变；结果未知时保留原键和完整请求协调，不能更换版本重试。Job 已接受不证明已执行；生产派发 planner 已在派发运行时装配（`backend/src/speechnexus_backend/job_dispatch_runtime.py:318`），完整异步链仍须在真实部署联验，见[公开 Job 派发器](../components/production-jobs.md#公开-job-派发器del-96-第一步)。以下是契约形状示例，资源和时间均为示意。
 
 ```json
 {

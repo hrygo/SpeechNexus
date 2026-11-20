@@ -7,9 +7,9 @@ import contextlib
 import logging
 import threading
 from collections.abc import Callable
-from urllib.parse import urlsplit
+from typing import Self
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from speechnexus_backend.binding_disable_worker import (
@@ -17,6 +17,7 @@ from speechnexus_backend.binding_disable_worker import (
 )
 from speechnexus_backend.speech.application.leases import LeaseService
 from speechnexus_backend.speech.application.tts_settlement import TtsSettlementWorker
+from speechnexus_backend.speech.domain.gateway_origin import require_safe_gateway_origin
 from speechnexus_backend.speech.domain.runtime_intents import identifier
 from speechnexus_backend.speech.infrastructure.gateway_execution_client import (
     GatewayExecutionClient,
@@ -56,6 +57,9 @@ class TtsSettlementWorkerSettings(BaseSettings):
     gateway_id: str = Field(validation_alias="SPEECHNEXUS_TTS_GATEWAY_ID")
     node_id: str = Field(validation_alias="SPEECHNEXUS_TTS_HOST_NODE_ID")
     gateway_url: str = Field(validation_alias="SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL")
+    allow_plaintext_origin: str = Field(
+        default="", validation_alias="SPEECHNEXUS_EXECUTION_GATEWAY_ALLOW_PLAINTEXT_ORIGIN"
+    )
     credential: SecretStr = Field(
         validation_alias="SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL"
     )
@@ -84,6 +88,15 @@ class TtsSettlementWorkerSettings(BaseSettings):
         default=32, ge=1, le=128, validation_alias="SPEECHNEXUS_TTS_SETTLEMENT_BATCH_SIZE"
     )
 
+    @model_validator(mode="after")
+    def safe_gateway_origin(self) -> Self:
+        require_safe_gateway_origin(
+            self.gateway_url,
+            allow_plaintext_origin=self.allow_plaintext_origin,
+            label="TTS gateway",
+        )
+        return self
+
 
 def _verify_worker(pool: SpeechPool, schema: str) -> None:
     """Require a non-owner principal and the shared settlement boundary."""
@@ -98,18 +111,6 @@ async def run(
 ) -> None:
     identifier(settings.gateway_id)
     identifier(settings.node_id)
-    parsed = urlsplit(settings.gateway_url)
-    if (
-        not parsed.hostname
-        or parsed.username
-        or parsed.password
-        or parsed.path not in ("", "/")
-        or parsed.query
-        or parsed.fragment
-        or parsed.scheme not in ("http", "https")
-        or (parsed.scheme == "http" and parsed.hostname not in ("localhost", "127.0.0.1", "::1"))
-    ):
-        raise ValueError("TTS gateway requires an authenticated safe origin")
     token = settings.credential.get_secret_value()
     if not 16 <= len(token) <= 4096 or any(not 33 <= ord(c) <= 126 for c in token):
         raise ValueError("Invalid gateway credential")

@@ -37,9 +37,9 @@
   record   过程记录:docs/reviews/、docs/archive/、docs/validation/YYYY-MM-DD-*.md.
            按约定保留原时点事实:审查记录引用的是当时的代码行、`/private/tmp/...`
            临时工作区路径和从未提交的探针文件,这些失效本身就是证据,不能回头
-           改.因此只计数、不门禁,并按基线报告增量.长期 FAIL 的检查等于没有
-           检查:接入前 138 条问题全部出自过程记录、终态文档 0 条,真正的终态
-           文档漂移会被这套噪音淹没.
+           改.因此只计数、不门禁,并按基线键集合差报告增量.长期 FAIL 的检查
+           等于没有检查:接入前 138 条问题全部出自过程记录、终态文档 0 条,真正
+           的终态文档漂移会被这套噪音淹没.
   判不准的路径一律按 terminal 处理:宁可让它变红,也不悄悄放行.
 
 围栏代码块内不算引用.围栏里贴的是命令输出、探针摘录或示例,是文档引用别人
@@ -60,7 +60,21 @@
 
 棘轮:`--baseline` 只对基线之外(新增)的终态问题变红,基线为空时等价全量门禁.
   当前基线是 `scripts/dev-env/doc-refs-baseline.json`.新增终态问题只能通过改
-  基线文件「接受」,那次改动在 PR diff 里可见,不是静默放行.
+  基线文件「接受」,那次改动在 PR diff 里可见,不是静默放行.`--write-baseline`
+  也守这条线:它默认拒绝把基线里没有的终态问题写进 `terminal`,并逐条列出,必须
+  再加 `--accept-new-terminal` 才写,且打印「已接受 N 条新终态问题」;重写已消失
+  的旧键是收紧,不需要开关.否则「跑一次 --write-baseline」就能把一条没人看过的
+  新问题永久写成「已接受」,门禁被一条命令静默打开.
+
+过程记录在基线里存的是**问题键集合**(`<记录文件>::<引用>::<判定>`),不是绝对
+计数,报告按「与基线键集合的差」给出 `RECORDS new=+N stale=+M`:
+  new    这条问题键不在基线里 → 本片新增(或此前报告后新出现)的记录问题;
+  stale  基线里有、现在没了 → 记录被删,或那条引用已经不再命中.
+存计数的方案(到 #1063 为止)会随基线变旧而说谎:没人为「增量显示」去刷基线,
+于是「实测 166 对基线 155」看起来像是本 PR 引入的 11 条.键集合没有这个问题——
+新增记录只体现为 `new=+N`,不需要任何人记得刷新;差的是一份稳定的身份而不是一个
+必然过期的数字.键含目标行号:同名目标换一行号是另一条问题,不能相互抵消.
+两边都不参与判定,过程记录的增减不改变退出码.
 
 `--fix` 把 DRIFT 的修复从「逐条改别的文件里的行号」压成一条命令:对每条 DRIFT,
 若断言片段在目标文件里**唯一命中**,就把引用处的行号改写成命中行的行号;命中 0 处
@@ -83,6 +97,9 @@ JSON 是给机器消费的,把两千多条 OK 行加进去只会淹没真正的�
   scripts/dev-env/check-doc-refs.py                  # 报告,并按基线门禁终态文档
   scripts/dev-env/check-doc-refs.py --baseline scripts/dev-env/doc-refs-baseline.json
   scripts/dev-env/check-doc-refs.py --write-baseline scripts/dev-env/doc-refs-baseline.json
+                                             # 快照当前的问题键(过程记录刷新只影响
+                                             # 增量显示);同一命令默认拒绝接受**新的**
+                                             # 终态问题,需 --accept-new-terminal
   scripts/dev-env/check-doc-refs.py --path docs/operations --path deploy
   scripts/dev-env/check-doc-refs.py --show-records   # 逐条打印过程记录的问题
   scripts/dev-env/check-doc-refs.py --show           # 只打印问题项, 并附被引用行的原文
@@ -144,12 +161,19 @@ REVIEW_MARKER = re.compile(r"审查|复核|核对|review", re.IGNORECASE)
 RECORD_REFERENCE = re.compile(r"#\d{2,}")
 RECORD_HEAD_CHARS = 400
 
-BASELINE_SCHEMA = 1
+BASELINE_SCHEMA = 2
 BASELINE_NOTE = (
     "check-doc-refs 棘轮基线:terminal 是已接受的终态文档引用问题(空列表 = 全量门禁),"
-    "records 是过程记录的问题计数(只用于报告增量,不门禁)."
-    "由 scripts/dev-env/check-doc-refs.py --write-baseline 生成."
+    "records 是已见过的过程记录问题键集合(<记录文件>::<引用>::<判定>),"
+    "只用于按键集合差报告 new/stale 增量,不参与判定;存计数会随基线变旧而失真(#1063)."
+    "由 scripts/dev-env/check-doc-refs.py --write-baseline 生成,刷新只改变增量显示."
 )
+# 过程记录问题键的分隔符:文档与引用里不会出现 `::`,而引用本身含 `:行号`,
+# 所以键必须把「文档」「路径:行号」「判定」三段分开,不能只靠 `::` 切两段.
+KEY_SEP = "::"
+# 过程记录只产生这三种问题:断言判定(DRIFT/UNASSERTED)只对终态文档生效,所以
+# 记录键里不会出现它们;出现即基线格式错误,按环境问题退出 2,不静默接受.
+RECORD_VERDICTS = ("MISSING", "OUT_OF_RANGE", "AMBIGUOUS")
 
 
 class RefResult(TypedDict):
@@ -337,7 +361,51 @@ def problem_key(result: RefResult) -> str:
     return f"{result['doc']}::{result['ref']}"
 
 
-def load_baseline(path: Path) -> tuple[Counter[str], dict[str, Counter[str]]]:
+def record_key(result: RefResult) -> str:
+    """过程记录问题的稳定键:记录文件 + 引用 + 判定.
+
+    引用里带目标行号(`settings.py:41`),所以同名目标换一个行号是**另一条**问题,
+    不会被「计数相同」抵消.记录文件自己的行号不进键:在记录顶部补一句话不该把
+    已有问题算成新增.判定也进键:同一引用从 `MISSING` 变成 `AMBIGUOUS` 是问题
+    换了性质,按消失+新增报告比静默归零诚实.
+    """
+    return KEY_SEP.join((result["doc"], result["ref"], result["verdict"]))
+
+
+def record_key_parts(key: str) -> tuple[str, str, str] | None:
+    """拆开一条过程记录问题键;不是本格式时返回 None(基线格式错误,不是检查结果)."""
+    doc, first, rest = key.partition(KEY_SEP)
+    ref, second, verdict = rest.partition(KEY_SEP)
+    if not first or not second or not doc or ":" not in ref:
+        return None
+    if verdict not in RECORD_VERDICTS:
+        return None
+    return doc, ref, verdict
+
+
+def record_delta(current: Counter[str], accepted: list[str]) -> tuple[Counter[str], Counter[str]]:
+    """(本次新增的过程记录问题键, 基线里有但现在没了的问题键).
+
+    按键集合的差,不按计数:新增一条记录只让 `new` 加一,不会变成「基线 127 /
+    实测 128」两套数字;基线登记过的键现在没命中则进 `stale`,不会被静默吞掉.
+    """
+    baseline = Counter(accepted)
+    return current - baseline, baseline - current
+
+
+def record_delta_buckets(keys: Counter[str]) -> dict[str, Counter[str]]:
+    """增量按记录目录与判定分桶,让 `RECORDS new=/stale=` 的明细能定位到目录."""
+    buckets: dict[str, Counter[str]] = defaultdict(Counter)
+    for key in keys.elements():
+        parts = record_key_parts(key)
+        if parts is None:
+            buckets["(无法解析)"]["?"] += 1
+            continue
+        buckets[record_bucket(parts[0])][parts[2]] += 1
+    return dict(buckets)
+
+
+def load_baseline(path: Path) -> tuple[Counter[str], list[str]]:
     """读棘轮基线;格式不对是环境问题(退出码 2),不是检查结果."""
     try:
         text = path.read_text(encoding="utf-8")
@@ -361,34 +429,26 @@ def load_baseline(path: Path) -> tuple[Counter[str], dict[str, Counter[str]]]:
             raise ValueError(f"{path}: terminal 必须是字符串列表")
         terminal.append(item)
 
-    raw_records = raw.get("records", {})
-    if not isinstance(raw_records, dict):
-        raise ValueError(f"{path}: records 必须是对象")
-    records: dict[str, Counter[str]] = {}
-    for bucket, counts in raw_records.items():
-        if not isinstance(bucket, str):
-            raise ValueError(f"{path}: records 的键必须是目录名")
-        if not isinstance(counts, dict):
-            raise ValueError(f"{path}: records[{bucket}] 必须是对象")
-        bucket_counter: Counter[str] = Counter()
-        for verdict, value in counts.items():
-            if not isinstance(verdict, str) or not isinstance(value, int):
-                raise ValueError(f"{path}: records[{bucket}] 必须是「判定: 计数」")
-            if isinstance(value, bool):
-                raise ValueError(f"{path}: records[{bucket}] 的计数必须是整数")
-            bucket_counter[verdict] = value
-        records[bucket] = bucket_counter
+    raw_records = raw.get("records", [])
+    if not isinstance(raw_records, list):
+        raise ValueError(
+            f"{path}: records 必须是问题键字符串列表(schema {BASELINE_SCHEMA})；"
+            "旧版计数格式请用 --write-baseline 重写"
+        )
+    records: list[str] = []
+    for item in raw_records:
+        if not isinstance(item, str) or record_key_parts(item) is None:
+            raise ValueError(f"{path}: records 的元素必须是 `<文件>::<路径:行号>::<判定>`")
+        records.append(item)
     return Counter(terminal), records
 
 
-def baseline_payload(terminal: Counter[str], records: dict[str, Counter[str]]) -> dict[str, object]:
+def baseline_payload(terminal: Counter[str], record_keys: list[str]) -> dict[str, object]:
     return {
         "schema": BASELINE_SCHEMA,
         "note": BASELINE_NOTE,
         "terminal": sorted(terminal.elements()),
-        "records": {
-            bucket: dict(sorted(counts.items())) for bucket, counts in sorted(records.items())
-        },
+        "records": sorted(record_keys),
     }
 
 
@@ -750,11 +810,22 @@ def main() -> int:
         help="棘轮基线 JSON；省略时不接受任何终态文档问题（等于全量门禁）",
     )
     ap.add_argument(
+        "--accept-new-terminal",
+        action="store_true",
+        help=(
+            "配合 --write-baseline：显式接受基线里没有的终态问题；缺省拒绝写入，"
+            "避免一条命令把没看过的新问题写成「已接受」"
+        ),
+    )
+    ap.add_argument(
         "--write-baseline",
         type=Path,
         default=None,
         metavar="PATH",
-        help="按当前结果重写基线后退出；过程记录目录布局不合约定时不写",
+        help=(
+            "按当前结果重写基线后退出：terminal 是已接受的问题，records 是过程记录"
+            "问题键的快照（只影响增量显示）；过程记录目录布局不合约定时不写"
+        ),
     )
     ap.add_argument(
         "--problems-only",
@@ -792,6 +863,9 @@ def main() -> int:
     if args.fix and args.write_baseline is not None:
         print("--fix 不能与 --write-baseline 同时使用", file=sys.stderr)
         return 2
+    if args.accept_new_terminal and args.write_baseline is None:
+        print("--accept-new-terminal 需要与 --write-baseline 一起使用", file=sys.stderr)
+        return 2
     if args.fix and args.json:
         print("--fix 不能与 --json 同时使用", file=sys.stderr)
         return 2
@@ -823,7 +897,7 @@ def main() -> int:
         return 2
 
     accepted: Counter[str] = Counter()
-    baseline_records: dict[str, Counter[str]] = {}
+    baseline_records: list[str] = []
     if args.baseline is not None:
         try:
             accepted, baseline_records = load_baseline(args.baseline)
@@ -852,33 +926,9 @@ def main() -> int:
     new_keys = terminal_keys - accepted
     stale_keys = accepted - terminal_keys
 
-    record_counts: dict[str, Counter[str]] = {}
-    for r in record_problems:
-        record_counts.setdefault(record_bucket(r["doc"]), Counter())[r["verdict"]] += 1
-
-    layout_offenders = misplaced_records(scanned)
-
-    if args.write_baseline is not None:
-        if layout_offenders:
-            for repo_path, reason in layout_offenders:
-                print(f"LAYOUT {repo_path}  {reason}", file=sys.stderr)
-            print("过程记录目录不合审查报告约定，未写基线", file=sys.stderr)
-            return 1
-        payload = baseline_payload(terminal_keys, record_counts)
-        try:
-            args.write_baseline.write_text(
-                json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-            )
-        except OSError as exc:
-            print(f"cannot write {args.write_baseline}: {exc.strerror}", file=sys.stderr)
-            return 2
-        print(
-            f"WROTE {args.write_baseline} terminal={sum(terminal_keys.values())} "
-            f"records={sum(sum(c.values()) for c in record_counts.values())}"
-        )
-        return 0
-
-    # 逐条展示:新的终态问题(红灯原因)在前,基线已接受的在后面单独标注.
+    # 逐条展示与 --write-baseline 的守卫共用同一份切分:新的终态问题在前,
+    # 基线已接受的在后面单独标注.放在写基线之前,写基线时才能逐条列出它要
+    # 接受什么,而不是只印一个计数.
     remaining = Counter(new_keys)
     new_terminal: list[RefResult] = []
     accepted_terminal: list[RefResult] = []
@@ -889,6 +939,59 @@ def main() -> int:
             new_terminal.append(r)
         else:
             accepted_terminal.append(r)
+
+    record_counts: dict[str, Counter[str]] = {}
+    for r in record_problems:
+        record_counts.setdefault(record_bucket(r["doc"]), Counter())[r["verdict"]] += 1
+    record_keys: Counter[str] = Counter(record_key(r) for r in record_problems)
+    # 只有给了基线才有「差」可言;不给时既不报 new 也不报 stale,不把全部记录
+    # 问题冒充成本次新增.
+    records_new: Counter[str] = Counter()
+    records_stale: Counter[str] = Counter()
+    if args.baseline is not None:
+        records_new, records_stale = record_delta(record_keys, baseline_records)
+
+    layout_offenders = misplaced_records(scanned)
+
+    if args.write_baseline is not None:
+        if layout_offenders:
+            for repo_path, reason in layout_offenders:
+                print(f"LAYOUT {repo_path}  {reason}", file=sys.stderr)
+            print("过程记录目录不合审查报告约定，未写基线", file=sys.stderr)
+            return 1
+        # `terminal` 是「已接受」白名单.把一条没人看过的新问题写成「已接受」,
+        # 等于用一条命令静默打开门禁,所以新增终态键必须显式接受;把已消失的
+        # 旧键重写掉是收紧,不需要开关.
+        if new_keys:
+            for r in new_terminal:
+                print_ref(r, show=False, marker="  [新增,基线外]")
+            if not args.accept_new_terminal:
+                print(
+                    f"REFUSED 基线里没有的终态问题 {sum(new_keys.values())} 条，未写基线："
+                    "`--write-baseline` 不会静默把它们写成「已接受」；确认要接受后加 "
+                    "`--accept-new-terminal`（并用 `--baseline` 指向前一份基线，"
+                    "否则其余已接受项也会被当成新增）",
+                    file=sys.stderr,
+                )
+                return 1
+            print(
+                f"ACCEPTED new-terminal={sum(new_keys.values())}  "
+                f"已接受 {sum(new_keys.values())} 条新终态问题（--accept-new-terminal），"
+                "它们从此不再门禁"
+            )
+        payload = baseline_payload(terminal_keys, list(record_keys.elements()))
+        try:
+            args.write_baseline.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+            )
+        except OSError as exc:
+            print(f"cannot write {args.write_baseline}: {exc.strerror}", file=sys.stderr)
+            return 2
+        print(
+            f"WROTE {args.write_baseline} terminal={sum(terminal_keys.values())} "
+            f"records={sum(record_keys.values())}"
+        )
+        return 0
 
     if args.json:
         print(
@@ -912,6 +1015,10 @@ def main() -> int:
                     "records": {
                         bucket: dict(sorted(counts.items()))
                         for bucket, counts in sorted(record_counts.items())
+                    },
+                    "records_baseline": {
+                        "new": sum(records_new.values()),
+                        "stale": sum(records_stale.values()),
                     },
                     "layout": layout_offenders,
                 },
@@ -971,17 +1078,24 @@ def main() -> int:
     else:
         print(f"SCOPE {RECORD} problems=0")
     if args.baseline is not None:
-        for bucket in sorted(set(baseline_records) | set(record_counts)):
-            before = baseline_records.get(bucket, Counter())
-            now = record_counts.get(bucket, Counter())
-            deltas = [
-                f"{verdict} {before.get(verdict, 0)}->{now.get(verdict, 0)} "
-                f"({now.get(verdict, 0) - before.get(verdict, 0):+d})"
-                for verdict in sorted(set(before) | set(now))
-                if before.get(verdict, 0) != now.get(verdict, 0)
-            ]
-            if deltas:
-                print(f"RECORDS {bucket} " + " ".join(deltas))
+        # 增量只报差,不报「基线计数 -> 实测计数」:后者把两个必然不同步的数字
+        # 摆在一起,读起来像是本片引入了那一段差值(#1063).
+        print(
+            f"RECORDS new={sum(records_new.values()):+d} "
+            f"stale={sum(records_stale.values()):+d}"
+            "  过程记录增量(与基线键集合的差,不参与判定)"
+        )
+        for label, keys in (("new", records_new), ("stale", records_stale)):
+            for bucket, counts in sorted(record_delta_buckets(keys).items()):
+                rendered = " ".join(
+                    f"{verdict}={value:+d}" for verdict, value in sorted(counts.items())
+                )
+                print(f"RECORDS {label} {bucket} {rendered}")
+        if records_stale:
+            print(
+                "RECORDS stale 基线里登记的过程记录问题现在没命中(记录被删或引用"
+                "已不再命中),所以计为消失;不参与判定"
+            )
     if stale_keys:
         print(
             f"BASELINE stale={sum(stale_keys.values())}  基线登记的终态问题已消失，"

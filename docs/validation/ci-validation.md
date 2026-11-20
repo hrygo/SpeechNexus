@@ -649,9 +649,70 @@ uv run pytest tests/ci tests/contract/test_ci_workflow.py tests/unit/test_integr
 
 ### 棘轮与基线
 
-`--baseline <json>` 只对基线之外的新增终态问题变红；`terminal` 为空列表时等价全量门禁。[doc-refs-baseline.json](../../scripts/dev-env/doc-refs-baseline.json) 就是这样一份基线：`terminal: []`，`records` 记录过程记录的问题计数（2026-11-17 刷新后为 `docs/reviews`：`AMBIGUOUS=127`、`MISSING=24`、`OUT_OF_RANGE=3`；`docs/validation`：`AMBIGUOUS=1`），只用于在报告里显示增量，不参与判定。要接受一条终态问题只能改 `terminal` 列表，那次改动在 PR diff 里可见，不是静默放行；`--write-baseline` 按当前结果重写基线，基线登记的问题消失时报告打印 `BASELINE stale=`，由同一条命令缩短。过程记录有实质变化时按同一命令刷新 `records`——刷新只改变增量显示，不改变任何判定（2026-11-17 的那次刷新见下节的刷新区块）。
+`--baseline <json>` 只对基线之外的新增终态问题变红；`terminal` 为空列表时等价全量门禁。[doc-refs-baseline.json](../../scripts/dev-env/doc-refs-baseline.json) 就是这样一份基线：`terminal: []`，所以终态文档是全量门禁；要接受一条终态问题只能改 `terminal` 列表，那次改动在 PR diff 里可见，不是静默放行。基线登记的终态问题消失时报告打印 `BASELINE stale=`，由 `--write-baseline` 缩短。
 
-输出固定四段：逐条问题（终态问题在前，新增标注 `[新增,基线外]`、基线已接受标注 `[基线已接受]`；过程记录默认只给计数，`--show-records` 逐条打印）、`SUMMARY`（`refs` 参与判定的引用数、`fenced` 围栏内跳过数、`fenced_terminal` 其中来自终态文档的条数、各判定计数）、`SCOPE`／`RECORDS`（终态与过程记录分目录计数，带基线时给出 `旧->新` 增量）、`RESULT PASS|FAIL`。退出码 0 表示没有新增终态问题（过程记录的增长不影响），1 表示有新增终态问题或目录布局不合约定，2 表示环境不可用（不在 git 仓库、扫描路径不存在、基线不可读）。
+`records` 存的是**过程记录的问题键集合**，不是计数。每条键是 `<记录文件>::<引用>::<判定>`，例如审查记录里一条指向 `jobs.py` 第 41 行的裸文件名引用与其 `AMBIGUOUS` 判定。报告按「与基线键集合的差」给出 `RECORDS new=+N stale=+M`，两侧都不参与判定：
+
+- `new`：这次扫描出现、基线里没有的键。新增一份审查记录只让它 `+1`，不会出现「基线 127 / 实测 140」两套数字；
+- `stale`：基线里有、这次没命中的键。记录被删、或那条引用已经不再命中，都如实显示为消失，不静默吞掉。
+
+键里带目标行号与判定，所以同名目标换一行号、或同一引用从 `MISSING` 变成 `AMBIGUOUS`，都算成旧键消失加新键出现，而不是因为「计数相同」静默归零。
+
+此前 `records` 存的是分目录绝对计数（2026-11-17 刷新后为 `docs/reviews`：`AMBIGUOUS=127`、`MISSING=24`、`OUT_OF_RANGE=3`；`docs/validation`：`AMBIGUOUS=1`）。这段数字是历史记录，保留原样；但它要有人记得刷新，而没人会为「增量显示」去刷，基线一旧，`RECORDS` 上的差就被读成本片引入的问题（#1063）。**此后不再手工刷新基线来对齐计数，增量按基线键集合差计算。**
+
+`--write-baseline` 重写 `terminal`（已接受集合）与 `records`（过程记录问题键快照）。它默认**拒绝**把基线里没有的终态问题写成「已接受」——`terminal` 是「已接受」白名单，一条没人看过的新问题被一条命令写进去，门禁就被静默打开了。遇到新终态键时逐条列出并以 1 退出，基线文件保持原字节；确认看过之后加 `--accept-new-terminal` 才写，并打印已接受条数。重写已消失的旧键是收紧，不需要开关。不传 `--baseline` 时没有「已接受」参照，所有终态问题都算新增，所以维护已接受集合要同时给 `--baseline <原基线>`。刷新 `records` 只是把「已见过」的边界前移，可选且不改变任何判定：新增记录即使从未刷新也显示 `new=+N`。`docs/reviews/` 有布局问题时仍拒绝写入。
+
+```text
+$ # 干净树：没有新终态键，直接写
+WROTE scripts/dev-env/doc-refs-baseline.json terminal=0 records=166
+
+$ # 引入一条新终态问题后不加开关（逐条 [新增,基线外] 略）
+REFUSED 基线里没有的终态问题 1 条，未写基线：…  # exit=1，基线文件逐字节不变
+
+$ # 加 --accept-new-terminal（并用 --baseline 指向原基线）
+ACCEPTED new-terminal=1  已接受 1 条新终态问题（--accept-new-terminal），它们从此不再门禁
+WROTE scripts/dev-env/doc-refs-baseline.json terminal=1 records=166
+```
+
+输出固定五段：逐条问题（终态问题在前，新增标注 `[新增,基线外]`、基线已接受标注 `[基线已接受]`；过程记录默认只给计数，`--show-records` 逐条打印）、`SUMMARY`（`refs` 参与判定的引用数、`fenced` 围栏内跳过数、`fenced_terminal` 其中来自终态文档的条数、各判定计数）、`SCOPE`（终态问题数与过程记录的当前分目录计数）、`RECORDS`（带基线时给出与基线键集合的差 `new=+N stale=+M`，明细按目录与判定分列）、`RESULT PASS|FAIL`。退出码 0 表示没有新增终态问题（过程记录的增减不影响），1 表示有新增终态问题或目录布局不合约定，2 表示环境不可用（不在 git 仓库、扫描路径不存在、基线不可读）。
+
+### 过程记录增量实跑（#1063）
+
+在一次性 git 仓库里实跑四条路径（2026-11-20，Python 3.12；仓库里只有一份审查记录、基线登记它的一条 `MISSING`）。A 是新加一份含坏引用的记录，B 是删掉它，C 是删掉基线登记的那份记录，D 是把同名目标的行号从 7 改成 9——两侧记录问题计数都是 1，只有键集合差看得见：
+
+```text
+$ # A 新增一份含坏引用的记录
+SCOPE terminal problems=0 new=0 accepted=0
+SCOPE record problems=2 docs/reviews MISSING=2
+RECORDS new=+1 stale=+0  过程记录增量(与基线键集合的差,不参与判定)
+RECORDS new docs/reviews MISSING=+1
+RESULT PASS                                    # exit=0，只说 +1
+
+$ # B 删掉该记录：回到基线值
+SCOPE terminal problems=0 new=0 accepted=0
+SCOPE record problems=1 docs/reviews MISSING=1
+RECORDS new=+0 stale=+0  过程记录增量(与基线键集合的差,不参与判定)
+RESULT PASS                                    # exit=0
+
+$ # C 基线里有、现在没命中：报 stale，仍然不门禁
+SCOPE terminal problems=0 new=0 accepted=0
+SCOPE record problems=0
+RECORDS new=+0 stale=+1  过程记录增量(与基线键集合的差,不参与判定)
+RECORDS stale docs/reviews MISSING=+1
+RECORDS stale 基线里登记的过程记录问题现在没命中(记录被删或引用已不再命中),所以计为消失;不参与判定
+RESULT PASS                                    # exit=0
+
+$ # D 同名目标换一个行号：计数两边都是 1，键不同
+SCOPE terminal problems=0 new=0 accepted=0
+SCOPE record problems=1 docs/reviews MISSING=1
+RECORDS new=+1 stale=+1  过程记录增量(与基线键集合的差,不参与判定)
+RECORDS new docs/reviews MISSING=+1
+RECORDS stale docs/reviews MISSING=+1
+RECORDS stale 基线里登记的过程记录问题现在没命中(记录被删或引用已不再命中),所以计为消失;不参与判定
+RESULT PASS                                    # exit=0
+```
+
+同一棵树上的终态判定不受影响：用改动前后的脚本各跑一次，`SUMMARY`、`SCOPE terminal` 与逐条终态问题行逐字相同，新增终态问题两边都是 `RESULT FAIL` / exit 1，基线已接受的终态问题两边都是 `RESULT PASS` / exit 0。`tests/ci/test_doc_refs_ratchet.py` 的 `RecordsBaselineTests` 把 A–D 与「增量恒 0」的反例钉住：把差集改成恒空时那四条用例全部变红。
 
 ### 修复与排障：`--fix` 与 `--show-ok`
 
@@ -678,7 +739,7 @@ uv run pytest tests/ci tests/contract/test_ci_workflow.py tests/unit/test_integr
 - **0 条判据过严**：逐目标核对同名文件数，没有任何「仓库里只有一个同名文件却被判歧义」的情况；省略号那条属写法不足，归入同一类。
 - **处置：不放开判据、不加忽略表。** 过程记录按「保留原时点事实」只计数不门禁；终态文档出现同类写法立即红，基线 `terminal` 保持为空（没有接受任何例外）。
 
-基线 `records` 的刷新与这次审计同批完成。刷新只改变增量显示，不改变任何判定：
+基线 `records` 的刷新与这次审计同批完成（下面是当次原始输出，`RECORDS` 行是 #1063 之前的计数格式；现行按键集合差计算）。刷新只改变增量显示，不改变任何判定：
 
 ```text
 $ # 刷新前：基线仍是接入时的计数，RECORDS 显示过程记录的累计增量
@@ -698,7 +759,7 @@ SCOPE record problems=155 docs/reviews AMBIGUOUS=127 MISSING=24 OUT_OF_RANGE=3; 
 RESULT PASS                                    # exit=0，new=0
 ```
 
-过程记录的计数不是门禁：`docs/reviews` 会继续增长，增长只改变这行报告里的数字，不阻塞合并；要让它重新可见，在 `docs/reviews/` 有实质变化的同一 PR 里再跑一次 `--write-baseline`。
+过程记录的计数不是门禁：`docs/reviews` 会继续增长，增长只改变 `SCOPE` 的当前计数与 `RECORDS` 的 `new=+N`，不阻塞合并，也不需要为增量显示刷新基线。需要把「已见过」的边界前移时（例如一次大的记录整理之后）才跑 `--write-baseline`：它只改变后续的增量基准，不改变任何判定。
 
 ### 作业与门禁
 
@@ -706,7 +767,7 @@ RESULT PASS                                    # exit=0，new=0
 
 ### 实测反例
 
-四段是 2026-11-16 接入 CI 时的快照，都在本机以 Python 3.12（CI runner 的系统 Python 版本）执行，命令与 CI 相同：第一段是基线树；第二、三段分别往终态文档与过程记录里注入坏引用；第四段把终态文档搬到 `docs/reviews/` 的合规文件名下。计数随 `docs/` 内容变化，包括本节自身的改动，以实际运行输出为准；基线已于 2026-11-17 刷新（见上节刷新区块），第三段的 `RECORDS` 增量因此不再与当前基线逐字一致：
+四段是 2026-11-16 接入 CI 时的快照，都在本机以 Python 3.12（CI runner 的系统 Python 版本）执行，命令与 CI 相同：第一段是基线树；第二、三段分别往终态文档与过程记录里注入坏引用；第四段把终态文档搬到 `docs/reviews/` 的合规文件名下。计数随 `docs/` 内容变化，包括本节自身的改动，以实际运行输出为准。第三段的 `RECORDS` 行是 #1063 之前的格式（`旧计数->新计数`），保留为当时的证据；现行格式是与基线键集合的差，实跑见上文「过程记录增量实跑」：
 
 ```text
 $ python3 scripts/dev-env/check-doc-refs.py --baseline scripts/dev-env/doc-refs-baseline.json

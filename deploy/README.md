@@ -669,10 +669,10 @@ mounts its three `.py` siblings by relative path:
 ```bash
 tag=v0.1.0
 mkdir -p "speechnexus-${tag}" && cd "speechnexus-${tag}"
-gh release download "$tag" --pattern "speechnexus-${tag}-*"
+gh release download "$tag" --repo hrygo/SpeechNexus --pattern "speechnexus-${tag}-*"
 shasum -a 256 -c "speechnexus-${tag}-SHA256SUMS"
 # Already pinned: this prints only image digests and the one public database image.
-docker compose -f "speechnexus-${tag}-compose.yaml" config --images
+docker compose --env-file compose.env -f "speechnexus-${tag}-compose.yaml" config --images
 docker compose --env-file compose.env -f "speechnexus-${tag}-compose.yaml" up -d postgres minio minio-init
 ```
 

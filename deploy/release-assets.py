@@ -114,7 +114,7 @@ HEADER = """\
 # `deploy/release-assets.py` in `.github/workflows/release-images.yml`.
 #
 # Every SpeechNexus service runs a published digest image:
-#   `docker compose -f {name} config --images` prints only
+#   `docker compose --env-file compose.env -f {name} config --images` prints only
 #   `ghcr.io/hrygo/<repository>@sha256:...` lines plus `{public}`.
 #
 # There is no `build:` key and no build context anywhere in this file, so it needs
@@ -328,6 +328,20 @@ def render_service(
     return [lines[service.start], *body], mounted
 
 
+def repoint_checkout_paths(lines: list[str]) -> list[str]:
+    """Rewrite commands inside preserved comments to the attachment layout.
+
+    Comments survive the rewrite byte for byte, but they were written for a
+    checkout: `--env-file deploy/compose.env` names a file that is not beside a
+    downloaded attachment, so a reader who copies that line gets `no such file or
+    directory`. Only comment lines are touched; nothing compose reads changes.
+    """
+    return [
+        line.replace("deploy/compose.env", "compose.env") if line.lstrip().startswith("#") else line
+        for line in lines
+    ]
+
+
 def verify(text: str, expected: dict[str, Image]) -> tuple[list[str], int]:
     """Assert the properties the attachment is published for; return (services, pinned)."""
     stripped = [line for line in text.splitlines() if not line.lstrip().startswith("#")]
@@ -468,29 +482,26 @@ def main(argv: list[str] | None = None) -> int:
     with_builds = drop_build_anchor(source)
     _, spans = service_spans(with_builds)
 
-    rewritten: list[str] = [
-        HEADER.format(
-            commit=args.commit,
-            tag=args.tag,
-            name=f"speechnexus-{args.tag}-compose.yaml",
-            public=PUBLIC_IMAGES["postgres"],
-            scripts=", ".join(
-                f"`{attachment_name(args.tag, script)}`" for script in MOUNTED_SCRIPTS
-            ),
-            glob=ATTACHMENT_GLOB.format(tag=args.tag),
-        )
-    ]
+    header = HEADER.format(
+        commit=args.commit,
+        tag=args.tag,
+        name=f"speechnexus-{args.tag}-compose.yaml",
+        public=PUBLIC_IMAGES["postgres"],
+        scripts=", ".join(f"`{attachment_name(args.tag, script)}`" for script in MOUNTED_SCRIPTS),
+        glob=ATTACHMENT_GLOB.format(tag=args.tag),
+    )
+    body: list[str] = []
     cursor = 0
     mounted: dict[str, str] = {}
     for span in spans:
-        rewritten.extend(with_builds[cursor : span.start])
+        body.extend(with_builds[cursor : span.start])
         block, repointed = render_service(span, with_builds, images, args.tag)
-        rewritten.extend(block)
+        body.extend(block)
         for script in repointed:
             mounted[script] = attachment_name(args.tag, script)
         cursor = span.end
-    rewritten.extend(with_builds[cursor:])
-    text = "".join(rewritten)
+    body.extend(with_builds[cursor:])
+    text = header + "".join(repoint_checkout_paths(body))
 
     services, pinned = verify(text, images)
     targets = verify_mounts(text, args.tag, scripts)

@@ -43,6 +43,7 @@ ROOT = Path(__file__).resolve().parents[2]
 GENERATOR = ROOT / "deploy/release-assets.py"
 COMPOSE = ROOT / "deploy/compose.yaml"
 WORKFLOW = (ROOT / ".github/workflows/release-images.yml").read_text()
+README = ROOT / "deploy/README.md"
 
 TAG = "v9.9.9"
 COMMIT = "0123456789abcdef0123456789abcdef01234567"
@@ -199,11 +200,27 @@ class PinnedServiceTests(unittest.TestCase):
                     self.assertRegex(reference, PINNED)
 
     def test_no_service_carries_a_build_or_a_context(self) -> None:
+        service = "top level"
+        offenders: list[tuple[str, str]] = []
         for line in self.assets.compose.splitlines():
+            header = re.match(r"^  ([a-z0-9][a-z0-9-]*):$", line)
+            if header is not None:
+                service = header[1]
             if line.lstrip().startswith("#"):
                 continue
-            self.assertNotRegex(line, r"^ {2,6}(build|context|dockerfile):", line)
+            if re.match(r"^ {2,6}(build|context|dockerfile):", line):
+                offenders.append((service, line.strip()))
+        for service, line in offenders:
+            with self.subTest(service=service):
+                self.fail(f"{service} still carries {line!r}")
         self.assertNotIn("*python-build", self.assets.compose)
+
+    def test_comments_point_every_command_at_the_attachment_directory(self) -> None:
+        # Comments are preserved from the source file, but a command copied out of
+        # them has to name a path the reader actually has: `deploy/compose.env`
+        # does not exist beside a downloaded attachment.
+        self.assertNotIn("deploy/compose.env", self.assets.compose)
+        self.assertIn("--env-file compose.env", self.assets.compose)
 
     def test_the_number_of_pinned_services_matches_the_manifest(self) -> None:
         pinned = [
@@ -397,16 +414,39 @@ class WorkflowTests(unittest.TestCase):
         ):
             with self.subTest(name=name):
                 self.assertIn(name, WORKFLOW)
-        # The three script assets are enumerated by the read-back and uploaded by
-        # glob, so the upload list cannot drift from the generator's output.
-        self.assertIn(
-            "for script in init-object-storage.py job-startup-gate.py "
-            "workbench-startup-gate.py; do",
-            WORKFLOW,
-        )
-        self.assertIn('"speechnexus-${TAG}-${script}"', WORKFLOW)
+        # The read-back expands the same glob the upload uses: a fourth mounted
+        # script cannot be uploaded and silently skipped by the check.
+        self.assertIn('scripts=(speechnexus-"${TAG}"-*.py)', WORKFLOW)
+        self.assertIn('for script in "${scripts[@]}"; do', WORKFLOW)
+        self.assertNotIn("for script in init-object-storage.py", WORKFLOW)
         # The read-back is the guard that the upload actually landed.
         self.assertGreaterEqual(WORKFLOW.count("release-manifest.json"), 5)
+
+    def test_the_read_back_refuses_an_empty_script_glob(self) -> None:
+        # `speechnexus-<tag>-*.py` matching nothing must fail loudly instead of
+        # looping over a literal pattern that `grep -qx` would never match.
+        self.assertIn("if [[ ${#scripts[@]} -eq 0 ]]; then", WORKFLOW)
+
+
+class DocumentedCommandTests(unittest.TestCase):
+    """The README's deployment commands must run on a host with no checkout."""
+
+    def test_the_download_names_the_repository(self) -> None:
+        # `gh release download` resolves the repository from the working tree when
+        # `--repo` is absent; the section it sits in promises "No checkout is
+        # involved", where that resolution fails with `not a git repository`.
+        self.assertIn(
+            'gh release download "$tag" --repo hrygo/SpeechNexus --pattern "speechnexus-${tag}-*"',
+            README.read_text(),
+            "deploy/README.md must name the repository, because this section skips the checkout",
+        )
+
+    def test_every_documented_compose_command_passes_the_env_file(self) -> None:
+        for line in README.read_text().splitlines():
+            if "docker compose" not in line or '-f "speechnexus-' not in line:
+                continue
+            with self.subTest(line=line):
+                self.assertIn("--env-file compose.env", line)
 
 
 if __name__ == "__main__":

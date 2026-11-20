@@ -591,9 +591,19 @@ jobs:
               exit 1
             fi
           done
-          for script in init-object-storage.py job-startup-gate.py workbench-startup-gate.py; do
-            if ! grep -qx "speechnexus-${TAG}-${script}" <<< "$assets"; then
-              echo "::error::speechnexus-${TAG}-${script} is missing from the ${TAG} release"
+          # Same glob the upload and the checksum step use, so a newly mounted
+          # script cannot be uploaded without also being checked here.
+          shopt -s nullglob
+          scripts=(speechnexus-"${TAG}"-*.py)
+          shopt -u nullglob
+          if [[ ${#scripts[@]} -eq 0 ]]; then
+            echo "::error::the generator wrote no script attachments"
+            exit 1
+          fi
+          for script in "${scripts[@]}"; do
+            name="$(basename "$script")"
+            if ! grep -qx "$name" <<< "$assets"; then
+              echo "::error::${name} is missing from the ${TAG} release"
               exit 1
             fi
           done

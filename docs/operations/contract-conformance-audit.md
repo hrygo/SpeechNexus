@@ -330,8 +330,8 @@ Starlette 307 到规范路径（复核实测见
 | 29 | getRealtimeSession | GET /v1/nexus/realtime/sessions/{session_id} | 200,401,404,410 | 404 默认 |
 | 30 | cancelRealtimeSession | POST /v1/nexus/realtime/sessions/{session_id}/cancellations | 200,202,401,404,409 | 404 默认 |
 | 31 | connectRealtime | GET /v1/realtime | 101,400,401,403,404,409,503 | 404 默认（无 WebSocket 路由） |
-| 32 | createVoiceDesign | POST /v1/nexus/voice-designs | 202,400,401,409,422,429 | 404 默认 |
-| 33 | createVoiceClone | POST /v1/nexus/voice-clones | 202,400,401,409,422,429 | 404 默认 |
+| 32 | createVoiceDesign | POST /v1/nexus/voice-designs | 202,400,401,409,422,429 | 404 默认；本版本创建以 422 `voice_draft_job_not_dispatchable` 拒绝 |
+| 33 | createVoiceClone | POST /v1/nexus/voice-clones | 202,400,401,409,422,429 | 404 默认；本版本创建以 422 `voice_draft_job_not_dispatchable` 拒绝 |
 | 34 | getVoiceDraft | GET /v1/nexus/voice-drafts/{draft_id} | 200,401,404 | 404 默认 |
 | 35 | updateVoiceDraftMetadata | PATCH /v1/nexus/voice-drafts/{draft_id} | 200,400,401,404,409,422 | 404 默认 |
 | 36 | generateVoiceDraftRevision | POST /v1/nexus/voice-drafts/{draft_id}/generations | 202,400,401,404,409,422 | 404 默认 |
@@ -407,12 +407,12 @@ HTTP GET，真实 WebSocket 升级仍由框架拒绝，属已知边界。
 | 29 | getRealtimeSession | GET /v1/nexus/realtime/sessions/{session_id} | 404 框架默认 | **503 `operation_not_implemented`** |
 | 30 | cancelRealtimeSession | POST /v1/nexus/realtime/sessions/{session_id}/cancellations | 404 框架默认 | **503 `operation_not_implemented`** |
 | 31 | connectRealtime | GET /v1/realtime | 404 框架默认 | **503 `operation_not_implemented`**（仅 HTTP 请求；WebSocket 升级仍被框架拒绝，见下） |
-| 32 | createVoiceDesign | POST /v1/nexus/voice-designs | 404 框架默认 | **【#494 已实现】** |
-| 33 | createVoiceClone | POST /v1/nexus/voice-clones | 404 框架默认 | **【#494 已实现】** |
+| 32 | createVoiceDesign | POST /v1/nexus/voice-designs | 404 框架默认 | **【#494 已实现】**；本版本创建以 422 `voice_draft_job_not_dispatchable` 拒绝 |
+| 33 | createVoiceClone | POST /v1/nexus/voice-clones | 404 框架默认 | **【#494 已实现】**；本版本创建以 422 `voice_draft_job_not_dispatchable` 拒绝 |
 | 34 | getVoiceDraft | GET /v1/nexus/voice-drafts/{draft_id} | 404 框架默认 | **【#494 已实现】** |
 | 35 | updateVoiceDraftMetadata | PATCH /v1/nexus/voice-drafts/{draft_id} | 404 框架默认 | **【#494 已实现】** |
-| 36 | generateVoiceDraftRevision | POST /v1/nexus/voice-drafts/{draft_id}/generations | 404 框架默认 | **503 `operation_not_implemented`** |
-| 37 | createVoicePreview | POST /v1/nexus/voice-drafts/{draft_id}/previews | 404 框架默认 | **503 `operation_not_implemented`** |
+| 36 | generateVoiceDraftRevision | POST /v1/nexus/voice-drafts/{draft_id}/generations | 404 框架默认 | **【#494 已实现】**；本版本以 422 `voice_draft_job_not_dispatchable` 拒绝 |
+| 37 | createVoicePreview | POST /v1/nexus/voice-drafts/{draft_id}/previews | 404 框架默认 | **【#494 已实现】**；本版本以 422 `voice_draft_job_not_dispatchable` 拒绝 |
 | 38 | validateVoiceDraftRevision | POST /v1/nexus/voice-drafts/{draft_id}/validations | 404 框架默认 | **503 `operation_not_implemented`** |
 | 39 | publishVoiceDraftRevision | POST /v1/nexus/voice-drafts/{draft_id}/publications | 404 框架默认 | **503 `operation_not_implemented`** |
 | 40 | speechCreateDeletionPlan | POST /v1/nexus/deletion-plans | 404 框架默认 | **503 `operation_not_implemented`** |

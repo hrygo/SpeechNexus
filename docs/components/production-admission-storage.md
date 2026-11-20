@@ -22,12 +22,14 @@
 `admit_in_transaction` 独占写入 `admission_operations.request_document` 的完整业务命令，
 公开意图继续由新表承载；两列摘要因此不同：`speech_jobs.request_digest` 与
 `speech_job_intents.request_digest` 是公开规范意图摘要，`admission_operations.request_digest`
-是私有执行命令摘要。`voice_design`/`voice_clone`/`voice_preview`/`voice_validation`
-尚无执行配方，仍按旧路径写入非派发的公开意图副本。voice 行占用了
-`admission_operations.operation_id = <job_id>` 锚点，但没有 attempt、lease、配额投影或
-`coordination_jobs` 预留；A3 不得再对同一个 operation 调用 `admit_in_transaction`，
-否则会触发 `reconciliation_required` 或 `idempotency_conflict`。voice 执行配方落地时应
-新建 operation 身份或先把旧锚点迁移为正式预留，不得复用该行。
+是私有执行命令摘要。`asr`/`tts`/`voice_validation` 之外的三个音色生成 kind
+（`voice_design`、`voice_clone`、`voice_preview`）没有执行配方，创建在写入任何行之前即
+被拒绝（见[声音草稿](voice-drafts.md)），因此不产生锚点、attempt、lease、配额投影或
+`coordination_jobs` 预留。此前版本为这些 kind 写入过只含
+`admission_operations.operation_id = <job_id>` 锚点的非派发行；这类历史行仍是读取事实，
+A3 不得对同一个 operation 调用 `admit_in_transaction`，否则会触发
+`reconciliation_required` 或 `idempotency_conflict`。配方落地时应新建 operation 身份或
+先把旧锚点迁移为正式预留，不得复用该行。
 准入信封的摘要包含本次 authority、实例版本、阶段分配和期限，不能替代业务摘要。
 准入信封的正文序列化与摘要计算在创建事务内完成，按 RFC 8785 的规范字节计算；
 迁移不校验 JSON、摘要或命令是否完整，完整性由公开 Job 创建适配器在提交前验证。

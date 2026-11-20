@@ -242,6 +242,7 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 
 ## 行为变化
 
+- 单次合成的文本上限明确为 **4096 字符**（`MAX_SPEECH_TEXT_CHARS`）：同步入口超界 `400 invalid_request`、异步 Job 超界 `422 unsupported_parameter`，两者都带 `param: input`；**不切分、不截断**，更长的正文由调用方分片。上限值本身未变，本条目只是把它写成使用者可依赖的边界。
 - 语音删除从占位 503 变成三段可用：`POST /v1/nexus/deletion-plans`（预检，返回不可变计划）、
   `POST /v1/nexus/deletions`（确认执行，`202`）、`GET /v1/nexus/deletions/{id}`（读记录）；
   目标 kind 为 `asset`、`artifact`、`voice_revision`、`operation_content`，仍被引用的目标以

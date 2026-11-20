@@ -129,19 +129,34 @@ async def test_unknown_release_queries_original_before_marking_settled() -> None
     assert (result.released, leases.calls, store.marks) == (1, 1, 1)
 
 
-@pytest.mark.parametrize("origin", ["http://remote.example", "https://user:secret@example.test"])
-def test_worker_rejects_untrusted_gateway_before_opening_pools(origin: str) -> None:
+def settlement_settings(origin: str) -> Any:
     from speechnexus_backend.tts_settlement_worker import TtsSettlementWorkerSettings
 
-    with pytest.raises(ValidationError, match="origin"):
-        TtsSettlementWorkerSettings.model_validate(
-            {
-                "SPEECHNEXUS_DATABASE_URL": "postgresql://synthetic@127.0.0.1/test",
-                "SPEECHNEXUS_TTS_SETTLEMENT_DATABASE_URL": "postgresql://worker@127.0.0.1/test",
-                "SPEECHNEXUS_DATABASE_SCHEMA": "speech",
-                "SPEECHNEXUS_TTS_GATEWAY_ID": "gateway-test",
-                "SPEECHNEXUS_TTS_HOST_NODE_ID": "host-test",
-                "SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL": origin,
-                "SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL": "synthetic-test-token",
-            }
-        )
+    return TtsSettlementWorkerSettings.model_validate(
+        {
+            "SPEECHNEXUS_DATABASE_URL": "postgresql://synthetic@127.0.0.1/test",
+            "SPEECHNEXUS_TTS_SETTLEMENT_DATABASE_URL": "postgresql://worker@127.0.0.1/test",
+            "SPEECHNEXUS_DATABASE_SCHEMA": "speech",
+            "SPEECHNEXUS_TTS_GATEWAY_ID": "gateway-test",
+            "SPEECHNEXUS_TTS_HOST_NODE_ID": "host-test",
+            "SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL": origin,
+            "SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL": "synthetic-test-token",
+        }
+    )
+
+
+def test_worker_settings_refuse_plaintext_gateway_before_run_can_open_pools() -> None:
+    """Refusal is the settings validator, so it precedes ``run()`` and any pool.
+
+    The old test relied on ``run()`` raising before its first pool; the rule now
+    lives in the settings model, which is constructed before ``run()`` exists in
+    the call path. Pinning construction is therefore the exact ordering guarantee:
+    an unvalidated settings object cannot reach the pool-opening body.
+    """
+    with pytest.raises(ValidationError, match="plain HTTP is allowed only for loopback"):
+        settlement_settings("http://remote.example")
+
+
+def test_worker_settings_refuse_a_credentialed_gateway_at_construction() -> None:
+    with pytest.raises(ValidationError, match="origin without credentials or path"):
+        settlement_settings("https://user:secret@example.test")

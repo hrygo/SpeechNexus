@@ -332,6 +332,11 @@ class DispatcherStartupGateTests(unittest.TestCase):
         self.assertIn("GATEWAY_CONFIGS", gate)
         self.assertIn('"asr": "gateway-file-asr.json"', gate)
         self.assertIn('"tts": "gateway-file-tts.json"', gate)
+        # #1075: the two voice lanes are assembled under the same naming rule.
+        self.assertIn('"voice_design": "gateway-file-voice-design.json"', gate)
+        self.assertIn('"voice_clone": "gateway-file-voice-clone.json"', gate)
+        self.assertIn("def resident_variant_findings(", gate)
+        self.assertIn("RESIDENT_VARIANT_KINDS", gate)
 
     def test_the_gate_covers_the_post_claim_write_columns(self) -> None:
         # Every relation the dispatcher writes after a claim must be named: the Job

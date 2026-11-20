@@ -519,10 +519,11 @@ WRITER_DELETE_TABLES: tuple[str, ...] = ("speech_job_intents", "speech_voice_dra
 
 # 复制自 speech.domain.job_dispatch.DispatchJobKind 的取值。
 DISPATCHABLE_KINDS = frozenset({"asr", "tts", "voice_design", "voice_clone", "voice_validation"})
-# 本参考部署装配的车道:deploy/compose.yaml 只把 asr 与 tts 的私有 gateway 配置传给
-# gateway,启动闸门的 GATEWAY_CONFIGS 与之相同。其余 kind 会被 worker 认领后在提交/
+# 本参考部署装配的车道:deploy/compose.yaml 把 asr 的私有 gateway 配置与一条常驻 TTS
+# 变体(tts、voice_design 或 voice_clone,由 compose.env 选择)传给 gateway,启动闸门的
+# GATEWAY_CONFIGS 与之相同。voice_validation 的车道仍未装配,会被 worker 认领后在提交/
 # 发布阶段失败,所以与闸门一样判 FAIL,而不是留作部署后再说。
-ASSEMBLED_KINDS = frozenset({"asr", "tts"})
+ASSEMBLED_KINDS = frozenset({"asr", "tts", "voice_design", "voice_clone"})
 
 # 本次运行按部署前还是部署后判定;pre 表示私有配置/容器/ready 实例还不存在。
 Phase = Literal["pre", "post"]
@@ -1217,8 +1218,8 @@ def check_dispatch_role(
         check.fail(
             "SPEECHNEXUS_JOB_DISPATCH_KINDS 含本参考部署未装配的车道:"
             + ", ".join(unassembled)
-            + ";deploy/compose.yaml 只把 asr/tts 的 gateway 配置传给 gateway,"
-            "worker 会认领该车道的 Job 后在提交阶段失败。要么从 kinds 里去掉,"
+            + ";deploy/compose.yaml 只把 asr 与一条常驻 TTS 变体的 gateway 配置传给 "
+            "gateway,worker 会认领该车道的 Job 后在提交阶段失败。要么从 kinds 里去掉,"
             "要么先装配车道(私有 gateway 配置、SPEECHNEXUS_GATEWAY_FILE_*_CONFIG_FILE "
             "与闸门的 GATEWAY_CONFIGS)"
         )

@@ -837,14 +837,17 @@ could only discover _after_ claiming a lease and names each missing one:
   `coordination_runtime_grants` stops at container start instead of failing after
   the first claim or the first result publication;
 - every requested lane is one this bootstrap assembles:
-  `SPEECHNEXUS_JOB_DISPATCH_KINDS` must stay inside `asr`/`tts`, and any other
-  kind is named and rejected before a claim (see the lane rules below);
+  `SPEECHNEXUS_JOB_DISPATCH_KINDS` must stay inside `asr` plus one resident TTS
+  variant (`tts`, `voice_design` or `voice_clone`), and any other kind - or a
+  selection naming two variants - is named and rejected before a claim (see the
+  lane rules below);
 - both `SPEECHNEXUS_OBJECT_STORAGE_BUCKET` (Artifact) and
   `SPEECHNEXUS_EXECUTION_RESULT_BUCKET` (gateway staging read-back) exist and have
-  versioning enabled; the gateway's private `result_bucket` in
-  `gateway-file-asr.json`/`gateway-file-tts.json` equals the latter. This covers
-  the staging bucket that `check_ready` alone never probed, so a missing or
-  unversioned result bucket no longer fails only after the first publication.
+  versioning enabled; the selected lane's private `result_bucket` (in
+  `gateway-file-asr.json` and in the one `gateway-file-{tts,voice-design,voice-clone}.json`
+  the deployment selects) equals the latter. This covers the staging bucket that
+  `check_ready` alone never probed, so a missing or unversioned result bucket no
+  longer fails only after the first publication.
 
 A failure exits non-zero with `FAIL: <named prerequisite>` and the worker never
 starts. Exactly two inputs are printed as `pending` lines because they are
@@ -1049,18 +1052,30 @@ authorization, so production must supply narrowly scoped object credentials.
 `SPEECHNEXUS_JOB_DISPATCH_KINDS` selects the lanes this process claims and
 defaults to `asr,tts`. It is comma-separated and de-duplicated, and it must stay
 inside the lanes this bootstrap assembles: `deploy/compose.yaml` forwards exactly
-the private ASR and TTS gateway configs, so `asr` and `tts` are the only kinds the
-gate accepts. Any other kind — `voice_design`, `voice_clone`, `voice_validation`
-or a value outside the dispatchable union — is named and rejected at container
-start, before a claim. `voice_design`/`voice_clone` are non-dispatchable generation
-lanes, and `voice_validation` submits through the voice-clone command lane, which
-this file never configures for the gateway: the worker would claim such a Job and
-fail after the claim, or never be served an engine for it.
+the private ASR and one resident TTS-variant gateway config, so `asr` plus one of
+`tts`, `voice_design` and `voice_clone` are the kinds the gate accepts. Any other
+kind — `voice_validation` or a value outside the dispatchable union — is named and
+rejected at container start, before a claim. Naming two resident TTS variants is
+refused the same way: one gateway loads one of CustomVoice (`tts`), VoiceDesign
+and Base clone, because they are three separate checkpoint/task loads, and the
+gateway itself refuses to start with two lanes configured. `voice_validation`
+submits through the voice-clone command lane, which this file never configures for
+the gateway: the worker would claim such a Job and fail after the claim, or never
+be served an engine for it.
 
-Serving another lane is a topology change, not a `kinds` change: add its private
-gateway config and `SPEECHNEXUS_GATEWAY_FILE_*_CONFIG_FILE` entry to
-`compose.yaml`, add the kind to the gate's `GATEWAY_CONFIGS`, install that lane's
-extra grants, and only then select it. For `voice_validation` the extra grants are
+The three resident TTS lanes are rendered from `compose.env`, so selecting one is
+an environment change rather than a `compose.yaml` edit: blank the CustomVoice
+pair (`SPEECHNEXUS_GATEWAY_FILE_TTS_CONFIG_FILE` and both
+`SPEECHNEXUS_GATEWAY_FILE_TTS_OBJECT_*` keys) and fill the pair of the variant the
+deployment runs. `SPEECHNEXUS_JOB_DISPATCH_KINDS` must then name that variant only;
+the gate verifies the lane's private config and its `objects.result_bucket` before
+any claim, and the gateway refuses to start when two lanes are configured.
+
+Serving a lane this file does not assemble is still a topology change, not a
+`kinds` change: add its private gateway config and
+`SPEECHNEXUS_GATEWAY_FILE_*_CONFIG_FILE` entry to `compose.yaml`, add the kind to
+the gate's `GATEWAY_CONFIGS`, install that lane's extra grants, and only then
+select it. For `voice_validation` the extra grants are
 `voice_validation_worker_grants(schema, worker_role)`: beyond `USAGE` on the schema
 it grants only two `SELECT`s — on `speech_voice_draft_revisions` and
 `speech_assets` — the frozen draft revision and the ready reference Asset the

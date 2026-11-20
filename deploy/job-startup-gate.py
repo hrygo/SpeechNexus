@@ -5,9 +5,10 @@ entrypoint. It verifies the deployment prerequisites that the dispatcher process
 cannot discover until *after* it has claimed a lease, prints one named failure
 per missing item, and only then `exec`s `speechnexus-job-dispatch-worker`. A
 missing bucket, a stale or unreadable migration head, an unversioned staging
-bucket, a lane this bootstrap does not assemble or a role without the post-claim
-write columns therefore fails while the container starts, before any Job can be
-claimed, instead of surfacing as a Job stuck in `running` or failed after claim.
+bucket, a lane this bootstrap does not assemble, a resident TTS variant the
+gateway does not load or a role without the post-claim write columns therefore
+fails while the container starts, before any Job can be claimed, instead of
+surfacing as a Job stuck in `running` or failed after claim.
 
 Every check is a hard failure except two inputs the gate deliberately reports as
 `pending`:
@@ -162,14 +163,23 @@ DISPATCH_GRANT_GROUPS = (
     "coordination_runtime_grants",
 )
 
-# The lanes this bootstrap assembles: `deploy/compose.yaml` forwards exactly the
-# asr and tts private configs to the gateway, and the gate verifies those two
-# lanes' `objects.result_bucket`. A kind outside this map is not served by the
-# reference deployment, so the worker would claim it and fail after the claim.
+# The lanes this bootstrap can assemble: `deploy/compose.yaml` forwards the ASR
+# private config and one resident TTS variant to the gateway, and the gate
+# verifies every selected lane's `objects.result_bucket`. A kind outside this map
+# is not served by the reference deployment at all, so the worker would claim it
+# and fail after the claim.
 GATEWAY_CONFIGS = {
     "asr": "gateway-file-asr.json",
     "tts": "gateway-file-tts.json",
+    "voice_design": "gateway-file-voice-design.json",
+    "voice_clone": "gateway-file-voice-clone.json",
 }
+
+# The lanes whose config the gateway loads *instead of* the others: one gateway
+# process runs one resident TTS variant, because Base, VoiceDesign and CustomVoice
+# are three separate checkpoint/task loads
+# (`execution-gateway/src/speechnexus_gateway/file_speech_runtime.py:179`).
+RESIDENT_VARIANT_KINDS = frozenset({"tts", "voice_design", "voice_clone"})
 IDENTIFIER = re.compile(r"[a-z][a-z0-9_]{2,62}")
 PROBE_TABLE = re.compile(r"\bFROM\s+([A-Za-z0-9_]+)")
 
@@ -456,7 +466,27 @@ def gateway_lane_findings(kinds: Sequence[str]) -> list[str]:
                 "lane (private gateway config, SPEECHNEXUS_GATEWAY_FILE_*_CONFIG_FILE and "
                 "GATEWAY_CONFIGS) before enabling it"
             )
-    return findings
+    return [*findings, *resident_variant_findings(kinds)]
+
+
+def resident_variant_findings(kinds: Sequence[str]) -> list[str]:
+    """Refuse a kinds selection one gateway cannot serve at all.
+
+    The gateway loads one resident TTS variant - CustomVoice (`tts`), VoiceDesign
+    or Base clone - because the three are separate checkpoint/task loads
+    (`execution-gateway/src/speechnexus_gateway/file_speech_runtime.py:179`). A
+    selection naming two of them could never be served by the gateway this
+    bootstrap stands up, so it is refused here instead of failing after the claim.
+    """
+    selected = [kind for kind in dict.fromkeys(kinds) if kind in RESIDENT_VARIANT_KINDS]
+    if len(selected) < 2:
+        return []
+    return [
+        f"{KINDS_ENV} names {', '.join(selected)}: this gateway serves one resident TTS "
+        "variant at a time (CustomVoice, VoiceDesign or Base clone are three separate "
+        "engine loads and the gateway refuses to start with two configured). Select the "
+        "one variant this deployment runs"
+    ]
 
 
 def gateway_config_findings(

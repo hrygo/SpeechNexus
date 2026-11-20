@@ -185,7 +185,7 @@ $ curl http://127.0.0.1:8010/readyz
  {"name":"gateway_ingress","status":"ok","detail":null}]}  http=200
 ```
 
-与 `compose-minimal.md:2303`（该行须含 `speechnexus-api`） 起的预期逐字一致（仅宿主端口不同）。网关私有的 VAD 文件、
+与 `compose-minimal.md:2333`（该行须含 `speechnexus-api`） 起的预期逐字一致（仅宿主端口不同）。网关私有的 VAD 文件、
 两份 gateway JSON、私有目录 sockets/spool 都一次装配成功。
 
 ### 4.8 第 8 节：一次性引擎注册（停止点）
@@ -671,7 +671,7 @@ $ docker compose … exec -T api python -c "import urllib.request; print(urllib.
 {"contract_version":1,"recipe_version":"pcm-decode-1","max_encoded_bytes":4194304,"max_wall_seconds":20.0,"in_flight":0}
 ```
 
-`/readyz` 现在是四项检查，`compose-minimal.md:2218`（该行须含 `本参考部署选择`） 起写的是两项：新增的
+`/readyz` 现在是四项检查，`compose-minimal.md:2248`（该行须含 `本参考部署选择`） 起写的是两项：新增的
 `cancellation_debt` / `stop_evidence_debt` 在未配置时按 `ok` 报告，属文档未跟上的漂移（§14.5）。
 
 ### 14.3 空库 → `202`：五个关键状态
@@ -762,7 +762,7 @@ http=202
 | # | 现象 | 位置 | 处置 |
 | --- | --- | --- | --- |
 | D12 | 实例已 `ready` 后 `GET /v1/models` 仍报 `"engine_ready":false,"admission_state":"unavailable"`：目录的 readiness 是静态投影，从未接入实例事实 | `backend/src/speechnexus_backend/speech/infrastructure/model_catalog_postgres.py:35`（`readiness or ReadinessFacts()` 恒为空），`public_job_admission` 才是真判据 | 本轮只记录：不要用 `/v1/models` 的 readiness 判断能否创建 Job；runbook §7.1 第 4 步「未注册实例时是 unavailable」暗示它会变，需要订正措辞 |
-| D13 | `api` 的 `/readyz` 现在有四项检查（多 `cancellation_debt`、`stop_evidence_debt`） | `compose-minimal.md:2218`（该行须含 `本参考部署选择`） 起写两项 | 文档漂移，记录于此 |
+| D13 | `api` 的 `/readyz` 现在有四项检查（多 `cancellation_debt`、`stop_evidence_debt`） | `compose-minimal.md:2248`（该行须含 `本参考部署选择`） 起写两项 | 文档漂移，记录于此 |
 | D14 | 发布新 revision 后实例身份失效：直接重跑注册被 `instance_config_conflict` 拒绝；创建变成 `429 job_capacity_exhausted`，message 是「no engine instance is registered for model …」 | `engine_registration.py:638`、`public_job_admission.py:211`–`:253` | 记录：换 revision 需要新的 generation/实例轮换路径，本轮**未验证**该路径 |
 | D15 | 单个注册实例的 `max_slots=1`，一个 queued Job 就占满：同一栈上第二次创建是 `429`，message 为「Job capacity is exhausted; retry after the indicated delay.」 | 配方 `runtime_plan.max_slots`、`public_job_admission.py:253` | 不是缺陷，是容量语义：占用持续到该 Job 的租约被释放或准入截止（`retry_after`）到期；写进 §13 判定表第 4 项 |
 

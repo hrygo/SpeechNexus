@@ -451,6 +451,15 @@ curl -sS -X POST \
 （[binding 生命周期](binding-lifecycle.md#发布)）；不要为了凑齐发布而伪造清单或资格。
 它们证明的是「这次发布引用了哪份清单/报告」，不是「该报告合格」。
 
+这条 HTTP 发布路径写下的证据行**没有** `capacity_manifest_digest` 与
+`qualification_report_digest`（`ModelBindingPublicationRequest` 只收两个 ID，
+`binding_lifecycle_postgres.py:315-323` 也不传摘要），而证据行是 insert-only、补录不会改
+已有行。因此它发布的 binding 不能用于内置声音：`speechnexus-publish-builtin-voice` 的
+release 校验在摘要为 `NULL` 时以 `Invalid binding release evidence` 拒绝。内置声音背后的
+binding 用宿主命令 `speechnexus-publish-binding --capacity-manifest-digest …
+--qualification-report-digest …` 发布，理由与命令见
+[最小部署手册的同步 TTS 资格段](compose-minimal.md#同步-tts-资格的部署前置)。
+
 **第 3 步 激活（选择 head 并留审计）。** 发布已经让 head 指向该 revision，所以对刚发布的
 revision 调一次激活是成功 no-op：只追加一条 `model_binding.activate` 事件，head 与目录
 版本都不变（[binding 生命周期](binding-lifecycle.md#激活与回滚)）。它的作用是把 head

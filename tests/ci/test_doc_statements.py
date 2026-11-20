@@ -141,7 +141,7 @@ class DocumentedCapabilityGuardTests(unittest.TestCase):
                 "重试（`POST /v1/nexus/jobs/{job_id}/retries`）、SSE 事件流"
                 "（`GET /v1/nexus/jobs/{job_id}/events`）与准入就绪报告"
                 "（`GET /v1/nexus/jobs/admission-readiness`，字面量段注册在 `{job_id}` 之前），"
-                "注册在 `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:867` 起，"
+                "注册在 `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:870` 起，"
                 "并由 `backend/src/speechnexus_backend/app.py:837` 装配进应用；"
                 "取消、重试与事件流另有隔离 PG 与真实 TCP 测试，这些路由尚未在参考部署上实际调用。"
             ),

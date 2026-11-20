@@ -863,7 +863,12 @@ def build_public_job_admission(
     max_command_bytes: int,
     storage_bucket: str,
 ) -> PublicJobAdmission | None:
-    """Return ``None`` for legacy voice kinds, which keep the pre-admission path.
+    """Return ``None`` for a kind the public surface refuses to create.
+
+    Only a kind in ``ADMITTED_JOB_KINDS`` reaches a caller in production: the
+    application service refuses every kind without a lane or a stored command
+    before it touches the store (#1080), so this branch keeps the writer honest
+    for a direct store caller rather than describing a reachable request.
 
     ``voice_validation`` is admitted for a clone candidate only. A design
     revision is not a candidate and raises ``voice_draft_not_candidate``; it

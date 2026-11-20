@@ -3542,7 +3542,11 @@
                 "error": {
                   "properties": {
                     "code": {
-                      "enum": ["voice_draft_input_unavailable", "voice_draft_request_expired"]
+                      "enum": [
+                        "voice_draft_input_unavailable",
+                        "voice_draft_request_expired",
+                        "voice_draft_job_not_dispatchable"
+                      ]
                     },
                     "type": {
                       "const": "invalid_request_error"
@@ -3899,7 +3903,11 @@
                 "error": {
                   "properties": {
                     "code": {
-                      "enum": ["voice_draft_input_unavailable", "voice_draft_request_expired"]
+                      "enum": [
+                        "voice_draft_input_unavailable",
+                        "voice_draft_request_expired",
+                        "voice_draft_job_not_dispatchable"
+                      ]
                     },
                     "type": {
                       "const": "invalid_request_error"
@@ -4765,7 +4773,11 @@
                 "error": {
                   "properties": {
                     "code": {
-                      "enum": ["voice_draft_input_unavailable", "voice_draft_request_expired"]
+                      "enum": [
+                        "voice_draft_input_unavailable",
+                        "voice_draft_request_expired",
+                        "voice_draft_job_not_dispatchable"
+                      ]
                     },
                     "type": {
                       "const": "invalid_request_error"
@@ -5114,7 +5126,8 @@
                       "enum": [
                         "voice_draft_input_unavailable",
                         "voice_draft_not_candidate",
-                        "voice_draft_request_expired"
+                        "voice_draft_request_expired",
+                        "voice_draft_job_not_dispatchable"
                       ]
                     },
                     "type": {

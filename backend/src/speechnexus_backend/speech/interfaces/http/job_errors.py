@@ -35,7 +35,7 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
     "job_retry_not_allowed": (
         409,
         "invalid_request_error",
-        "The Job state does not allow a retry.",
+        "This Job cannot be retried: its kind has no dispatch path, or its state does not.",
     ),
     "job_retry_unavailable": (
         409,
@@ -57,6 +57,17 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
         422,
         "invalid_request_error",
         "This execution unit does not accept this Job kind.",
+    ),
+    # The kind is declared by the contract but no queue in this release can claim
+    # it, so a 202 would be a Job that never runs. Declared 422, no row written,
+    # and not retryable: the same request is refused until a dispatch recipe for
+    # the kind ships (#1080).
+    "job_kind_not_dispatchable": (
+        422,
+        "invalid_request_error",
+        "This Job kind cannot be dispatched in this release; no Job was created. "
+        "Submit a kind this deployment can execute, or wait for its dispatch "
+        "recipe.",
     ),
     "workspace_not_found": (422, "invalid_request_error", "The workspace was not found."),
     "workspace_disabled": (422, "invalid_request_error", "The workspace is disabled."),

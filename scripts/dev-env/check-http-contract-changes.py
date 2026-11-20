@@ -1240,6 +1240,8 @@ def inspect_sources(
     approved_vocabulary_changes: list[str] = []
     approved_bound_widenings: list[str] = []
     movement_problem: str | None = None
+    approved_code_additions: list[str] = []
+    code_addition_problem: str | None = None
     compared_sources: set[str] = set()
     selected = (SPEECH_SOURCE,) if surface == "speech" else SOURCES
     for path in selected:
@@ -1315,10 +1317,22 @@ def inspect_sources(
                     )
                     detected = []
                 else:
-                    # A reviewer reads why the reviewed movement did not cover this
-                    # diff; the kernel's own findings stay exactly as reported so the
-                    # gate never adds a finding of its own.
-                    movement_problem = f"{path}: {problem}"
+                    # The second whole-diff proof covers the reviewed response code
+                    # additions (#1080). It is tried only while findings remain, and
+                    # it approves them all only when it established that the whole
+                    # `contracts/` diff is those additions and nothing else.
+                    addition_problem = kernel.reviewed_vocabulary_addition(_ROOT, resolved)
+                    if addition_problem is None:
+                        approved_code_additions.append(
+                            kernel.reviewed_vocabulary_addition_line(len(detected))
+                        )
+                        detected = []
+                    else:
+                        # A reviewer reads why neither proof covered this diff; the
+                        # kernel's own findings stay exactly as reported so the gate
+                        # never adds a finding of its own.
+                        movement_problem = f"{path}: {problem}"
+                        code_addition_problem = f"{path}: {addition_problem}"
             findings.extend(detected)
             approved_removals.extend(approved)
             approved_parameters.extend(approved_parameter)
@@ -1356,6 +1370,8 @@ def inspect_sources(
         "approved_response_vocabulary_changes": approved_vocabulary_changes,
         "approved_reviewed_bound_movements": approved_bound_widenings,
         "reviewed_bound_movement_problem": movement_problem,
+        "approved_reviewed_code_additions": approved_code_additions,
+        "reviewed_code_addition_problem": code_addition_problem,
         "unverified": list(UNVERIFIED),
     }
 
@@ -1395,10 +1411,18 @@ def main() -> int:
             print("  approved response vocabulary widening: " + approval)
         for approval in report["approved_reviewed_bound_movements"]:
             print("  approved reviewed planner bound widening: " + approval)
-        if report["reviewed_bound_movement_problem"]:
+        for approval in report["approved_reviewed_code_additions"]:
+            print("  approved reviewed response code addition: " + approval)
+        if report["reviewed_bound_movement_problem"] and report["findings"]:
             print(
                 "  reviewed planner bound widening did not cover this diff: "
                 + report["reviewed_bound_movement_problem"],
+                file=sys.stderr,
+            )
+        if report["reviewed_code_addition_problem"] and report["findings"]:
+            print(
+                "  reviewed response code addition did not cover this diff: "
+                + report["reviewed_code_addition_problem"],
                 file=sys.stderr,
             )
         print("Known HTTP structural checks: " + ("rejected" if report["findings"] else "passed"))

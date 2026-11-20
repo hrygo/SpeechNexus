@@ -12,6 +12,7 @@ from speechnexus_contracts import parse
 from speechnexus_backend.speech.application.public_jobs import (
     BindingFact,
     IdempotencyConflictError,
+    JobKindNotDispatchableError,
     JobOutcomeUnknownError,
     ModelBindingError,
     ModelNotPublishedError,
@@ -293,8 +294,9 @@ def test_an_unsupported_job_kind_is_rejected_before_any_fact_lookup() -> None:
 
 def test_unknown_or_unpublished_facts_are_rejected() -> None:
     service, facts, _ = _service()
-    # A preview Job is a supported kind now, but its target revision must exist.
-    with pytest.raises(PublicJobNotFoundError):
+    # A preview Job is refused by its kind before its target revision is even read:
+    # no queue can claim the kind, so a resolved target could not run either (#1080).
+    with pytest.raises(JobKindNotDispatchableError):
         service.submit(
             parse(
                 "JobCreateRequest",

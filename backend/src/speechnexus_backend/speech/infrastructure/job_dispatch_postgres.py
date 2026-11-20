@@ -73,12 +73,13 @@ class PostgresDispatchQueue:
 
     ``require_admission`` turns the production lane on: only a Job whose admission
     wrote a complete command, an attempt and a usable lease in the same commit is
-    due. Voice kinds keep an operation anchor without attempt/lease, so they are
-    never claimed here and never re-enter ``admit_in_transaction`` for an existing
-    anchor.
+    due. The three voice generation kinds (``voice_design``, ``voice_clone``,
+    ``voice_preview``) declare no stored command, so their create is refused before
+    any row exists and the joins below can never match them; anchors that older
+    releases left behind are unreachable for the same reason.
 
-    The default stays ``False`` because this queue also serves the legacy voice
-    lanes that intentionally claim those anchor rows. The constructor rejects a
+    The default stays ``False`` because this queue also serves the legacy assemblies
+    that create public Jobs without an admission pool. The constructor rejects a
     validation lane without admission instead of failing only at runtime.
     """
 
@@ -125,10 +126,10 @@ class PostgresDispatchQueue:
 
     def _claim(self, worker_id: str, lease_ms: int, limit: int) -> list[ClaimedJob]:
         # The production lane joins the admission rows the create transaction
-        # committed. A legacy voice anchor has no attempt or lease, so it cannot
-        # satisfy these inner joins and is never claimed. Re-admitting it would
-        # collide with the existing anchor, so filtering here is the only safe
-        # option until a voice recipe writes a real reservation.
+        # committed. A kind without a stored command never gets an attempt or a
+        # lease, so it cannot satisfy these inner joins -- which is why such a kind
+        # is refused at creation instead of being left to be silently unclaimable
+        # (#1080). An anchor left by an older release is unreachable here too.
         admission = (
             "JOIN admission_operations AS a ON a.operation_id = c.job_id "
             "AND a.request_document IS NOT NULL AND CHAR_LENGTH(a.request_document) > 0 "

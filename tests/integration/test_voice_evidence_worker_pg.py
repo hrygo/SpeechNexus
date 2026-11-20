@@ -35,6 +35,7 @@ from tests.integration.test_voice_validation_dispatch_pg import (
 from tests.integration.test_voice_validation_dispatch_pg import (
     validation_db as validation_db,
 )
+from tests.support.voice_recipe import plan_a_write_path  # noqa: F401
 
 from speechnexus_backend.speech.application.voice_capability_evidence import (
     VoiceReportUnavailableError,

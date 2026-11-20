@@ -16,6 +16,7 @@ from speechnexus_contracts.voice_drafts_http import validate_response
 from tests.integration.test_public_job_progress_migration_pg import _isolated_schema
 from tests.integration.test_public_jobs_http import JobSandbox, _seed_binding, _settings_for
 from tests.integration.test_public_jobs_http import jobs_db as jobs_db
+from tests.support.voice_recipe import plan_a_write_path  # noqa: F401
 from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app

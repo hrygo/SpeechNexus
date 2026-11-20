@@ -32,6 +32,7 @@ from tests.integration.test_public_job_atomic_admission_pg import (
     _seed,
     _store,
 )
+from tests.support.voice_recipe import plan_a_write_path  # noqa: F401
 from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app

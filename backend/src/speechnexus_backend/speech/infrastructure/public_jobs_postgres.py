@@ -1616,8 +1616,13 @@ def _insert_job_rows(connection: _Executor, job: NewPublicJob, *, admitted: bool
         ),
     )
     if not admitted:
-        # Legacy voice path only: its private intent row is not an execution
-        # command and stays non-dispatchable until a voice recipe exists.
+        # The assembly created this Job without an admission pool, so nothing
+        # reserved it: this anchor is the identity the dispatch queue's legacy
+        # mode claims. It is not an execution command -- the production claim
+        # joins attempts and leases this branch never writes. No public entry
+        # point creates such a kind: submission refuses it before the store is
+        # called (#1080). A direct store caller still can, which is why this
+        # branch stays -- it is the writer plan A's recipe sandbox resolves.
         connection.execute(
             "INSERT INTO admission_operations "
             "(operation_id, workspace_id, request_digest, request_document, "
@@ -1647,8 +1652,8 @@ def _insert_job_rows(connection: _Executor, job: NewPublicJob, *, admitted: bool
         ),
     )
     if not admitted:
-        # Admission owns the coordination claim/outbox for asr/tts. Voice kinds
-        # keep the pre-admission identity until their recipe lands.
+        # Admission owns the coordination claim/outbox when it runs. Without it,
+        # the create still writes the claim row the legacy claim mode selects.
         connection.execute(
             "INSERT INTO coordination_jobs "
             "(job_id, operation_id, attempt_id, initial_event_id, initial_event_digest, "

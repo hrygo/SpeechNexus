@@ -19,6 +19,7 @@ from speechnexus_backend.speech.application.public_jobs import (
     DisabledWorkspaceError,
     IdempotencyConflictError,
     JobAdmissionRejectedError,
+    JobKindNotDispatchableError,
     JobOutcomeUnknownError,
     JobRejectedError,
     ModelBindingError,
@@ -123,6 +124,18 @@ _ERRORS: dict[str, tuple[int, str, str, str, bool]] = {
         "invalid_request_error",
         "Published model or ready input required.",
         "input_unavailable",
+        False,
+    ),
+    # The operation's Job kind is declared by the contract but no queue in this
+    # release can claim it: a 202 would commit a draft whose generation Job never
+    # runs. Deterministic 422, nothing written, and the same answer until a
+    # dispatch recipe for the kind ships (#1080).
+    "job_not_dispatchable": (
+        422,
+        "invalid_request_error",
+        "Voice generation needs a dispatch path this release does not provide; "
+        "no draft or Job was created.",
+        "job_not_dispatchable",
         False,
     ),
     # Admission capacity is transient: the same request can succeed once a
@@ -461,6 +474,19 @@ def _execute(
     except ContractValidationError:
         # The reply we built violates our own contract. Answering 503 would hide
         # an implementation defect behind a retryable outage.
+        return _error("contract_violation", request_id, operation)
+    except JobKindNotDispatchableError:
+        # Only the four operations whose submitted Job kind is refused can meet
+        # this: `validateVoiceDraftRevision` submits `voice_validation`, which is
+        # admitted and dispatched, so reaching here with it would be a conflict
+        # between the domain declaration and the submission path, not a 422.
+        if operation in (
+            "createVoiceDesign",
+            "createVoiceClone",
+            "generateVoiceDraftRevision",
+            "createVoicePreview",
+        ):
+            return _error("job_not_dispatchable", request_id, operation)
         return _error("contract_violation", request_id, operation)
     except JobAdmissionRejectedError as error:
         # Only these five operations submit a Job, so only they can meet an admission

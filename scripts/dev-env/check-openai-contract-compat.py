@@ -914,9 +914,22 @@ def _annotation_free(value: object) -> object:
     return value
 
 
-def _pointer_value(document: object, pointer: tuple[str, ...]) -> object:
+def _pointer_value(document: object, pointer: tuple[str | int, ...]) -> object:
+    """The value at one JSON pointer; an integer part indexes a list position.
+
+    A response body may nest its inline error schema inside an `allOf` list, so a
+    pointer has to be able to name a list element to reach it. Indices are explicit
+    integers rather than numeric strings, so a mapping key written as `"1"` still
+    resolves as a key.
+    """
+
     current = document
     for part in pointer:
+        if isinstance(part, int):
+            if not isinstance(current, list) or not -len(current) <= part < len(current):
+                return None
+            current = current[part]
+            continue
         mapping = _mapping(current)
         if mapping is None or part not in mapping:
             return None
@@ -924,7 +937,21 @@ def _pointer_value(document: object, pointer: tuple[str, ...]) -> object:
     return current
 
 
-def _with_pointer_value(document: object, pointer: tuple[str, ...], value: object) -> object:
+def _without_pointer(document: object, pointer: tuple[str | int, ...]) -> object:
+    """Deep copy with the branch at one pointer removed."""
+
+    copied = copy.deepcopy(document)
+    current: Any = copied
+    for part in pointer[:-1]:
+        current = current[part]
+    if isinstance(current, dict):
+        current.pop(pointer[-1], None)
+    elif isinstance(current, list) and isinstance(pointer[-1], int):
+        del current[pointer[-1]]
+    return copied
+
+
+def _with_pointer_value(document: object, pointer: tuple[str | int, ...], value: object) -> object:
     """Deep copy with one pointer replaced, so both sides compare on equal bounds."""
 
     copied = copy.deepcopy(document)
@@ -1031,6 +1058,195 @@ def reviewed_bound_movement_line(explained: int) -> str:
     return (
         f"{labels}: planner.max_chars maximum 400 -> 4096 explains {explained} "
         f"finding(s) [{_REVIEWED_BOUND_ISSUE}: {_REVIEWED_BOUND_REASON}]"
+    )
+
+
+# The tail of every inline 422 error schema: the response wraps `ErrorResponse` and
+# restates the same fields in a second `allOf` branch, so the code enum lives one
+# list index deep. Named here once so the registrations below stay readable.
+_INLINE_422_CODE_ENUM: tuple[str | int, ...] = (
+    "content",
+    "application/json",
+    "schema",
+    "allOf",
+    1,
+    "properties",
+    "error",
+    "properties",
+    "code",
+    "enum",
+)
+
+
+class _ReviewedCodeAddition(NamedTuple):
+    """One exact response-vocabulary value a reviewed change may add.
+
+    ``mirror`` names the pointer whose enum is the expected pre-addition list when
+    the addition lands in a response the reviewed change introduces itself: a new
+    response component is the shared one plus the code, so its baseline list is the
+    shared component's list rather than anything the baseline document holds.
+    """
+
+    path: str
+    pointer: tuple[str | int, ...]
+    code: str
+    mirror: tuple[str | int, ...] | None = None
+
+    @property
+    def label(self) -> str:
+        return self.path + "/" + "/".join(str(part) for part in self.pointer)
+
+
+class _ReviewedResponseSplit(NamedTuple):
+    """One operation response a reviewed change re-points at its own component."""
+
+    path: str
+    pointer: tuple[str | int, ...]
+    shared_component: str
+    reviewed_component: str
+
+    @property
+    def label(self) -> str:
+        return self.path + "/" + "/".join(str(part) for part in self.pointer)
+
+
+# `voice_design`, `voice_clone` and `voice_preview` declare no stored command kind, so
+# admission writes no attempt or lease for them and no queue's claim can match: the
+# measured symptom was `202` followed by `claimed:0` forever (#1080). The refusal is
+# therefore a machine-visible 422 code rather than a permanent `pending`. The preview
+# operation shares its 422 response with the validation operation, which commits a
+# dispatched `voice_validation` Job, so this change splits that response instead of
+# enumerating a code validation can never answer -- the same rule as the refusal
+# itself, applied to the declaration.
+_REVIEWED_CODE_ADDITIONS: tuple[_ReviewedCodeAddition, ...] = (
+    _ReviewedCodeAddition(
+        "contracts/speech-openapi.yaml",
+        ("paths", "/v1/nexus/jobs", "post", "responses", "422", *_INLINE_422_CODE_ENUM),
+        "job_kind_not_dispatchable",
+    ),
+    _ReviewedCodeAddition(
+        "contracts/speech-openapi.yaml",
+        (
+            "components",
+            "responses",
+            "VoiceDraftSubmitUnprocessableEntity",
+            *_INLINE_422_CODE_ENUM,
+        ),
+        "voice_draft_job_not_dispatchable",
+    ),
+    _ReviewedCodeAddition(
+        "contracts/speech-openapi.yaml",
+        (
+            "components",
+            "responses",
+            "VoiceDraftPreviewUnprocessableEntity",
+            *_INLINE_422_CODE_ENUM,
+        ),
+        "voice_draft_job_not_dispatchable",
+        mirror=(
+            "components",
+            "responses",
+            "VoiceDraftCandidateUnprocessableEntity",
+            *_INLINE_422_CODE_ENUM,
+        ),
+    ),
+)
+_REVIEWED_RESPONSE_SPLITS: tuple[_ReviewedResponseSplit, ...] = (
+    _ReviewedResponseSplit(
+        "contracts/speech-openapi.yaml",
+        ("paths", "/v1/nexus/voice-drafts/{draft_id}/previews", "post", "responses", "422"),
+        "VoiceDraftCandidateUnprocessableEntity",
+        "VoiceDraftPreviewUnprocessableEntity",
+    ),
+)
+_REVIEWED_CODE_ISSUE = "#1080"
+_REVIEWED_CODE_REASON = (
+    "a kind with no stored command is never claimed by the admission-joining dispatch "
+    "query, so the 202 this contract used to answer promised an execution no worker "
+    "would run; the refusal is the caller-visible 422 that replaces it"
+)
+
+
+def reviewed_vocabulary_addition(root: Path, reference: str) -> str | None:
+    """Prove the contracts diff is exactly the reviewed code additions and split.
+
+    The same whole-diff discipline as `reviewed_bound_movement`: the approval it
+    enables may not outlive its scope, so a second file, a different value or any
+    other semantic edit beside the registered additions keeps the gate's findings.
+    A split is admitted only when the component it introduces is the shared response
+    plus the registered code, so re-pointing an operation at a response that declares
+    something else fails here instead of widening what the operation advertises.
+    """
+
+    expected = {entry.path for entry in _REVIEWED_CODE_ADDITIONS} | {
+        entry.path for entry in _REVIEWED_RESPONSE_SPLITS
+    }
+    changed = _changed_contract_paths(root, reference)
+    if changed != expected:
+        unexpected = sorted(changed.symmetric_difference(expected))
+        return (
+            "the reviewed code addition may explain only its own files, but contracts/ "
+            f"differs in {', '.join(unexpected)}"
+        )
+    for path in sorted(expected):
+        base = _contract_document(root, reference, path)
+        current = _contract_document(root, None, path)
+        normalized: object = copy.deepcopy(current)
+        for addition in _REVIEWED_CODE_ADDITIONS:
+            if addition.path != path:
+                continue
+            before = (
+                _pointer_value(base, addition.pointer)
+                if addition.mirror is None
+                else _pointer_value(current, addition.mirror)
+            )
+            after = _pointer_value(current, addition.pointer)
+            if not isinstance(before, list) or not isinstance(after, list):
+                return f"{addition.label} is not an enum in both versions"
+            added = [value for value in after if value not in before]
+            removed = [value for value in before if value not in after]
+            if added != [addition.code] or removed:
+                return (
+                    f"{addition.label} adds {added!r} and removes {removed!r}, "
+                    f"not exactly the reviewed {addition.code!r}"
+                )
+            if [value for value in after if value != addition.code] != before:
+                return f"{addition.label} restates a value it already declared"
+            normalized = _with_pointer_value(normalized, addition.pointer, before)
+        for split in _REVIEWED_RESPONSE_SPLITS:
+            if split.path != path:
+                continue
+            shared_ref = {"$ref": f"#/components/responses/{split.shared_component}"}
+            reviewed_ref = {"$ref": f"#/components/responses/{split.reviewed_component}"}
+            if _pointer_value(base, split.pointer) != shared_ref:
+                return f"{split.label} does not start at {split.shared_component}"
+            if _pointer_value(current, split.pointer) != reviewed_ref:
+                return f"{split.label} does not point at {split.reviewed_component}"
+            component = ("components", "responses", split.reviewed_component)
+            split_body = _pointer_value(normalized, component)
+            shared_body = _pointer_value(
+                current, ("components", "responses", split.shared_component)
+            )
+            if not _same_json_tree(_annotation_free(shared_body), _annotation_free(split_body)):
+                return (
+                    f"{split.path}: {split.reviewed_component} is not "
+                    f"{split.shared_component} plus the reviewed code"
+                )
+            normalized = _with_pointer_value(normalized, split.pointer, shared_ref)
+            normalized = _without_pointer(normalized, component)
+        if not _same_json_tree(_annotation_free(base), _annotation_free(normalized)):
+            return f"{path}: another semantic change exists beside the reviewed code addition"
+    return None
+
+
+def reviewed_vocabulary_addition_line(explained: int) -> str:
+    """One review line for a code addition the proof showed explains every finding."""
+
+    codes = ", ".join(sorted({entry.code for entry in _REVIEWED_CODE_ADDITIONS}))
+    files = ", ".join(sorted({entry.path for entry in _REVIEWED_CODE_ADDITIONS}))
+    return (
+        f"{files}: response 422 vocabulary additions {codes} explain {explained} "
+        f"finding(s) [{_REVIEWED_CODE_ISSUE}: {_REVIEWED_CODE_REASON}]"
     )
 
 

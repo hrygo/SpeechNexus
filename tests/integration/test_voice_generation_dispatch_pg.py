@@ -22,6 +22,7 @@ from pydantic import SecretStr
 from tests.fake.execution_status import ENGINE_FAILURE_CODE, execution_status
 from tests.integration.test_public_job_progress_migration_pg import _isolated_schema
 from tests.integration.test_public_jobs_http import JobSandbox, _seed_binding
+from tests.support.voice_recipe import plan_a_write_path  # noqa: F401
 from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app

@@ -271,19 +271,30 @@ Profile、voice 和 model binding revision 不可变；升级只影响后续新�
 本节的设计、克隆、候选验证与发布流程是契约和设计目标；当前生产装配尚未接通
 完整音色创作链。已有预置音色资格或同步 TTS 证据不能替代该链路验收。
 
+本版本不提供音色生成的派发配方，因此 `voice_design`、`voice_clone`、`voice_preview`
+三个 Job kind 只声明、不执行：kind 的声明里没有可冻结的存储命令，生产 claim 内连接
+的 admission attempt 与 lease 也就永远不存在。`POST /v1/nexus/jobs`、
+`/voice-designs`、`/voice-clones`、`.../generations`、`.../previews` 因此在写入任何行
+之前以 `422` 拒绝——通用入口回答契约码 `job_kind_not_dispatchable`，音色入口回答
+`voice_draft_job_not_dispatchable`——不产生 draft、revision、Job、admission 操作、
+attempt、lease 或 coordination 行，同一请求在配方接通前保持该结果。这些 kind 的既有
+Job、draft 与 revision 仍可读取，但不能被重试：`retry` 从父 Job 的持久意图重建同 kind 的
+新 Job，因此同样以 `409 job_retry_not_allowed` 拒绝且不写替换 Job。`asr`、`tts` 与
+`voice_validation` 不受影响。
+
 标准 `/v1/audio/speech` 使用已发布音色或预置 speaker；instructions 仅控制当前绑定支持的表达方式，不隐式创建、克隆或发布音色。音色创作有自己的 `VoiceCommand`，复用 Admission、Operation、Job、Artifact、ExecutionReceipt 与幂等规则，不要求消费方使用工作台。
 
 | 增强入口 | 规范命令 / 结果 |
 | --- | --- |
-| `POST /v1/nexus/voice-designs` | `voice_design`；描述、预览文本、语言与逻辑模型 → `202` 的 `VoiceCreationAccepted`（draft 与 job）→ 任务完成后的候选、试听 Artifact 与 receipt |
-| `POST /v1/nexus/voice-clones` | `voice_clone`；ready 参考音频、可选参考正文、使用确认与逻辑模型 → `202` 的 `VoiceCreationAccepted`（draft 与 job）→ 任务完成后的候选、试听与来源记录 |
+| `POST /v1/nexus/voice-designs` | `voice_design`；描述、预览文本、语言与逻辑模型 → 目标形态为 `202` 的 `VoiceCreationAccepted`（draft 与 job）→ 任务完成后的候选、试听 Artifact 与 receipt；本版本以 `422 voice_draft_job_not_dispatchable` 拒绝 |
+| `POST /v1/nexus/voice-clones` | `voice_clone`；ready 参考音频、可选参考正文、使用确认与逻辑模型 → 目标形态为 `202` 的 `VoiceCreationAccepted`（draft 与 job）→ 任务完成后的候选、试听与来源记录；本版本以 `422 voice_draft_job_not_dispatchable` 拒绝 |
 | `GET /v1/nexus/voice-drafts/{draft_id}`、`PATCH .../{draft_id}` | 读取固定 revision 或当前 head；PATCH 只接受 display_name 等元数据及 expected_metadata_revision，递增 metadata_revision |
-| `POST /v1/nexus/voice-drafts/{draft_id}/generations` | expected_draft_revision + 完整声音输入 / model → 原子创建下一 draft_revision 与 voice_design / voice_clone Job；`202` 的 `VoiceGenerationAccepted` 包含 draft、revision 和 job，生成完成后才可试听 / 校验 |
-| `POST /v1/nexus/voice-drafts/{draft_id}/previews` | 对固定候选 revision 进行短文本 TTS，返回 `202` Job；不发布或修改候选 |
+| `POST /v1/nexus/voice-drafts/{draft_id}/generations` | expected_draft_revision + 完整声音输入 / model → 原子创建下一 draft_revision 与 voice_design / voice_clone Job；目标形态 `202` 的 `VoiceGenerationAccepted` 包含 draft、revision 和 job，生成完成后才可试听 / 校验；本版本以 `422 voice_draft_job_not_dispatchable` 拒绝 |
+| `POST /v1/nexus/voice-drafts/{draft_id}/previews` | 对固定候选 revision 进行短文本 TTS，目标形态返回 `202` Job，不发布或修改候选；本版本以 `422 voice_draft_job_not_dispatchable` 拒绝 |
 | `POST /v1/nexus/voice-drafts/{draft_id}/validations` | `voice_validation`；固定候选与绑定，返回 `202` Job，完成后取得格式 / 素材 / 兼容性 / 质量检查结果 |
 | `POST /v1/nexus/voice-drafts/{draft_id}/publications` | 固定候选和校验 revision，原子生成可用于 TTS 的不可变 VoiceRevision；首次成功 `201`，幂等重放返回同一发布。本切片只接受 `clone`；`design` 保持 `preview_only` 并返回 422 |
 
-Job.kind 为 asr / tts / voice_design / voice_clone / voice_preview / voice_validation。音色使用独立 VoiceCommand，不套用 ASR/TTS profile；从模型绑定、音色功能策略和参数域生成执行配方。便捷入口与 `POST /v1/nexus/jobs` 使用相同规范意图、operation_family 和请求摘要去重，换路径不能重复创建。voice_preview 是独立任务类型，内部复用 TTS 计算与计量；兼容 speech 入口只接受已发布 voice。
+Job.kind 为 asr / tts / voice_design / voice_clone / voice_preview / voice_validation，其中只有 asr、tts 与 voice_validation 在本版本可创建并派发（见本节开头）。音色使用独立 VoiceCommand，不套用 ASR/TTS profile；从模型绑定、音色功能策略和参数域生成执行配方。便捷入口与 `POST /v1/nexus/jobs` 使用相同规范意图、operation_family 和请求摘要去重，换路径不能重复创建。voice_preview 是独立任务类型，内部复用 TTS 计算与计量；兼容 speech 入口只接受已发布 voice。
 
 Job 入口的音色 body 使用 kind、可选 workspace_id / client_reference、model、input 和 constraints；design 的 input 对应 description / preview_text / language / display_name，clone 对应 reference_audio_asset_id / reference_text / preview_text / language / display_name / source_use_confirmed。初次创建在同一事务写入 VoiceDraft、draft_revision=1、Job 与 outbox；便捷创建响应的 `draft.id` 和 `draft.head_revision` 标识已分配的草稿及版本，结果尚未就绪。Job 的 `effective_configuration` 未声明草稿身份字段，成功结果另含 `voice_draft_id` 和 `draft_revision`。重新生成使用可选顶层 `draft_target={id,expected_revision}`，指定现有草稿；generations 入口把 path ID 与 expected_draft_revision 规范化为该字段，body 的 model 与完整 input 作为新声音配方，省略旧字段不会隐式继承。类型保持 design 或 clone，切换类型创建新草稿。版本比较、分配下一 revision 与 Job / outbox 同事务提交；同幂等键先重放原意图，不因 head 已前进而冲突。已有生成未终结时以新 key 再生成返回 `409 operation_in_progress`。
 
@@ -452,7 +463,7 @@ WS 断开即停止接收新操作，取消实时计算并回收 owner，记录�
 
 ## 3. 调用示例
 
-以下 ID、版本和文本均为说明性示例；运行前须替换为目标部署中实际存在且具备资格的资源。示例展示契约形状，不证明路由或执行链已装配：同步 ASR/TTS 的前置条件分别见[同步转写](../operations/synchronous-transcription.md)和[同步语音合成](../components/synchronous-speech.md)，公开 Job 路由已装配创建、列表、读取、取消、重试与 SSE 事件流（`backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:867` 起），实时及音色创作流程仍须按实际交付与部署证据判断。
+以下 ID、版本和文本均为说明性示例；运行前须替换为目标部署中实际存在且具备资格的资源。示例展示契约形状，不证明路由或执行链已装配：同步 ASR/TTS 的前置条件分别见[同步转写](../operations/synchronous-transcription.md)和[同步语音合成](../components/synchronous-speech.md)，公开 Job 路由已装配创建、列表、读取、取消、重试与 SSE 事件流（`backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:870` 起），实时及音色创作流程仍须按实际交付与部署证据判断。
 
 ### 3.1 同步 TTS 与文件转写
 

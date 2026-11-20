@@ -26,6 +26,7 @@ from speechnexus_backend.speech.domain.public_jobs import (
     RevisionCreateResult,
 )
 from speechnexus_backend.speech.infrastructure.voice_drafts_postgres import _view
+from tests.support.voice_recipe import plan_a_write_path  # noqa: F401
 from tests.unit.backend.test_health import _settings
 from tests.unit.backend.test_public_jobs import NOW, Store
 from tests.unit.backend.test_voice_creation_jobs import VoiceFacts

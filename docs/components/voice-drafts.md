@@ -5,15 +5,23 @@
 [#495](https://github.com/hrygo/SpeechNexus/issues/495)。公开源为
 `contracts/speech-openapi.yaml` 与 `contracts/voice-resource.schema.json`；当前实现：
 
-| 操作 | 成功响应 |
-| --- | --- |
-| `POST /v1/nexus/voice-designs` | 202，`VoiceCreationAccepted` |
-| `POST /v1/nexus/voice-clones` | 202，`VoiceCreationAccepted` |
-| `GET /v1/nexus/voice-drafts/{draft_id}` | 200，`VoiceDraftView` |
-| `PATCH /v1/nexus/voice-drafts/{draft_id}` | 200，`VoiceDraft` |
-| `POST /v1/nexus/voice-drafts/{draft_id}/generations` | 202，`VoiceGenerationAccepted` |
-| `POST /v1/nexus/voice-drafts/{draft_id}/previews` | 202，`Job` |
-| `POST /v1/nexus/voice-drafts/{draft_id}/validations` | 202，`Job` |
+| 操作 | 成功响应 | 本版本 |
+| --- | --- | --- |
+| `POST /v1/nexus/voice-designs` | 202，`VoiceCreationAccepted` | 422，`voice_draft_job_not_dispatchable` |
+| `POST /v1/nexus/voice-clones` | 202，`VoiceCreationAccepted` | 422，`voice_draft_job_not_dispatchable` |
+| `GET /v1/nexus/voice-drafts/{draft_id}` | 200，`VoiceDraftView` | 同左 |
+| `PATCH /v1/nexus/voice-drafts/{draft_id}` | 200，`VoiceDraft` | 同左 |
+| `POST /v1/nexus/voice-drafts/{draft_id}/generations` | 202，`VoiceGenerationAccepted` | 422，`voice_draft_job_not_dispatchable` |
+| `POST /v1/nexus/voice-drafts/{draft_id}/previews` | 202，`Job` | 422，`voice_draft_job_not_dispatchable` |
+| `POST /v1/nexus/voice-drafts/{draft_id}/validations` | 202，`Job` | 202，`Job` |
+
+`voice_design`、`voice_clone` 与 `voice_preview` 三个 Job kind 的声明里没有可冻结的存储
+命令，生产 claim 内连接的 admission attempt 与 lease 也就不会存在，因此提交它们在写入
+之前即被拒绝：不产生 draft、revision、Job、admission 操作、attempt、lease 或
+coordination 行，`422` 为唯一结果且不可重试。拒绝在幂等键查询之前判定，同一键不会回放
+旧 Job；既有 Job、draft 与 revision 仍可读取，但重试同样被拒绝（`409
+job_retry_not_allowed`，不写替换 Job）。`voice_validation` 有 `validation` lane 与存储命令，
+不受影响。
 
 创建请求保留现有 `model`、`input`、可选 workspace/client reference/constraints。
 clone 必须明确 `source_use_confirmed: true`，输入素材须是对应 workspace 中 ready 的
@@ -196,11 +204,10 @@ CHECK 内。尝试通过 PATCH 改状态、输入或生成结果返回 422，且
 `speech_voice_drafts.input_json` 是权威输入本身（DDL 允许 2..65536 字节），不是回执，
 `binding_json` 上限 1024，二者都不复制到回执。创建路径没有第二份整输入回执。
 
-`POST /v1/nexus/jobs` 的 `VoiceDesignJobCreate` / `VoiceCloneJobCreate` 同样通过
-`PublicJobs.submit` 接入：202 返回 Job，并在同一事务创建一条草稿；草稿 ID 固定为
-`draft-` + Job ID，可用 `/v1/nexus/voice-drafts/{draft_id}` 读取。它与专用创建入口共享
-幂等键语义：同键同意图回放原 Job 与原草稿，不新增行；专用入口只是额外在 202 中返回
-`draft` 投影。需要草稿投影时优先用专用入口，通用入口适合已经按 Job 编排的调用方。
+`POST /v1/nexus/jobs` 的 `VoiceDesignJobCreate` / `VoiceCloneJobCreate` / `VoicePreviewJobCreate`
+同样通过 `PublicJobs.submit` 接入，因此使用同一拒绝：目标形态是 202 返回 Job 并在同一
+事务创建一条草稿（草稿 ID 固定为 `draft-` + Job ID），与专用创建入口共享幂等键语义；
+本版本在写入前返回 `422 job_kind_not_dispatchable`。
 
 创建提交的失败按“是否已确定未提交”区分：
 

@@ -57,18 +57,22 @@ class JobKindProfile:
     so a future ``voice_*`` kind must declare its slot here. ``progress_unit``
     is ``items`` for the voice family (one produced item per unit of progress)
     and ``audio_ms`` otherwise. ``command_kind`` is the stored command kind
-    admission freezes; a kind without one keeps the legacy path and is therefore
-    outside the admission universe. ``pinned`` says the create may carry an
-    expected binding: ``tts`` accepts an explicit reference, while the voice
-    kinds derive it from the target draft. ``lane`` is the dispatch lane a queue
-    may claim this kind on, or ``None`` when no queue may claim it at all: a
-    queue validates its selection against a union derived from this column, so a
-    laneless kind is never selectable. ``voice_preview`` is committed and
-    readable, but no consumer dispatches it yet, so it stays outside every lane
-    instead of acquiring one by prefix. That is a policy pin, not a dispatcher
-    guarantee: the publish-side media map has no preview entry, so assigning it
-    a lane without that mapping fails at result publication, not at queue
-    construction.
+    admission freezes; a kind without one is outside the admission universe, so
+    no attempt or lease is ever written for it. ``pinned`` says the create may
+    carry an expected binding: ``tts`` accepts an explicit reference, while the
+    voice kinds derive it from the target draft. ``lane`` is the dispatch lane a
+    queue may claim this kind on, or ``None`` when no queue may claim it at all:
+    a queue validates its selection against a union derived from this column, so
+    a laneless kind is never selectable. ``voice_preview`` stays outside every
+    lane instead of acquiring one by prefix, and the publish-side media map has
+    no preview entry either, so assigning it a lane without that mapping fails
+    at result publication rather than at queue construction.
+
+    A kind is claimable only when it declares **both** columns: the claim selects
+    a lane and then joins the admission attempt and lease admission itself writes
+    from ``command_kind``. Every kind that misses either column is listed in
+    ``UNDISPATCHABLE_JOB_KINDS``, and its create is refused before any row is
+    written instead of committing a Job no worker can ever pick up (#1080).
     """
 
     task: str | None
@@ -155,11 +159,26 @@ JOB_KIND_TASK: dict[JobKind, str] = {
 }
 
 # The kinds ``build_public_job_admission`` turns into a complete command, i.e.
-# exactly the kinds with a stored command kind. The other Job kinds keep the
-# legacy path and are outside the readiness verdict's universe: no admission
-# transaction reads them.
+# exactly the kinds with a stored command kind. A create that reaches admission
+# with any other kind is refused before a row is written, so this tuple is the
+# admission universe no matter which entry point asked.
 ADMITTED_JOB_KINDS: tuple[JobKind, ...] = tuple(
     kind for kind, profile in JOB_KIND_PROFILES.items() if profile.command_kind is not None
+)
+
+# The kinds no queue can ever claim: a claim selects a lane and joins the
+# admission attempt and lease, so the declaration needs both columns. These three
+# are the whole non-dispatchable set today. ``voice_design``/``voice_clone``
+# declare the ``voice_generation`` lane but no stored command kind, so their
+# create took the pre-admission path (an operation anchor without attempt or
+# lease) and the production claim could never match it; ``voice_preview``
+# declares no lane at all. A create for any of them is refused with
+# ``job_kind_not_dispatchable`` before the first row is written, because a 202
+# would promise an execution no worker will ever run (#1080).
+UNDISPATCHABLE_JOB_KINDS: tuple[JobKind, ...] = tuple(
+    kind
+    for kind, profile in JOB_KIND_PROFILES.items()
+    if profile.lane is None or profile.command_kind is None
 )
 
 # The kinds whose create may carry an expected binding.

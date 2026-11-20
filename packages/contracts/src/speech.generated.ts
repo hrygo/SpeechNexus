@@ -402,6 +402,20 @@ export interface paths {
      *     with the same canonical intent replays the original job; a different
      *     intent returns 409 `idempotency_conflict`.
      *
+     *     The declared `kind` vocabulary is wider than the executable one. `asr`,
+     *     `tts` and `voice_validation` are admitted and dispatched. `voice_design`,
+     *     `voice_clone` and `voice_preview` stay declared -- their Jobs, drafts and
+     *     revisions that already exist remain readable -- but no worker can claim
+     *     them, because their kind declares no stored command for admission to
+     *     freeze and no queue's claim can match. Creating one is therefore refused
+     *     with 422 `job_kind_not_dispatchable` before anything is written: no Job,
+     *     admission operation, attempt, lease, draft or coordination row. The same
+     *     request stays refused until a dispatch recipe for the kind ships, and the
+     *     refusal precedes the idempotency lookup, so an old key does not replay a
+     *     committed Job of a refused kind; read that Job by its id instead. This
+     *     replaces the previous `202`, which committed a Job no worker would ever
+     *     claim and left the caller in `pending` with nothing to observe.
+     *
      *     TTS requests may supply `model_binding` as an exact immutable reference.
      *     With this field, `model` must equal that binding's `logical_model` and
      *     the binding must support `tts_file`. A new request accepts only the
@@ -4028,6 +4042,14 @@ export interface components {
      *     ones this operation answers with 422 -- a declaration without the enum is
      *     invisible to a consumer generating types (see also
      *     `voice_draft_engine_unavailable`, which is a 503 and not this class).
+     *
+     *     `voice_draft_job_not_dispatchable` is the one code that refuses every
+     *     request of its kind, not one request's facts: the generation Job this
+     *     operation commits is of a kind no worker can claim in this release, so
+     *     the operation answers 422 before writing the draft, its revision, the
+     *     Job or any admission and coordination row. Nothing is left behind to
+     *     read, the refusal is not retryable, and it stays until a dispatch recipe
+     *     for the kind ships.
      */
     VoiceDraftSubmitUnprocessableEntity: {
       headers: {
@@ -4042,7 +4064,10 @@ export interface components {
         } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
           error: {
             /** @enum {unknown} */
-            code?: "voice_draft_input_unavailable" | "voice_draft_request_expired";
+            code?:
+              | "voice_draft_input_unavailable"
+              | "voice_draft_request_expired"
+              | "voice_draft_job_not_dispatchable";
             /** @constant */
             type?: "invalid_request_error";
             /** @enum {unknown} */
@@ -4074,6 +4099,42 @@ export interface components {
               | "voice_draft_input_unavailable"
               | "voice_draft_not_candidate"
               | "voice_draft_request_expired";
+            /** @constant */
+            type?: "invalid_request_error";
+            /** @enum {unknown} */
+            retryable?: true | false;
+            nexus?: never;
+          };
+        });
+      };
+    };
+    /**
+     * @description Same class as `VoiceDraftCandidateUnprocessableEntity`, plus
+     *     `voice_draft_job_not_dispatchable` for the preview Job kind: a preview
+     *     commits a `voice_preview` Job, whose kind declares no stored command for
+     *     admission to freeze, so no queue's claim can ever match it. The
+     *     operation answers 422 before writing the Job or any admission and
+     *     coordination row, and the refusal stays until a dispatch recipe for that
+     *     kind ships.
+     */
+    VoiceDraftPreviewUnprocessableEntity: {
+      headers: {
+        "Cache-Control": "no-store";
+        /** @description Always the string "false"; every code in this response is deterministic. */
+        "X-Should-Retry": "false";
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": {
+          error: components["schemas"]["ErrorBody"];
+        } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+          error: {
+            /** @enum {unknown} */
+            code?:
+              | "voice_draft_input_unavailable"
+              | "voice_draft_not_candidate"
+              | "voice_draft_request_expired"
+              | "voice_draft_job_not_dispatchable";
             /** @constant */
             type?: "invalid_request_error";
             /** @enum {unknown} */
@@ -5207,6 +5268,7 @@ export interface operations {
               code?:
                 | "unsupported_parameter"
                 | "job_kind_not_supported"
+                | "job_kind_not_dispatchable"
                 | "workspace_not_found"
                 | "workspace_disabled"
                 | "workspace_not_configured"
@@ -6416,7 +6478,7 @@ export interface operations {
       404: components["responses"]["NotFound"];
       405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
-      422: components["responses"]["VoiceDraftCandidateUnprocessableEntity"];
+      422: components["responses"]["VoiceDraftPreviewUnprocessableEntity"];
       429: components["responses"]["TooManyRequests"];
       500: components["responses"]["VoiceDraftContractViolation"];
       /**

@@ -286,6 +286,51 @@ which proves that an unrelated response bound widening and an unrelated `error.c
 addition both still reject, and that a contract already carrying the movement needs
 no approval.
 
+## Approved response code additions
+
+A deterministic refusal that replaces an over-promising success is a *response
+vocabulary addition*: an operation's 422 enum grows one code. `#1080` refuses
+`voice_design`, `voice_clone` and `voice_preview` at creation because their Job kinds
+declare no stored command kind, so admission writes no attempt or lease and no
+dispatch claim can ever match them; the previous `202` committed a Job that stayed
+`pending` for good. The speech surface reports every grown response enum, and the gate
+approves those findings through a second proof over the whole diff instead of a
+pointer list:
+
+`reviewed_vocabulary_addition()` requires all of the following, and any failure leaves
+every finding in place:
+
+- `git diff <base> -- contracts` names exactly the reviewed file;
+- each reviewed enum holds exactly the reviewed code as its only added value, removes
+  nothing, restates nothing and keeps the previously declared values in place; an
+  integer pointer part addresses an `allOf` branch, while a mapping key written as
+  `"1"` stays a name;
+- a reviewed response split is admitted only when the operation's 422 pointed at the
+  shared response at the baseline, points at the reviewed response in the service,
+  and the reviewed response is the shared one plus that code. The preview operation
+  cannot share the candidate response with `validateVoiceDraftRevision`, which
+  commits a dispatched `voice_validation` Job and must not enumerate a code it cannot
+  answer;
+- with the added values removed, the split response deleted and the shared reference
+  restored, both documents are identical once annotation keys are removed at schema
+  position — the same name-map rule as the movement proof above.
+
+The registry sits beside the movement proof (`_REVIEWED_CODE_ADDITIONS`,
+`_REVIEWED_RESPONSE_SPLITS`), and the speech HTTP surface consults it immediately after
+the movement proof, so a diff is approved only by the proof it actually is. Each
+approval is printed as `approved reviewed response code addition:` and listed in
+`approved_reviewed_code_additions` in JSON mode; when the proof fails and findings
+remain, the gate reports why in `reviewed_code_addition_problem` and on stderr, and
+adds no finding of its own. New entries must add matching cases in
+[`tests/contract/test_approved_undispatchable_job_kind_codes.py`](../../tests/contract/test_approved_undispatchable_job_kind_codes.py),
+which proves that an unreviewed code, a removed value, a permuted vocabulary, a
+narrowed sibling constraint, a second contract file, a tampered split response and a
+re-pointed second operation all still reject, and that a contract already carrying the
+additions needs no approval.
+
+The standard-surface `contracts-compat` gate is unaffected: the refused kinds live on
+Nexus paths, which that scope does not walk.
+
 ## What the check establishes
 
 The existing directional comparison kernel is reused: reject known request

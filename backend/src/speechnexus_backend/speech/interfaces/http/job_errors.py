@@ -58,6 +58,17 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
         "invalid_request_error",
         "This execution unit does not accept this Job kind.",
     ),
+    # The kind is declared by the contract but no queue in this release can claim
+    # it, so a 202 would be a Job that never runs. Declared 422, no row written,
+    # and not retryable: the same request is refused until a dispatch recipe for
+    # the kind ships (#1080).
+    "job_kind_not_dispatchable": (
+        422,
+        "invalid_request_error",
+        "This Job kind cannot be dispatched in this release; no Job was created. "
+        "Submit a kind this deployment can execute, or wait for its dispatch "
+        "recipe.",
+    ),
     "workspace_not_found": (422, "invalid_request_error", "The workspace was not found."),
     "workspace_disabled": (422, "invalid_request_error", "The workspace is disabled."),
     # The workspace row exists but has no ``workspace_quotas`` row: admission has

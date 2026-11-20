@@ -240,6 +240,11 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 | `job_runtime_grants` | `job_schema.py` | 未变 |
 | `job_dispatch_grants` | `job_schema.py` | 未变 |
 
+## 边界澄清（行为未变）
+
+- 单次合成的**入口声明**上限是 4096 字符（`MAX_SPEECH_TEXT_CHARS`）：同步入口超界 `400 invalid_request`（带 `param: input`），异步 Job 对 **>4096** 的请求体答 `422 unsupported_parameter`（**异步只保证 `error.code`，`param` 为 `null`**）；不切分、不截断，更长的正文由调用方分片。
+- 入口声明不等于可执行上限：正文还要满足 planner 与 binding 的更严限制，以更严者为准。**planner 上界 400 对所有 binding 生效且调用方无法调高**，因此同步入口 401–4096 一律被拒（`422 unsupported_parameter`，`param: input`）；CustomVoice 的 binding 400 codepoints 只是更早一层。planner 上界与契约声明之间的这段差另见 [#1073](https://github.com/hrygo/SpeechNexus/issues/1073)。
+
 ## 行为变化
 
 - 语音删除从占位 503 变成三段可用：`POST /v1/nexus/deletion-plans`（预检，返回不可变计划）、

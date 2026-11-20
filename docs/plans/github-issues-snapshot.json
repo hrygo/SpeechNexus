@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-19T00:00:44+08:00",
+  "fetched_at": "2026-11-20T09:24:26+08:00",
   "issues": [
     {
       "number": 336,
@@ -1041,8 +1041,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/540",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "内容删除需覆盖 speech_job_intents",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [
         {
           "name": "bug"
@@ -1196,68 +1196,6 @@
       "parent_issue_url": null
     },
     {
-      "number": 819,
-      "html_url": "https://github.com/hrygo/SpeechNexus/issues/819",
-      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "语音侧删除：预检、确认与删除账本的最小可验收实现（吸收 #540）",
-      "state": "open",
-      "state_reason": null,
-      "labels": [],
-      "parent_issue_url": null
-    },
-    {
-      "number": 845,
-      "html_url": "https://github.com/hrygo/SpeechNexus/issues/845",
-      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "创建可准入没有可观察信号：收据过期时所有建 Job 503，而 /readyz 与容器状态全绿",
-      "state": "open",
-      "state_reason": null,
-      "labels": [],
-      "parent_issue_url": null
-    },
-    {
-      "number": 852,
-      "html_url": "https://github.com/hrygo/SpeechNexus/issues/852",
-      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "取消后算力不归还：Job 卡在 unknown_quarantined / execution_cleanup_pending，租约 reserved、槽位不释放",
-      "state": "open",
-      "state_reason": null,
-      "labels": [
-        {
-          "name": "bug"
-        }
-      ],
-      "parent_issue_url": null
-    },
-    {
-      "number": 862,
-      "html_url": "https://github.com/hrygo/SpeechNexus/issues/862",
-      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "准入可观察面 A：契约收成单值 cause（拆自 #845，先行片）",
-      "state": "open",
-      "state_reason": null,
-      "labels": [
-        {
-          "name": "type:program"
-        }
-      ],
-      "parent_issue_url": null
-    },
-    {
-      "number": 863,
-      "html_url": "https://github.com/hrygo/SpeechNexus/issues/863",
-      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "准入可观察面 B：选择层与准入层收敛成一个函数，报告走同一路径（拆自 #845）",
-      "state": "open",
-      "state_reason": null,
-      "labels": [
-        {
-          "name": "type:program"
-        }
-      ],
-      "parent_issue_url": null
-    },
-    {
       "number": 885,
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/885",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
@@ -1266,16 +1204,6 @@
       "state_reason": "completed",
       "labels": [],
       "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
-    },
-    {
-      "number": 941,
-      "html_url": "https://github.com/hrygo/SpeechNexus/issues/941",
-      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "契约在 /v1/models 给 admission_state 一个不可能满足的定义（无 workspace 维度 vs 按 workspace 的准入）",
-      "state": "open",
-      "state_reason": null,
-      "labels": [],
-      "parent_issue_url": null
     },
     {
       "number": 957,
@@ -1316,20 +1244,43 @@
       "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
     },
     {
-      "number": 989,
-      "html_url": "https://github.com/hrygo/SpeechNexus/issues/989",
+      "number": 1027,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1027",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "host_capacity_insufficient 的缺省容量把节点锁成单实例，且错误文案不指出路",
+      "title": "把七份 _DeadlineCursor 收敛成一份共享实现（已评估，暂不派工）",
       "state": "open",
       "state_reason": null,
-      "labels": [
-        {
-          "name": "bug"
-        },
-        {
-          "name": "status:ready"
-        }
-      ],
+      "labels": [],
+      "parent_issue_url": null
+    },
+    {
+      "number": 1062,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1062",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "判定表按当前 main 刷新：过期数字、过期字符串、与未发布清单去重",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": null
+    },
+    {
+      "number": 1063,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1063",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "records 基线不该存绝对计数：让它按键集合差算，别再说假话",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": null
+    },
+    {
+      "number": 1065,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1065",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "需求矩阵按当前 main 刷新：证据指向真实位置，结论指向判定表",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
       "parent_issue_url": null
     }
   ]

@@ -67,8 +67,9 @@ VOICE_JOB_KINDS: tuple[str, ...] = (
 )
 # Every kind a DispatchJob may represent, whether or not a queue claims it:
 # exactly the kinds with a lane. ``voice_preview`` has none, so a queue can never
-# select it. Assigning it a lane without adding the publish-side media mapping
-# would fail at result publication (``application/results.py``), not at queue
+# select it, and no lane-less kind can be created at all -- submission refuses it
+# (#1080). Assigning it a lane without adding the publish-side media mapping would
+# fail at result publication (``application/results.py``), not at queue
 # construction.
 DISPATCHABLE_JOB_KIND_UNION: tuple[str, ...] = (
     *DISPATCHABLE_JOB_KINDS,

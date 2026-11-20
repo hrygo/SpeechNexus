@@ -37,6 +37,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 GENERATOR = ROOT / "deploy/release-assets.py"
@@ -163,6 +164,9 @@ class GeneratedAssets:
 
 
 class PinnedServiceTests(unittest.TestCase):
+    assets: GeneratedAssets
+    generated: dict[str, list[str]]
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.assets = GeneratedAssets()
@@ -253,6 +257,9 @@ class PinnedServiceTests(unittest.TestCase):
 
 
 class MountedScriptTests(unittest.TestCase):
+    assets: GeneratedAssets
+    compose: str
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.assets = GeneratedAssets()
@@ -278,7 +285,8 @@ class MountedScriptTests(unittest.TestCase):
                 target = re.search(
                     rf"^      - \./{re.escape(script)}:(?P<target>/\S+):ro$", source, re.M
                 )
-                self.assertIsNotNone(target)
+                if target is None:
+                    self.fail(f"the development compose does not mount {script}")
                 self.assertIn(
                     f"      - ./speechnexus-{TAG}-{script}:{target['target']}:ro\n", self.compose
                 )
@@ -299,6 +307,9 @@ class MountedScriptTests(unittest.TestCase):
 
 
 class ManifestTests(unittest.TestCase):
+    assets: GeneratedAssets
+    manifest: dict[str, Any]
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.assets = GeneratedAssets()

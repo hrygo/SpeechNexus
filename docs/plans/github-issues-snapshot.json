@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-20T09:24:26+08:00",
+  "fetched_at": "2026-11-20T10:17:25+08:00",
   "issues": [
     {
       "number": 336,
@@ -1196,6 +1196,16 @@
       "parent_issue_url": null
     },
     {
+      "number": 819,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/819",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "语音侧删除：预检、确认与删除账本的最小可验收实现（吸收 #540）",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
+    },
+    {
       "number": 885,
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/885",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
@@ -1254,30 +1264,10 @@
       "parent_issue_url": null
     },
     {
-      "number": 1062,
-      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1062",
+      "number": 1068,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1068",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "判定表按当前 main 刷新：过期数字、过期字符串、与未发布清单去重",
-      "state": "open",
-      "state_reason": null,
-      "labels": [],
-      "parent_issue_url": null
-    },
-    {
-      "number": 1063,
-      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1063",
-      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "records 基线不该存绝对计数：让它按键集合差算，别再说假话",
-      "state": "open",
-      "state_reason": null,
-      "labels": [],
-      "parent_issue_url": null
-    },
-    {
-      "number": 1065,
-      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1065",
-      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "需求矩阵按当前 main 刷新：证据指向真实位置，结论指向判定表",
+      "title": "把已挂到 Epic 的实施卡登记进矩阵：F-DELETE 的 #819",
       "state": "open",
       "state_reason": null,
       "labels": [],

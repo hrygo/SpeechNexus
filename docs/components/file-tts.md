@@ -108,6 +108,9 @@ unknown/停止协议保留占用，PUT 或读回失败不重试或删除未知�
 `text_commit_mode=explicit`、`audio_delivery=complete`、无 pronunciation revision、
 `voice_kind=builtin` 且无 voice material/词表/发音资源，并要求文本长度不超过命令声明的
 `planner.max_chars`：本单元只做单段完整交付，长文本切分属于后续单元，不会被静默截断。
+`planner.max_chars` 的取值上界是 `MAX_SPEECH_TEXT_CHARS`（4096），默认沿用服务链声明
+（参考部署 400，binding 预设本身上限 400）；准入取它与绑定 `max_input_codepoints`
+的较小值，并按同一值写入原命令，所以准入拒绝与网关拒绝判断的是同一条上界。
 
 接受的参数覆盖到策略字段：`instructions`、`speed`、`language`、`seed`；`response_format`
 决定交付格式（wav/mp3/pcm），引擎格式、采样率与各项上限仍来自批准 binding。

@@ -26,6 +26,7 @@ from speechnexus_backend.speech.domain.speech_synthesis import MAX_SPEECH_TEXT_C
 from speechnexus_gateway.domain.tts import MAX_TTS_TEXT_CHARS
 from tests.support.contracts import validator
 from tests.unit.backend.test_health import _settings
+from tests.unit.backend.test_speech_http import Facts, Synthesizer, mp3, service
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "contracts" / "speech-openapi.yaml"
@@ -314,3 +315,108 @@ def test_the_cross_entry_bound_table_states_each_entry_column() -> None:
     assert "generateRenderUnitV2" in render["入口"]
     assert "4096" in render["声明上限"]
     assert "200000" in render["声明上限"]
+
+
+# The declared 4096 bound is reachable, not just declared (#1073).
+#
+# `MAX_SPEECH_TEXT_CHARS` was always 4096, but the planner chunk budget capped a
+# synchronous request at 400 and the Job route never compared text against it, so
+# 401-4096 was refused by the synchronous entry and admitted by the asynchronous
+# one. These cases pin the measured boundary on both sides of 400 and 4096: the
+# text the contract promises is accepted when the binding's own input ceiling and
+# the caller's planner budget allow it, refused deterministically when they do
+# not, and the plan carries the tighter of the two declarations.
+
+
+def _synchronous_service(max_input_codepoints: int) -> tuple[Any, Any]:
+    """A real ``SpeechSynthesis`` over a published binding with the given ceiling."""
+
+    facts = Facts()
+    facts.definition["parameter_domains"]["tts"]["max_input_codepoints"] = max_input_codepoints
+    return service(facts=facts, synth=Synthesizer(mp3()))
+
+
+@pytest.mark.parametrize(
+    "text_chars,binding_ceiling,planner_max_chars,expected_planner",
+    [
+        (401, 2000, 2000, 2000),
+        (2000, 2000, 4096, 2000),
+        (4096, 4096, 4096, 4096),
+    ],
+    ids=["401-raised-planner", "2000-planner-beyond-binding", "4096-contract-bound"],
+)
+async def test_the_synchronous_route_accepts_text_up_to_the_raised_planner_budget(
+    text_chars: int, binding_ceiling: int, planner_max_chars: int, expected_planner: int
+) -> None:
+    """A body inside the declared 4096 bound is synthesized, not refused at 400."""
+
+    chain, synth = _synchronous_service(binding_ceiling)
+    app = create_app(settings=_settings(), speech=chain)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/audio/speech",
+            json={
+                "model": "tts-quality",
+                "input": "啊" * text_chars,
+                "voice": "voice-vivian",
+                "nexus": {"overrides": {"tts": {"planner": {"max_chars": planner_max_chars}}}},
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    assert len(synth.plans) == 1
+    # The text reached admission unchanged, and the plan carries the tighter of
+    # the caller's budget and the binding's declared ceiling.
+    assert len(synth.plans[0].text) == text_chars
+    assert synth.plans[0].planner_max_chars == expected_planner
+
+
+@pytest.mark.parametrize(
+    "text_chars,binding_ceiling,planner_max_chars",
+    [
+        (2001, 2000, 4096),
+        (4097, 4096, 4096),
+    ],
+    ids=["above-binding-ceiling", "above-contract-bound"],
+)
+async def test_text_above_the_tighter_declared_cap_is_refused_before_the_engine(
+    text_chars: int, binding_ceiling: int, planner_max_chars: int
+) -> None:
+    """The binding ceiling and the contract bound each still refuse their own excess."""
+
+    chain, synth = _synchronous_service(binding_ceiling)
+    app = create_app(settings=_settings(), speech=chain)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/audio/speech",
+            json={
+                "model": "tts-quality",
+                "input": "啊" * text_chars,
+                "voice": "voice-vivian",
+                "nexus": {"overrides": {"tts": {"planner": {"max_chars": planner_max_chars}}}},
+            },
+        )
+
+    assert response.status_code in (400, 422), response.text
+    assert synth.plans == []
+    if response.status_code == 422:
+        error = response.json()["error"]
+        assert error["code"] == "unsupported_parameter"
+        assert error["param"] == "input"
+
+
+def test_the_planner_default_stays_at_the_preset_budget_and_is_raisable() -> None:
+    """The default is the serving chain's 400; 401-4096 needs the explicit raise.
+
+    Keeping the default unchanged is what keeps the synchronous default equal to
+    the asynchronous one (a Job's effective planner is the binding's execution
+    preset, also capped at 400). Raising the code default instead would make the
+    two entries accept different text for one body, which is the defect class this
+    issue closes; the budget is raised per request, and the ceiling is the
+    contract's own 4096.
+    """
+
+    schemas = _schemas()
+    planner = schemas["RestTtsOverrides"]["properties"]["planner"]
+    assert planner["properties"]["max_chars"]["minimum"] == 40
+    assert planner["properties"]["max_chars"]["maximum"] == MAX_SPEECH_TEXT_CHARS

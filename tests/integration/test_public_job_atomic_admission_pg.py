@@ -208,6 +208,7 @@ def _job(
     input_value: dict[str, Any] | None = None,
     key: str = "synthetic-idem-0001",
     queue_wait_ms: int | None = None,
+    overrides: dict[str, Any] | None = None,
 ) -> NewPublicJob:
     job_id = "job-" + canonical_digest({"key": key}).removeprefix("sha256:")[:48]
     intent: dict[str, Any] = {
@@ -229,6 +230,8 @@ def _job(
     }
     if kind == "tts":
         intent["voice"] = {"id": VOICE, "revision": 2}
+    if overrides is not None:
+        intent["overrides"] = overrides
     return NewPublicJob(
         job_id=job_id,
         workspace_id=WORKSPACE,
@@ -457,6 +460,57 @@ def test_text_asset_is_explicitly_unsupported(
     )
     assert result.outcome == "rejected"
     assert result.error_code == "job_text_asset_unsupported"
+
+
+def test_tts_text_over_the_effective_bound_is_refused_before_any_row(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """The over-bound answer is admission's, not a 202 followed by dispatch.
+
+    The seeded binding's execution planner budget is 400, so text the shape gate
+    admits (401 characters, inside the declared 4096) still exceeds
+    ``min(planner, binding ceiling)``. A create must answer 422
+    ``unsupported_parameter`` inside its own transaction and write no Job,
+    reservation or intent row.
+    """
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    before = _counts(db)
+    result = _store(admission_database).create(
+        _job(input_value={"text": "啊" * 401}, key="synthetic-idem-text-over-bound")
+    )
+    assert result.outcome == "rejected"
+    assert result.error_code == "unsupported_parameter"
+    assert _counts(db) == before
+
+
+def test_a_raised_planner_budget_admits_the_same_text_and_states_it_once(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """Raising the planner is the caller's switch, and one value reaches dispatch.
+
+    The override names only ``max_chars``; the preset's ``max_wait_ms`` must
+    survive the merge, and the command must carry the same budget admission
+    judged rather than the preset's 400.
+    """
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    result = _store(admission_database).create(
+        _job(
+            input_value={"text": "啊" * 401},
+            overrides={"tts": {"planner": {"max_chars": 4096}}},
+            key="synthetic-idem-text-raised",
+        )
+    )
+    assert result.outcome == "created", result.error_code
+    command = json.loads(
+        db.query("SELECT request_document FROM admission_operations")[0]["request_document"]
+    )
+    assert command["gateway_request"]["command"]["parameters"]["planner"] == {
+        "max_chars": 4096,
+        "max_wait_ms": 1000,
+    }
+    assert len(command["gateway_request"]["command"]["text"]) == 401
 
 
 def test_deadline_uses_the_frozen_binding_timeout_not_queue_wait(

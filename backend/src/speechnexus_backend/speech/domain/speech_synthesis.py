@@ -21,6 +21,13 @@ _LANGUAGE = re.compile(r"[a-z]{2,3}(-[A-Za-z0-9]{2,8}){0,4}\Z")
 MAX_SPEECH_TEXT_CHARS = 4096
 MAX_SPEECH_TEXT_BYTES = 16384
 MAX_SPEECH_INSTRUCTIONS_CHARS = 4096
+# The planner's chunk budget bounds one file-TTS synthesis, so its ceiling is the
+# text ceiling itself: a lower ceiling would refuse text the public contract
+# declares, and the binding's own ``max_input_codepoints`` is what narrows it for
+# a specific model. Its default stays the preset budget (application layer).
+PLANNER_CHARS_MIN = 40
+PLANNER_CHARS_MAX = MAX_SPEECH_TEXT_CHARS
+DEFAULT_PLANNER_CHARS = 400
 MIN_AUDIO_MS = 100
 MAX_AUDIO_MS = 3_600_000
 MIN_PAYLOAD_BYTES = 1024
@@ -56,6 +63,19 @@ def pcm16_mono_bytes(duration_ms: int, sample_rate_hz: int) -> int:
     if type(duration_ms) is not int or duration_ms < 0 or type(sample_rate_hz) is not int:
         raise ValueError("Invalid audio duration bound")
     return -((-duration_ms * sample_rate_hz) // 1000) * PCM_FRAME_BYTES
+
+
+def speech_text_bound(planner_max_chars: int, max_input_codepoints: int) -> int:
+    """Characters one synthesis may carry: the tighter declared bound wins.
+
+    Two declarations answer "does this text fit one synthesis?": the request's
+    planner chunk budget and the selected binding's model-domain input ceiling.
+    Admission must judge the tighter of the two, because judging either alone
+    either admits text dispatch will refuse or refuses text the engine accepts.
+    """
+    if type(planner_max_chars) is not int or type(max_input_codepoints) is not int:
+        raise ValueError("A speech text bound requires two declared integers")
+    return min(planner_max_chars, max_input_codepoints)
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,7 +152,8 @@ class SpeechCommand:
         ):
             raise ValueError("Invalid speech seed")
         if self.planner_max_chars is not None and (
-            type(self.planner_max_chars) is not int or not 40 <= self.planner_max_chars <= 400
+            type(self.planner_max_chars) is not int
+            or not PLANNER_CHARS_MIN <= self.planner_max_chars <= PLANNER_CHARS_MAX
         ):
             raise ValueError("Invalid speech planner chunk size")
         if self.planner_max_wait_ms is not None and (
@@ -174,7 +195,7 @@ class SpeechPlan:
     instructions: str = field(default="", repr=False)
     language: str | None = None
     seed: int | None = None
-    planner_max_chars: int = 400
+    planner_max_chars: int = DEFAULT_PLANNER_CHARS
     planner_max_wait_ms: int = 500
     max_audio_ms: int = MAX_AUDIO_MS
     max_source_pcm_bytes: int = MAX_PAYLOAD_BYTES
@@ -239,7 +260,10 @@ class SpeechPlan:
             type(self.seed) is not int or not 0 <= self.seed <= 2**31 - 1
         ):
             raise ValueError("Invalid speech seed")
-        if type(self.planner_max_chars) is not int or not 1 <= self.planner_max_chars <= 4096:
+        if (
+            type(self.planner_max_chars) is not int
+            or not 1 <= self.planner_max_chars <= PLANNER_CHARS_MAX
+        ):
             raise ValueError("Invalid speech planner chunk size")
         if type(self.planner_max_wait_ms) is not int or not 100 <= self.planner_max_wait_ms <= 3000:
             raise ValueError("Invalid speech planner wait")
@@ -347,6 +371,7 @@ def revision_number(value: int) -> int:
 
 
 __all__ = [
+    "DEFAULT_PLANNER_CHARS",
     "MAX_AUDIO_MS",
     "MAX_PAYLOAD_BYTES",
     "MAX_SPEECH_INSTRUCTIONS_CHARS",
@@ -355,6 +380,8 @@ __all__ = [
     "MIN_AUDIO_MS",
     "MIN_PAYLOAD_BYTES",
     "PCM_FRAME_BYTES",
+    "PLANNER_CHARS_MAX",
+    "PLANNER_CHARS_MIN",
     "SpeechAudio",
     "SpeechCommand",
     "SpeechFormat",
@@ -362,4 +389,5 @@ __all__ = [
     "identifier",
     "pcm16_mono_bytes",
     "revision_number",
+    "speech_text_bound",
 ]

@@ -1744,6 +1744,7 @@ export interface components {
     /** @enum {string} */
     AudioDeliveryMode: "complete" | "chunked";
     pronunciation_revision: components["schemas"]["Revision"] | null;
+    /** @description Per-request file-TTS planner budget. `max_chars` is the most text one synthesis accepts; it defaults to the serving chain's declared budget (400 in the reference deployments, and a binding preset is capped at 400) and a request may raise it to 4096, the same MAX_SPEECH_TEXT_CHARS a public body declares. The effective bound is the tighter of `max_chars` and the selected binding's declared max_input_codepoints; a request above it is refused at admission, not at dispatch. */
     planner: {
       max_chars?: number;
       max_wait_ms?: number;

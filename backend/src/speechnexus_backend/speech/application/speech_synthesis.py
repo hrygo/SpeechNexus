@@ -15,6 +15,7 @@ from typing import Any, Protocol
 
 from speechnexus_backend.speech.domain.publications import Publication, PublicationKind
 from speechnexus_backend.speech.domain.speech_synthesis import (
+    DEFAULT_PLANNER_CHARS,
     MAX_AUDIO_MS,
     MAX_PAYLOAD_BYTES,
     MAX_SPEECH_INSTRUCTIONS_CHARS,
@@ -27,13 +28,13 @@ from speechnexus_backend.speech.domain.speech_synthesis import (
     correlation_identifier,
     identifier,
     pcm16_mono_bytes,
+    speech_text_bound,
 )
 
 DEFAULT_WORKSPACE = "workspace-default"
 REQUIRED_TASK = "tts_file"
 REST_SAMPLE_RATE_HZ = 24000
 REST_CHANNELS = 1
-DEFAULT_PLANNER_CHARS = 400
 DEFAULT_PLANNER_WAIT_MS = 500
 _WAV_HEADER_BYTES = 44
 # 64 kbit/s MP3 is roughly one sixth of 24 kHz PCM16; a quarter keeps the bound
@@ -244,6 +245,7 @@ class SpeechSynthesis:
             command,
             request_id=request_id,
             binding=binding,
+            domain=domain,
             workspace=workspace,
             voice=voice,
             max_output_audio_ms=max_output_audio_ms,
@@ -269,6 +271,7 @@ class SpeechSynthesis:
         *,
         request_id: str,
         binding: BindingFact,
+        domain: Mapping[str, Any],
         workspace: WorkspaceFact,
         voice: Publication,
         max_output_audio_ms: int | None,
@@ -298,6 +301,14 @@ class SpeechSynthesis:
         )
         authority_reader = getattr(self._facts, "voice_execution_authority", None)
         authority = authority_reader(voice) if callable(authority_reader) else (None, None)
+        # One synthesis carries two declared caps: the planner chunk budget and the
+        # binding's model-domain input ceiling. The plan keeps the tighter one, so
+        # admission judges -- and the dispatched command states -- a single value.
+        input_ceiling = domain.get("max_input_codepoints")
+        assert type(input_ceiling) is int  # _require_domain refused an undeclared ceiling
+        planner_max_chars = speech_text_bound(
+            command.planner_max_chars or DEFAULT_PLANNER_CHARS, input_ceiling
+        )
         return SpeechPlan(
             gateway_policy_digest=authority[0],
             native_speaker_id=authority[1],
@@ -317,7 +328,7 @@ class SpeechSynthesis:
             instructions=command.instructions,
             language=command.language,
             seed=command.seed,
-            planner_max_chars=command.planner_max_chars or DEFAULT_PLANNER_CHARS,
+            planner_max_chars=planner_max_chars,
             planner_max_wait_ms=command.planner_max_wait_ms or DEFAULT_PLANNER_WAIT_MS,
             max_audio_ms=ceiling,
             max_source_pcm_bytes=source_pcm,

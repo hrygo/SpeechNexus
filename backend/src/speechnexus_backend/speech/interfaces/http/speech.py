@@ -43,6 +43,8 @@ from speechnexus_backend.speech.domain.speech_synthesis import (
     MAX_SPEECH_INSTRUCTIONS_CHARS,
     MAX_SPEECH_TEXT_CHARS,
     MIN_AUDIO_MS,
+    PLANNER_CHARS_MAX,
+    PLANNER_CHARS_MIN,
     SpeechCommand,
     SpeechFormat,
     identifier,
@@ -57,8 +59,6 @@ RESPONSE_FORMATS = ("mp3", "wav", "pcm")
 STREAM_FORMATS = ("audio",)
 SPEED_MIN = 0.25
 SPEED_MAX = 4.0
-PLANNER_CHARS_MIN = 40
-PLANNER_CHARS_MAX = 400
 PLANNER_WAIT_MIN = 100
 PLANNER_WAIT_MAX = 3000
 DEADLINE_MAX_MS = 600_000

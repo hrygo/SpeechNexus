@@ -132,11 +132,11 @@
     "version": null
   },
   "shared/speech-overrides.schema.json": {
-    "sha256": "800dc677da56545a9863f4d85e15143ea84747a7bc871271ae5ba204b630f028",
+    "sha256": "6ccfda3016a436ae93b8aea6b2959ef75693f39bfc11eace67ac8c87e2df9427",
     "version": null
   },
   "speech-openapi.yaml": {
-    "sha256": "3b2de4e704777ee7e04e168dbe18090b762180fa8e6415cbfdc295dbd8268c3d",
+    "sha256": "63771f1a21d55dbe23a94fcab324bf4e59f334c486943a26789a887e2ee6ad6b",
     "version": "0.1.0.dev18"
   },
   "voice-resource.schema.json": {

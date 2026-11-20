@@ -231,6 +231,61 @@ negative cases in
 [`tests/contract/test_approved_http_response_vocabulary_changes.py`](../../tests/contract/test_approved_http_response_vocabulary_changes.py),
 which also proves every entry still matches a finding of the real comparison.
 
+## Approved caller-chosen bound movements
+
+A bound the caller may raise reappears wherever the contract restates the caller's
+own choice: a receipt reports `requested`, `effective` and `observed`, and an
+`effective_configuration` reports the applied parameters. Raising such a bound
+therefore shows up as a response widening even though no client can meet a value it
+did not ask for. `#1073` raised `planner.max_chars` from 400 to 4096 for exactly
+that reason, and the gate approves it through a proof over the whole diff instead
+of a pointer list:
+
+`reviewed_bound_movement()` requires all of the following, and any failure leaves
+every finding in place:
+
+- `git diff <base> -- contracts` names exactly the reviewed files;
+- each reviewed pointer holds exactly the reviewed old value at the baseline and
+  the reviewed new value in the service, so a second widening, a different value or
+  a reverted bound never matches;
+- with those values aligned, both documents are identical once annotation keys
+  (`title`, `description`, `examples`, `$comment`) are removed, so no structural,
+  vocabulary or bound change may ride along. Only keys in annotation positions are
+  removed: inside a schema name map (`properties`, `patternProperties`, `$defs`,
+  `definitions`, `dependentSchemas`) every key is a name, so a property called
+  `description` — `VoiceDesignInput` declares one — is compared like any other member
+  instead of being deleted from the tree. Member schemas are shaped by
+  `_compatibility_shape`, the same rule the comparison uses.
+
+The scope is deliberately the diff, not a path pattern: the approval can only fire
+when the reviewed movement is the *only* thing that changed in `contracts/`, which
+is a stronger statement than "these pointers may widen". A pointer list would also
+approve a later, unrelated change at the same pointer; this proof cannot, because
+that change would make the documents differ beside the reviewed bound.
+
+Every contract fence reuses the proof through `apply_reviewed_bound_movement`: the
+speech and nonstandard HTTP surfaces, the coordination request/result fences, the
+realtime fence and the standard-surface comparison. One shared declaration is
+reachable from several contracts, so a single reviewed movement legitimately explains
+findings in `admin-openapi.yaml`, `workbench-openapi.yaml`,
+`internal/execution-control.openapi.yaml`, the realtime events and the coordination
+`create_submit` command. Sharing the proof is what keeps that honest: a fence keeps
+its findings whenever anything beside the movement changed.
+
+`contracts-compat` filters through the same proof: `_apply_reviewed_receipt_planner_widenings`
+accepts only the three `receipt.{requested,effective,observed}.planner.max_chars`
+pointers of `contracts/shared/errors.schema.json`, and only for the exact reviewed
+value pair. Every other pointer, value, document or class still rejects.
+
+Each approval is printed as `approved reviewed planner bound widening:` and listed
+in `approved_reviewed_bound_movements` in JSON mode; when the proof fails the
+speech gate reports why in `reviewed_bound_movement_problem` and on stderr, and
+adds no finding of its own. New entries must add matching negative cases in
+[`tests/contract/test_approved_tts_receipt_planner_widening.py`](../../tests/contract/test_approved_tts_receipt_planner_widening.py),
+which proves that an unrelated response bound widening and an unrelated `error.code`
+addition both still reject, and that a contract already carrying the movement needs
+no approval.
+
 ## What the check establishes
 
 The existing directional comparison kernel is reused: reject known request

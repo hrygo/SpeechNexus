@@ -36,7 +36,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4096,
-          "description": "Text spoken by one synthesis, bounded at `MAX_SPEECH_TEXT_CHARS`\n(4096) characters: one request synthesizes its `input` exactly once\nand never splits, truncates, or silently shortens it. Text above the\nbound is refused as `400` `invalid_request` with `param: input`.\n`POST /v1/nexus/jobs` enforces the same bound on `TtsJobInput.text`\nbut reports the same condition as `422` `unsupported_parameter`\n(the asynchronous entry classifies a body that does not match the\ndeclared Job shape, the synchronous entry a body this route cannot\naccept). Both codes describe one limit, so a consumer branches on\n`error.code` and `param`, not on the status code.\n"
+          "description": "Text spoken by one synthesis, bounded at `MAX_SPEECH_TEXT_CHARS`\n(4096) characters: one request synthesizes its `input` exactly once\nand never splits, truncates, or silently shortens it. Text above the\nbound is refused as `400` `invalid_request` with `param: input`.\nWithin the bound, the selected binding may declare a smaller\n`max_input_codepoints` and the request's own `planner.max_chars` may\nbudget less; the effective one-synthesis bound is the tighter of the\ntwo, and text above it is refused before any engine call as `422`\n`unsupported_parameter` with `param: input` rather than being sent to\nan engine that would reject it.\n`POST /v1/nexus/jobs` enforces the same bound on `TtsJobInput.text`\nbut reports the same condition as `422` `unsupported_parameter`\n(the asynchronous entry classifies a body that does not match the\ndeclared Job shape, the synchronous entry a body this route cannot\naccept). Both codes describe one limit, so a consumer branches on\n`error.code` and `param`, not on the status code.\n"
         },
         "voice": {
           "type": "string",
@@ -170,11 +170,12 @@
         "planner": {
           "type": "object",
           "additionalProperties": false,
+          "description": "Per-request file-TTS planner budget. `max_chars` is the most text one\nsynthesis accepts. It defaults to the serving chain's declared budget\n(400 in the reference deployments; a binding's own preset is capped at\n400 by the preset contract) and a request may raise it to 4096, the\nsame `MAX_SPEECH_TEXT_CHARS` an `input` body declares. The effective\nbound is the tighter of `max_chars` and the selected binding's\ndeclared `max_input_codepoints`, and text above it is refused as\n`422` `unsupported_parameter` with `param: input` before any engine\ncall.\n",
           "properties": {
             "max_chars": {
               "type": "integer",
               "minimum": 40,
-              "maximum": 400
+              "maximum": 4096
             },
             "max_wait_ms": {
               "type": "integer",
@@ -429,11 +430,12 @@
         "planner": {
           "type": "object",
           "additionalProperties": false,
+          "description": "Per-request file-TTS planner budget. `max_chars` is the most text one synthesis accepts; it defaults to the serving chain's declared budget (400 in the reference deployments, and a binding preset is capped at 400) and a request may raise it to 4096, the same MAX_SPEECH_TEXT_CHARS a public body declares. The effective bound is the tighter of `max_chars` and the selected binding's declared max_input_codepoints; a request above it is refused at admission, not at dispatch.",
           "properties": {
             "max_chars": {
               "type": "integer",
               "minimum": 40,
-              "maximum": 400
+              "maximum": 4096
             },
             "max_wait_ms": {
               "type": "integer",
@@ -555,7 +557,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 4096,
-              "description": "Inline text for one Job. A Job performs exactly one speech\nsynthesis, so the body bound is the same `MAX_SPEECH_TEXT_CHARS`\n(4096) that `input` on `/v1/audio/speech` declares; longer text is\nrejected instead of being split, truncated, or silently shortened.\nThis asynchronous entry reports an over-bound body as `422`\n`unsupported_parameter`, while `/v1/audio/speech` reports the same\ncondition as `400` `invalid_request` with `param: input`. The two\ncodes describe one limit and differ by entry point, so a consumer\nbranches on `error.code` and `param`, not on the status code.\n"
+              "description": "Inline text for one Job. A Job performs exactly one speech\nsynthesis, so the body bound is the same `MAX_SPEECH_TEXT_CHARS`\n(4096) that `input` on `/v1/audio/speech` declares; longer text is\nrejected instead of being split, truncated, or silently shortened.\nWithin the bound, the selected binding may declare a smaller\n`max_input_codepoints` and the Job's own `planner.max_chars`\n(binding preset or `overrides.tts.planner`) may budget less; the\neffective one-synthesis bound is the tighter of the two, and a Job\nabove it is refused at admission, before any Job row exists, so a\ncaller never receives `202` for text dispatch would reject.\nThis asynchronous entry reports an over-bound body as `422`\n`unsupported_parameter`, while `/v1/audio/speech` reports the same\ncondition as `400` `invalid_request` with `param: input`. The two\ncodes describe one limit and differ by entry point, so a consumer\nbranches on `error.code` and `param`, not on the status code.\n"
             }
           }
         },
@@ -3295,11 +3297,12 @@
     "External_shared_speech_overrides_schema_json_planner": {
       "type": "object",
       "additionalProperties": false,
+      "description": "Per-request file-TTS planner budget. `max_chars` is the most text one synthesis accepts; it defaults to the serving chain's declared budget (400 in the reference deployments, and a binding preset is capped at 400) and a request may raise it to 4096, the same MAX_SPEECH_TEXT_CHARS a public body declares. The effective bound is the tighter of `max_chars` and the selected binding's declared max_input_codepoints; a request above it is refused at admission, not at dispatch.",
       "properties": {
         "max_chars": {
           "type": "integer",
           "minimum": 40,
-          "maximum": 400
+          "maximum": 4096
         },
         "max_wait_ms": {
           "type": "integer",

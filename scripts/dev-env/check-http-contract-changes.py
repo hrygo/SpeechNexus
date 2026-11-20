@@ -1228,7 +1228,8 @@ def inspect_sources(
             text=True,
         ).splitlines()
     )
-    compare = _kernel()._compare_openapi
+    kernel = _kernel()
+    compare = kernel._compare_openapi
     rows: list[dict[str, Any]] = []
     findings: list[str] = []
     approved_removals: list[str] = []
@@ -1237,6 +1238,8 @@ def inspect_sources(
     approved_header_removals: list[str] = []
     approved_narrowings: list[str] = []
     approved_vocabulary_changes: list[str] = []
+    approved_bound_widenings: list[str] = []
+    movement_problem: str | None = None
     compared_sources: set[str] = set()
     selected = (SPEECH_SOURCE,) if surface == "speech" else SOURCES
     for path in selected:
@@ -1301,6 +1304,21 @@ def inspect_sources(
             detected, approved_vocabulary = _apply_approved_response_vocabulary_widenings(
                 path, row["base_version"], row["current_version"], detected
             )
+            if detected:
+                problem = kernel.reviewed_bound_movement(_ROOT, resolved)
+                if problem is None:
+                    # Every finding here is explained by the one reviewed movement:
+                    # the proof established that nothing else in `contracts/` changed
+                    # semantically, so no finding can have another cause.
+                    approved_bound_widenings.append(
+                        kernel.reviewed_bound_movement_line(len(detected))
+                    )
+                    detected = []
+                else:
+                    # A reviewer reads why the reviewed movement did not cover this
+                    # diff; the kernel's own findings stay exactly as reported so the
+                    # gate never adds a finding of its own.
+                    movement_problem = f"{path}: {problem}"
             findings.extend(detected)
             approved_removals.extend(approved)
             approved_parameters.extend(approved_parameter)
@@ -1336,6 +1354,8 @@ def inspect_sources(
         "approved_response_header_removals": approved_header_removals,
         "approved_request_bound_narrowings": approved_narrowings,
         "approved_response_vocabulary_changes": approved_vocabulary_changes,
+        "approved_reviewed_bound_movements": approved_bound_widenings,
+        "reviewed_bound_movement_problem": movement_problem,
         "unverified": list(UNVERIFIED),
     }
 
@@ -1373,6 +1393,14 @@ def main() -> int:
             print("  approved request bound narrowing: " + approval)
         for approval in report["approved_response_vocabulary_changes"]:
             print("  approved response vocabulary widening: " + approval)
+        for approval in report["approved_reviewed_bound_movements"]:
+            print("  approved reviewed planner bound widening: " + approval)
+        if report["reviewed_bound_movement_problem"]:
+            print(
+                "  reviewed planner bound widening did not cover this diff: "
+                + report["reviewed_bound_movement_problem"],
+                file=sys.stderr,
+            )
         print("Known HTTP structural checks: " + ("rejected" if report["findings"] else "passed"))
         print("Not a full protocol compatibility proof; see unverified scope:")
         for boundary in report["unverified"]:

@@ -802,6 +802,264 @@ def _same_json_tree(left: object, right: object, *, numeric_equivalent: bool = F
     return left == right
 
 
+class _ReviewedBound(NamedTuple):
+    """One numeric bound whose movement a reviewed change is allowed to explain."""
+
+    path: str
+    pointer: tuple[str, ...]
+    keyword: str
+    before: object
+    after: object
+
+    @property
+    def label(self) -> str:
+        return self.path + "/" + "/".join(self.pointer)
+
+
+# The public contract declares one synthesis at up to `MAX_SPEECH_TEXT_CHARS` (4096)
+# and lets a caller raise the planner budget to that same ceiling. A receipt and an
+# `effective_configuration` restate that budget, so the request-side widening reappears
+# on the response side -- but only for a client that itself asked for more than 400:
+# the reported value is the caller's own explicit choice echoed back, never a value
+# that appears unrequested. That is why this one movement is reviewed, and why the
+# approval below is written as a *proof over the whole contract diff* rather than as a
+# list of pointers: it fires only when everything that changed in `contracts/` is
+# exactly this movement (with annotation-only edits elsewhere), so it can never
+# explain an unrelated widening, a second movement or a different value (#1073).
+_REVIEWED_BOUND_MOVEMENT: tuple[_ReviewedBound, ...] = (
+    _ReviewedBound(
+        "contracts/speech-openapi.yaml",
+        (
+            "components",
+            "schemas",
+            "RestTtsOverrides",
+            "properties",
+            "planner",
+            "properties",
+            "max_chars",
+            "maximum",
+        ),
+        "maximum",
+        400,
+        4096,
+    ),
+    _ReviewedBound(
+        "contracts/shared/speech-overrides.schema.json",
+        (
+            "$defs",
+            "TtsOverrides",
+            "properties",
+            "planner",
+            "properties",
+            "max_chars",
+            "maximum",
+        ),
+        "maximum",
+        400,
+        4096,
+    ),
+)
+_REVIEWED_BOUND_ISSUE = "#1073"
+_REVIEWED_BOUND_REASON = (
+    "The planner budget is the caller's own switch: only a request that asks for "
+    "`planner.max_chars > 400` can receive a receipt or `effective_configuration` "
+    "above the old ceiling, so the wider bound reports a caller-chosen value rather "
+    "than a response surface that changed under a client that never opted in (#1073)."
+)
+
+
+_ANNOTATION_KEYS = frozenset({"title", "description", "examples", "$comment"})
+_SCHEMA_NAME_MAPS = frozenset(
+    {"properties", "patternProperties", "$defs", "definitions", "dependentSchemas"}
+)
+
+
+def _annotation_free(value: object) -> object:
+    """One contract tree with the keys that cannot change acceptance removed.
+
+    The movement proof compares whole documents, so it cannot call
+    `_compatibility_shape` at the root: that helper only descends through schema
+    keywords and would copy `paths` and `components` verbatim. This walks the rest of
+    the document instead, while keeping the one distinction that decides correctness:
+    inside a schema name map every key is a name, not a keyword. A schema may declare a
+    property called `description` or `examples`, and dropping it would delete a whole
+    branch of the accepted shape -- exactly the change this proof must not approve.
+    Members of a name map are therefore shaped by the kernel's own
+    `_compatibility_shape`, which removes annotations there by the same rule the
+    comparison uses. Anywhere else a key named like an annotation is an annotation.
+    """
+
+    mapping = _mapping(value)
+    if mapping is not None:
+        result: dict[str, Any] = {}
+        for key, child in mapping.items():
+            if key in _SCHEMA_NAME_MAPS:
+                members = _mapping(child)
+                result[key] = (
+                    {
+                        name: _compatibility_shape(member, standard_only=False)
+                        for name, member in members.items()
+                    }
+                    if members is not None
+                    else _compatibility_shape(child, standard_only=False)
+                )
+            elif key in _ANNOTATION_KEYS:
+                continue
+            else:
+                result[key] = _annotation_free(child)
+        return result
+    sequence = _sequence(value)
+    if sequence is not None:
+        return [_annotation_free(item) for item in sequence]
+    return value
+
+
+def _pointer_value(document: object, pointer: tuple[str, ...]) -> object:
+    current = document
+    for part in pointer:
+        mapping = _mapping(current)
+        if mapping is None or part not in mapping:
+            return None
+        current = mapping[part]
+    return current
+
+
+def _with_pointer_value(document: object, pointer: tuple[str, ...], value: object) -> object:
+    """Deep copy with one pointer replaced, so both sides compare on equal bounds."""
+
+    copied = copy.deepcopy(document)
+    current = copied
+    for part in pointer[:-1]:
+        current = current[part]  # type: ignore[index]
+    current[pointer[-1]] = value  # type: ignore[index]
+    return copied
+
+
+def _changed_contract_paths(root: Path, reference: str) -> set[str]:
+    diffed = subprocess.check_output(
+        ["git", "-C", str(root), "diff", "--name-only", reference, "--", "contracts"],
+        text=True,
+    ).splitlines()
+    untracked = subprocess.check_output(
+        ["git", "-C", str(root), "ls-files", "--others", "--exclude-standard", "--", "contracts"],
+        text=True,
+    ).splitlines()
+    return {line for line in (*diffed, *untracked) if line}
+
+
+def _contract_document(root: Path, reference: str | None, path: str) -> object:
+    if reference is None:
+        return yaml.safe_load((root / path).read_text(encoding="utf-8"))
+    text = subprocess.check_output(
+        ["git", "-C", str(root), "show", f"{reference}:{path}"], text=True
+    )
+    return yaml.safe_load(text)
+
+
+def reviewed_bound_movement(root: Path, reference: str) -> str | None:
+    """Prove the contract diff is exactly the reviewed bound movement.
+
+    Returns ``None`` when the proof holds, otherwise one sentence naming what broke
+    it. The proof is deliberately a whole-diff claim: the approval it enables may not
+    outlive its scope, so any file, value or constraint beside the registered
+    movement keeps the kernel's findings in place.
+    """
+
+    expected = {entry.path for entry in _REVIEWED_BOUND_MOVEMENT}
+    changed = _changed_contract_paths(root, reference)
+    if changed != expected:
+        unexpected = sorted(changed.symmetric_difference(expected))
+        return (
+            "the reviewed movement may explain only its own files, but contracts/ "
+            f"differs in {', '.join(unexpected)}"
+        )
+    for entry in _REVIEWED_BOUND_MOVEMENT:
+        base = _contract_document(root, reference, entry.path)
+        current = _contract_document(root, None, entry.path)
+        before = _pointer_value(base, entry.pointer)
+        after = _pointer_value(current, entry.pointer)
+        if before != entry.before or after != entry.after:
+            return (
+                f"{entry.label} declares {before!r} -> {after!r}, "
+                f"not the reviewed {entry.before!r} -> {entry.after!r}"
+            )
+        normalized_base = _with_pointer_value(base, entry.pointer, entry.after)
+        normalized_current = _with_pointer_value(current, entry.pointer, entry.after)
+        if not _same_json_tree(
+            _annotation_free(normalized_base),
+            _annotation_free(normalized_current),
+        ):
+            return f"{entry.path}: another semantic change exists beside the reviewed bound"
+    return None
+
+
+_TTS_RECEIPT_PLANNER_POINTERS = (
+    "contracts/shared/errors.schema.json/$defs/OperationRecovery/properties/receipt/"
+    "properties/requested/properties/planner/properties/max_chars",
+    "contracts/shared/errors.schema.json/$defs/OperationRecovery/properties/receipt/"
+    "properties/effective/properties/planner/properties/max_chars",
+    "contracts/shared/errors.schema.json/$defs/OperationRecovery/properties/receipt/"
+    "properties/observed/properties/planner/properties/max_chars",
+)
+
+
+def apply_reviewed_bound_movement(report: dict[str, Any], root: Path, resolved: str) -> None:
+    """Fold a gate's findings into one approval when the whole diff is the movement.
+
+    Each gate keeps its own finding semantics; this only decides whether every finding
+    it produced is explained by the reviewed movement. The proof is the same one for
+    all of them: nothing else in `contracts/` may have changed, so a gate cannot approve
+    a finding that has another cause. When the proof fails the findings stay and the
+    reason is reported beside them, never instead of them.
+    """
+
+    findings = report.get("findings")
+    if not findings:
+        return
+    problem = reviewed_bound_movement(root, resolved)
+    if problem is None:
+        report["approved_reviewed_bound_movements"] = [reviewed_bound_movement_line(len(findings))]
+        report["findings"] = []
+    else:
+        report["reviewed_bound_movement_problem"] = problem
+
+
+def reviewed_bound_movement_line(explained: int) -> str:
+    """One review line for a movement the proof showed explains every finding."""
+
+    labels = ", ".join(entry.label for entry in _REVIEWED_BOUND_MOVEMENT)
+    return (
+        f"{labels}: planner.max_chars maximum 400 -> 4096 explains {explained} "
+        f"finding(s) [{_REVIEWED_BOUND_ISSUE}: {_REVIEWED_BOUND_REASON}]"
+    )
+
+
+def _apply_reviewed_receipt_planner_widenings(
+    issues: list[str],
+) -> tuple[list[str], list[str]]:
+    """Split out the receipt-planner widenings, and only those, of ``errors.schema.json``.
+
+    A line is approved only when it is one of the three receipt planner pointers and
+    names exactly the reviewed values; the narrowing direction and every other
+    pointer, message or value stay findings. The caller has already proven that the
+    whole contract diff is the reviewed movement, so this is a narrow filter on top of
+    a narrow proof instead of a substitute for one.
+    """
+    remaining: list[str] = []
+    approved: list[str] = []
+    for issue in issues:
+        pointer, separator, finding = issue.partition(": ")
+        if (
+            separator
+            and pointer in _TTS_RECEIPT_PLANNER_POINTERS
+            and finding == "maximum was tightened from 4096 to 400"
+        ):
+            approved.append(f"{issue} [{_REVIEWED_BOUND_ISSUE}: {_REVIEWED_BOUND_REASON}]")
+        else:
+            remaining.append(issue)
+    return remaining, approved
+
+
 def _closed_schema_tree(value: object) -> bool:
     """Exact-tree implication needs no unresolved or dynamic reference semantics."""
     if isinstance(value, Mapping):
@@ -2149,15 +2407,27 @@ def main() -> int:
                 )
             )
         else:
-            issues.extend(
-                _compare_json_schema(
-                    base_document,
-                    current_document,
-                    path,
-                    base_git_ref=args.base,
-                    direction="response" if path.endswith("errors.schema.json") else "request",
-                )
+            document_issues = _compare_json_schema(
+                base_document,
+                current_document,
+                path,
+                base_git_ref=args.base,
+                direction="response" if path.endswith("errors.schema.json") else "request",
             )
+            if path == "contracts/shared/errors.schema.json" and document_issues:
+                problem = reviewed_bound_movement(_ROOT, args.base)
+                if problem is None:
+                    document_issues, approved = _apply_reviewed_receipt_planner_widenings(
+                        document_issues
+                    )
+                    for approval in approved:
+                        print("approved reviewed planner bound widening: " + approval)
+                else:
+                    document_issues.append(
+                        f"{path}: reviewed planner bound movement does not explain these "
+                        f"findings ({problem})"
+                    )
+            issues.extend(document_issues)
 
     if issues:
         print("Breaking OpenAI-compatible contract changes:", file=sys.stderr)

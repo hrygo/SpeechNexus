@@ -248,7 +248,7 @@ Job 的取消与重试也是契约目标；当前公开 Job 路由只装配创�
 | `tts.instructions` | 有界 string 或 null | 预设参数上限 2000 字符，REST 标准字段上限 4096；仅绑定声明支持时开放，禁止把整段业务 prompt 默认送入声音模型 |
 | `tts.pronunciation_revision` | 资源引用或 null | 固定的发音词典；保留原始文本与声学文本摘要 |
 | `tts.seed` | integer 或 null | 只有后端声明支持时生效；不承诺跨版本相同波形 |
-| `tts.planner.max_chars` | integer，40–400 | 预设契约中的分段预算，实际还受绑定支持范围限制 |
+| `tts.planner.max_chars` | integer，40–4096 | 一次文件合成允许的正文预算；请求上界 4096 与 `MAX_SPEECH_TEXT_CHARS` 对齐，默认沿用服务链声明（参考部署 400，binding 预设本身 40–400），可显式提高。生效上界取它与绑定 `max_input_codepoints` 的较小值 |
 | `tts.planner.max_wait_ms` | integer，100–3000 | sentence 模式等待完整句界的最大时间；到期不强制合成不安全尾部 |
 | `output.transcript_format` | `json / text / verbose_json / srt / vtt` | 后三者仅在具备相应时间边界证据时开放，不伪造时间戳 |
 | `output.audio_format` | `mp3 / wav / pcm` REST 基线 | 标准 REST 默认 mp3；实时 PCM descriptor 独立协商，其他格式经 encoder / 客户端资格验证后发布 |

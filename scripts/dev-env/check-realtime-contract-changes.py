@@ -218,6 +218,8 @@ def inspect_source(base: str) -> dict[str, Any]:
         "entrypoints": ["RealtimeEvent", "TranscriptionEvent", "OpenAIPcmFormat"],
         "inventory": {"base": None, "current": None},
         "findings": [],
+        "approved_reviewed_bound_movements": [],
+        "reviewed_bound_movement_problem": None,
         "unverified": list(UNVERIFIED),
     }
     kernel = _kernel()
@@ -294,6 +296,7 @@ def inspect_source(base: str) -> dict[str, Any]:
         RecursionError,
     ):
         findings.append(SOURCE + ": source/binding/reference invalid or unsupported; not compared")
+    kernel.apply_reviewed_bound_movement(report, _ROOT, resolved)
     return report
 
 
@@ -314,6 +317,14 @@ def main() -> int:
         print("Runtime inventory: " + json.dumps(report["inventory"], sort_keys=True))
         for finding in report["findings"]:
             print("  - " + finding)
+        for approval in report["approved_reviewed_bound_movements"]:
+            print("  approved reviewed planner bound widening: " + approval)
+        if report["reviewed_bound_movement_problem"]:
+            print(
+                "  reviewed planner bound widening did not cover this diff: "
+                + report["reviewed_bound_movement_problem"],
+                file=sys.stderr,
+            )
         print(
             "Declared realtime constraint identity: "
             + ("rejected" if report["findings"] else "passed")

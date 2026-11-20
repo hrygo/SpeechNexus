@@ -481,6 +481,14 @@ export interface paths {
      *     bound is never enforced by splitting, truncating or silently shortening
      *     the text, so a `tts` Job synthesizes exactly the text it was admitted
      *     with and at most what `/v1/audio/speech` accepts for one `input`.
+     *     A `tts` inline `text` that satisfies the declared 4096-character bound
+     *     can still exceed the selected binding's declared `max_input_codepoints`
+     *     or the effective planner budget (`planner.max_chars`, defaulted from the
+     *     binding preset and raised only by `overrides.tts.planner`). That is the
+     *     same one-synthesis limit, answered with the same 422
+     *     `unsupported_parameter`, but by admission rather than by the shape gate:
+     *     it is still decided inside the create transaction, before any Job row
+     *     exists, so no `202` is returned for text dispatch would reject.
      *
      *     Independent of every field bound, the request body has a byte ceiling.
      *     It is a deployment setting rather than a contract constant; the
@@ -1391,6 +1399,12 @@ export interface components {
        *     (4096) characters: one request synthesizes its `input` exactly once
        *     and never splits, truncates, or silently shortens it. Text above the
        *     bound is refused as `400` `invalid_request` with `param: input`.
+       *     Within the bound, the selected binding may declare a smaller
+       *     `max_input_codepoints` and the request's own `planner.max_chars` may
+       *     budget less; the effective one-synthesis bound is the tighter of the
+       *     two, and text above it is refused before any engine call as `422`
+       *     `unsupported_parameter` with `param: input` rather than being sent to
+       *     an engine that would reject it.
        *     `POST /v1/nexus/jobs` enforces the same bound on `TtsJobInput.text`
        *     but reports the same condition as `422` `unsupported_parameter`
        *     (the asynchronous entry classifies a body that does not match the
@@ -1465,6 +1479,17 @@ export interface components {
       /** @constant */
       audio_delivery?: "complete";
       seed?: number | null;
+      /**
+       * @description Per-request file-TTS planner budget. `max_chars` is the most text one
+       *     synthesis accepts. It defaults to the serving chain's declared budget
+       *     (400 in the reference deployments; a binding's own preset is capped at
+       *     400 by the preset contract) and a request may raise it to 4096, the
+       *     same `MAX_SPEECH_TEXT_CHARS` an `input` body declares. The effective
+       *     bound is the tighter of `max_chars` and the selected binding's
+       *     declared `max_input_codepoints`, and text above it is refused as
+       *     `422` `unsupported_parameter` with `param: input` before any engine
+       *     call.
+       */
       planner?: {
         max_chars?: number;
         max_wait_ms?: number;
@@ -1478,6 +1503,7 @@ export interface components {
       instructions?: string | null;
       speed?: number;
       seed?: number | null;
+      /** @description Per-request file-TTS planner budget. `max_chars` is the most text one synthesis accepts; it defaults to the serving chain's declared budget (400 in the reference deployments, and a binding preset is capped at 400) and a request may raise it to 4096, the same MAX_SPEECH_TEXT_CHARS a public body declares. The effective bound is the tighter of `max_chars` and the selected binding's declared max_input_codepoints; a request above it is refused at admission, not at dispatch. */
       planner?: {
         max_chars?: number;
         max_wait_ms?: number;
@@ -1721,6 +1747,12 @@ export interface components {
            *     synthesis, so the body bound is the same `MAX_SPEECH_TEXT_CHARS`
            *     (4096) that `input` on `/v1/audio/speech` declares; longer text is
            *     rejected instead of being split, truncated, or silently shortened.
+           *     Within the bound, the selected binding may declare a smaller
+           *     `max_input_codepoints` and the Job's own `planner.max_chars`
+           *     (binding preset or `overrides.tts.planner`) may budget less; the
+           *     effective one-synthesis bound is the tighter of the two, and a Job
+           *     above it is refused at admission, before any Job row exists, so a
+           *     caller never receives `202` for text dispatch would reject.
            *     This asynchronous entry reports an over-bound body as `422`
            *     `unsupported_parameter`, while `/v1/audio/speech` reports the same
            *     condition as `400` `invalid_request` with `param: input`. The two
@@ -2695,6 +2727,7 @@ export interface components {
     /** @enum {string} */
     AudioDeliveryMode: "complete" | "chunked";
     pronunciation_revision: components["schemas"]["Revision"] | null;
+    /** @description Per-request file-TTS planner budget. `max_chars` is the most text one synthesis accepts; it defaults to the serving chain's declared budget (400 in the reference deployments, and a binding preset is capped at 400) and a request may raise it to 4096, the same MAX_SPEECH_TEXT_CHARS a public body declares. The effective bound is the tighter of `max_chars` and the selected binding's declared max_input_codepoints; a request above it is refused at admission, not at dispatch. */
     planner: {
       max_chars?: number;
       max_wait_ms?: number;

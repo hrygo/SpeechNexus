@@ -13,10 +13,12 @@ coupled constraints found by hand in issue #690 were never pinned by a test:
   the 503 ``job_unavailable`` storage-outage code, whose message and retry shape
   did not describe missing capacity provisioning. A failed storage read keeps the
   503 answer, so the two cases stay distinguishable in both directions;
-* the admission plan rebuilds a ``SpeechPlan`` from the full body text, whose own
-  ceiling is 4096 code points, so 4097 characters are refused. #690 narrowed
-  ``TtsJobInput.text.maxLength`` to that same ceiling, so the refusal is now the
-  contract's declared 422 ``unsupported_parameter`` and happens before admission;
+* the admission plan rebuilds a ``SpeechPlan`` from the full body text under
+  ``min(planner.max_chars, binding.max_input_codepoints)`` (#1073), so a body above
+  either budget is refused at admission, while 4097 characters are refused by
+  ``TtsJobInput.text.maxLength`` before admission ever runs. #690 narrowed that
+  declared bound to the contract's 4096 ceiling, so both cases answer the same
+  declared 422 ``unsupported_parameter``;
 * a body over the deployment receive bound answers the declared 413
   ``PayloadTooLarge`` with code ``job_request_too_large`` (#703), which is a
   different code from both the 400 an unparsable document gets and the 422 above,
@@ -94,10 +96,13 @@ Boundaries -- what this module does not claim:
   assertion with the observed value, which is a scenario change to re-derive,
   not a flake to delete.
 * ``PLAN_TEXT_CEILING`` and ``CONTRACT_TEXT_CEILING`` are the same 4096 number
-  since #690, so the text-ceiling case asserts one ceiling through two layers.
-  #703 declared the receive bound and gave it 413 ``job_request_too_large``, so
-  the two ceilings are pinned to two different codes here; moving one back onto
-  the other's status or code must update these cases in the same change.
+  since #690, and #1073 added a third layer above them: the effective bound is
+  ``min(planner.max_chars, binding.max_input_codepoints)``, so the text-ceiling
+  case states the raised planner for its accepted body and proves the preset-only
+  body is refused. #703 declared the receive bound and gave it 413
+  ``job_request_too_large``, so the two ceilings are pinned to two different codes
+  here; moving one back onto the other's status or code must update these cases in
+  the same change.
 """
 
 from __future__ import annotations
@@ -425,23 +430,29 @@ async def test_admitted_tts_create_writes_job_intent_and_reservation(
 async def test_text_above_the_plan_ceiling_is_refused_without_rows(
     admission_database: AdmissionDatabase,
 ) -> None:
-    """4096 code points are accepted and 4097 are refused by the contract.
+    """One synthesis accepts 4096 code points only when the planner allows them.
 
-    #690 narrowed ``TtsJobInput.text.maxLength`` to the admission plan's ceiling,
-    so the refusal is the declared 422 ``unsupported_parameter`` and it happens at
-    the contract check: the document never reaches admission, which is why no row
-    and no in-place counter moves. A body over the receive bound instead answers
-    the declared 413 ``job_request_too_large`` of #703.
+    #1073 makes the effective one-synthesis bound
+    ``min(planner.max_chars, binding.max_input_codepoints)``, judged at admission on
+    both entries. The at-limit body therefore states the raised planner explicitly
+    (``overrides.tts.planner.max_chars``); the same 4096 code points without it stay
+    above the planner preset and answer the declared 422 ``unsupported_parameter``,
+    which is why the accepted set is proved with the budget the request declares.
+    4097 is refused by ``TtsJobInput.text.maxLength`` itself, so it never reaches
+    admission. Every refusal happens before any row exists, so no in-place counter
+    moves; a body over the receive bound instead answers the declared 413
+    ``job_request_too_large`` of #703.
     """
     _seed(admission_database)
     db = admission_database.runtime.foundation.database
     _add_spare_host(db)
     _grant_capacity(db)
+    raised_planner = {"tts": {"planner": {"max_chars": PLAN_TEXT_CEILING}}}
     async with AsyncClient(
         transport=ASGITransport(app=_app(admission_database)), base_url="http://test"
     ) as client:
         before = _snapshot(db)
-        at_limit = _body(input={"text": "中" * PLAN_TEXT_CEILING})
+        at_limit = _body(input={"text": "中" * PLAN_TEXT_CEILING}, overrides=raised_planner)
         accepted = await client.post(
             PREFIX, json=at_limit, headers={"Idempotency-Key": "synthetic-at-plan-ceiling"}
         )
@@ -449,8 +460,8 @@ async def test_text_above_the_plan_ceiling_is_refused_without_rows(
         after_limit = _snapshot(db)
         _expect_reservation(before, after_limit)
 
-        over_limit = _body(input={"text": "中" * (PLAN_TEXT_CEILING + 1)})
-        # The body stays far below the receive bound, so only the plan's own text
+        over_limit = _body(input={"text": "中" * (PLAN_TEXT_CEILING + 1)}, overrides=raised_planner)
+        # The body stays far below the receive bound, so only the contract's own text
         # ceiling can explain this refusal.
         assert _wire_bytes(over_limit) < _settings().job_receive_max_bytes
         refused = await client.post(
@@ -461,6 +472,22 @@ async def test_text_above_the_plan_ceiling_is_refused_without_rows(
         assert (code, kind, retryable) == ("unsupported_parameter", "invalid_request_error", False)
         # The refusal committed nothing: the accepted attempt is still the only
         # reservation, and no quota, node-budget or instance-slot counter moved.
+        assert _snapshot(db) == after_limit
+
+        # The planner preset still bounds the same text when the caller does not raise
+        # it, and that refusal is the same declared 422 with nothing written.
+        default_bounded = _body(input={"text": "中" * PLAN_TEXT_CEILING})
+        refused_default = await client.post(
+            PREFIX,
+            json=default_bounded,
+            headers={"Idempotency-Key": "synthetic-default-planner-ceiling"},
+        )
+        assert refused_default.status_code == 422, refused_default.text
+        assert _error(refused_default) == (
+            "unsupported_parameter",
+            "invalid_request_error",
+            False,
+        )
         assert _snapshot(db) == after_limit
 
 

@@ -145,6 +145,7 @@ export interface components {
       instructions?: string | null;
       speed?: number;
       seed?: number | null;
+      /** @description Per-request file-TTS planner budget. `max_chars` is the most text one synthesis accepts; it defaults to the serving chain's declared budget (400 in the reference deployments, and a binding preset is capped at 400) and a request may raise it to 4096, the same MAX_SPEECH_TEXT_CHARS a public body declares. The effective bound is the tighter of `max_chars` and the selected binding's declared max_input_codepoints; a request above it is refused at admission, not at dispatch. */
       planner?: {
         max_chars?: number;
         max_wait_ms?: number;
@@ -479,6 +480,7 @@ export interface components {
     External_shared_speech_overrides_schema_json_audio_delivery: components["schemas"]["External_shared_capability_domains_schema_json_AudioDeliveryMode"];
     External_shared_speech_overrides_schema_json_pronunciation_revision:
       components["schemas"]["External_shared_identifiers_schema_json_Revision"] | null;
+    /** @description Per-request file-TTS planner budget. `max_chars` is the most text one synthesis accepts; it defaults to the serving chain's declared budget (400 in the reference deployments, and a binding preset is capped at 400) and a request may raise it to 4096, the same MAX_SPEECH_TEXT_CHARS a public body declares. The effective bound is the tighter of `max_chars` and the selected binding's declared max_input_codepoints; a request above it is refused at admission, not at dispatch. */
     External_shared_speech_overrides_schema_json_planner: {
       max_chars?: number;
       max_wait_ms?: number;

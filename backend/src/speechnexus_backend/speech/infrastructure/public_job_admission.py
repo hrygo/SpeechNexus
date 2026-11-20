@@ -61,7 +61,14 @@ from speechnexus_backend.speech.domain.runtime_intents import (
     RuntimeHost,
     RuntimeRejectedError,
 )
-from speechnexus_backend.speech.domain.speech_synthesis import SpeechFormat, SpeechPlan
+from speechnexus_backend.speech.domain.speech_synthesis import (
+    MAX_SPEECH_TEXT_CHARS,
+    PLANNER_CHARS_MAX,
+    PLANNER_CHARS_MIN,
+    SpeechFormat,
+    SpeechPlan,
+    speech_text_bound,
+)
 from speechnexus_backend.speech.domain.transcription import TranscriptFormat
 from speechnexus_backend.speech.domain.voice_capability_evidence import VoiceMaterial
 from speechnexus_backend.speech.infrastructure.admission_codec import (
@@ -221,6 +228,7 @@ def binding_gate(
     plan: ApprovedRuntimePlan | None = None,
     instance: dict[str, Any] | None = None,
     effective: dict[str, Any] | None = None,
+    text: str | None = None,
 ) -> dict[str, Any] | None:
     """The create path's binding gates, at the point a create applies each one.
 
@@ -238,6 +246,10 @@ def binding_gate(
       create would use (binding block plus request overrides); the report passes
       the binding block alone, which is the same value for every request the
       public contract allows, because it cannot override these two fields.
+      ``text`` is the body a create is admitting: when given, the gate also judges
+      it against ``min(planner chunk budget, binding input ceiling)``, the same
+      boundary the synchronous route applies before admission and the gateway
+      enforces at dispatch. A report has no body, so it passes none.
 
     They stay three calls because non-binding refusals sit between them (the
     workspace quota before the plan is read, the approved plan before its
@@ -272,7 +284,63 @@ def binding_gate(
         or parameters.get("audio_delivery") != "complete"
     ):
         raise PublicJobAdmissionRejectedError("job_binding_incomplete")
+    if text is not None and len(text) > _tts_text_bound(definition, parameters):
+        raise PublicJobAdmissionRejectedError("unsupported_parameter")
     return None
+
+
+def _inline_text(value: Any) -> str | None:
+    """The inline text a Job request carries, or ``None`` when the shape names none.
+
+    A ``text_asset_id`` request and a body without a string ``text`` carry no
+    inline body; their shape refusals stay after the gate, so the bound here must
+    not turn them into a different answer.
+    """
+    if not isinstance(value, dict):
+        return None
+    text = value.get("text")
+    return text if isinstance(text, str) else None
+
+
+def _tts_text_bound(definition: dict[str, Any], parameters: dict[str, Any]) -> int:
+    """Characters one ``tts`` Job may carry, judged at admission.
+
+    The binding's model-domain ceiling belongs to the same declaration the
+    synchronous route narrows against; a definition that publishes none is
+    bounded by the contract's own one-synthesis ceiling rather than by nothing.
+    The planner budget must be a declared integer because the command and the
+    gateway both state it.
+    """
+    domains = definition.get("parameter_domains")
+    domain = domains.get("tts") if isinstance(domains, dict) else None
+    ceiling = domain.get("max_input_codepoints") if isinstance(domain, dict) else None
+    if type(ceiling) is not int:
+        ceiling = MAX_SPEECH_TEXT_CHARS
+    planner = parameters.get("planner")
+    planner_max_chars = planner.get("max_chars") if isinstance(planner, dict) else None
+    if type(planner_max_chars) is not int:
+        raise PublicJobAdmissionRejectedError("job_binding_incomplete")
+    return speech_text_bound(planner_max_chars, ceiling)
+
+
+def _effective_planner(block: dict[str, Any], intent: dict[str, Any]) -> dict[str, Any]:
+    """The planner budget one Job runs with: binding preset plus request override.
+
+    A request may set either planner field; merging field by field keeps the
+    preset for the one it omits. The chunk budget is capped at the service's
+    one-synthesis ceiling, so admission and the dispatched command name one
+    value and no binding or caller can state more than the contract declares.
+    """
+    declared = block.get("planner")
+    if not isinstance(declared, dict):
+        raise PublicJobAdmissionRejectedError("job_binding_incomplete")
+    override = _overrides(intent, "tts").get("planner")
+    planner = {**declared, **override} if isinstance(override, dict) else dict(declared)
+    maximum = planner.get("max_chars")
+    if type(maximum) is not int or maximum < PLANNER_CHARS_MIN:
+        raise PublicJobAdmissionRejectedError("job_binding_incomplete")
+    planner["max_chars"] = min(maximum, PLANNER_CHARS_MAX)
+    return planner
 
 
 def _binding(cursor: _Cursor, model_id: str, revision: str) -> tuple[str, int, dict[str, Any]]:
@@ -759,7 +827,9 @@ def _tts_parameters(
         "instructions": merged["instructions"],
         "speed": merged["speed"],
         "seed": merged["seed"],
-        "planner": merged["planner"],
+        # The same effective budget admission judged, never the raw preset plus a
+        # partial override (which would drop the field the caller omitted).
+        "planner": _effective_planner(block, intent),
         "response_format": audio_format,
     }
 
@@ -899,19 +969,24 @@ def build_public_job_admission(
         }
     elif job.kind == "tts":
         assert block is not None
+        merged = {**block, **_overrides(intent, "tts")}
+        planner = _effective_planner(block, intent)
+        merged["planner"] = planner
         voice = _voice(cursor, intent)
         pronunciation, pronunciation_source = _pronunciation(cursor, intent, block)
-        merged = {**block, **_overrides(intent, "tts")}
+        # The text bound is part of the request semantics this gate already owns,
+        # so it is judged here -- inside the create transaction, before any Job
+        # row exists -- instead of being left to dispatch. The refusal order is
+        # unchanged: the gate still decides before the input shape below, and an
+        # input with no inline text is judged by the shape, not by this bound.
         binding_gate(
             stage="request",
             binding_revision_id=binding_revision_id,
             definition=definition,
             kind=job.kind,
             effective=merged,
+            text=_inline_text(intent["input"]),
         )
-        planner = merged.get("planner")
-        if not isinstance(planner, dict):
-            planner = block["planner"]
         request_input = intent["input"]
         if "text_asset_id" in request_input:
             raise PublicJobAdmissionRejectedError("job_text_asset_unsupported")

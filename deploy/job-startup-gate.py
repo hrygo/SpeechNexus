@@ -77,6 +77,7 @@ from speechnexus_backend.job_dispatch_runtime import (
     DISPATCH_VOICE_VALIDATION_PROBES,
 )
 from speechnexus_backend.speech.domain.job_dispatch import DISPATCHABLE_JOB_KIND_UNION
+from speechnexus_backend.speech.domain.lane_selection import resident_tts_variant_findings
 from speechnexus_backend.speech.infrastructure.artifact_schema import ARTIFACT_INSERT_COLUMNS
 from speechnexus_backend.speech.infrastructure.coordination_grants import SPEECH_UPDATES
 
@@ -174,12 +175,6 @@ GATEWAY_CONFIGS = {
     "voice_design": "gateway-file-voice-design.json",
     "voice_clone": "gateway-file-voice-clone.json",
 }
-
-# The lanes whose config the gateway loads *instead of* the others: one gateway
-# process runs one resident TTS variant, because Base, VoiceDesign and CustomVoice
-# are three separate checkpoint/task loads
-# (`execution-gateway/src/speechnexus_gateway/file_speech_runtime.py:179`).
-RESIDENT_VARIANT_KINDS = frozenset({"tts", "voice_design", "voice_clone"})
 IDENTIFIER = re.compile(r"[a-z][a-z0-9_]{2,62}")
 PROBE_TABLE = re.compile(r"\bFROM\s+([A-Za-z0-9_]+)")
 
@@ -448,7 +443,9 @@ def gateway_lane_findings(kinds: Sequence[str]) -> list[str]:
     without an assembled gateway config would be claimed and then fail at submit
     or publication time - exactly the "fails after claim" shape this gate exists
     to remove. Both the typo case and the known-but-unassembled case are failures;
-    the messages differ so an operator can tell them apart.
+    the messages differ so an operator can tell them apart. The resident-variant
+    rule lives in the domain (`speechnexus_backend.speech.domain.lane_selection`)
+    because the read-only pre-deployment self-check applies the same one.
     """
     findings: list[str] = []
     for kind in dict.fromkeys(kinds):
@@ -466,27 +463,7 @@ def gateway_lane_findings(kinds: Sequence[str]) -> list[str]:
                 "lane (private gateway config, SPEECHNEXUS_GATEWAY_FILE_*_CONFIG_FILE and "
                 "GATEWAY_CONFIGS) before enabling it"
             )
-    return [*findings, *resident_variant_findings(kinds)]
-
-
-def resident_variant_findings(kinds: Sequence[str]) -> list[str]:
-    """Refuse a kinds selection one gateway cannot serve at all.
-
-    The gateway loads one resident TTS variant - CustomVoice (`tts`), VoiceDesign
-    or Base clone - because the three are separate checkpoint/task loads
-    (`execution-gateway/src/speechnexus_gateway/file_speech_runtime.py:179`). A
-    selection naming two of them could never be served by the gateway this
-    bootstrap stands up, so it is refused here instead of failing after the claim.
-    """
-    selected = [kind for kind in dict.fromkeys(kinds) if kind in RESIDENT_VARIANT_KINDS]
-    if len(selected) < 2:
-        return []
-    return [
-        f"{KINDS_ENV} names {', '.join(selected)}: this gateway serves one resident TTS "
-        "variant at a time (CustomVoice, VoiceDesign or Base clone are three separate "
-        "engine loads and the gateway refuses to start with two configured). Select the "
-        "one variant this deployment runs"
-    ]
+    return [*findings, *resident_tts_variant_findings(kinds, kinds_env=KINDS_ENV)]
 
 
 def gateway_config_findings(

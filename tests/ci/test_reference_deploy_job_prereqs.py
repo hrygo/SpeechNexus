@@ -335,8 +335,14 @@ class DispatcherStartupGateTests(unittest.TestCase):
         # #1075: the two voice lanes are assembled under the same naming rule.
         self.assertIn('"voice_design": "gateway-file-voice-design.json"', gate)
         self.assertIn('"voice_clone": "gateway-file-voice-clone.json"', gate)
-        self.assertIn("def resident_variant_findings(", gate)
-        self.assertIn("RESIDENT_VARIANT_KINDS", gate)
+        # The resident-variant rule is the domain function the self-check also
+        # calls; the gate must not grow a second spelling of it (#1075).
+        self.assertIn(
+            "from speechnexus_backend.speech.domain.lane_selection import "
+            "resident_tts_variant_findings",
+            gate,
+        )
+        self.assertIn("resident_tts_variant_findings(kinds, kinds_env=KINDS_ENV)", gate)
 
     def test_the_gate_covers_the_post_claim_write_columns(self) -> None:
         # Every relation the dispatcher writes after a claim must be named: the Job

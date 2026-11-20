@@ -521,9 +521,31 @@ WRITER_DELETE_TABLES: tuple[str, ...] = ("speech_job_intents", "speech_voice_dra
 DISPATCHABLE_KINDS = frozenset({"asr", "tts", "voice_design", "voice_clone", "voice_validation"})
 # 本参考部署装配的车道:deploy/compose.yaml 把 asr 的私有 gateway 配置与一条常驻 TTS
 # 变体(tts、voice_design 或 voice_clone,由 compose.env 选择)传给 gateway,启动闸门的
-# GATEWAY_CONFIGS 与之相同。voice_validation 的车道仍未装配,会被 worker 认领后在提交/
-# 发布阶段失败,所以与闸门一样判 FAIL,而不是留作部署后再说。
+# GATEWAY_CONFIGS 与之相同(该集合由 tests/unit/test_async_job_prereqs_check.py 逐字比对,
+# 两边一起改才绿)。voice_validation 的车道仍未装配,会被 worker 认领后在提交/发布阶段
+# 失败,所以与闸门一样判 FAIL,而不是留作部署后再说。
 ASSEMBLED_KINDS = frozenset({"asr", "tts", "voice_design", "voice_clone"})
+# 常驻 TTS 变体的互斥规则不在这里写第二份:闸门调用
+# `speechnexus_backend.speech.domain.lane_selection.resident_tts_variant_findings`,
+# 预检也调用同一个函数,否则"预检通过、闸门必拒"就是下一次漂移。
+_BACKEND_SRC = REPO_ROOT / "backend/src"
+
+
+def resident_variant_findings(kinds: list[str]) -> list[str]:
+    """按闸门的同一函数判定 kinds 是否点名了两条常驻 TTS 变体。
+
+    `lane_selection` 只依赖标准库,所以没有 workspace venv 时也能从本检出直接导入;
+    有 venv 时导入的是同一个文件(editable 安装指向同一目录),不存在第二份规则。
+    """
+    source = str(_BACKEND_SRC)
+    if source not in sys.path:
+        sys.path.insert(0, source)
+    from speechnexus_backend.speech.domain.lane_selection import (
+        resident_tts_variant_findings,
+    )
+
+    return resident_tts_variant_findings(kinds)
+
 
 # 本次运行按部署前还是部署后判定;pre 表示私有配置/容器/ready 实例还不存在。
 Phase = Literal["pre", "post"]
@@ -1223,6 +1245,10 @@ def check_dispatch_role(
             "要么先装配车道(私有 gateway 配置、SPEECHNEXUS_GATEWAY_FILE_*_CONFIG_FILE "
             "与闸门的 GATEWAY_CONFIGS)"
         )
+    # 与闸门同一条规则、同一段文案:一次点名两条常驻 TTS 变体,闸门会在领取前拒绝,
+    # 预检必须给出同一个结论,否则操作者会以为这个 kinds 组合可以启动。
+    for finding in resident_variant_findings(kinds):
+        check.fail(finding)
     if offline or dsn is None:
         check.probe("运行时: SKIP — 未执行角色/授权探测")
         return check

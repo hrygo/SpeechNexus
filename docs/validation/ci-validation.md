@@ -660,9 +660,21 @@ uv run pytest tests/ci tests/contract/test_ci_workflow.py tests/unit/test_integr
 
 此前 `records` 存的是分目录绝对计数（2026-11-17 刷新后为 `docs/reviews`：`AMBIGUOUS=127`、`MISSING=24`、`OUT_OF_RANGE=3`；`docs/validation`：`AMBIGUOUS=1`）。这段数字是历史记录，保留原样；但它要有人记得刷新，而没人会为「增量显示」去刷，基线一旧，`RECORDS` 上的差就被读成本片引入的问题（#1063）。**此后不再手工刷新基线来对齐计数，增量按基线键集合差计算。**
 
-`--write-baseline` 因此只剩两件事：按当前结果重写 `terminal`，以及把当前的过程记录问题键快照进 `records`。刷新 `records` 是可选的，只把「已见过」的边界前移，不改变任何判定——新增记录即使从未刷新也显示 `new=+N`。写入时若 `docs/reviews/` 有布局问题仍拒绝写入。
+`--write-baseline` 重写 `terminal`（已接受集合）与 `records`（过程记录问题键快照）。它默认**拒绝**把基线里没有的终态问题写成「已接受」——`terminal` 是「已接受」白名单，一条没人看过的新问题被一条命令写进去，门禁就被静默打开了。遇到新终态键时逐条列出并以 1 退出，基线文件保持原字节；确认看过之后加 `--accept-new-terminal` 才写，并打印已接受条数。重写已消失的旧键是收紧，不需要开关。不传 `--baseline` 时没有「已接受」参照，所有终态问题都算新增，所以维护已接受集合要同时给 `--baseline <原基线>`。刷新 `records` 只是把「已见过」的边界前移，可选且不改变任何判定：新增记录即使从未刷新也显示 `new=+N`。`docs/reviews/` 有布局问题时仍拒绝写入。
 
-输出固定四段：逐条问题（终态问题在前，新增标注 `[新增,基线外]`、基线已接受标注 `[基线已接受]`；过程记录默认只给计数，`--show-records` 逐条打印）、`SUMMARY`（`refs` 参与判定的引用数、`fenced` 围栏内跳过数、`fenced_terminal` 其中来自终态文档的条数、各判定计数）、`SCOPE`（终态问题数与过程记录的当前分目录计数）、`RECORDS`（带基线时给出与基线键集合的差 `new=+N stale=+M`，明细按目录与判定分列）、`RESULT PASS|FAIL`。退出码 0 表示没有新增终态问题（过程记录的增减不影响），1 表示有新增终态问题或目录布局不合约定，2 表示环境不可用（不在 git 仓库、扫描路径不存在、基线不可读）。
+```text
+$ # 干净树：没有新终态键，直接写
+WROTE scripts/dev-env/doc-refs-baseline.json terminal=0 records=166
+
+$ # 引入一条新终态问题后不加开关（逐条 [新增,基线外] 略）
+REFUSED 基线里没有的终态问题 1 条，未写基线：…  # exit=1，基线文件逐字节不变
+
+$ # 加 --accept-new-terminal（并用 --baseline 指向原基线）
+ACCEPTED new-terminal=1  已接受 1 条新终态问题（--accept-new-terminal），它们从此不再门禁
+WROTE scripts/dev-env/doc-refs-baseline.json terminal=1 records=166
+```
+
+输出固定五段：逐条问题（终态问题在前，新增标注 `[新增,基线外]`、基线已接受标注 `[基线已接受]`；过程记录默认只给计数，`--show-records` 逐条打印）、`SUMMARY`（`refs` 参与判定的引用数、`fenced` 围栏内跳过数、`fenced_terminal` 其中来自终态文档的条数、各判定计数）、`SCOPE`（终态问题数与过程记录的当前分目录计数）、`RECORDS`（带基线时给出与基线键集合的差 `new=+N stale=+M`，明细按目录与判定分列）、`RESULT PASS|FAIL`。退出码 0 表示没有新增终态问题（过程记录的增减不影响），1 表示有新增终态问题或目录布局不合约定，2 表示环境不可用（不在 git 仓库、扫描路径不存在、基线不可读）。
 
 ### 过程记录增量实跑（#1063）
 

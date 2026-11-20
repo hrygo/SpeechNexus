@@ -60,7 +60,11 @@
 
 棘轮:`--baseline` 只对基线之外(新增)的终态问题变红,基线为空时等价全量门禁.
   当前基线是 `scripts/dev-env/doc-refs-baseline.json`.新增终态问题只能通过改
-  基线文件「接受」,那次改动在 PR diff 里可见,不是静默放行.
+  基线文件「接受」,那次改动在 PR diff 里可见,不是静默放行.`--write-baseline`
+  也守这条线:它默认拒绝把基线里没有的终态问题写进 `terminal`,并逐条列出,必须
+  再加 `--accept-new-terminal` 才写,且打印「已接受 N 条新终态问题」;重写已消失
+  的旧键是收紧,不需要开关.否则「跑一次 --write-baseline」就能把一条没人看过的
+  新问题永久写成「已接受」,门禁被一条命令静默打开.
 
 过程记录在基线里存的是**问题键集合**(`<记录文件>::<引用>::<判定>`),不是绝对
 计数,报告按「与基线键集合的差」给出 `RECORDS new=+N stale=+M`:
@@ -93,7 +97,9 @@ JSON 是给机器消费的,把两千多条 OK 行加进去只会淹没真正的�
   scripts/dev-env/check-doc-refs.py                  # 报告,并按基线门禁终态文档
   scripts/dev-env/check-doc-refs.py --baseline scripts/dev-env/doc-refs-baseline.json
   scripts/dev-env/check-doc-refs.py --write-baseline scripts/dev-env/doc-refs-baseline.json
-                                             # 快照当前的问题键;刷新只影响增量显示
+                                             # 快照当前的问题键(过程记录刷新只影响
+                                             # 增量显示);同一命令默认拒绝接受**新的**
+                                             # 终态问题,需 --accept-new-terminal
   scripts/dev-env/check-doc-refs.py --path docs/operations --path deploy
   scripts/dev-env/check-doc-refs.py --show-records   # 逐条打印过程记录的问题
   scripts/dev-env/check-doc-refs.py --show           # 只打印问题项, 并附被引用行的原文
@@ -804,6 +810,14 @@ def main() -> int:
         help="棘轮基线 JSON；省略时不接受任何终态文档问题（等于全量门禁）",
     )
     ap.add_argument(
+        "--accept-new-terminal",
+        action="store_true",
+        help=(
+            "配合 --write-baseline：显式接受基线里没有的终态问题；缺省拒绝写入，"
+            "避免一条命令把没看过的新问题写成「已接受」"
+        ),
+    )
+    ap.add_argument(
         "--write-baseline",
         type=Path,
         default=None,
@@ -848,6 +862,9 @@ def main() -> int:
         return 2
     if args.fix and args.write_baseline is not None:
         print("--fix 不能与 --write-baseline 同时使用", file=sys.stderr)
+        return 2
+    if args.accept_new_terminal and args.write_baseline is None:
+        print("--accept-new-terminal 需要与 --write-baseline 一起使用", file=sys.stderr)
         return 2
     if args.fix and args.json:
         print("--fix 不能与 --json 同时使用", file=sys.stderr)
@@ -909,6 +926,20 @@ def main() -> int:
     new_keys = terminal_keys - accepted
     stale_keys = accepted - terminal_keys
 
+    # 逐条展示与 --write-baseline 的守卫共用同一份切分:新的终态问题在前,
+    # 基线已接受的在后面单独标注.放在写基线之前,写基线时才能逐条列出它要
+    # 接受什么,而不是只印一个计数.
+    remaining = Counter(new_keys)
+    new_terminal: list[RefResult] = []
+    accepted_terminal: list[RefResult] = []
+    for r in terminal_problems:
+        key = problem_key(r)
+        if remaining[key] > 0:
+            remaining[key] -= 1
+            new_terminal.append(r)
+        else:
+            accepted_terminal.append(r)
+
     record_counts: dict[str, Counter[str]] = {}
     for r in record_problems:
         record_counts.setdefault(record_bucket(r["doc"]), Counter())[r["verdict"]] += 1
@@ -928,6 +959,26 @@ def main() -> int:
                 print(f"LAYOUT {repo_path}  {reason}", file=sys.stderr)
             print("过程记录目录不合审查报告约定，未写基线", file=sys.stderr)
             return 1
+        # `terminal` 是「已接受」白名单.把一条没人看过的新问题写成「已接受」,
+        # 等于用一条命令静默打开门禁,所以新增终态键必须显式接受;把已消失的
+        # 旧键重写掉是收紧,不需要开关.
+        if new_keys:
+            for r in new_terminal:
+                print_ref(r, show=False, marker="  [新增,基线外]")
+            if not args.accept_new_terminal:
+                print(
+                    f"REFUSED 基线里没有的终态问题 {sum(new_keys.values())} 条，未写基线："
+                    "`--write-baseline` 不会静默把它们写成「已接受」；确认要接受后加 "
+                    "`--accept-new-terminal`（并用 `--baseline` 指向前一份基线，"
+                    "否则其余已接受项也会被当成新增）",
+                    file=sys.stderr,
+                )
+                return 1
+            print(
+                f"ACCEPTED new-terminal={sum(new_keys.values())}  "
+                f"已接受 {sum(new_keys.values())} 条新终态问题（--accept-new-terminal），"
+                "它们从此不再门禁"
+            )
         payload = baseline_payload(terminal_keys, list(record_keys.elements()))
         try:
             args.write_baseline.write_text(
@@ -941,18 +992,6 @@ def main() -> int:
             f"records={sum(record_keys.values())}"
         )
         return 0
-
-    # 逐条展示:新的终态问题(红灯原因)在前,基线已接受的在后面单独标注.
-    remaining = Counter(new_keys)
-    new_terminal: list[RefResult] = []
-    accepted_terminal: list[RefResult] = []
-    for r in terminal_problems:
-        key = problem_key(r)
-        if remaining[key] > 0:
-            remaining[key] -= 1
-            new_terminal.append(r)
-        else:
-            accepted_terminal.append(r)
 
     if args.json:
         print(

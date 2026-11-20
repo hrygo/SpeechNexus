@@ -745,7 +745,8 @@ class ShowTierTests(unittest.TestCase):
         repo = Repository(self)
         repo.write(TERMINAL_DOC, f"实现见 `{GHOST_REF}`。\n")
         repo.track()
-        self.assertEqual(repo.run("--write-baseline", "baseline.json").returncode, 0)
+        written = repo.run("--write-baseline", "baseline.json", "--accept-new-terminal")
+        self.assertEqual(written.returncode, 0, written.stdout + written.stderr)
         accepted = repo.run("--baseline", "baseline.json", "--show")
         self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
         self.assertIn("[MISSING]", accepted.stdout)
@@ -767,7 +768,7 @@ class RatchetTests(unittest.TestCase):
         repo = Repository(self)
         repo.write(TERMINAL_DOC, f"实现见 `{GHOST_REF}`。\n")
         repo.track()
-        written = repo.run("--write-baseline", "baseline.json")
+        written = repo.run("--write-baseline", "baseline.json", "--accept-new-terminal")
         self.assertEqual(written.returncode, 0, written.stdout + written.stderr)
         self.assertIn("terminal=1", written.stdout)
         payload = json.loads((repo.root / "baseline.json").read_text(encoding="utf-8"))
@@ -790,7 +791,8 @@ class RatchetTests(unittest.TestCase):
         repo = Repository(self)
         repo.write(TERMINAL_DOC, f"实现见 `{GHOST_REF}`。\n")
         repo.track()
-        self.assertEqual(repo.run("--write-baseline", "baseline.json").returncode, 0)
+        written = repo.run("--write-baseline", "baseline.json", "--accept-new-terminal")
+        self.assertEqual(written.returncode, 0, written.stdout + written.stderr)
         repo.write(TERMINAL_DOC, f"实现见 `{REAL_SOURCE}:3`。\n")
         repo.track()
         result = repo.run("--baseline", "baseline.json")
@@ -805,6 +807,114 @@ class RatchetTests(unittest.TestCase):
         result = repo.run("--baseline", "baseline.json")
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn("baseline invalid", result.stderr)
+
+
+class WriteBaselineGuardTests(unittest.TestCase):
+    """`--write-baseline` cannot silently accept a terminal problem.
+
+    `terminal` is the "already reviewed" allow-list. Writing a problem nobody read
+    into it turns the gate off with a single command, so a terminal key that is not
+    in the baseline needs `--accept-new-terminal`. Shrinking the list (a registered
+    problem is gone) is a tightening, not a widening, and needs no switch.
+    """
+
+    def _accepted_one(self) -> Repository:
+        repo = Repository(self)
+        repo.write(TERMINAL_DOC, f"实现见 `{GHOST_REF}`。\n")
+        repo.track()
+        written = repo.run("--write-baseline", "baseline.json", "--accept-new-terminal")
+        self.assertEqual(written.returncode, 0, written.stdout + written.stderr)
+        return repo
+
+    def test_a_new_terminal_problem_is_refused_and_the_file_is_unchanged(self) -> None:
+        repo = self._accepted_one()
+        before = (repo.root / "baseline.json").read_bytes()
+        repo.write(TERMINAL_DOC, f"实现见 `{GHOST_REF}` 与 `{OTHER_GHOST_REF}`。\n")
+        repo.track()
+        refused = repo.run("--baseline", "baseline.json", "--write-baseline", "baseline.json")
+        self.assertEqual(refused.returncode, 1, refused.stdout + refused.stderr)
+        self.assertIn("REFUSED", refused.stderr)
+        self.assertIn("--accept-new-terminal", refused.stderr)
+        # The refused key is listed by name, not hidden behind a count.
+        self.assertIn(OTHER_GHOST_REF, refused.stdout)
+        self.assertIn("[新增,基线外]", refused.stdout)
+        # Byte-for-byte unchanged: a refusal must not leave a half-written baseline.
+        self.assertEqual((repo.root / "baseline.json").read_bytes(), before)
+
+    def test_the_flag_accepts_and_reports_how_many(self) -> None:
+        repo = self._accepted_one()
+        repo.write(TERMINAL_DOC, f"实现见 `{GHOST_REF}` 与 `{OTHER_GHOST_REF}`。\n")
+        repo.track()
+        written = repo.run(
+            "--baseline",
+            "baseline.json",
+            "--write-baseline",
+            "baseline.json",
+            "--accept-new-terminal",
+        )
+        self.assertEqual(written.returncode, 0, written.stdout + written.stderr)
+        self.assertIn("ACCEPTED new-terminal=1", written.stdout)
+        self.assertIn("已接受 1 条新终态问题", written.stdout)
+        payload = json.loads((repo.root / "baseline.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            payload["terminal"],
+            sorted([f"{TERMINAL_DOC}::{GHOST_REF}", f"{TERMINAL_DOC}::{OTHER_GHOST_REF}"]),
+            payload,
+        )
+        accepted = repo.run("--baseline", "baseline.json")
+        self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+        self.assertIn("new=0 accepted=2", accepted.stdout)
+
+    def test_shrinking_an_accepted_problem_needs_no_flag(self) -> None:
+        repo = self._accepted_one()
+        repo.write(TERMINAL_DOC, f"实现见 `{GHOST_REF}` 与 `{OTHER_GHOST_REF}`。\n")
+        repo.track()
+        self.assertEqual(
+            repo.run(
+                "--baseline",
+                "baseline.json",
+                "--write-baseline",
+                "baseline.json",
+                "--accept-new-terminal",
+            ).returncode,
+            0,
+        )
+        # One of the two accepted problems is gone: rewriting is a tightening.
+        repo.write(TERMINAL_DOC, f"实现见 `{GHOST_REF}`。\n")
+        repo.track()
+        shrunk = repo.run("--baseline", "baseline.json", "--write-baseline", "baseline.json")
+        self.assertEqual(shrunk.returncode, 0, shrunk.stdout + shrunk.stderr)
+        self.assertNotIn("ACCEPTED", shrunk.stdout)
+        payload = json.loads((repo.root / "baseline.json").read_text(encoding="utf-8"))
+        self.assertEqual(payload["terminal"], [f"{TERMINAL_DOC}::{GHOST_REF}"], payload)
+
+    def test_a_clean_tree_needs_no_flag(self) -> None:
+        repo = Repository(self)
+        repo.write(TERMINAL_DOC, f"实现见 `{REAL_SOURCE}:3`。\n")
+        repo.track()
+        written = repo.run("--write-baseline", "baseline.json")
+        self.assertEqual(written.returncode, 0, written.stdout + written.stderr)
+        self.assertIn("terminal=0", written.stdout)
+        self.assertNotIn("ACCEPTED", written.stdout)
+
+    def test_without_a_baseline_reference_every_terminal_problem_is_new(self) -> None:
+        # No `--baseline`: there is nothing to have accepted before, so even the
+        # first terminal problem must be accepted explicitly. Say so in the error.
+        repo = Repository(self)
+        repo.write(TERMINAL_DOC, f"实现见 `{GHOST_REF}`。\n")
+        repo.track()
+        refused = repo.run("--write-baseline", "baseline.json")
+        self.assertEqual(refused.returncode, 1, refused.stdout + refused.stderr)
+        self.assertIn("REFUSED", refused.stderr)
+        self.assertFalse((repo.root / "baseline.json").exists())
+
+    def test_the_flag_without_write_baseline_is_an_environment_error(self) -> None:
+        repo = Repository(self)
+        repo.write(TERMINAL_DOC, f"实现见 `{REAL_SOURCE}:3`。\n")
+        repo.track()
+        result = repo.run("--accept-new-terminal")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("--accept-new-terminal 需要与 --write-baseline 一起使用", result.stderr)
 
 
 class CommittedStateTests(unittest.TestCase):
@@ -969,6 +1079,7 @@ class WorkflowTests(unittest.TestCase):
             "一级标题须含审查",
             "--fix",
             "--show-ok",
+            "--accept-new-terminal",
         ):
             with self.subTest(required=required):
                 self.assertIn(required, section)

@@ -32,3 +32,10 @@ uv run python scripts/dev-env/verify-file-asr-artifacts.py \
 注意：样例中的 `<CUSTOMVOICE_MODEL_ROOT>`、`<SERVED_MODEL>`、`<NATIVE_SPEAKER_ID>` 与
 `readiness.warmup.body_path` 由部署方按实际挂载替换；`command` 与镜像摘要沿用
 [runtime-pin.json](runtime-pin.json) 固定的只读核验记录，部署前仍须核对实际 argv 与环境。
+
+`command` 里的 `--omni` 是 vLLM-Omni 的分支开关，必须传，与 VoiceDesign、Base 两份模板一致：
+不传时 `vllm-omni` 入口把参数交给上游 vLLM 的 `serve` 解析器，启动以
+`unrecognized arguments` 退出（#1075）。CustomVoice 任务由 checkpoint 决定，argv 不传
+`--task-type`。该镜像自报的参数面与两次实测（拒绝旧 argv、接受 `--omni`）记录在
+`tests/fixtures/engine-cli/vllm-omni-sha256-5a12eac1/`，模板 argv 由
+`tests/ci/test_engine_template_argv.py` 守住。

@@ -6,7 +6,7 @@
 ## 一个节点只常驻一个 TTS 变体
 
 实测（vLLM-Omni `0.32.0rc1`，`vllm/vllm-omni:latest`，arm64）：VoiceDesign 与
-CustomVoice 是两个不同 task 的加载，引擎按 checkpoint 与 `task_type` 校验；两者同时常驻
+CustomVoice 是两个不同 task 的加载，引擎按 checkpoint 决定 `task_type`；两者同时常驻
 时第二个实例在 stage1 直接 `CUDA error: out of memory`。因此：
 
 - 模板声明 `variant_slot`（两种 TTS 变体模板取同一槽位，如 `tts-variant`）。控制器在
@@ -19,6 +19,11 @@ CustomVoice 是两个不同 task 的加载，引擎按 checkpoint 与 `task_type
 
 `template.example.json` 的 `command` 与 `environment` 对应实测启动形态：
 
+- `--omni`：vLLM-Omni 的分支开关，必须传。`vllm-omni` 入口先看 argv 里有没有它，没有就把参数
+  交给上游 vLLM 的 `serve` 解析器；那个解析器没有 TTS 的任务选项，于是启动即以
+  `vllm-omni: error: unrecognized arguments: --task-type VoiceDesign` 退出（#1075）。任务的
+  取舍由 checkpoint 决定，argv 不传 `--task-type`：该镜像确实声明了它（`serve --help=all` 的
+  OmniConfig 组写明“由模型校验取值”），但本目录只有 checkpoint 形态的实测记录。
 - `--gpu-memory-utilization 0.06 --max-model-len 1536 --max-num-seqs 1 --enforce-eager`
   （VoiceDesign 阶段显存占用低，默认利用率会与其它常驻进程争抢）。
 - `VLLM_USE_V2_MODEL_RUNNER=0`、`HUMMING_DISABLE_PARALLEL_BUILD=1`：避免 V2 runner 与

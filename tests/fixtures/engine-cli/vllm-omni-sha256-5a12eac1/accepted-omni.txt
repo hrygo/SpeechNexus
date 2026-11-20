@@ -1,0 +1,13 @@
+W1120 09:38:20.591000 1 torch/utils/cpp_extension.py:178] No CUDA runtime is found, using CUDA_HOME='/usr/local/cuda'
+Failed to import from vllm._C: ModuleNotFoundError("No module named 'vllm._C'")
+vllm_omni: /usr/local/lib/python3.12/dist-packages/vllm_omni-0.32.0rc1.dist-info/METADATA
+vllm: /usr/local/lib/python3.12/dist-packages/vllm-0.32.0.dist-info/METADATA
+
+# trimmed: omni CLI banner, api_server startup log and 40-frame traceback
+(APIServer pid=1) INFO 11-20 09:38:22 [api_utils.py:347] vLLM server version 0.32.0, serving model /nonexistent-model
+(APIServer pid=1) INFO 11-20 09:38:22 [api_utils.py:286] non-default args: {'model_tag': '/nonexistent-model', 'model': '/nonexistent-model'}
+
+    validate_repo_id(arg_value)
+  File "/usr/local/lib/python3.12/dist-packages/huggingface_hub/utils/_validators.py", line 139, in validate_repo_id
+    raise HFValidationError(
+huggingface_hub.errors.HFValidationError: Repo id must use alphanumeric chars, '-', '_' or '.'. The name cannot start or end with '-' or '.' and the maximum length is 96: '/nonexistent-model'.

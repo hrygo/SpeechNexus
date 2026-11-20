@@ -373,7 +373,11 @@ def test_the_deployed_voice_clone_template_pins_a_real_base_warmup(tmp_path: Pat
     assert template.readiness.warmup is not None
     assert template.readiness.warmup.path == "/v1/audio/speech"
     assert template.command is not None
-    assert "Base" in template.command
+    # #1075: the Base task is selected by the checkpoint, not by argv. `--omni` is
+    # what routes the argv to the omni parser; without it the entry point hands the
+    # command to upstream vLLM, which rejects the TTS task flags outright.
+    assert "--omni" in template.command
+    assert "--task-type" not in template.command
     assert template.command[template.command.index("--gpu-memory-utilization") + 1] == "0.08"
     assert template.engine_auth is EngineAuthKind.VLLM_API_KEY_V1
 

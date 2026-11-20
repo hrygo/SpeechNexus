@@ -374,10 +374,11 @@ async def test_the_synchronous_route_accepts_text_up_to_the_raised_planner_budge
 @pytest.mark.parametrize(
     "text_chars,binding_ceiling,planner_max_chars",
     [
+        (401, 400, 4096),
         (2001, 2000, 4096),
         (4097, 4096, 4096),
     ],
-    ids=["above-binding-ceiling", "above-contract-bound"],
+    ids=["planner-raised-binding-400", "above-binding-ceiling", "above-contract-bound"],
 )
 async def test_text_above_the_tighter_declared_cap_is_refused_before_the_engine(
     text_chars: int, binding_ceiling: int, planner_max_chars: int

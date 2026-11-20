@@ -15,14 +15,16 @@ name: Release images
 #   ghcr.io/hrygo/speechnexus-web-workbench   deploy/images/web.Dockerfile APP_NAME=workbench
 #   ghcr.io/hrygo/speechnexus-node-controller deploy/images/node-controller.Dockerfile
 #   ghcr.io/hrygo/speechnexus-asset-inspector asset-inspector/Dockerfile
+#   ghcr.io/hrygo/speechnexus-minio           deploy/images/minio.Dockerfile
 #
 # `execution-gateway` has no Dockerfile of its own — the compose `gateway` service
-# builds `*python-build` — so it ships inside `speechnexus-python` rather than as a
-# sixth image. `minio` is deliberately not published here: compose's `minio` service
-# carries both `image:` and `build: deploy/images/minio.Dockerfile`, so a deployment
-# still builds it locally from GitHub Releases, `api.github.com` and
-# `raw.githubusercontent.com` — the download path `#900` records failing on a
-# throttled host. Pinning every other service by digest does not remove that build.
+# builds `*python-build` — so it ships inside `speechnexus-python` rather than as an
+# image of its own. `minio` *is* published: the upstream image is no longer
+# anonymously pullable (`minio/minio` does not exist on Docker Hub and
+# `quay.io/minio/minio` answers 401), so a deployment that did not get it here would
+# still build `deploy/images/minio.Dockerfile` from GitHub Releases, `api.github.com`
+# and `raw.githubusercontent.com` — the download path `#900` records failing on a
+# throttled host.
 #
 # Multi-architecture without QEMU: amd64 and arm64 build natively on the
 # `ubuntu-24.04` / `ubuntu-24.04-arm` pair this repository already uses for image
@@ -205,14 +207,20 @@ jobs:
               "repository": "speechnexus-asset-inspector",
               "dockerfile": "asset-inspector/Dockerfile",
               "build_args": ""
+            },
+            {
+              "name": "minio",
+              "repository": "speechnexus-minio",
+              "dockerfile": "deploy/images/minio.Dockerfile",
+              "build_args": ""
             }
           ]
           JSON
           # The image list is emitted as one JSON line so both the build matrix and
           # the manifest job read the same definition instead of a second copy.
           images="$(jq -c . "${RUNNER_TEMP}/images.json")"
-          if [[ "$(jq 'length' <<< "$images")" != 5 ]]; then
-            echo "::error::Expected 5 image definitions, got $(jq 'length' <<< "$images")"
+          if [[ "$(jq 'length' <<< "$images")" != 6 ]]; then
+            echo "::error::Expected 6 image definitions, got $(jq 'length' <<< "$images")"
             exit 1
           fi
 

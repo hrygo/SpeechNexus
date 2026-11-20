@@ -175,7 +175,8 @@ class ScopeTests(unittest.TestCase):
         repo.track()
         result = repo.run("--baseline", "baseline.json")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("RECORDS docs/reviews MISSING 0->1 (+1)", result.stdout)
+        self.assertIn("RECORDS new=+1 stale=+0", result.stdout)
+        self.assertIn("RECORDS new docs/reviews MISSING=+1", result.stdout)
         self.assertIn("RESULT PASS", result.stdout)
 
     def test_a_fenced_reference_is_not_a_reference(self) -> None:
@@ -223,6 +224,96 @@ class ScopeTests(unittest.TestCase):
         result = repo.run()
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("LAYOUT docs/reviews/2026-11-16-review.md", result.stdout)
+
+
+class RecordsBaselineTests(unittest.TestCase):
+    """The records baseline is a problem-key set, so the delta cannot go stale.
+
+    #1063: `records` used to store per-directory verdict counts, refreshed by hand
+    with `--write-baseline`. Nobody refreshes a display-only delta, so the report
+    kept printing "baseline 127 / measured 140" and those 13 read as if the current
+    PR had introduced them. The baseline now carries the keys it has seen
+    (`<record flow>::<reference>::<verdict>`) and the report prints only the
+    difference: `new=+N` for keys that were not in the baseline, `stale=+M` for
+    keys that stopped hitting. Neither side gates.
+    """
+
+    def test_a_new_record_is_an_increment_not_two_counts(self) -> None:
+        # #1063: the baseline used to store absolute counts, refreshed by hand.
+        # Nobody refreshes for a display-only delta, so the report showed "baseline
+        # 127 / measured 140" and the 13 looked like this PR's doing. With a key
+        # set the report can only say +1 - and deleting the record returns to +0.
+        repo = self._seeded()
+        added = "docs/reviews/2026-11-20-added.md"
+        repo.write(added, f"# 新增审查（#1063）\n\n当时指向 `{OTHER_GHOST_REF}`。\n")
+        repo.track()
+        result = repo.run("--baseline", "baseline.json")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("RECORDS new=+1 stale=+0", result.stdout)
+        self.assertIn("RECORDS new docs/reviews MISSING=+1", result.stdout)
+        # No "old count -> new count" pair may come back: that pair is the lie.
+        self.assertNotIn("->", result.stdout.split("SCOPE record", 1)[1])
+        self.assertNotIn("RESULT FAIL", result.stdout)
+
+        (repo.root / added).unlink()
+        repo.track()
+        back = repo.run("--baseline", "baseline.json")
+        self.assertEqual(back.returncode, 0, back.stdout + back.stderr)
+        self.assertIn("RECORDS new=+0 stale=+0", back.stdout)
+        self.assertIn("SCOPE record problems=1 docs/reviews MISSING=1", back.stdout)
+
+    def test_a_record_problem_that_disappeared_is_reported_as_stale(self) -> None:
+        # Requirement 2: a key the baseline accepted and that no longer hits must
+        # not be swallowed - it is reported as `stale`, and still does not gate.
+        repo = self._seeded()
+        (repo.root / REVIEW_DOC).unlink()
+        repo.track()
+        result = repo.run("--baseline", "baseline.json")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("RECORDS new=+0 stale=+1", result.stdout)
+        self.assertIn("RECORDS stale docs/reviews MISSING=+1", result.stdout)
+        self.assertIn("计为消失", result.stdout)
+        self.assertIn("SCOPE record problems=0", result.stdout)
+        self.assertIn("RESULT PASS", result.stdout)
+
+    def test_same_target_at_another_line_is_another_problem(self) -> None:
+        # The comparison axis moved from counts to keys, so this pins the key: the
+        # record problem count stays 1 on both sides, and a count-based diff would
+        # report nothing. Only the target line changed, and that is a new problem.
+        repo = self._seeded()
+        repo.write(REVIEW_DOC, REVIEW_BODY.format(ref="backend/src/speechnexus_backend/ghost.py:9"))
+        repo.track()
+        result = repo.run("--baseline", "baseline.json")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("SCOPE record problems=1 docs/reviews MISSING=1", result.stdout)
+        self.assertIn("RECORDS new=+1 stale=+1", result.stdout)
+
+    def test_the_record_delta_does_not_move_the_terminal_gate(self) -> None:
+        # Requirement 3: the delta is display only. A new record plus a new
+        # terminal problem still fails on the terminal problem alone.
+        repo = self._seeded()
+        repo.write(TERMINAL_DOC, f"实现见 `{GHOST_REF}`。\n")
+        repo.write(
+            "docs/reviews/2026-11-20-added.md",
+            f"# 新增审查（#1063）\n\n当时指向 `{OTHER_GHOST_REF}`。\n",
+        )
+        repo.track()
+        result = repo.run("--baseline", "baseline.json")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("SCOPE terminal problems=1 new=1 accepted=0", result.stdout)
+        self.assertIn("RECORDS new=+1", result.stdout)
+        self.assertIn("RESULT FAIL", result.stdout)
+
+    def _seeded(self) -> Repository:
+        """基线里登记了恰好一条过程记录问题的仓库."""
+        repo = Repository(self)
+        repo.write(REVIEW_DOC, REVIEW_BODY.format(ref=GHOST_REF))
+        repo.track()
+        written = repo.run("--write-baseline", "baseline.json")
+        self.assertEqual(written.returncode, 0, written.stdout + written.stderr)
+        payload = json.loads((repo.root / "baseline.json").read_text(encoding="utf-8"))
+        self.assertEqual(payload["records"], [f"{REVIEW_DOC}::{GHOST_REF}::MISSING"], payload)
+        return repo
 
 
 class AssertionTests(unittest.TestCase):
@@ -731,6 +822,9 @@ class CommittedStateTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("SCOPE terminal problems=0", result.stdout)
+        # The committed records key set matches the checkout: no drift is reported
+        # either way, so the delta is a real measurement rather than always zero.
+        self.assertIn("RECORDS new=+0 stale=+0", result.stdout)
         self.assertIn("RESULT PASS", result.stdout)
 
     def test_every_terminal_document_reference_is_asserted(self) -> None:
@@ -775,14 +869,29 @@ class CommittedStateTests(unittest.TestCase):
 
     def test_the_committed_baseline_keeps_terminal_documents_fully_gated(self) -> None:
         payload = json.loads(BASELINE.read_text(encoding="utf-8"))
-        self.assertEqual(payload["schema"], 1)
+        self.assertEqual(payload["schema"], 2)
         # An empty `terminal` list is what makes this a full gate instead of a
         # ratchet that already tolerates drift.
         self.assertEqual(payload["terminal"], [], payload)
-        # Process-record counts stay in the report; they are not a gate.
-        self.assertIn("docs/reviews", payload["records"], payload)
-        for verdict, count in payload["records"]["docs/reviews"].items():
-            self.assertIsInstance(count, int, verdict)
+        # `records` is a set of problem keys, not counts (#1063): a count is a
+        # number that goes stale on its own, a key stays comparable. Each key
+        # carries the document, the target with its line number, and the verdict.
+        self.assertIsInstance(payload["records"], list, payload)
+        self.assertTrue(payload["records"], payload)
+        for key in payload["records"]:
+            with self.subTest(key=key):
+                parts = CHECK.record_key_parts(key)
+                self.assertIsNotNone(parts, key)
+                assert parts is not None
+                doc, ref, verdict = parts
+                self.assertRegex(doc, r"^docs/")
+                self.assertRegex(ref, r":\d+$")
+                self.assertIn(verdict, CHECK.RECORD_VERDICTS)
+        # Duplicates are deliberate: a record may cite the same target on several
+        # lines, and the document line is not part of the key. The delta counts
+        # multiplicity, so removing one occurrence reports `stale=+1` instead of
+        # being merged away. The list is sorted to keep the diff stable.
+        self.assertEqual(payload["records"], sorted(payload["records"]))
 
     def test_the_script_parses_as_the_runner_system_python(self) -> None:
         # The job uses the runner's `python3` (3.12 on ubuntu-24.04) without uv, so

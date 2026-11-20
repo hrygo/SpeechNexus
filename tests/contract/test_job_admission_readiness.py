@@ -81,6 +81,9 @@ DEFECT = "a deployment defect answered as 500, not a refusal"
 NON_DEPLOYMENT_STATE_CODES: dict[str, str] = {
     "unsupported_parameter": REQUEST_SHAPED,
     "job_kind_not_supported": REQUEST_SHAPED,
+    # The kind is in the request, so no deployment state predicts this refusal; it
+    # holds until a dispatch recipe for the kind ships (#1080).
+    "job_kind_not_dispatchable": REQUEST_SHAPED,
     "model_not_published": REQUEST_SHAPED,
     "model_binding_not_published": REQUEST_SHAPED,
     "model_binding_retired": REQUEST_SHAPED,

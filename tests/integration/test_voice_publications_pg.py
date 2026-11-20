@@ -27,6 +27,7 @@ from tests.integration.test_voice_drafts_pg import (
 from tests.integration.test_voice_drafts_pg import (
     voice_sandbox as voice_sandbox,
 )
+from tests.support.voice_recipe import plan_a_write_path  # noqa: F401
 from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app

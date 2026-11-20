@@ -155,6 +155,16 @@ VOICE_DRAFT_SUBMIT_OPERATIONS = (
 VOICE_DRAFT_422_KEYS: dict[str, tuple[str, ...]] = {
     "input_unavailable": VOICE_DRAFT_SUBMIT_OPERATIONS,
     "request_expired": VOICE_DRAFT_SUBMIT_OPERATIONS,
+    # The four submits whose own Job kind has no dispatch recipe can meet the #1080
+    # refusal. `validateVoiceDraftRevision` is deliberately absent: it commits a
+    # `voice_validation` Job, which is admitted and dispatched, so the code was
+    # declared on its own response rather than on the shared candidate one.
+    "job_not_dispatchable": (
+        "createVoiceDesign",
+        "createVoiceClone",
+        "generateVoiceDraftRevision",
+        "createVoicePreview",
+    ),
     "not_candidate": ("createVoicePreview", "validateVoiceDraftRevision"),
 }
 

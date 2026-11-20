@@ -44,7 +44,7 @@ PASS/FAIL/未运行、环境（checkout commit、项目名、gate 模式、schem
 | 三个桶名键与 lane 结果桶 | `SPEECHNEXUS_OBJECT_STORAGE_BUCKET`（Artifact 桶，同时是后端同步转写的结果读回桶）、`SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET`（同步上传桶）；两者**必须同名**（网关只有一个 `objects.input_bucket`），不同名时 `tools` 步骤直接以 `execution_input_scope_mismatch` / `503 backend_unavailable` 的原因失败。`SPEECHNEXUS_EXECUTION_RESULT_BUCKET`（异步 staging 读取桶）可省略，省略时取 `deploy/compose.yaml` 的默认值（默认部署里与 Artifact 桶同名）；**重命名 Artifact 桶时必须显式设置该键**；已存在私有 lane 配置时，其 `objects.result_bucket` 必须等于后端读回桶 `SPEECHNEXUS_OBJECT_STORAGE_BUCKET`，否则 `tools` 步骤以 `result_object_scope_rejected` / `503 backend_unavailable` 的原因失败（只把 staging 桶单独配置时异步链路仍能读，同步结果读回必失败） |
 | `SN_ADMIN_DSN` | 迁移 owner 连接串，由 shell 导出（密钥通道），默认不进环境文件 |
 | §6 基线角色 | `sn_api`、`SN_GATEWAY_ROLE`（默认 `sn_gateway`）、`sn_gateway_query` 已预置；本入口不重做 §6 的撤权与基线角色 |
-| 私有配置目录 | `SPEECHNEXUS_PRIVATE_CONFIG_DIR` 下的 recipe、gateway lane 配置、批准的 Silero ONNX；缺任一项时 `stack` 步点名缺的是哪个文件 |
+| 私有配置目录 | `SPEECHNEXUS_PRIVATE_CONFIG_DIR` 下的 recipe、gateway lane 配置、批准的 Silero ONNX；缺任一项时 `stack` 步点名缺的是哪个文件。`SPEECHNEXUS_GATEWAY_FILE_*_CONFIG_FILE` 的值**为空或全空白即该车道未配置**（与网关把空可选值判为未配置同一口径，`deploy/compose.yaml` 正是用 `${VAR-}` 留空来停用变体车道）；非空值必须落在挂载的 `/run/speechnexus-private/` 下，否则 `tools` 步直接 FAIL |
 | 运行时 UID/GID | `SPEECHNEXUS_RUNTIME_UID` / `SPEECHNEXUS_RUNTIME_GID`，取 `id -u` / `id -g` |
 
 ## 一条命令

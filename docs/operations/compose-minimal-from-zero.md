@@ -60,7 +60,7 @@ date: 2026-11-16
 宿主端口全部走环境文件的既有变量，没有改 Compose 定义。这些改动只存在于测后已删除的
 worktree 运行态，不进入本 PR，也不是从零手册的额外步骤。
 
-另外一项外部输入：`compose-minimal.md:383`（该行须含 `把已批准的 Silero ONNX 普通文件放到私有目录`） 要求把已批准的 Silero ONNX 文件放进私有目录。
+另外一项外部输入：`compose-minimal.md:393`（该行须含 `把已批准的 Silero ONNX 普通文件放到私有目录`） 要求把已批准的 Silero ONNX 文件放进私有目录。
 本机没有该受控制品，用的是本机另一项目已存在的同一开源 Silero VAD ONNX
 （2,327,524 字节，`sha256 597d30b3ec076608d059477bb14cfeffdf951bf5cae370d38f65d33bbfe82004`），
 按文档流程写入 `vad_model_sha256`。仓库钉在 `deploy/engines/file-asr-audio/artifact-pin.json:139`
@@ -131,7 +131,7 @@ $ curl -fsS http://127.0.0.1:59020/minio/health/live
 http=200
 ```
 
-与 `compose-minimal.md:334`（该行须含 `quota_dimensions`） 的预期逐字一致。容器名是 `sn878-*`，见 §7 第 1 条。
+与 `compose-minimal.md:344`（该行须含 `quota_dimensions`） 的预期逐字一致。容器名是 `sn878-*`，见 §7 第 1 条。
 
 ### 4.5 第 5 节：迁移
 
@@ -144,7 +144,7 @@ $ docker exec sn878-postgres-1 psql -U speechnexus -d speechnexus -Atc \
 0054_artifact_deleted_ledger
 ```
 
-与 `compose-minimal.md:515`（该行须含 `仓库当前迁移链的 head`） 声明的当前 head 一致。文档同处的
+与 `compose-minimal.md:525`（该行须含 `仓库当前迁移链的 head`） 声明的当前 head 一致。文档同处的
 `docker exec speechnexus-postgres-1 …` 在独立项目名下失败，见 §7 第 1 条。
 
 ### 4.6 第 6 节：非 owner 角色、授权与 Job 角色
@@ -185,7 +185,7 @@ $ curl http://127.0.0.1:8010/readyz
  {"name":"gateway_ingress","status":"ok","detail":null}]}  http=200
 ```
 
-与 `compose-minimal.md:2303`（该行须含 `speechnexus-api`） 起的预期逐字一致（仅宿主端口不同）。网关私有的 VAD 文件、
+与 `compose-minimal.md:2344`（该行须含 `speechnexus-api`） 起的预期逐字一致（仅宿主端口不同）。网关私有的 VAD 文件、
 两份 gateway JSON、私有目录 sockets/spool 都一次装配成功。
 
 ### 4.8 第 8 节：一次性引擎注册（停止点）
@@ -244,7 +244,7 @@ job dispatch startup gate: OK
 
 ## 5. 为什么到不了 Job 创建
 
-`async-job-runbook.md:705`（该行须含 `select workspace_id, max_attempts`） 与第 11 节假设"六项前置满足后 `POST /v1/nexus/jobs` 才不再返回
+`async-job-runbook.md:714`（该行须含 `select workspace_id, max_attempts`） 与第 11 节假设"六项前置满足后 `POST /v1/nexus/jobs` 才不再返回
 503"。本轮六项里只剩引擎未满足，但创建仍然不可达，真实顺序是：
 
 1. 创建请求先解析模型与 binding。参考部署没有任何已发布 binding
@@ -295,9 +295,9 @@ HTTP/1.1 422 Unprocessable Content
 
 | 编号 | 位置 | 现象 | 建议 |
 | --- | --- | --- | --- |
-| D1 | `docs/operations/compose-minimal.md:512`（该行须含 `因此不绑定容器名`）（`25c96360` 时在 361，现文已改为经服务名 `postgres` 进入容器；同类 `:880`、`:920`、`:1064`、`:1077` 是当时的同路径简写行号） | （`25c96360` 时）核对命令硬编码默认项目名的容器名 `speechnexus-postgres-1`；用独立 Compose 项目（本项目 Agent 约定要求）时直接 `No such container` | 改成 `"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml exec -T postgres psql …`，或在第 1 节声明项目名变量并统一使用（现文已按此改） |
-| D2 | `deploy/compose.yaml:90`、`:850` 与 `docs/operations/compose-minimal.md:105`（该行须含 `默认网络使用`）（`25c96360` 时在 105；现文已改为 `${SPEECHNEXUS_COMPOSE_SUBNET:-…}` / `${SPEECHNEXUS_MINIO_STATIC_IP:-…}` 插值，并在 105–110 补了变量表） | （`25c96360` 时）子网与 MinIO 静态地址硬编码；文档只说"一起调整部署配置"，没有环境变量或受支持的 override 入口。本机 `172.28.0.0/24` 已被其它项目占用，从零必须改仓库文件（含四份 private 示例） | 提供 `SPEECHNEXUS_COMPOSE_SUBNET` / `SPEECHNEXUS_MINIO_STATIC_IP` 之类的 env 键，或提供并测试一份受支持的 override 文件（现文已按此改） |
-| D3 | `docs/operations/compose-minimal.md:383`（该行须含 `把已批准的 Silero ONNX 普通文件放到私有目录`）（`25c96360` 时在 246） 与 `deploy/engines/file-asr-audio/artifact-pin.json:139` | VAD 模型只有一句"把已批准的 Silero ONNX 普通文件放到私有目录"：没有获取来源、没有校验命令；仓库钉的摘要是 `sha256:1a153a22…`，与常见 Silero 发行版（本轮实测 `597d30b3…`）不同。网关只校验配置里的摘要，因此"任何 Silero ONNX"都能过闸门，但没人能判断哪份是"已批准" | 在 §3 增加受控来源与 `sha256` 核对步骤（例如用 `artifact-pin.json` 的摘要校验），并说明摘要不符时网关的具体报错 |
+| D1 | `docs/operations/compose-minimal.md:522`（该行须含 `因此不绑定容器名`）（`25c96360` 时在 361，现文已改为经服务名 `postgres` 进入容器；同类 `:880`、`:920`、`:1064`、`:1077` 是当时的同路径简写行号） | （`25c96360` 时）核对命令硬编码默认项目名的容器名 `speechnexus-postgres-1`；用独立 Compose 项目（本项目 Agent 约定要求）时直接 `No such container` | 改成 `"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml exec -T postgres psql …`，或在第 1 节声明项目名变量并统一使用（现文已按此改） |
+| D2 | `deploy/compose.yaml:90`、`:850` 与 `docs/operations/compose-minimal.md:115`（该行须含 `默认网络使用`）（`25c96360` 时在 105；现文已改为 `${SPEECHNEXUS_COMPOSE_SUBNET:-…}` / `${SPEECHNEXUS_MINIO_STATIC_IP:-…}` 插值，并在 105–110 补了变量表） | （`25c96360` 时）子网与 MinIO 静态地址硬编码；文档只说"一起调整部署配置"，没有环境变量或受支持的 override 入口。本机 `172.28.0.0/24` 已被其它项目占用，从零必须改仓库文件（含四份 private 示例） | 提供 `SPEECHNEXUS_COMPOSE_SUBNET` / `SPEECHNEXUS_MINIO_STATIC_IP` 之类的 env 键，或提供并测试一份受支持的 override 文件（现文已按此改） |
+| D3 | `docs/operations/compose-minimal.md:393`（该行须含 `把已批准的 Silero ONNX 普通文件放到私有目录`）（`25c96360` 时在 246） 与 `deploy/engines/file-asr-audio/artifact-pin.json:139` | VAD 模型只有一句"把已批准的 Silero ONNX 普通文件放到私有目录"：没有获取来源、没有校验命令；仓库钉的摘要是 `sha256:1a153a22…`，与常见 Silero 发行版（本轮实测 `597d30b3…`）不同。网关只校验配置里的摘要，因此"任何 Silero ONNX"都能过闸门，但没人能判断哪份是"已批准" | 在 §3 增加受控来源与 `sha256` 核对步骤（例如用 `artifact-pin.json` 的摘要校验），并说明摘要不符时网关的具体报错 |
 | D4 | `docs/operations/async-job-runbook.md:34`（该行须含 `未发布 binding 时创建返回`）（`25c96360` 时在 32；现文第 4 项已写「未发布 binding 返回 422、缺配额行返回 422、实例容量才是 429」） | （`25c96360` 时）第 4 项写"没有实例时创建返回 `429 job_capacity_exhausted`"；从零实测先得到 `422 model_not_published`（binding 未发布），容量判定在 `public_job_admission.py:253`，排在绑定、输入资产与配额之后 | 改成"已发布 binding 且工作空间配额存在时，才由容量返回 429；从零未发布 binding 时先 422"（现文已按此改） |
 | D5 | `docs/operations/async-job-runbook.md:122`（该行须含 `请求只有走到准入才会得到`）（`25c96360` 时在 109；现文已补「只有走到准入才会得到 503」的限定） | （`25c96360` 时）"只配 writer 时创建仍返回 `503 job_unavailable`"；实测（writer 已配、admission 为空、无 binding）返回 `422 model_not_published`。只有请求走到准入时才会是 503 | 加"在有已发布 binding 的部署上"限定，并同时给出从零会先看到的 422（现文已按此改） |
 | D6 | `docs/operations/async-job-runbook.md:363`（该行须含 `入口是公共 HTTP 契约的三条已装配写路径`）（`25c96360` 时在 319；现文已在 §7.1 补上发布 binding 的三条写路径）、`:704`，以及 `docs/operations/compose-minimal.md` 第 6 节 | （`25c96360` 时）两份手册都假设"已发布 binding + 完整 execution_defaults + 工作空间配额"是既有事实，却没有任何步骤产生它们；第 6 节只写回 `SPEECHNEXUS_BINDING_WRITER_DATABASE_URL`，没有草稿/发布命令。结果是"照文档起一套"永远创建不出 Job | 二选一：补一节"从零发布一个 binding（含 manifest 与 evidence）"并纳入自检；或明确写"本参考部署不产生 binding，异步 Job 需要另按 [发布 binding](publish-binding-revision.md) 与[绑定生命周期](binding-lifecycle.md) 取证"，同时把它列为创建 Job 的前置（现文已按此改：`async-job-runbook.md` §7.1「发布 binding」） |
@@ -305,7 +305,7 @@ HTTP/1.1 422 Unprocessable Content
 | D8 | `backend/src/speechnexus_backend/speech_runtime.py:91` → `backend/src/speechnexus_backend/speech/infrastructure/tts_settlement_preflight.py:73` | 迁移未执行时 API 启动在同步 TTS 结算预检里抛 `UndefinedTable: relation "admission_leases" does not exist`，未捕获 traceback、进程退出并进入重启循环；没有"先跑迁移"的点名拒绝 | 预检捕获缺表/缺 schema，按启动闸门的风格输出"迁移未执行，先跑 migration profile"并退出码非零 |
 | D9 | `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:788` | writer/admission 缺失时统一 `503 job_unavailable`，不点名缺哪个 DSN；这与手册写法一致，但不满足 `#572` 的"错误点名缺的是哪一个前置" | 至少在启动期日志点名哪些可选 DSN 为空，或在错误 `message` 里给出可操作提示（不回显 DSN 内容） |
 | D10 | `deploy/compose.yaml:1` 与两份手册第 1 节 | Compose 文件自带 `name: speechnexus`，手册没提独立项目名；两套部署直接相遇时会争抢容器/卷/网络名 | 手册第 1 节显式给出 `COMPOSE_PROJECT_NAME`（或 `-p`）示例，并说明端口/子网/项目名三者一起改 |
-| D11 | `docs/operations/async-job-runbook.md:634`（该行须含 `只会得到连接`） | 引擎健康探测写成在**操作主机**上 `curl "${SPEECHNEXUS_ENGINE_HEALTH_URL%/}/health"`，而示例值是 `host.docker.internal`，操作主机上不可解析/不可达（本轮 `curl` 得到 `Empty reply from server`，注册得到 `engine_unreachable`） | 改成在注册容器同一网络内探测（例如 `docker compose run --rm --entrypoint curl engine-register …`），或用可被两处共同解析的地址，并说明 `host.docker.internal` 只对容器有意义 |
+| D11 | `docs/operations/async-job-runbook.md:643`（该行须含 `只会得到连接`） | 引擎健康探测写成在**操作主机**上 `curl "${SPEECHNEXUS_ENGINE_HEALTH_URL%/}/health"`，而示例值是 `host.docker.internal`，操作主机上不可解析/不可达（本轮 `curl` 得到 `Empty reply from server`，注册得到 `engine_unreachable`） | 改成在注册容器同一网络内探测（例如 `docker compose run --rm --entrypoint curl engine-register …`），或用可被两处共同解析的地址，并说明 `host.docker.internal` 只对容器有意义 |
 
 ## 8. 未验证项
 
@@ -671,7 +671,7 @@ $ docker compose … exec -T api python -c "import urllib.request; print(urllib.
 {"contract_version":1,"recipe_version":"pcm-decode-1","max_encoded_bytes":4194304,"max_wall_seconds":20.0,"in_flight":0}
 ```
 
-`/readyz` 现在是四项检查，`compose-minimal.md:2218`（该行须含 `本参考部署选择`） 起写的是两项：新增的
+`/readyz` 现在是四项检查，`compose-minimal.md:2259`（该行须含 `本参考部署选择`） 起写的是两项：新增的
 `cancellation_debt` / `stop_evidence_debt` 在未配置时按 `ok` 报告，属文档未跟上的漂移（§14.5）。
 
 ### 14.3 空库 → `202`：五个关键状态
@@ -762,7 +762,7 @@ http=202
 | # | 现象 | 位置 | 处置 |
 | --- | --- | --- | --- |
 | D12 | 实例已 `ready` 后 `GET /v1/models` 仍报 `"engine_ready":false,"admission_state":"unavailable"`：目录的 readiness 是静态投影，从未接入实例事实 | `backend/src/speechnexus_backend/speech/infrastructure/model_catalog_postgres.py:35`（`readiness or ReadinessFacts()` 恒为空），`public_job_admission` 才是真判据 | 本轮只记录：不要用 `/v1/models` 的 readiness 判断能否创建 Job；runbook §7.1 第 4 步「未注册实例时是 unavailable」暗示它会变，需要订正措辞 |
-| D13 | `api` 的 `/readyz` 现在有四项检查（多 `cancellation_debt`、`stop_evidence_debt`） | `compose-minimal.md:2218`（该行须含 `本参考部署选择`） 起写两项 | 文档漂移，记录于此 |
+| D13 | `api` 的 `/readyz` 现在有四项检查（多 `cancellation_debt`、`stop_evidence_debt`） | `compose-minimal.md:2259`（该行须含 `本参考部署选择`） 起写两项 | 文档漂移，记录于此 |
 | D14 | 发布新 revision 后实例身份失效：直接重跑注册被 `instance_config_conflict` 拒绝；创建变成 `429 job_capacity_exhausted`，message 是「no engine instance is registered for model …」 | `engine_registration.py:638`、`public_job_admission.py:211`–`:253` | 记录：换 revision 需要新的 generation/实例轮换路径，本轮**未验证**该路径 |
 | D15 | 单个注册实例的 `max_slots=1`，一个 queued Job 就占满：同一栈上第二次创建是 `429`，message 为「Job capacity is exhausted; retry after the indicated delay.」 | 配方 `runtime_plan.max_slots`、`public_job_admission.py:253` | 不是缺陷，是容量语义：占用持续到该 Job 的租约被释放或准入截止（`retry_after`）到期；写进 §13 判定表第 4 项 |
 

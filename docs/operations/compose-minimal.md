@@ -100,7 +100,17 @@ recorder DSN 与报告对象存储读取凭据）。`migrate` 和 `engine-regist
 路径与服务装配，不作为可用的界面证据。Job 派发
 profile 的变量与默认 `dispatch_kinds` 见
 [deploy/README.md](../../deploy/README.md#job-dispatcher-job-dispatch-profile)；
-本参考部署只装配 `asr`、`tts` 车道，启动闸门对其它 kind 点名拒绝（见 §6 的异步 Job 段）。
+本参考部署装配 `asr` 与一条常驻 TTS 变体车道（`tts`、`voice_design`、`voice_clone` 三者选一），
+启动闸门对其它 kind 点名拒绝（见 §6 的异步 Job 段）。变体由 `deploy/compose.env` 选择：清空
+CustomVoice 那组 `SPEECHNEXUS_GATEWAY_FILE_TTS_*` 键、填上目标变体的
+`SPEECHNEXUS_GATEWAY_FILE_VOICE_*` 键，并让 `SPEECHNEXUS_JOB_DISPATCH_KINDS` 只点名该变体。
+两条规则分属两层：`kinds` 点名两条变体时**闸门**在领取前点名拒绝；`compose.env` 配了两条
+变体时**网关**拒绝启动。闸门只读 `kinds`，容器里没有 `SPEECHNEXUS_GATEWAY_FILE_*`，因此
+**`kinds` 与实际配置的车道不一致时闸门放行**，Job 在领取之后才被确定性拒绝：网关的
+`validate_request` 对未服务的 stage 抛 `FileStageUnavailableError`
+（`execution-gateway/src/speechnexus_gateway/file_speech_runtime.py:98`），派发返回
+`DispatchResult.REJECTED` / `INVALID_EXECUTION_REQUEST`
+（`file_execution_worker.py:174`）。两边保持一致是部署动作，不是已校验的不变量。
 
 默认网络使用 `172.28.0.0/24`（`deploy/compose.yaml:850` 的 `ipam`），MinIO 地址为
 `172.28.0.10`（`deploy/compose.yaml:90` 的 `ipv4_address`）；启动前须核对该网段不会与
@@ -1241,10 +1251,11 @@ GRANT SELECT ON speech.alembic_version TO sn_job_dispatch;
 `SELECT` 探针、认领后的写入列（派发状态、结果 Artifact 发布、终止时的容量释放），以及
 Artifact 桶与 gateway staging 结果桶的存在和版本化，全部通过后才 `exec` 真正的派发进程；
 真实引擎与已注册实例作为部署方输入以 `pending` 行提示，不作为闸门失败条件（引擎可用性
-另按 #572 的真实验收处理）。`SPEECHNEXUS_JOB_DISPATCH_KINDS` 只能取本参考部署装配的
-`asr`、`tts`：其它 kind（例如 `voice_design`、`voice_validation`）在闸门里点名拒绝，
-因为 worker 会认领该车道而在提交/发布阶段才失败。要启用别的车道，先装配 gateway 的
-私有配置与 `SPEECHNEXUS_GATEWAY_FILE_*_CONFIG_FILE`，再把该车道加入闸门的
+另按 #572 的真实验收处理）。`SPEECHNEXUS_JOB_DISPATCH_KINDS` 只能取本参考部署装配的车道：
+`asr` 加上一条常驻 TTS 变体（`tts`、`voice_design` 或 `voice_clone`）。其余 kind（例如
+`voice_validation`）在闸门里点名拒绝，因为 worker 会认领该车道而在提交/发布阶段才失败；
+一次点名两条 TTS 变体同样在领取前被拒，网关也拒绝同时加载两条。要启用别的车道，先装配
+gateway 的私有配置与 `SPEECHNEXUS_GATEWAY_FILE_*_CONFIG_FILE`，再把该车道加入闸门的
 `GATEWAY_CONFIGS`，并同时安装该车道需要的授权组（`voice_validation` 对应
 `voice_validation_worker_grants`）。
 
@@ -1552,6 +1563,36 @@ uv run speechnexus-attest-builtin-voice \
   --report <report.json> --scenario-evidence <scenario.json>
 uv run speechnexus-publish-builtin-voice ...
 ```
+
+**内置声音背后的 binding 必须由宿主 CLI 发布，不能走 HTTP 生命周期。**
+`speechnexus-publish-builtin-voice` 的 release 校验要求该 binding 发布时记录过
+`capacity_manifest_digest` 与 `qualification_report_digest`
+（`backend/src/speechnexus_backend/speech/application/binding_release_evidence.py:157`），
+而 `POST /v1/nexus/admin/model-bindings/{binding_id}/publications` 只收两个 evidence ID：
+`ModelBindingPublicationRequest` 没有摘要字段（`contracts/admin-openapi.yaml:1852-1872`），
+服务端写证据行时也不传摘要（`binding_lifecycle_postgres.py:315-323`，`evidence_source` 为
+`publish_http`），因此那一行两个摘要都是 `NULL`，发布内置声音会以
+`Invalid binding release evidence` 失败。这条证据行不可补写：证据写入是 insert-only
+（`binding_publication_evidence_sql.py` 的 `ON CONFLICT DO NOTHING`），补录命令对已存在行
+只做一致性比较后跳过（`binding_publication_evidence_postgres.py` 的 `_stage`），既不能
+`UPDATE` 也不会重建。所以 voice binding 用宿主命令发布，并把两个摘要显式传入：
+
+```bash
+uv run speechnexus-publish-binding \
+  --binding-id <voice binding id> --revision <draft revision> \
+  --revision-id <观察到的 revision_id> \
+  --capacity-manifest-id <与 execution_recipe 相同的 ID> \
+  --qualification-report-id <资格报告 ID> \
+  --capacity-manifest-digest 'sha256:<manifest 原文件摘要>' \
+  --qualification-report-digest 'sha256:<report 原文件摘要>' \
+  --expected-current-revision none --expected-catalog-revision <观察值> \
+  --observed-installation-id <观察值> --observed-database <观察值> \
+  --schema speech --idempotency-key <本次意图的固定 key>
+```
+
+两个摘要就是同一组测量原文件里 `capacity-manifest.json` 与 `qualification-report.json`
+的原始字节 SHA-256，与 `speechnexus-attest-builtin-voice --manifest/--report` 用的文件必须
+逐字节相同。命令参数、观察值与退出码见[发布命令说明](publish-binding-revision.md)。
 
 发布后用**只读审计身份**核对来源。`sn_qualification_reader` 只持有
 `qualification_reader_grants` 声明的读权限（已发布资格、批准、`provenance` 标签，以及支撑

@@ -295,11 +295,31 @@ def test_a_missing_gateway_config_is_named(tmp_path: Path) -> None:
 def test_a_lane_this_bootstrap_does_not_assemble_fails_before_any_claim() -> None:
     # The worker claims any kind inside the dispatchable union, so an unassembled
     # lane would be claimed and fail at submit time - the shape this gate removes.
-    findings = GATE.gateway_lane_findings(("asr", "voice_design"))
+    # `voice_validation` has no gateway lane: it submits through the voice-clone
+    # command, which this bootstrap never configures.
+    findings = GATE.gateway_lane_findings(("asr", "voice_validation"))
     assert len(findings) == 1
-    assert "voice_design" in findings[0]
+    assert "voice_validation" in findings[0]
     assert "assembles no gateway lane" in findings[0]
     assert "after the claim" in findings[0]
+
+
+def test_the_voice_lanes_are_assembled_like_asr_and_tts() -> None:
+    # #1075 A: `voice_design`/`voice_clone` are dispatchable kinds this bootstrap
+    # now serves, so a selection naming one of them passes the lane check.
+    assert GATE.gateway_lane_findings(("asr", "voice_design")) == []
+    assert GATE.gateway_lane_findings(("asr", "voice_clone")) == []
+    assert GATE.GATEWAY_CONFIGS["voice_design"] == "gateway-file-voice-design.json"
+    assert GATE.GATEWAY_CONFIGS["voice_clone"] == "gateway-file-voice-clone.json"
+
+
+def test_two_resident_tts_variants_fail_before_any_claim() -> None:
+    # One gateway loads one resident TTS variant, so a selection naming two could
+    # never be served: it is refused before the claim, not after the submit.
+    findings = GATE.gateway_lane_findings(("asr", "tts", "voice_design"))
+    assert len(findings) == 1
+    assert "tts, voice_design" in findings[0]
+    assert "one resident TTS variant" in findings[0]
 
 
 def test_an_unknown_lane_is_rejected_as_not_dispatchable() -> None:
@@ -310,9 +330,10 @@ def test_an_unknown_lane_is_rejected_as_not_dispatchable() -> None:
 
 
 def test_the_assembled_lanes_are_the_ones_the_config_check_reads(tmp_path: Path) -> None:
-    assert GATE.gateway_lane_findings(tuple(GATE.GATEWAY_CONFIGS)) == []
+    assert GATE.gateway_lane_findings(("asr", "voice_design")) == []
+    write_gateway_config(tmp_path / "gateway-file-voice-design.json", "b")
     findings, checked = GATE.gateway_config_findings(tmp_path, "b", ("voice_design",))
-    assert findings == [] and checked == []
+    assert findings == [] and checked == ["gateway-file-voice-design.json"]
 
 
 def test_the_write_surface_matches_the_read_only_self_check() -> None:
@@ -688,12 +709,22 @@ def test_main_returns_one_and_never_execs_on_a_gateway_bucket_mismatch(
 
 def test_main_returns_one_and_never_execs_on_an_unassembled_lane(tmp_path: Path) -> None:
     env = healthy_env(tmp_path)
-    env[GATE.KINDS_ENV] = "asr,tts,voice_design"
+    env[GATE.KINDS_ENV] = "asr,voice_validation"
     result, executed, output = run_main(env)
     assert result == 1
     assert executed == []
-    assert "voice_design" in output
+    assert "voice_validation" in output
     assert "assembles no gateway lane" in output
+
+
+def test_main_returns_one_and_never_execs_on_two_resident_variants(tmp_path: Path) -> None:
+    env = healthy_env(tmp_path)
+    env[GATE.KINDS_ENV] = "tts,voice_design"
+    write_gateway_config(tmp_path / "gateway-file-voice-design.json", "speechnexus-staging")
+    result, executed, output = run_main(env)
+    assert result == 1
+    assert executed == []
+    assert "one resident TTS variant" in output
 
 
 def test_main_names_every_failure_instead_of_stopping_at_the_first(tmp_path: Path) -> None:

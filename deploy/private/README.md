@@ -110,7 +110,11 @@ target and the `VoiceDesign` engine task; it delivers 24 kHz mono WAV only. A
 gateway serves at most one TTS variant: configuring more than one of
 `gateway-file-tts.json`, `gateway-file-voice-design.json` and
 `gateway-file-voice-clone.json` fails startup, and switching variants is a
-stop-then-activate action. The engine sleep endpoint is not release evidence.
+stop-then-activate action. `deploy/compose.yaml` renders all three lanes from
+`compose.env`, so the switch is an environment change: blank the selected lane's
+`SPEECHNEXUS_GATEWAY_FILE_*_CONFIG_FILE` and both of its `OBJECT_*` keys, fill the
+other variant's three keys, and name that variant in
+`SPEECHNEXUS_JOB_DISPATCH_KINDS`. The engine sleep endpoint is not release evidence.
 Readiness requires one real warmup synthesis, cached and run in the background
 with its own `readiness` budget, so `/readyz` never blocks a health probe; only
 languages with a verified vendor value are forwarded. See

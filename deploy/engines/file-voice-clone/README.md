@@ -6,8 +6,8 @@
 
 ## Base 与其它 TTS 变体必须不同进程
 
-实测（vLLM-Omni `0.32.0rc1`，`vllm/vllm-omni:latest`，arm64）：引擎按 checkpoint 与
-`task_type` 校验加载，Base、VoiceDesign、CustomVoice 是三次不同的任务加载；同一进程
+实测（vLLM-Omni `0.32.0rc1`，`vllm/vllm-omni:latest`，arm64）：引擎按 checkpoint 决定
+`task_type`，Base、VoiceDesign、CustomVoice 是三次不同的任务加载；同一进程
 不能切换，且同时常驻会在后续实例 stage1 直接 `CUDA error: out of memory`。因此：
 
 - 模板声明 `variant_slot`，与 CustomVoice、VoiceDesign 取同一槽位（`tts-variant`），
@@ -20,7 +20,11 @@
 
 `template.example.json` 的 `command` 与 `environment` 对应实测启动形态：
 
-- `--task-type Base`：checkpoint 必须以 Base 任务加载。
+- `--omni`：vLLM-Omni 的分支开关，必须传。不传时 `vllm-omni` 入口把参数交给上游 vLLM 的
+  `serve` 解析器，那里没有任务选项，启动以
+  `vllm-omni: error: unrecognized arguments: --task-type Base` 退出（#1075）。Base 任务由
+  checkpoint 决定，argv 不传 `--task-type`：该镜像确实声明了它（`serve --help=all` 的
+  OmniConfig 组），但本仓库只有 checkpoint 形态的实测记录。
 - `--gpu-memory-utilization 0.08 --max-model-len 1536 --max-num-seqs 1 --enforce-eager`：
   Base 常驻实测占用 7.2–7.4 GiB；模板按 10 GiB 峰值/容器上限预留，真实节点必须按实测
   峰值重新核定后替换，而不是照抄示例。

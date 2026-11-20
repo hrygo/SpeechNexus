@@ -112,6 +112,34 @@ def test_dispatch_kinds_match_the_dispatchable_literal() -> None:
     assert frozenset(get_args(DispatchJobKind)) == module.DISPATCHABLE_KINDS
 
 
+def gate_module() -> Any:
+    """The deployment's startup gate, loaded the way its deployment loads it."""
+    path = ROOT / "deploy/job-startup-gate.py"
+    spec = importlib.util.spec_from_file_location("job_startup_gate_for_parity", path)
+    assert spec is not None and spec.loader is not None
+    module: Any = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_assembled_lanes_are_the_gateway_configs_the_gate_serves() -> None:
+    # #1075: the self-check promised "the same lanes as the gate" in a comment and
+    # drifted to asr/tts while the gate grew the voice lanes. The promise is now
+    # checked: both sides must name the same set or this test is red.
+    assert set(checker().ASSEMBLED_KINDS) == set(gate_module().GATEWAY_CONFIGS)
+
+
+def test_the_resident_variant_rule_is_the_gates_own_function() -> None:
+    # Not a copy: the self-check calls the same domain function, so the two emit
+    # the same finding for the same selection. A second spelling of the rule is
+    # exactly how "the preflight passes, the gate refuses" happens.
+    module = checker()
+    gate = gate_module()
+    for kinds in (("tts", "voice_design"), ("asr", "voice_clone"), ("asr", "tts")):
+        assert module.resident_variant_findings(list(kinds)) == gate.gateway_lane_findings(kinds)
+
+
 def test_dispatch_write_probes_are_covered_by_the_documented_grants() -> None:
     module = checker()
     granted = granted_columns()

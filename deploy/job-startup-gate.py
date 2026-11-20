@@ -5,9 +5,10 @@ entrypoint. It verifies the deployment prerequisites that the dispatcher process
 cannot discover until *after* it has claimed a lease, prints one named failure
 per missing item, and only then `exec`s `speechnexus-job-dispatch-worker`. A
 missing bucket, a stale or unreadable migration head, an unversioned staging
-bucket, a lane this bootstrap does not assemble or a role without the post-claim
-write columns therefore fails while the container starts, before any Job can be
-claimed, instead of surfacing as a Job stuck in `running` or failed after claim.
+bucket, a lane this bootstrap does not assemble, a resident TTS variant the
+gateway does not load or a role without the post-claim write columns therefore
+fails while the container starts, before any Job can be claimed, instead of
+surfacing as a Job stuck in `running` or failed after claim.
 
 Every check is a hard failure except two inputs the gate deliberately reports as
 `pending`:
@@ -76,6 +77,7 @@ from speechnexus_backend.job_dispatch_runtime import (
     DISPATCH_VOICE_VALIDATION_PROBES,
 )
 from speechnexus_backend.speech.domain.job_dispatch import DISPATCHABLE_JOB_KIND_UNION
+from speechnexus_backend.speech.domain.lane_selection import resident_tts_variant_findings
 from speechnexus_backend.speech.infrastructure.artifact_schema import ARTIFACT_INSERT_COLUMNS
 from speechnexus_backend.speech.infrastructure.coordination_grants import SPEECH_UPDATES
 
@@ -162,13 +164,16 @@ DISPATCH_GRANT_GROUPS = (
     "coordination_runtime_grants",
 )
 
-# The lanes this bootstrap assembles: `deploy/compose.yaml` forwards exactly the
-# asr and tts private configs to the gateway, and the gate verifies those two
-# lanes' `objects.result_bucket`. A kind outside this map is not served by the
-# reference deployment, so the worker would claim it and fail after the claim.
+# The lanes this bootstrap can assemble: `deploy/compose.yaml` forwards the ASR
+# private config and one resident TTS variant to the gateway, and the gate
+# verifies every selected lane's `objects.result_bucket`. A kind outside this map
+# is not served by the reference deployment at all, so the worker would claim it
+# and fail after the claim.
 GATEWAY_CONFIGS = {
     "asr": "gateway-file-asr.json",
     "tts": "gateway-file-tts.json",
+    "voice_design": "gateway-file-voice-design.json",
+    "voice_clone": "gateway-file-voice-clone.json",
 }
 IDENTIFIER = re.compile(r"[a-z][a-z0-9_]{2,62}")
 PROBE_TABLE = re.compile(r"\bFROM\s+([A-Za-z0-9_]+)")
@@ -438,7 +443,9 @@ def gateway_lane_findings(kinds: Sequence[str]) -> list[str]:
     without an assembled gateway config would be claimed and then fail at submit
     or publication time - exactly the "fails after claim" shape this gate exists
     to remove. Both the typo case and the known-but-unassembled case are failures;
-    the messages differ so an operator can tell them apart.
+    the messages differ so an operator can tell them apart. The resident-variant
+    rule lives in the domain (`speechnexus_backend.speech.domain.lane_selection`)
+    because the read-only pre-deployment self-check applies the same one.
     """
     findings: list[str] = []
     for kind in dict.fromkeys(kinds):
@@ -456,7 +463,7 @@ def gateway_lane_findings(kinds: Sequence[str]) -> list[str]:
                 "lane (private gateway config, SPEECHNEXUS_GATEWAY_FILE_*_CONFIG_FILE and "
                 "GATEWAY_CONFIGS) before enabling it"
             )
-    return findings
+    return [*findings, *resident_tts_variant_findings(kinds, kinds_env=KINDS_ENV)]
 
 
 def gateway_config_findings(

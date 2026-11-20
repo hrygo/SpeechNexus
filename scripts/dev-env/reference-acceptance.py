@@ -856,12 +856,26 @@ def container_private_path(ctx: Context, container_path: str) -> Path:
 
 
 def gateway_lane_config_paths(config: Mapping[str, object]) -> list[str]:
+    """Every file lane the gateway service actually configures.
+
+    A blank value means "not configured", the rule the gateway itself applies to
+    optional settings (`settings.py`'s `blank_optional_values_are_unconfigured`,
+    #660 review FP-2). `deploy/compose.yaml` renders the three resident TTS lanes
+    as `${VAR-}` so blanking a lane's keys disables it without deleting them, which
+    means a default render carries
+    `SPEECHNEXUS_GATEWAY_FILE_VOICE_{DESIGN,CLONE}_CONFIG_FILE=""`. Those keys exist
+    but name no lane: skipping them keeps "all blank" reading as "no lane", not as
+    "a lane whose path is the empty string" (#1075).
+    """
     environment = service_environment(config, "gateway")
-    return [
-        value
-        for key, value in sorted(environment.items())
-        if key.startswith("SPEECHNEXUS_GATEWAY_FILE_") and key.endswith("_CONFIG_FILE")
-    ]
+    lanes: list[str] = []
+    for key, raw in sorted(environment.items()):
+        if not (key.startswith("SPEECHNEXUS_GATEWAY_FILE_") and key.endswith("_CONFIG_FILE")):
+            continue
+        value = raw.strip()
+        if value:
+            lanes.append(value)
+    return lanes
 
 
 def gateway_lane_configs(ctx: Context, config: Mapping[str, object]) -> list[Path]:

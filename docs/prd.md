@@ -73,7 +73,7 @@
 **验收：**
 
 - CustomVoice 的一次 intent 对应一次合成，绑定的输入文本最多 400 Unicode codepoints；该限制不是 token 数，也不推广为其他模型或公共任务的通用文本上限。
-- 公开入口 `SpeechRequest.input` 与 `TtsJobInput.text` 单次上限为 4096 字符，超界拒绝（同步 `400`、异步 `422`，都带 `param: input`）而不是切分、截断或静默缩短；**更长的正文由调用方分片并自行拼接**，平台不实现跨请求的长文合成。
+- 公开入口 `SpeechRequest.input` 与 `TtsJobInput.text` 的单次声明上限为 4096 字符，超界拒绝而不是切分、截断或静默缩短；**更长的正文由调用方分片并自行拼接**，平台不实现跨请求的长文合成。同步入口超界为 `400 invalid_request`（带 `param: input`），异步 Job 超界为 `422 unsupported_parameter`（只保证 `error.code`，`param` 允许为 `null`）。该 4096 是入口体上限，不改变各 binding 自身上限（如 CustomVoice 的 400 codepoints），两者都生效时以更严者为准；binding 或 planner 超界在同步入口报 `422 unsupported_parameter`（`param: input`）。
 - `nexus.overrides.tts.instructions` 入口上限为 2000 codepoints；标准 `SpeechRequest.instructions` 和内部执行命令 `instructions` 上限均为 4096 codepoints；固定 pipeline 的 `instructions` 默认上限为 500 codepoints。分别验证实际入口校验、配置传递与 2001–4096 准入结果，不静默截断。
 - 冻结文本、参数、声音和版本；超限明确拒绝，WAV/MP3/PCM 输出格式、长度、样本数与回执一致，失败不泄露未提交制品。
 - 公开同步 `SpeechRequest` 通过 `nexus.max_output_audio_ms` 声明请求上限（100–3,600,000 ms），有效值取该值与部署上限的较小者，并冻结在执行计划与完整持久请求中；请求只能收紧部署与批准 binding 上限，不得放宽。保留 100ms 请求不得接受 200ms 结果的反例，覆盖恰好上限、超一帧、低于 binding、重放及编码制品。

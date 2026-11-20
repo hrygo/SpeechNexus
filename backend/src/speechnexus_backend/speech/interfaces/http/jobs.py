@@ -33,6 +33,7 @@ from speechnexus_backend.speech.application.public_jobs import (
     IdempotencyConflictError,
     JobAdmissionRejectedError,
     JobCleanupPendingError,
+    JobKindNotDispatchableError,
     JobOutcomeUnknownError,
     JobRejectedError,
     JobRetryNotAllowedError,
@@ -486,6 +487,8 @@ async def _create(
                 "Cache-Control": "no-store",
             },
         )
+    except JobKindNotDispatchableError:
+        return job_error("job_kind_not_dispatchable", request_id)
     except UnsupportedJobKindError:
         return job_error("job_kind_not_supported", request_id)
     except UnknownWorkspaceError:

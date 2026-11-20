@@ -30,6 +30,7 @@ from speechnexus_backend.speech.domain.public_jobs import (
     JOB_KIND_PROFILES,
     JOB_KIND_TASK,
     JOB_KINDS,
+    UNDISPATCHABLE_JOB_KINDS,
     VOICE_DRAFT_JOB_KINDS,
     JobArtifactFact,
     JobCancellationReceipt,
@@ -90,6 +91,20 @@ def _list_cursor(cursor: str, scope: str) -> tuple[int, str]:
 
 class UnsupportedJobKindError(ValueError):
     """The frozen contract declares more kinds than this execution unit accepts."""
+
+
+class JobKindNotDispatchableError(ValueError):
+    """The kind is declared, but no queue in this release can ever claim it.
+
+    Raised before the store is called, so a refused create writes no Job, no
+    admission anchor and no coordination row. The kind's own declaration is what
+    decides it (``UNDISPATCHABLE_JOB_KINDS``), not the route that asked, because
+    a Job no worker can claim must not be committed from any entry point (#1080).
+    """
+
+    def __init__(self, kind: str) -> None:
+        self.kind = kind
+        super().__init__(kind)
 
 
 class UnknownWorkspaceError(LookupError):
@@ -641,6 +656,15 @@ class PublicJobs:
         if kind not in JOB_KINDS:
             raise UnsupportedJobKindError
         typed_kind: JobKind = kind
+        # The kind's declaration decides dispatchability, and the refusal comes
+        # before the store is called: no Job, admission anchor, draft or
+        # coordination row may exist for a kind no queue can claim, and the
+        # caller must not read a 202 for an execution that can never start
+        # (#1080). This precedes the idempotency lookup deliberately -- a
+        # refused kind stays refused under an old key instead of replaying a Job
+        # this release cannot dispatch.
+        if typed_kind in UNDISPATCHABLE_JOB_KINDS:
+            raise JobKindNotDispatchableError(typed_kind)
         workspace_id = payload.get("workspace_id", DEFAULT_WORKSPACE)
         if not isinstance(workspace_id, str):
             raise UnknownWorkspaceError
@@ -711,6 +735,12 @@ class PublicJobs:
         if kind not in ("voice_design", "voice_clone"):
             raise UnsupportedJobKindError
         typed_kind: JobKind = kind
+        # A revision append commits another Job of the draft's own kind, so it is
+        # the same refused execution: the append would advance the draft head and
+        # write a revision that no worker ever generates (#1080). Refused before
+        # the draft row is locked, so nothing is appended and no Job exists.
+        if typed_kind in UNDISPATCHABLE_JOB_KINDS:
+            raise JobKindNotDispatchableError(typed_kind)
         workspace_id = payload.get("workspace_id")
         if not isinstance(workspace_id, str):
             raise UnknownWorkspaceError
@@ -1182,6 +1212,14 @@ class PublicJobs:
         if parent.state == "failed" and parent.error_code == CANCELLATION_UNCONFIRMED:
             raise JobCleanupPendingError
         if not retryable(parent):
+            raise JobRetryNotAllowedError
+        # A retry rebuilds the parent's kind from its stored intent, so it is the
+        # same unclaimable execution: the replacement would be committed and no
+        # worker could ever claim it. Refused here, with the state check and
+        # before the intent is read, because the answer does not depend on the
+        # stored document -- a Job an older release left behind must not be
+        # retried into a Job this release refuses to create (#1080).
+        if parent.kind in UNDISPATCHABLE_JOB_KINDS:
             raise JobRetryNotAllowedError
         intent = self._store.intent_document(job_id)
         if intent is None:
@@ -1681,6 +1719,7 @@ __all__ = [
     "JobAdmissionRejectedError",
     "JobCleanupPendingError",
     "JobFacts",
+    "JobKindNotDispatchableError",
     "JobOutcomeUnknownError",
     "JobRejectedError",
     "JobRetryNotAllowedError",

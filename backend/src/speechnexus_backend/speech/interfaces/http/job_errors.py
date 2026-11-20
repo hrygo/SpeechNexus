@@ -35,7 +35,7 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
     "job_retry_not_allowed": (
         409,
         "invalid_request_error",
-        "The Job state does not allow a retry.",
+        "This Job cannot be retried: its kind has no dispatch path, or its state does not.",
     ),
     "job_retry_unavailable": (
         409,

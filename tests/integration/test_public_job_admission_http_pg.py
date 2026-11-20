@@ -13,10 +13,12 @@ coupled constraints found by hand in issue #690 were never pinned by a test:
   the 503 ``job_unavailable`` storage-outage code, whose message and retry shape
   did not describe missing capacity provisioning. A failed storage read keeps the
   503 answer, so the two cases stay distinguishable in both directions;
-* the admission plan rebuilds a ``SpeechPlan`` from the full body text, whose own
-  ceiling is 4096 code points, so 4097 characters are refused. #690 narrowed
-  ``TtsJobInput.text.maxLength`` to that same ceiling, so the refusal is now the
-  contract's declared 422 ``unsupported_parameter`` and happens before admission;
+* the admission plan rebuilds a ``SpeechPlan`` from the full body text under
+  ``min(planner.max_chars, binding.max_input_codepoints)`` (#1073), so a body above
+  either budget is refused at admission, while 4097 characters are refused by
+  ``TtsJobInput.text.maxLength`` before admission ever runs. #690 narrowed that
+  declared bound to the contract's 4096 ceiling, so both cases answer the same
+  declared 422 ``unsupported_parameter``;
 * a body over the deployment receive bound answers the declared 413
   ``PayloadTooLarge`` with code ``job_request_too_large`` (#703), which is a
   different code from both the 400 an unparsable document gets and the 422 above,

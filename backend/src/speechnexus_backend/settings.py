@@ -13,6 +13,7 @@ from speechnexus_backend.environment import (
     PLANES,
     refuse_unrecognised_prefixed_environment,
 )
+from speechnexus_backend.speech.domain.gateway_origin import plaintext_origin_opt_in
 
 ProcessRole = Literal[
     "api",
@@ -193,6 +194,7 @@ class Settings(BaseSettings):
     job_event_send_timeout_seconds: float = Field(default=10, gt=0, le=60)
 
     execution_gateway_base_url: AnyHttpUrl | None = None
+    execution_gateway_allow_plaintext_origin: str = ""
     execution_gateway_component_credential: SecretStr | None = Field(default=None, min_length=1)
     execution_gateway_timeout_seconds: float = Field(default=10, gt=0, le=600)
     execution_gateway_max_retries: int = Field(default=2, ge=0, le=5)
@@ -313,6 +315,14 @@ class Settings(BaseSettings):
             f"the speech backend process (SPEECHNEXUS_PROCESS_ROLE={self.process_role})",
             planes=PLANES,
         )
+        return self
+
+    @model_validator(mode="after")
+    def plaintext_gateway_opt_in_is_an_origin(self) -> Self:
+        # Validate the authorisation even when the API does not assemble a
+        # consumer (no qualified voice, ASR-only): an opt-in that can never
+        # match is a configuration defect, not a dormant setting.
+        plaintext_origin_opt_in(self.execution_gateway_allow_plaintext_origin)
         return self
 
     @model_validator(mode="after")

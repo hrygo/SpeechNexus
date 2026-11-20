@@ -6,7 +6,6 @@ import asyncio
 import logging
 import uuid
 from typing import Literal, Self
-from urllib.parse import urlsplit
 
 import psycopg
 from psycopg.conninfo import conninfo_to_dict
@@ -18,6 +17,7 @@ from speechnexus_backend.speech.application.binding_disable_coordinator import (
     BindingDisableCoordinator,
 )
 from speechnexus_backend.speech.application.leases import LeaseService
+from speechnexus_backend.speech.domain.gateway_origin import require_safe_gateway_origin
 from speechnexus_backend.speech.domain.runtime_intents import identifier
 from speechnexus_backend.speech.infrastructure.binding_disable_coordinator_postgres import (
     PostgresDisableCoordinatorStore,
@@ -141,6 +141,9 @@ class BindingDisableWorkerSettings(BaseSettings):
     gateway_id: str = Field(validation_alias="SPEECHNEXUS_DISABLE_GATEWAY_ID")
     node_id: str = Field(validation_alias="SPEECHNEXUS_DISABLE_NODE_ID")
     gateway_url: AnyHttpUrl = Field(validation_alias="SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL")
+    allow_plaintext_origin: str = Field(
+        default="", validation_alias="SPEECHNEXUS_EXECUTION_GATEWAY_ALLOW_PLAINTEXT_ORIGIN"
+    )
     credential: SecretStr = Field(
         validation_alias="SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL", min_length=16
     )
@@ -179,18 +182,11 @@ class BindingDisableWorkerSettings(BaseSettings):
                 info.get("host") or info.get("hostaddr")
             ):
                 raise ValueError("Disable worker requires explicit host, database and principal")
-        parsed = urlsplit(str(self.gateway_url))
-        if (
-            not parsed.hostname
-            or parsed.username
-            or parsed.password
-            or parsed.path not in ("", "/")
-            or parsed.query
-            or parsed.fragment
-        ):
-            raise ValueError("Disable gateway must be an origin")
-        if parsed.scheme == "http" and parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
-            raise ValueError("Disable gateway requires TLS except on loopback")
+        require_safe_gateway_origin(
+            str(self.gateway_url),
+            allow_plaintext_origin=self.allow_plaintext_origin,
+            label="Disable gateway",
+        )
         token = self.credential.get_secret_value()
         if len(token) > 4096 or any(not 33 <= ord(char) <= 126 for char in token):
             raise ValueError("Invalid gateway credential")

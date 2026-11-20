@@ -109,6 +109,9 @@ def build_speech(settings: Settings) -> SpeechSynthesis | None:
                 "SPEECHNEXUS_TTS_GATEWAY_ID": binding.gateway_id,
                 "SPEECHNEXUS_TTS_HOST_NODE_ID": binding.target_node_id,
                 "SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL": str(settings.execution_gateway_base_url),
+                "SPEECHNEXUS_EXECUTION_GATEWAY_ALLOW_PLAINTEXT_ORIGIN": (
+                    settings.execution_gateway_allow_plaintext_origin
+                ),
                 "SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL": (
                     settings.execution_gateway_component_credential
                 ),

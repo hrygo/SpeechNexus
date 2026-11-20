@@ -11,12 +11,13 @@ import os
 import stat
 import time
 from pathlib import Path
-from urllib.parse import urlsplit
+from typing import Self
 
-from pydantic import AnyHttpUrl, Field, SecretStr
+from pydantic import AnyHttpUrl, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from speechnexus_backend.speech.application.admission import AdmissionService
+from speechnexus_backend.speech.domain.gateway_origin import require_safe_gateway_origin
 from speechnexus_backend.speech.domain.speech_synthesis import SpeechAudio
 from speechnexus_backend.speech.infrastructure.admission_postgres import (
     PostgresAdmissionTransactions,
@@ -43,6 +44,9 @@ class TtsRecoverySettings(BaseSettings):
         validation_alias="SPEECHNEXUS_DATABASE_SCHEMA", pattern=r"^[a-z][a-z0-9_]{2,62}$"
     )
     gateway_url: AnyHttpUrl = Field(validation_alias="SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL")
+    allow_plaintext_origin: str = Field(
+        default="", validation_alias="SPEECHNEXUS_EXECUTION_GATEWAY_ALLOW_PLAINTEXT_ORIGIN"
+    )
     gateway_credential: SecretStr = Field(
         validation_alias="SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL"
     )
@@ -50,6 +54,15 @@ class TtsRecoverySettings(BaseSettings):
     object_bucket: str = Field(validation_alias="SPEECHNEXUS_OBJECT_STORAGE_BUCKET", min_length=3)
     object_access_key: SecretStr = Field(validation_alias="SPEECHNEXUS_OBJECT_STORAGE_ACCESS_KEY")
     object_secret_key: SecretStr = Field(validation_alias="SPEECHNEXUS_OBJECT_STORAGE_SECRET_KEY")
+
+    @model_validator(mode="after")
+    def safe_gateway_origin(self) -> Self:
+        require_safe_gateway_origin(
+            str(self.gateway_url),
+            allow_plaintext_origin=self.allow_plaintext_origin,
+            label="Recovery gateway",
+        )
+        return self
 
 
 class _PoolDiagnostics(logging.Filter):
@@ -71,9 +84,6 @@ def recover(
     ):
         raise ValueError("Recovery requires a bounded timeout")
     deadline = time.monotonic() + timeout_seconds
-    parsed = urlsplit(str(settings.gateway_url))
-    if parsed.scheme != "https" and parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
-        raise ValueError("Recovery gateway requires TLS outside loopback")
     pool = speech_pool(
         settings.database_url.get_secret_value(),
         schema=settings.database_schema,

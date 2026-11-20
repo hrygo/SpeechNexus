@@ -154,7 +154,7 @@ binding 发布与配额/容量核对的命令在[异步 Job 手册 §7.1–§7.3
    [从零到第一个 202 的判定顺序](../operations/compose-minimal-from-zero.md)（`docs/operations/compose-minimal-from-zero.md:498`（该行须含 `从空库到第一个`）））。
    binding 由三条 admin 路由产生（`POST /v1/nexus/admin/model-bindings` → `…/publications` →
    `…/revisions/{revision}/activations`，命令见 `docs/operations/async-job-runbook.md` 的 §7.1）；
-   配额与 `host_nodes` 行只由一次性注册写入（[compose-minimal.md §8](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:2371`（该行须含 `一次性注册引擎`））），
+   配额与 `host_nodes` 行只由一次性注册写入（[compose-minimal.md §8](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:2393`（该行须含 `一次性注册引擎`））），
    注册写入的 `binding_revision_id` 必须等于已发布 revision，两边要分别核对。配额与 `host_nodes`
    这两份事实都没有第二个入口，也不必手写 SQL（[§13.3](../operations/compose-minimal-from-zero.md)）。
    已发布的 binding 必须带 `execution_defaults`，否则 asr/tts 创建返回 `422 job_binding_incomplete`；
@@ -333,7 +333,7 @@ head，见下），但有三个地方会**硬拒绝启动**，以及四类数据
 
 1. **停新版本服务**：先停 worker/profile 单元（`job-dispatch`、`artifact-retention`、
    `binding-disable`），再停 `api` 与 `gateway`。自查：`docker compose ps` 里目标容器不再
-   `Up`；按 [§10.1 的 label filter](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:2559`（该行须含 `清栈复核`）） 确认没有遗留的一次性
+   `Up`；按 [§10.1 的 label filter](../operations/compose-minimal.md)（`docs/operations/compose-minimal.md:2581`（该行须含 `清栈复核`）） 确认没有遗留的一次性
    容器。
 2. **把 ACL 退回旧声明面**：对升级时被扩权的角色 `REVOKE` 新增的列/关系，再用旧版本的 grant
    函数重放。自查：旧镜像启动不再出现 `... startup rejected`；旧镜像与旧授权面不读

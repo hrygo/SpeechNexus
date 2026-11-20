@@ -28,6 +28,7 @@ from speechnexus_backend.speech.application.results import (
     ResultArtifactPublisher,
 )
 from speechnexus_backend.speech.domain.artifacts import ArtifactError
+from speechnexus_backend.speech.domain.gateway_origin import require_safe_gateway_origin
 from speechnexus_backend.speech.domain.job_dispatch import (
     DISPATCHABLE_JOB_KIND_UNION,
     DISPATCHABLE_JOB_KINDS,
@@ -84,6 +85,9 @@ class JobDispatchSettings(BaseSettings):
 
     gateway_base_url: AnyHttpUrl = Field(
         validation_alias="SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL", repr=False
+    )
+    allow_plaintext_origin: str = Field(
+        default="", validation_alias="SPEECHNEXUS_EXECUTION_GATEWAY_ALLOW_PLAINTEXT_ORIGIN"
     )
     gateway_credential: SecretStr = Field(
         validation_alias="SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL",
@@ -198,18 +202,11 @@ class JobDispatchSettings(BaseSettings):
             info.get("host") or info.get("hostaddr")
         ):
             raise ValueError("Dispatch PostgreSQL host, database and principal must be explicit")
-        parsed = urlsplit(str(self.gateway_base_url))
-        if (
-            not parsed.hostname
-            or parsed.username
-            or parsed.password
-            or parsed.path not in ("", "/")
-            or parsed.query
-            or parsed.fragment
-        ):
-            raise ValueError("Dispatch gateway requires an origin without credentials or path")
-        if parsed.scheme == "http" and parsed.hostname not in ("127.0.0.1", "::1", "localhost"):
-            raise ValueError("Dispatch gateway plain HTTP is allowed only for loopback")
+        require_safe_gateway_origin(
+            str(self.gateway_base_url),
+            allow_plaintext_origin=self.allow_plaintext_origin,
+            label="Dispatch gateway",
+        )
         token = self.gateway_credential.get_secret_value()
         if len(token) > 4096 or any(not 33 <= ord(char) <= 126 for char in token):
             raise ValueError("Dispatch gateway credential must be visible ASCII")

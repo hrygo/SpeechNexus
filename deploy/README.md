@@ -574,10 +574,10 @@ Record that digest with the deployment: together with the layer diffIDs it is wh
 
 [`.github/workflows/release-images.yml`](../.github/workflows/release-images.yml) is the
 publication path for the deployment images. It builds them for a release tag, pushes them
-to GHCR, and attaches their digests to that tag's GitHub Release. It does not make
-`deploy/compose.yaml` build less: the bootstrap still builds from source, and a deployment
-consumes published images only when it pins them explicitly (below). A tag whose release
-page carries no `speechnexus-<tag>-images.txt` asset has not been published by this
+to GHCR, and attaches the digest record and a self-contained compose file to that tag's
+GitHub Release. `deploy/compose.yaml` itself still builds from source; the attachment is a
+generated derivative of it, pinned to the digests this run published (below). A tag whose
+release page carries no `speechnexus-<tag>-images.txt` asset has not been published by this
 workflow and has no published images.
 
 | Image | Build input | Services |
@@ -587,13 +587,16 @@ workflow and has no published images.
 | `ghcr.io/hrygo/speechnexus-web-workbench` | `deploy/images/web.Dockerfile`, `APP_NAME=workbench` | `workbench` |
 | `ghcr.io/hrygo/speechnexus-node-controller` | `deploy/images/node-controller.Dockerfile` | `node-controller` (outside this compose file) |
 | `ghcr.io/hrygo/speechnexus-asset-inspector` | `asset-inspector/Dockerfile` | `asset-inspector` |
+| `ghcr.io/hrygo/speechnexus-minio` | `deploy/images/minio.Dockerfile` | `minio` |
 
-`minio` is deliberately not published here: the compose `minio` service carries both
-`image:` and `build: deploy/images/minio.Dockerfile`, so a deployment still builds it
-locally from GitHub Releases, `api.github.com` and `raw.githubusercontent.com` — the
-download path [#900](https://github.com/hrygo/SpeechNexus/issues/900) records failing on a
-throttled host. Pinning every other service by digest therefore does not remove that local
-build, and the failure it can hit.
+`minio` is published because no anonymous upstream image is left to pin: the `minio/minio`
+Docker Hub repository does not exist and `quay.io/minio/minio` answers `401 UNAUTHORIZED`,
+so a deployment that relied on the upstream project would still have to build
+`deploy/images/minio.Dockerfile` from GitHub Releases, `api.github.com` and
+`raw.githubusercontent.com` — the download path
+[#900](https://github.com/hrygo/SpeechNexus/issues/900) records failing on a throttled host.
+The published image carries `RELEASE.2025-09-07T16-13-09Z`, the release the development
+compose pins.
 
 Each image is an `amd64` and an `arm64` build made natively on GitHub's `ubuntu-24.04` and
 `ubuntu-24.04-arm` runners and merged into one manifest list, so `docker pull` resolves the
@@ -613,7 +616,7 @@ gh workflow run release-images.yml -f ref=v0.1.0
 ```
 
 A published record is treated as immutable. If the tag's release already carries any of the
-three assets, the run stops in the metadata job — before a single image is built — and asks
+published assets, the run stops in the metadata job — before a single image is built — and asks
 for an explicit re-publication:
 
 ```bash
@@ -630,29 +633,62 @@ A `push` of a `v*` tag starts the same run. Every image carries
 `org.speechnexus.source.commit` and `org.speechnexus.release.tag`, so a pulled image names
 the commit and release it came from.
 
-The run attaches three assets and then re-reads each published tag from the registry,
-failing if the digest it reads differs from the digest it wrote. A digest on the release
-page therefore names bytes that were pullable at publication time:
+The run attaches a generated set rather than a copy of the development file, and then
+re-reads each published tag from the registry, failing if the digest it reads differs from
+the digest it wrote. A digest on the release page therefore names bytes that were pullable
+at publication time:
 
-- `speechnexus-<tag>-images.txt` — one `registry/repo:<tag>@sha256:…` line per image;
-- `speechnexus-<tag>-SHA256SUMS` — checksums of the other two assets;
-- `speechnexus-<tag>-compose.yaml` — `deploy/compose.yaml` at the same tag.
+- `speechnexus-<tag>-compose.yaml` — the topology with every SpeechNexus service pinned to
+  `ghcr.io/hrygo/<repository>@sha256:<digest>` from the digest list, with no `build:` key and
+  no build context anywhere in the file. `postgres` keeps its upstream tag
+  (`postgres:16.15-alpine`): it is third-party, anonymously pullable and not built by this
+  repository, and the manifest records it with `digest_pinned: false` rather than implying a
+  pin it does not have;
+- `speechnexus-<tag>-images.txt` — one `registry/repo:<tag>@sha256:…` line per image; it is
+  the digest source the compose file is generated from;
+- `speechnexus-<tag>-init-object-storage.py`, `speechnexus-<tag>-job-startup-gate.py`,
+  `speechnexus-<tag>-workbench-startup-gate.py` — the three scripts the compose file mounts,
+  so the set is closed under what the topology needs;
+- `speechnexus-<tag>-release-manifest.json` — tag, version, build commit, every image digest,
+  the migration head read out of the published image, and this asset list with checksums;
+- `speechnexus-<tag>-SHA256SUMS` — checksums of every other asset.
 
-Verify and pin what the page claims:
+The manifest's migration head is the head the image actually carries: the workflow runs
+`alembic` inside the published `speechnexus-python` image instead of transcribing a value
+from the repository. Compare it with the head the documentation you are reading states — a
+difference means the images predate those migrations. That field exists because the two
+values can disagree without anything on the page saying so: `v0.1.0`'s image carries
+`0057_asr_settlement`, while the repository's current migration chain ends at
+`0063_deletion_targets_blocked`.
+
+### Deploying from the attachments alone
+
+No checkout is involved. Download every asset into one directory, because the compose file
+mounts its three `.py` siblings by relative path:
 
 ```bash
 tag=v0.1.0
-gh release download "$tag" --pattern "speechnexus-${tag}-*"
+mkdir -p "speechnexus-${tag}" && cd "speechnexus-${tag}"
+gh release download "$tag" --repo hrygo/SpeechNexus --pattern "speechnexus-${tag}-*"
 shasum -a 256 -c "speechnexus-${tag}-SHA256SUMS"
-# Every line is a complete image reference; the digest is the manifest list.
-docker pull "$(grep speechnexus-python "speechnexus-${tag}-images.txt")"
-# Both architectures must be present in the index:
-docker buildx imagetools inspect "ghcr.io/hrygo/speechnexus-python:${tag}"
+# Already pinned: this prints only image digests and the one public database image.
+docker compose --env-file compose.env -f "speechnexus-${tag}-compose.yaml" config --images
+docker compose --env-file compose.env -f "speechnexus-${tag}-compose.yaml" up -d postgres minio minio-init
 ```
 
-Pinning a published image replaces the build for that service without editing
-`deploy/compose.yaml` — the same deployment-side override pattern as [Web images](#web-images),
-started with `--no-build` so compose does not rebuild over the pinned digest:
+`compose.env` and the private recipe files remain deployment inputs, not attachments: copy
+[`compose.env.example`](compose.env.example) and the files under [`private/`](private/), then
+replace their synthetic values as §2–§3 of the
+[minimal runbook](../docs/operations/compose-minimal.md) describes. The digest in
+`images.txt` is the manifest list, so `docker pull "$(grep speechnexus-python
+"speechnexus-${tag}-images.txt")"` pulls the architecture of the host and
+`docker buildx imagetools inspect` shows both.
+
+Pinning a published image by hand is an advanced case now, not the normal path: it is only
+needed to run the source tree's `deploy/compose.yaml` with one published image instead of
+the attachment. There the build still exists and the override replaces it, exactly like
+[Web images](#web-images), started with `--no-build` so compose does not rebuild over the
+pinned digest:
 
 ```yaml
 services:

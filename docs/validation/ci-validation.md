@@ -624,7 +624,7 @@ uv run pytest tests/ci tests/contract/test_ci_workflow.py tests/unit/test_integr
 
 所以指向 Markdown 的终态引用必须带内容断言，把「那一行是哪件事」写进引用本身：
 
-- 形式：`` `deploy/README.md:1270`（该行须含 `check-public-job-execution-defaults.sql`） ``；
+- 形式：`` `deploy/README.md:1313`（该行须含 `check-public-job-execution-defaults.sql`） ``；
 - 判据：片段必须出现在目标行 **±15 行**内，否则 `DRIFT`，并报出最近命中行与相差行数；
 - 只有终态文档判定；过程记录连断言都不校验（冻结）；
 - 代码目标的引用允许暂时不带断言，报告用 `ASSERT ... unasserted_code=` 计数——那是待补的欠账，不是失败条件。

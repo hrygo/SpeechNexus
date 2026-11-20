@@ -26,7 +26,7 @@ SIBLINGS = (
     (ROOT / ".github/workflows/node-controller-image.yml").read_text(),
 )
 PINNED_ACTION = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}$")
-ASSET_SUFFIXES = ("images.txt", "SHA256SUMS", "compose.yaml")
+ASSET_SUFFIXES = ("images.txt", "SHA256SUMS", "compose.yaml", "release-manifest.json")
 UPLOAD_STEP = "Upload the assets to the release"
 REUPLOAD_STEP = "Re-upload the assets to the release (explicit republish)"
 

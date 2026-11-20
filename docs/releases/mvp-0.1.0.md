@@ -160,7 +160,7 @@ binding 发布与配额/容量核对的命令在[异步 Job 手册 §7.1–§7.3
    已发布的 binding 必须带 `execution_defaults`，否则 asr/tts 创建返回 `422 job_binding_incomplete`；
    升级前用只读预检
    `psql "$SPEECHNEXUS_DATABASE_URL" -f scripts/dev-env/check-public-job-execution-defaults.sql`
-   列出缺项，对列出的 binding 重新发布，**不要自动回填**（口径与命令来源：`deploy/README.md:1270`（该行须含 `check-public-job-execution-defaults.sql`））。
+   列出缺项，对列出的 binding 重新发布，**不要自动回填**（口径与命令来源：`deploy/README.md:1313`（该行须含 `check-public-job-execution-defaults.sql`））。
 4. **声音资格**：参考部署的 bootstrap 明确「engine lifecycle is operator/external」
    （`deploy/compose.yaml:9`），因此没有 node-controller 也就没有 native runtime 证据。外部托管
    引擎只能走运维自证路径：先声明信任（默认关闭，未声明即 `exit 2` 点名变量），再
@@ -215,7 +215,7 @@ binding 发布与配额/容量核对的命令在[异步 Job 手册 §7.1–§7.3
 4. **起 gateway，再起 api 与 worker**。原因是 TTS 内部命令新增的可选字段是**单向兼容**：新
    gateway 能处理旧 backend 的 builtin 命令，旧 gateway 处理新 backend 的 custom 命令会走未知
    路径（`ENGINE_TRANSPORT_UNKNOWN`），不会静默回退。因此不允许「新 backend + 旧 gateway」
-   （`deploy/README.md:1280`（该行须含 `新 backend + 旧 gateway`））。
+   （`deploy/README.md:1323`（该行须含 `新 backend + 旧 gateway`））。
 5. **按需启用 profile**：`job-dispatch`、`artifact-retention`、`workbench-api`、`web`、
    `asset-inspection`。每个 profile 都有自己的启动闸门，闸门失败是**容器退出/重启循环**，不是
    `up -d` 失败——`up -d` 返回 0 不代表该单元可用。

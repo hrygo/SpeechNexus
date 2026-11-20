@@ -15,14 +15,24 @@ name: Release images
 #   ghcr.io/hrygo/speechnexus-web-workbench   deploy/images/web.Dockerfile APP_NAME=workbench
 #   ghcr.io/hrygo/speechnexus-node-controller deploy/images/node-controller.Dockerfile
 #   ghcr.io/hrygo/speechnexus-asset-inspector asset-inspector/Dockerfile
+#   ghcr.io/hrygo/speechnexus-minio           deploy/images/minio.Dockerfile
 #
 # `execution-gateway` has no Dockerfile of its own — the compose `gateway` service
-# builds `*python-build` — so it ships inside `speechnexus-python` rather than as a
-# sixth image. `minio` is deliberately not published here: compose's `minio` service
-# carries both `image:` and `build: deploy/images/minio.Dockerfile`, so a deployment
-# still builds it locally from GitHub Releases, `api.github.com` and
-# `raw.githubusercontent.com` — the download path `#900` records failing on a
-# throttled host. Pinning every other service by digest does not remove that build.
+# builds `*python-build` — so it ships inside `speechnexus-python` rather than as an
+# image of its own. `minio` *is* published: the upstream image is no longer
+# anonymously pullable (`minio/minio` does not exist on Docker Hub and
+# `quay.io/minio/minio` answers 401), so a deployment that did not get it here would
+# still build `deploy/images/minio.Dockerfile` from GitHub Releases, `api.github.com`
+# and `raw.githubusercontent.com` — the download path `#900` records failing on a
+# throttled host.
+#
+# The attached compose is not `deploy/compose.yaml`. `deploy/release-assets.py`
+# rewrites that file into one whose services run the digests above, repoints the
+# three bind-mounted bootstrap/startup-gate scripts at attachments that ship beside
+# it, and writes the release manifest that names this commit, every digest and the
+# migration head read out of the published image. Attaching the development file
+# verbatim produced an attachment whose services resolved to `<project>-api` and
+# failed with `lstat .../deploy: no such file or directory`.
 #
 # Multi-architecture without QEMU: amd64 and arm64 build natively on the
 # `ubuntu-24.04` / `ubuntu-24.04-arm` pair this repository already uses for image
@@ -155,13 +165,13 @@ jobs:
 
           # A published record is immutable unless someone says otherwise. A tag
           # force-pushed to a tree with a different Dockerfile would otherwise rebuild
-          # every check green and replace the three assets, leaving a fresh but
+          # every check green and replace the published assets, leaving a fresh but
           # self-consistent digest list — `SHA256SUMS` would verify against itself and
           # the page would show no sign that the record changed. Stop here, before a
           # single image is built, when the tag already carries assets.
           assets="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
           conflicts=()
-          for suffix in images.txt SHA256SUMS compose.yaml; do
+          for suffix in images.txt SHA256SUMS compose.yaml release-manifest.json; do
             if grep -qx "speechnexus-${tag}-${suffix}" <<< "$assets"; then
               conflicts+=("speechnexus-${tag}-${suffix}")
             fi
@@ -205,14 +215,20 @@ jobs:
               "repository": "speechnexus-asset-inspector",
               "dockerfile": "asset-inspector/Dockerfile",
               "build_args": ""
+            },
+            {
+              "name": "minio",
+              "repository": "speechnexus-minio",
+              "dockerfile": "deploy/images/minio.Dockerfile",
+              "build_args": ""
             }
           ]
           JSON
           # The image list is emitted as one JSON line so both the build matrix and
           # the manifest job read the same definition instead of a second copy.
           images="$(jq -c . "${RUNNER_TEMP}/images.json")"
-          if [[ "$(jq 'length' <<< "$images")" != 5 ]]; then
-            echo "::error::Expected 5 image definitions, got $(jq 'length' <<< "$images")"
+          if [[ "$(jq 'length' <<< "$images")" != 6 ]]; then
+            echo "::error::Expected 6 image definitions, got $(jq 'length' <<< "$images")"
             exit 1
           fi
 
@@ -318,6 +334,7 @@ jobs:
       SHORT_SHA: ${{ needs.metadata.outputs.short_sha }}
       IMAGE_PREFIX: ghcr.io/hrygo
       IMAGES: ${{ needs.metadata.outputs.images }}
+      COMMIT: ${{ needs.metadata.outputs.commit }}
       GITHUB_REPOSITORY: ${{ github.repository }}
     steps:
       - name: Check out the published tag
@@ -467,14 +484,71 @@ jobs:
             cat "speechnexus-${TAG}-images.txt"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-      - name: Prepare the compose snapshot and checksums
+      - name: Read the migration head out of the published image
+        id: head
         shell: bash
         run: |
           set -euo pipefail
-          # Same ref as the images, so the published topology and the published
-          # digests describe one commit.
-          cp deploy/compose.yaml "speechnexus-${TAG}-compose.yaml"
-          sha256sum "speechnexus-${TAG}-images.txt" "speechnexus-${TAG}-compose.yaml" \
+          # The attachment has to state the head the image actually carries. These
+          # two values differed by six migrations for `v0.1.0` (image
+          # `0057_asr_settlement`, current repository chain
+          # `0063_deletion_targets_blocked`) and nothing on the release page let a
+          # reader notice it, so the value is read here instead of being written
+          # down next to the documentation.
+          ref="$(grep -E '/speechnexus-python:' "speechnexus-${TAG}-images.txt")"
+          if [[ -z "$ref" ]]; then
+            echo "::error::${TAG}'s images.txt names no speechnexus-python image"
+            exit 1
+          fi
+          head="$(docker run --rm --entrypoint python "$ref" -c '
+          from alembic.config import Config
+          from alembic.script import ScriptDirectory
+          from importlib.resources import files
+
+          config = Config()
+          config.set_main_option(
+              "script_location",
+              str(files("speechnexus_backend.speech.infrastructure").joinpath("migrations")),
+          )
+          print(ScriptDirectory.from_config(config).get_current_head())
+          ')"
+          if [[ ! "$head" =~ ^[0-9]{4}_[A-Za-z0-9_]+$ ]]; then
+            echo "::error::the published image returned an unusable migration head: '$head'"
+            exit 1
+          fi
+          echo "value=${head}" >> "$GITHUB_OUTPUT"
+          echo "ref=${ref}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Migration head of ${TAG}"
+            echo
+            echo '```'
+            echo "${ref}: ${head}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Generate the self-contained compose, the manifest and the checksums
+        shell: bash
+        env:
+          MIGRATION_HEAD: ${{ steps.head.outputs.value }}
+          MIGRATION_HEAD_REF: ${{ steps.head.outputs.ref }}
+        run: |
+          set -euo pipefail
+          # The attachment set is generated from the ref the images were built from,
+          # so the published topology and the published digests describe one commit.
+          python3 deploy/release-assets.py \
+            --compose deploy/compose.yaml \
+            --images "speechnexus-${TAG}-images.txt" \
+            --tag "$TAG" \
+            --version "$VERSION" \
+            --commit "$COMMIT" \
+            --migration-head "$MIGRATION_HEAD" \
+            --migration-head-image "$MIGRATION_HEAD_REF" \
+            --out-dir .
+          # The manifest carries the checksums of the other assets; this file covers
+          # the manifest and everything beside it.
+          sha256sum "speechnexus-${TAG}-images.txt" \
+            "speechnexus-${TAG}-compose.yaml" \
+            "speechnexus-${TAG}-release-manifest.json" \
+            speechnexus-"${TAG}"-*.py \
             > "speechnexus-${TAG}-SHA256SUMS"
           sha256sum --check --strict "speechnexus-${TAG}-SHA256SUMS"
           cat "speechnexus-${TAG}-SHA256SUMS"
@@ -491,6 +565,8 @@ jobs:
             "speechnexus-${TAG}-images.txt" \
             "speechnexus-${TAG}-SHA256SUMS" \
             "speechnexus-${TAG}-compose.yaml" \
+            "speechnexus-${TAG}-release-manifest.json" \
+            speechnexus-"${TAG}"-*.py \
             --repo "$GITHUB_REPOSITORY"
       - name: Re-upload the assets to the release (explicit republish)
         if: ${{ needs.metadata.outputs.republish == 'true' }}
@@ -501,16 +577,34 @@ jobs:
             "speechnexus-${TAG}-images.txt" \
             "speechnexus-${TAG}-SHA256SUMS" \
             "speechnexus-${TAG}-compose.yaml" \
+            "speechnexus-${TAG}-release-manifest.json" \
+            speechnexus-"${TAG}"-*.py \
             --clobber --repo "$GITHUB_REPOSITORY"
       - name: Read the release page back
         shell: bash
         run: |
           set -euo pipefail
           assets="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
-          for suffix in images.txt SHA256SUMS compose.yaml; do
+          for suffix in images.txt SHA256SUMS compose.yaml release-manifest.json; do
             if ! grep -qx "speechnexus-${TAG}-${suffix}" <<< "$assets"; then
               echo "::error::speechnexus-${TAG}-${suffix} is missing from the ${TAG} release"
               exit 1
             fi
           done
-          echo "Verified: the ${TAG} release carries the digest manifest, its checksums and the compose snapshot."
+          # Same glob the upload and the checksum step use, so a newly mounted
+          # script cannot be uploaded without also being checked here.
+          shopt -s nullglob
+          scripts=(speechnexus-"${TAG}"-*.py)
+          shopt -u nullglob
+          if [[ ${#scripts[@]} -eq 0 ]]; then
+            echo "::error::the generator wrote no script attachments"
+            exit 1
+          fi
+          for script in "${scripts[@]}"; do
+            name="$(basename "$script")"
+            if ! grep -qx "$name" <<< "$assets"; then
+              echo "::error::${name} is missing from the ${TAG} release"
+              exit 1
+            fi
+          done
+          echo "Verified: the ${TAG} release carries the digests, the self-contained compose, the manifest, the mounted scripts and their checksums."

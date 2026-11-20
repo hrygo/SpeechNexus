@@ -103,8 +103,14 @@ profile 的变量与默认 `dispatch_kinds` 见
 本参考部署装配 `asr` 与一条常驻 TTS 变体车道（`tts`、`voice_design`、`voice_clone` 三者选一），
 启动闸门对其它 kind 点名拒绝（见 §6 的异步 Job 段）。变体由 `deploy/compose.env` 选择：清空
 CustomVoice 那组 `SPEECHNEXUS_GATEWAY_FILE_TTS_*` 键、填上目标变体的
-`SPEECHNEXUS_GATEWAY_FILE_VOICE_*` 键，并让 `SPEECHNEXUS_JOB_DISPATCH_KINDS` 只点名该变体；
-同时配置两条变体时网关拒绝启动，闸门也在领取前点名拒绝。
+`SPEECHNEXUS_GATEWAY_FILE_VOICE_*` 键，并让 `SPEECHNEXUS_JOB_DISPATCH_KINDS` 只点名该变体。
+两条规则分属两层：`kinds` 点名两条变体时**闸门**在领取前点名拒绝；`compose.env` 配了两条
+变体时**网关**拒绝启动。闸门只读 `kinds`，容器里没有 `SPEECHNEXUS_GATEWAY_FILE_*`，因此
+**`kinds` 与实际配置的车道不一致时闸门放行**，Job 在领取之后才被确定性拒绝：网关的
+`validate_request` 对未服务的 stage 抛 `FileStageUnavailableError`
+（`execution-gateway/src/speechnexus_gateway/file_speech_runtime.py:98`），派发返回
+`DispatchResult.REJECTED` / `INVALID_EXECUTION_REQUEST`
+（`file_execution_worker.py:174`）。两边保持一致是部署动作，不是已校验的不变量。
 
 默认网络使用 `172.28.0.0/24`（`deploy/compose.yaml:850` 的 `ipam`），MinIO 地址为
 `172.28.0.10`（`deploy/compose.yaml:90` 的 `ipv4_address`）；启动前须核对该网段不会与

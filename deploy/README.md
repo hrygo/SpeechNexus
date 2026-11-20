@@ -1055,21 +1055,30 @@ inside the lanes this bootstrap assembles: `deploy/compose.yaml` forwards exactl
 the private ASR and one resident TTS-variant gateway config, so `asr` plus one of
 `tts`, `voice_design` and `voice_clone` are the kinds the gate accepts. Any other
 kind — `voice_validation` or a value outside the dispatchable union — is named and
-rejected at container start, before a claim. Naming two resident TTS variants is
-refused the same way: one gateway loads one of CustomVoice (`tts`), VoiceDesign
-and Base clone, because they are three separate checkpoint/task loads, and the
-gateway itself refuses to start with two lanes configured. `voice_validation`
-submits through the voice-clone command lane, which this file never configures for
-the gateway: the worker would claim such a Job and fail after the claim, or never
-be served an engine for it.
+rejected at container start, before a claim. Naming two resident TTS variants in
+`kinds` is refused the same way, because one gateway process loads one of
+CustomVoice (`tts`), VoiceDesign and Base clone: they are three separate
+checkpoint/task loads. That is a rule about `kinds`; the environment rule is
+separate — with two lanes configured in `compose.env` the gateway itself refuses
+to start. `voice_validation` submits through the voice-clone command lane, which
+this file never configures for the gateway: the worker would claim such a Job and
+fail after the claim, or never be served an engine for it.
 
 The three resident TTS lanes are rendered from `compose.env`, so selecting one is
 an environment change rather than a `compose.yaml` edit: blank the CustomVoice
 pair (`SPEECHNEXUS_GATEWAY_FILE_TTS_CONFIG_FILE` and both
 `SPEECHNEXUS_GATEWAY_FILE_TTS_OBJECT_*` keys) and fill the pair of the variant the
-deployment runs. `SPEECHNEXUS_JOB_DISPATCH_KINDS` must then name that variant only;
-the gate verifies the lane's private config and its `objects.result_bucket` before
-any claim, and the gateway refuses to start when two lanes are configured.
+deployment runs. `SPEECHNEXUS_JOB_DISPATCH_KINDS` must then name that variant only; the gate
+verifies the lane's private config and its `objects.result_bucket` before any
+claim. The gate reads `kinds`, not `compose.env`, so it cannot see which variant
+the gateway actually loaded: a `kinds` selection that disagrees with the
+configured lane passes the gate, and the Job is then refused deterministically
+after the claim — the gateway's `validate_request` raises
+`FileStageUnavailableError` for a stage it does not serve
+(`execution-gateway/src/speechnexus_gateway/file_speech_runtime.py:98`) and the
+dispatch answers `DispatchResult.REJECTED` /
+`INVALID_EXECUTION_REQUEST` (`file_execution_worker.py:174`). Keeping the two
+agreeing is a deployment step, not a checked invariant.
 
 Serving a lane this file does not assemble is still a topology change, not a
 `kinds` change: add its private gateway config and

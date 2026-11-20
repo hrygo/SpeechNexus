@@ -53,6 +53,7 @@ COMPOSE = ROOT / "deploy/compose.yaml"
 ENV_EXAMPLE = ROOT / "deploy/compose.env.example"
 PRIVATE_EXAMPLES = ROOT / "deploy/private"
 INIT_STORAGE = ROOT / "deploy/init-object-storage.py"
+MANUAL = ROOT / "docs/operations/compose-minimal.md"
 PYTHON_IMAGE = ROOT / "deploy/images/python.Dockerfile"
 GATE = ROOT / "deploy/job-startup-gate.py"
 PROVISION = ROOT / "scripts/dev-env/provision-job-roles.py"
@@ -425,6 +426,26 @@ class DeployReadmeGateTests(unittest.TestCase):
         # Grant-only framing used to present the lane as a supported opt-in.
         self.assertNotIn("Enabling `voice_validation` is not only a kinds change", readme)
         self.assertNotIn("`voice_validation_worker_grants` relations are readable", readme)
+
+    def test_the_manual_separates_the_kinds_rule_from_the_environment_rule(self) -> None:
+        manual = normalise(MANUAL.read_text(encoding="utf-8"))
+        self.assertIn("闸门", manual)
+        self.assertIn("网关", manual)
+        self.assertIn("网关的 `validate_request` 对未服务的 stage 抛", manual)
+        self.assertIn("FileStageUnavailableError", manual)
+        self.assertIn("INVALID_EXECUTION_REQUEST", manual)
+
+    def test_the_readme_separates_the_kinds_rule_from_the_environment_rule(self) -> None:
+        # #1075: "two variants" is two different failures. `kinds` naming two is
+        # refused by the gate before a claim; `compose.env` configuring two is
+        # refused by the gateway at startup. Conflating them hid the case that
+        # actually escapes the gate, which the README must also name.
+        readme = normalise(deploy_readme_gate_description())
+        self.assertIn("That is a rule about `kinds`", readme)
+        self.assertIn("the gateway itself refuses to start", readme)
+        self.assertIn("disagrees with the", readme)
+        self.assertIn("FileStageUnavailableError", readme)
+        self.assertIn("INVALID_EXECUTION_REQUEST", readme)
 
 
 class JobRoleProvisioningTests(unittest.TestCase):

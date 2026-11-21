@@ -51,7 +51,7 @@ def _translate_composed(node: Any, params: Any) -> Any:
         parts = cast(Sequence[Any], node._obj)
         return psycopg.sql.Composed([_translate_composed(part, params) for part in parts])
     if isinstance(node, psycopg.sql.SQL):
-        template = cast(str, node._obj)
+        template = node._obj
         return psycopg.sql.SQL(qmark_to_pyformat(template, params))
     return node
 

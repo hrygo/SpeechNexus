@@ -71,6 +71,10 @@ class Rows:
     def fetchall(self) -> list[dict[str, Any]]:
         return self.rows
 
+    def fetchmany(self, size: int) -> list[dict[str, Any]]:
+        # 适配器现在按页取行;替身必须真的按 size 截断,否则测不出分页边界。
+        return self.rows[:size]
+
 
 class Pool:
     def __init__(self, request: NewPublicJob) -> None:

@@ -92,8 +92,10 @@ def test_list_jobs_reads_a_bounded_page_in_a_read_only_transaction() -> None:
     assert any(query == "SET TRANSACTION READ ONLY" for query, _ in pool.calls)
     query, parameters = next(call for call in pool.calls if "WHERE j.workspace_id = ?" in call[0])
     assert "(j.created_at_us, j.job_id) > (?, ?)" in query
-    assert "ORDER BY j.created_at_us ASC, j.job_id ASC LIMIT %s" in query
-    assert parameters == ("workspace-default", "pending", "tts", NOW - 1, "job-0", 3)
+    # 页大小不进 SQL:方言没有 `LIMIT`,由 fetchmany 决定。语句里剩下的 `LIMIT 1`
+    # 都在 `_JOB_COLUMNS` 的标量子查询里(取最新进度),那是标量语义,不能去掉。
+    assert query.endswith("ORDER BY j.created_at_us ASC, j.job_id ASC")
+    assert parameters == ("workspace-default", "pending", "tts", NOW - 1, "job-0")
     with pytest.raises(ValueError):
         _driver(pool).list_jobs(
             workspace_id="workspace-default",
@@ -172,8 +174,9 @@ def test_events_reads_strictly_after_the_cursor_with_a_bounded_page() -> None:
     events = _driver(pool).events(request.job_id, after_seq=1, limit=100)
     assert [event.event_seq for event in events] == [2, 3]
     query, parameters = next(call for call in pool.calls if "FROM speech_job_events" in call[0])
-    assert "event_seq > ?" in query and "ORDER BY event_seq ASC LIMIT %s" in query
-    assert parameters == (request.job_id, 1, 100)
+    assert "event_seq > ?" in query and query.endswith("ORDER BY event_seq ASC")
+    assert "LIMIT" not in query
+    assert parameters == (request.job_id, 1)
 
     pool.event_rows = [
         {

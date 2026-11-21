@@ -136,6 +136,7 @@ class _ObservedJobs(PostgresPublicJobs):
         parameters: tuple[object, ...],
         *,
         submission_key: tuple[str, str] | None = None,
+        page_size: int | None = None,
     ) -> list[dict[str, Any]]:
         self.calls.append((query, parameters))
         return super()._read(query, parameters, submission_key=submission_key)

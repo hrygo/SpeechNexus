@@ -122,6 +122,7 @@ class _Rows(Protocol):
     @property
     def rowcount(self) -> int: ...
     def fetchall(self) -> list[dict[str, Any]]: ...
+    def fetchmany(self, size: int) -> list[dict[str, Any]]: ...
     def fetchone(self) -> dict[str, Any] | None: ...
 
 
@@ -148,6 +149,12 @@ class _DeadlineRows:
     def fetchall(self) -> list[dict[str, Any]]:
         _remaining(self.deadline)
         rows = self.raw.fetchall()
+        _remaining(self.deadline)
+        return rows
+
+    def fetchmany(self, size: int) -> list[dict[str, Any]]:
+        _remaining(self.deadline)
+        rows = self.raw.fetchmany(size)
         _remaining(self.deadline)
         return rows
 
@@ -377,8 +384,9 @@ class PostgresPublicJobs:
         rows = self._read(
             "SELECT event_seq, state, occurred_at_us, kind, progress_unit, "
             "progress_completed, progress_total FROM speech_job_events "
-            "WHERE job_id = ? AND event_seq > ? ORDER BY event_seq ASC LIMIT %s",
-            (identifier(job_id), after_seq, limit),
+            "WHERE job_id = ? AND event_seq > ? ORDER BY event_seq ASC",
+            (identifier(job_id), after_seq),
+            page_size=limit,
         )
         try:
             return tuple(
@@ -505,14 +513,12 @@ class PostgresPublicJobs:
         if after is not None:
             predicates.append("(j.created_at_us, j.job_id) > (?, ?)")
             parameters.extend(after)
-        parameters.append(limit)
         rows = self._read(
             "SELECT " + _JOB_COLUMNS + " FROM speech_jobs AS j "
             "LEFT JOIN speech_job_submissions AS s ON s.job_id = j.job_id "
-            "WHERE "
-            + " AND ".join(predicates)
-            + " ORDER BY j.created_at_us ASC, j.job_id ASC LIMIT %s",
+            "WHERE " + " AND ".join(predicates) + " ORDER BY j.created_at_us ASC, j.job_id ASC",
             tuple(parameters),
+            page_size=limit,
         )
         return tuple(_job(row) for row in rows)
 
@@ -1059,6 +1065,7 @@ class PostgresPublicJobs:
         parameters: tuple[object, ...],
         *,
         submission_key: tuple[str, str] | None = None,
+        page_size: int | None = None,
     ) -> list[dict[str, Any]]:
         deadline = time.monotonic() + self._timeout
         try:
@@ -1066,7 +1073,9 @@ class PostgresPublicJobs:
                 connection.execute("SET TRANSACTION READ ONLY")
                 if submission_key is not None:
                     _lock_submission_key(connection, *submission_key)
-                rows = connection.execute(query, parameters).fetchall()
+                cursor = connection.execute(query, parameters)
+                # 页大小不进 SQL:方言没有 `LIMIT`,keyset 谓词已把扫描面收窄。
+                rows = cursor.fetchall() if page_size is None else cursor.fetchmany(page_size)
                 if time.monotonic() >= deadline:
                     raise PublicJobUnavailableError
             return rows

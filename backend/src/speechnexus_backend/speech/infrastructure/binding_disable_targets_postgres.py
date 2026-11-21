@@ -42,6 +42,8 @@ class TargetCursor(Protocol):
 
     def fetchall(self) -> list[dict[str, Any]]: ...
 
+    def fetchmany(self, size: int) -> list[dict[str, Any]]: ...
+
 
 def _target(row: dict[str, Any]) -> DisableExecutionTarget:
     return DisableExecutionTarget(**{name: row[name] for name in _FIELDS})
@@ -52,12 +54,13 @@ def list_disable_event_ids(cursor: TargetCursor, *, after: str | None, limit: in
     integer(limit, minimum=1, maximum=128)
     if after is not None:
         identifier(after)
+    # 页大小不进 SQL:方言没有 `LIMIT`,keyset 谓词已把扫描面收窄。
     cursor.execute(
         "SELECT event_id FROM speech_binding_disable_intents "
-        "WHERE (CAST(? AS text) IS NULL OR event_id > ?) ORDER BY event_id LIMIT %s",
-        (after, after, limit),
+        "WHERE (CAST(? AS text) IS NULL OR event_id > ?) ORDER BY event_id",
+        (after, after),
     )
-    event_ids = [row["event_id"] for row in cursor.fetchall()]
+    event_ids = [row["event_id"] for row in cursor.fetchmany(limit)]
     for event_id in event_ids:
         identifier(event_id)
     return event_ids
@@ -87,10 +90,10 @@ def list_disable_targets(
         "WHERE event_id=? AND (CAST(? AS text) IS NULL OR submit_intent_id > ?) "
         "AND (CAST(? AS text) IS NULL OR gateway_id=?) "
         "AND (CAST(? AS text) IS NULL OR host_node_id=?) "
-        "ORDER BY submit_intent_id LIMIT %s",
-        (event_id, after, after, gateway_id, gateway_id, node_id, node_id, limit),
+        "ORDER BY submit_intent_id",
+        (event_id, after, after, gateway_id, gateway_id, node_id, node_id),
     )
-    return [_target(row) for row in cursor.fetchall()]
+    return [_target(row) for row in cursor.fetchmany(limit)]
 
 
 def read_disable_target(
@@ -168,16 +171,16 @@ def capture_disable_targets(
         "AND (CAST(? AS text) IS NULL OR l.host_node_id=?) "
         f"AND NOT EXISTS (SELECT 1 FROM {TARGET_TABLE} t "
         "WHERE t.event_id=i.event_id AND t.submit_intent_id=s.submit_intent_id) "
-        "ORDER BY s.submit_intent_id LIMIT %s",
-        (wait_timeout_ms, event_id, gateway_id, gateway_id, node_id, node_id, limit),
+        "ORDER BY s.submit_intent_id",
+        (wait_timeout_ms, event_id, gateway_id, gateway_id, node_id, node_id),
     )
-    candidates = [_target(row) for row in cursor.fetchall()]
+    candidates = [_target(row) for row in cursor.fetchmany(limit)]
     captured = []
     for target in candidates:
         values = tuple(getattr(target, name) for name in _FIELDS)
         cursor.execute(
             f"INSERT INTO {TARGET_TABLE} (event_id, {', '.join(_FIELDS)}) "
-            f"VALUES ({', '.join(['%s'] * (len(_FIELDS) + 1))}) "
+            f"VALUES ({', '.join(['?'] * (len(_FIELDS) + 1))}) "
             "ON CONFLICT (event_id, submit_intent_id) DO NOTHING",
             (event_id, *values),
         )

@@ -51,6 +51,9 @@ class _Cursor:
     def fetchall(self) -> list[dict[str, Any]]:
         return self.raw.fetchall()
 
+    def fetchmany(self, size: int) -> list[dict[str, Any]]:
+        return self.raw.fetchmany(size)
+
     def clock(self) -> int:
         self.execute("SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp())*1000000 AS BIGINT) AS t")
         return cast(int, self.fetchall()[0]["t"])

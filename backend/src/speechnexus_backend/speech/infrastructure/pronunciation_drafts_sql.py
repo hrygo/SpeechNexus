@@ -41,10 +41,24 @@ class PronunciationCursor(Protocol):
 
     def fetchall(self) -> list[dict[str, Any]]: ...
 
+    def fetchmany(self, size: int) -> list[dict[str, Any]]: ...
+
 
 def _rows(cursor: PronunciationCursor, sql: str, args: tuple[object, ...]) -> list[dict[str, Any]]:
     cursor.execute(sql, args)
     return cursor.fetchall()
+
+
+def _page(
+    cursor: PronunciationCursor,
+    sql: str,
+    args: tuple[object, ...],
+    limit: int,
+) -> list[dict[str, Any]]:
+    """取一页:页大小不进 SQL(方言没有 `LIMIT`),多取的一行由调用方判断。"""
+
+    cursor.execute(sql, args)
+    return cursor.fetchmany(limit)
 
 
 def read_draft(
@@ -149,7 +163,7 @@ def list_summaries(
         raise ValueError("Invalid pronunciation page bound")
     if after is not None:
         identifier(after)
-    return _rows(
+    return _page(
         cursor,
         "SELECT f.pronunciation_id AS pronunciation_id, "
         "f.latest_revision AS head_revision, r.encoding AS encoding, "
@@ -160,8 +174,9 @@ def list_summaries(
         "FROM speech_pronunciation_families f "
         "JOIN speech_pronunciation_revisions r "
         "ON r.pronunciation_id = f.pronunciation_id AND r.revision = f.latest_revision "
-        "WHERE f.pronunciation_id > ? ORDER BY f.pronunciation_id LIMIT %s",
-        (after or "", limit + 1),
+        "WHERE f.pronunciation_id > ? ORDER BY f.pronunciation_id",
+        (after or "",),
+        limit + 1,
     )
 
 

@@ -42,7 +42,8 @@ from types import TracebackType
 from urllib.parse import quote, urlsplit, urlunsplit
 
 import psycopg
-import pymysql
+
+from speechnexus_portable_sql.pymysql_driver import connect as portable_mysql_connect
 
 # 10 ms per chunk is the value that reproduced the adjacent lease-window red:
 # enough to blow a 1 s observation window while keeping a whole test file
@@ -278,7 +279,7 @@ def measure_roundtrip_ms(dsn: str, samples: int = 5) -> list[float]:
         finally:
             connection.close()
         return latencies
-    mysql_connection = pymysql.connect(
+    mysql_connection = portable_mysql_connect(
         host=parsed.hostname or "127.0.0.1",
         port=parsed.port or 3306,
         user=parsed.username or "root",
@@ -358,7 +359,7 @@ def measure_commit_latency_ms(dsn: str, samples: int = 5) -> list[float]:
             connection.close()
         return latencies
     database = _MYSQL_SCRATCH_PREFIX + uuid.uuid4().hex[:12]
-    admin = pymysql.connect(
+    admin = portable_mysql_connect(
         host=parsed.hostname or "127.0.0.1",
         port=parsed.port or 3306,
         user=parsed.username or "root",
@@ -369,7 +370,7 @@ def measure_commit_latency_ms(dsn: str, samples: int = 5) -> list[float]:
         with admin.cursor() as cursor:
             cursor.execute(f"CREATE DATABASE `{database}`")
             cursor.execute(f"CREATE TABLE `{database}`.probe (i int primary key)")
-        worker = pymysql.connect(
+        worker = portable_mysql_connect(
             host=parsed.hostname or "127.0.0.1",
             port=parsed.port or 3306,
             user=parsed.username or "root",
@@ -613,7 +614,7 @@ class MySQLSlowCommits:
         self.baseline_latency_ms = 0.0
         self.commit_latency_ms = 0.0
         self._original_delay = 0
-        self._connection = pymysql.connect(
+        self._connection = portable_mysql_connect(
             host=parsed.hostname,
             port=parsed.port,
             user=parsed.username or "root",

@@ -12,8 +12,9 @@ date: 2026-10-26
 本文规定目标架构与退出条件，不能把下文流程图当作已装配能力；当前实现、缺口和验收证据见[交付跟踪矩阵](../plans/delivery-tracking.md)，[2026-10-26 项目经理基线](../archive/plans/2026-10-26-project-manager-baseline.md)仅反映当时快照。首批模型与加载策略沿用 [ADR 0002](../decisions/0002-speech-models-engines-and-loading.md)，业务内容不出网的约束见 [ADR 0003](../decisions/0003-workbench-llm-network-boundary.md)，集群就绪架构与单机 MVP 同构部署见 [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md)。
 
 [ADR 0006](../decisions/0006-cluster-coordination-and-storage-portability.md)确定集群能力
-完整保留、跨表规则迁入受控应用事务、不采用 etcd，以及 PostgreSQL 正式交付 /
-MySQL 关键协调验证的边界。原替代步骤见[历史重构计划](../archive/plans/2026-10-23-cluster-coordination-refactor.md)；
+完整保留、跨表规则迁入受控应用事务、不采用 etcd。[ADR 0016](../decisions/0016-database-portability-core.md)
+进一步规定产品正确性由最小数据库能力契约和共享测试定义，PostgreSQL 是当前生产适配器，
+不构成数据库品牌约束。原替代步骤见[历史重构计划](../archive/plans/2026-10-23-cluster-coordination-refactor.md)；
 目标 DDL、[应用事务方案与契约](coordination-transactions.md)及双库测试原型已交付，
 旧 PG 独立兜底测试另存历史 fixture。生产协调已有分段实现与证据地图，完整业务装配和集群故障资格仍待完成；按 ADR 0007 的退出条件判断旧原型，不按目录或测试数量推定验收。
 
@@ -23,9 +24,9 @@ MySQL 关键协调验证的边界。原替代步骤见[历史重构计划](../ar
 | --- | --- | --- |
 | 应用运行时 | Python 3.14、FastAPI、Pydantic、Uvicorn、HTTPX | 保持现有 uv workspace；重型解码和推理不在事件循环内执行 |
 | 领域与应用 | 领域对象、服务中立端口、显式用例、Repository / Unit of Work | domain 不导入框架、生成 DTO、数据库或 vendor；adapter 在边界转换 |
-| 数据访问 | PostgreSQL 正式适配器沿用 Psycopg 3、有界连接池与显式 SQL；关键协调事务由端口隔离 | 规则留在领域/应用层；MySQL/InnoDB 仅作协调行为验证，不承诺全产品双库支持 |
-| 数据迁移 | Alembic 版本化迁移，SQLAlchemy 仅用于迁移环境 | 不将 ORM 模型作为业务权威，不以自动建表代替迁移 |
-| 任务与协调 | 关系数据库 Job / outbox / 租约，短事务 claim 与 reconcile，正式实现为 PostgreSQL | 不采用 etcd；Redis 仅可选非权威缓存/唤醒，不引入 Celery 或 Kafka 作为首期依赖 |
+| 数据访问 | 关系数据库中立端口；当前 PostgreSQL 适配器沿用 Psycopg 3、有界连接池与显式 SQL | 规则留在领域/应用层；品牌 SQL、驱动异常和 SQLSTATE 不泄漏；MySQL/InnoDB 仅作协调行为验证 |
+| 数据迁移 | 版本化、可检查迁移；当前 PostgreSQL 适配器使用 Alembic，SQLAlchemy 仅用于迁移环境 | 不将 ORM 模型作为业务权威，不以自动建表代替迁移；其他适配器提供等价迁移与资格 |
+| 任务与协调 | 关系数据库 Job / outbox / 租约，短事务 claim 与 reconcile；基础路径不依赖品牌快特性 | 不采用 etcd；Redis 仅可选非权威缓存/唤醒；`SKIP LOCKED` 与通知只作适配器优化 |
 | 对象与媒体 | S3 兼容存储、MinIO 开发验证；PyAV / FFmpeg 有界媒体处理 | 对象提交和数据库引用分开协调；编码、重采样、临时磁盘纳入预算 |
 | 公共和内部协议 | HTTP / JSON 控制、SSE 持久事件、WebSocket 实时流 | 公共、执行网关、部署控制器分别拥有契约，不透传 vendor 协议 |
 | 契约工具 | OpenAPI 3.1、JSON Schema 2020-12；Python DTO 生成 / 校验；TypeScript 类型与客户端生成 | 生成器与模板锁版本，验证语义而非只检查 schema 语法 |
@@ -148,9 +149,9 @@ VAD 的滞回、去抖和前缀缓冲与识别段策略版本化；预览与正�
 
 实例运行状态、控制意图和执行证据持久化在各自拥有的控制表中；数据流不写入控制账本。WS 断线后停止新增输入并协调取消，查询可以恢复执行事实，但不从元数据重放未保存音频。任何清理未知都保留 quarantine，不能以重试、换副本或重启 worker 绕过。
 
-## 7. PostgreSQL 事务、迁移与对象一致性
+## 7. 关系数据库事务、迁移与对象一致性
 
-运行时采用显式短事务、行锁、条件更新与唯一约束。PostgreSQL 默认业务事务使用 Read Committed；需要跨行不变量时锁定对应权威行，统一锁顺序，并在明确可安全重试的事务边界处理死锁 / 序列化失败。其他数据库适配器必须证明等价的事务行为，不能仅凭相同隔离级别名称判定兼容。跨表规则由受控应用事务保证，数据库保留基础约束、历史保护和最小权限。不能用“先读余量，再无条件写入”维护容量。
+运行时采用显式短事务、条件更新、互斥或无丢失更新能力与唯一约束。当前 PostgreSQL 业务事务默认使用 Read Committed；需要跨行不变量时锁定对应权威行，统一锁顺序，并在明确可安全重试的事务边界处理死锁 / 序列化失败。其他数据库适配器必须通过[同一能力契约与共享测试](database-portability.md)，不能仅凭相同隔离级别名称判定兼容。跨表规则由受控应用事务保证，数据库保留基础约束、历史保护和最小权限。不能用“先读余量，再无条件写入”维护容量。
 
 | 原子边界 | 同一事务内必须成立的事实 |
 | --- | --- |

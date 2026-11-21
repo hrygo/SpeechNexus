@@ -9,8 +9,10 @@ date: 2026-10-24
 
 依据 [ADR 0006](../decisions/0006-cluster-coordination-and-storage-portability.md)，
 业务裁决从 PostgreSQL 函数迁入应用事务。集群是必须支持的部署形态，Node=1 使用
-同一协议；不引入 etcd，Redis 只能缓存或唤醒。PostgreSQL 是唯一正式产品数据库，
-MySQL/InnoDB 是协调路径迁移验证目标。
+同一协议；不引入 etcd，Redis 只能缓存或唤醒。[ADR 0016](../decisions/0016-database-portability-core.md)
+把高层业务规则与数据库品牌解耦：PostgreSQL 是当前生产适配器和基线，
+MySQL/InnoDB 是协调路径迁移验证目标；声明支持其他适配器前须通过
+[共享能力契约与一致性测试](database-portability.md)。
 
 本次已交付精简 DDL、事务机器契约、权限生成工具，以及两个真实数据库共用的
 测试原型。[首个生产 Job/outbox 事务](../components/production-jobs.md)另行实现创建、完整身份重放、

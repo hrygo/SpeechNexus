@@ -436,6 +436,7 @@
       "epic": 338,
       "prd": "docs/prd.md#x-admit",
       "designs": [
+        "docs/architecture/database-portability.md",
         "docs/architecture/runtime-governance.md",
         "docs/architecture/technical-blueprint.md"
       ],
@@ -465,13 +466,16 @@
           "note": "显式启用 binding 停用屏障"
         }
       ],
-      "issues": []
+      "issues": [
+        1094
+      ]
     },
     {
       "id": "X-RECOVER",
       "epic": 338,
       "prd": "docs/prd.md#x-recover",
       "designs": [
+        "docs/architecture/database-portability.md",
         "docs/architecture/runtime-governance.md",
         "docs/architecture/technical-blueprint.md"
       ],
@@ -513,7 +517,8 @@
       ],
       "issues": [
         409,
-        455
+        455,
+        1095
       ]
     },
     {
@@ -1884,6 +1889,7 @@
       "epic": 338,
       "prd": "docs/prd.md#x-realtime-reserve",
       "designs": [
+        "docs/architecture/database-portability.md",
         "docs/architecture/runtime-governance.md",
         "docs/architecture/technical-blueprint.md"
       ],
@@ -1903,13 +1909,16 @@
           "note": "需求基线；不证明现行实现或运行资格。"
         }
       ],
-      "issues": []
+      "issues": [
+        1096
+      ]
     },
     {
       "id": "R-PCM",
       "epic": 339,
       "prd": "docs/prd.md#r-pcm",
       "designs": [
+        "docs/architecture/database-portability.md",
         "docs/architecture/speech-api.md",
         "docs/components/cpu-vad.md"
       ],
@@ -1934,7 +1943,9 @@
           "note": "需求基线；不证明现行实现或运行资格。"
         }
       ],
-      "issues": []
+      "issues": [
+        1097
+      ]
     },
     {
       "id": "V-REFERENCE",

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-20T10:50:00+08:00",
+  "fetched_at": "2026-11-21T18:06:05+0800",
   "issues": [
     {
       "number": 336,
@@ -1190,8 +1190,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/696",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "长文 TTS：支持超过 4096 字符的正文（需先定产品形态）",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [],
       "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
     },
@@ -1264,14 +1264,153 @@
       "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/338"
     },
     {
-      "number": 1070,
-      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1070",
+      "number": 1078,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1078",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "把 #696 登记进 F-TTS，并让已挂父 Epic 的卡不再显示「父 Epic 未核实」",
+      "title": "契约证明的 _annotation_free 仍会盲剥 components.* 下的同名 key（今天不可利用，是会自我埋点的护栏）",
       "state": "open",
       "state_reason": null,
       "labels": [],
       "parent_issue_url": null
+    },
+    {
+      "number": 1079,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1079",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "参考部署有合格音色时 api 起不来：结算 worker 只接受 loopback 明文，而 compose 给的是 http://gateway:8010",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": null
+    },
+    {
+      "number": 1084,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1084",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "同步 ASR 与取消对账仍明文外发网关凭据：未接入 #1083 收敛后的 origin 规则",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": null
+    },
+    {
+      "number": 1087,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1087",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "算力面装配：网关、节点控制器与 ASR 引擎在 MegaCube 受控运行",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:work-package"
+        },
+        {
+          "name": "status:in-progress"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/342"
+    },
+    {
+      "number": 1088,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1088",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "公开文件 ASR 跨主机端到端与五类故障演练",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:work-package"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/342"
+    },
+    {
+      "number": 1092,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1092",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "双机开发环境下一迭代：同构收口与显存额度取证",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:work-package"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": null
+    },
+    {
+      "number": 1094,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1094",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "把数据库品牌机制收进适配器，并冻结可移植协调能力契约",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:work-package"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/338"
+    },
+    {
+      "number": 1095,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1095",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "实现不依赖 SKIP LOCKED 的 CAS 认领与 outbox 推进基础路径",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:work-package"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/338"
+    },
+    {
+      "number": 1096,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1096",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "实现持久实时 budget grant、epoch 续租与幂等回收",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:work-package"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/338"
+    },
+    {
+      "number": 1097,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1097",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "实现实时本地 credit、边界 usage 区间与 grant 耗尽背压",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:work-package"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/339"
     }
   ]
 }

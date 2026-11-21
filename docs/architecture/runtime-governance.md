@@ -10,7 +10,8 @@ date: 2026-10-24
 本文负责容量准入、调度、取消 / 接管、用量、持久任务与数据生命周期，属于[项目主设计](../speechnexus-product-architecture.md)的配套规范。首期按部署 / 工作空间 / 执行类别治理，不建设用户或租户权限。硬件配置由部署资格确定；以下规则是不变量，部分已有实现，各链路仍须分别验证实际容量、质量与恢复能力。
 
 [ADR 0006](../decisions/0006-cluster-coordination-and-storage-portability.md)已将跨表
-规则的主要执行边界调整为受控应用事务。PostgreSQL 是唯一正式交付数据库，
+规则的主要执行边界调整为受控应用事务；[ADR 0016](../decisions/0016-database-portability-core.md)
+进一步把产品正确性定义在最小关系数据库能力契约上。PostgreSQL 是当前生产适配器，
 MySQL/InnoDB 仅用于关键协调路径验证；不采用 etcd，Redis 不承担协调权威。
 活动 DDL 已精简，规则的程序实现见[受控事务方案与契约](coordination-transactions.md)；
 测试/工具原型在真实 PostgreSQL 与 MySQL 上验证关键路径。生产调度、运行时接入与完整
@@ -81,7 +82,7 @@ MySQL/InnoDB 仅用于关键协调路径验证；不采用 etcd，Redis 不承�
 
 ### 1.4 多进程一致性与 fencing
 
-每个 pool 的调度 owner 使用关系数据库持久租约与递增 fencing token，正式适配器为 PostgreSQL。容量预留在事务中原子完成，lease 绑定 operation、engine 与 token；所有回写都验证 attempt 与 fencing。API 副本不能使用各自内存中的 semaphore 充当全局准入。
+每个 pool 的调度 owner 使用关系数据库持久租约与递增 fencing token，当前生产适配器为 PostgreSQL，正确性由[可移植协调能力契约](database-portability.md)约束。容量预留在事务中原子完成，lease 绑定 operation、engine 与 token；所有回写都验证 attempt 与 fencing。API 副本不能使用各自内存中的 semaphore 充当全局准入。
 
 管理面 `ResourcePool` 是跨节点聚合投影：`realtime_reserved_slots <= max_active_slots`，`active_slots + quarantine_slots <= max_active_slots`；任何计数都不能把隔离容量当成空闲容量。`status=ready` 必须至少有一个贡献节点和正容量，否则只能是 `degraded` / `unavailable`。聚合计数变化与节点租约账目保持同一事务口径，不能先展示可接单再补扣隔离槽位。受控应用事务必须使 host 与 instance 的 reserved / incremental / quarantine 投影等于实例基础预算与 admission lease 状态推导值；通过同一事务维护租约和预算、核对参与资源的当前状态/版本保证一致性，检查失败整体回滚。历史保护和最小写入权限继续保留，后台对账不能替代同步防超卖；不再强制由 PostgreSQL 延迟约束触发器完成跨表校验。
 

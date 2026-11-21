@@ -16,6 +16,7 @@
 - [OpenAI 兼容与增强边界](openai-compatibility.md)：兼容子集和 `nexus` 扩展。
 - [规范执行命令](execution-command.md)：网关与生产者间的私有执行输入。
 - [契约与协调事务所有权](contract-ownership.md)：生产者、消费者与事务归属。
+- [数据库可移植协调核心](database-portability.md)：最小数据库能力契约、适配器边界、CAS claim、outbox 与实时 grant / credit。
 - [应用事务方案与契约](coordination-transactions.md)：原子准入、锁序、恢复和预算不变量。
 - [精简协调 Schema](distributed-coordination-schema.md)：表关系、所有权与约束。
 

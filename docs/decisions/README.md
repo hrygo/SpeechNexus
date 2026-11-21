@@ -20,4 +20,6 @@ ADR 记录架构决定及其理由；每项状态以该文 frontmatter 为准，
 
 - [0013：binding 生命周期管理 HTTP 与激活冲突提示](0013-binding-lifecycle-admin-http.md)（proposed，2026-10-29；补录已合入路由的契约选择及冲突提示，待非作者审查，不结算 #273 或投产 Gate）。
 
+- [0016：数据库可移植协调核心与实时预算](0016-database-portability-core.md)（proposed，2026-11-21；以最小关系数据库能力契约、适配器快路径、CAS claim 和持久实时 grant / 本地 credit 解耦数据库品牌；当前 PostgreSQL 仍为生产适配器，第二适配器与实时资格待实施）。
+
 [文档索引](../README.md)

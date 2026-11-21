@@ -204,7 +204,8 @@ class PostgresVoiceEvidenceRecorder:
             "WHERE j.kind = 'voice_validation' AND j.state = 'succeeded' "
             "AND NOT EXISTS (SELECT 1 FROM speech_voice_capability_evidence AS e "
             "WHERE e.validation_job_id = j.job_id) "
-            "AND (?::bigint IS NULL OR (j.updated_at_us, j.job_id) > (?::bigint, ?::varchar)) "
+            "AND (CAST(? AS bigint) IS NULL OR (j.updated_at_us, j.job_id) > (CAST(? AS bigint), "
+            "CAST(? AS varchar))) "
             "ORDER BY j.updated_at_us, j.job_id LIMIT %s",
             (after_us, after_us, after_id, limit),
         )
@@ -362,8 +363,8 @@ class PostgresVoiceEvidenceRecorder:
             "(evidence_id, draft_id, draft_revision, validation_job_id, validation_id, "
             "binding_revision_id, report_artifact_id, report_sha256, report_receipt_id, "
             "evidence_kind, measured_by, measured_at_us, capabilities, coverage, material, "
-            "evidence_digest) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?::jsonb,"
-            "?::jsonb,?::jsonb,?) ON CONFLICT (evidence_id) DO NOTHING",
+            "evidence_digest) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,CAST(? AS jsonb),"
+            "CAST(? AS jsonb),CAST(? AS jsonb),?) ON CONFLICT (evidence_id) DO NOTHING",
             (
                 row["evidence_id"],
                 row["draft_id"],

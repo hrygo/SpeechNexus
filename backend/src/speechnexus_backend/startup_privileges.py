@@ -26,7 +26,7 @@ def current_role(connection: SpeechConnection) -> str:
 def _role_argument(role: str | None) -> tuple[str, tuple[object, ...]]:
     if role is None:
         return "CURRENT_USER", ()
-    return "%s::name", (role,)
+    return "CAST(%s AS name)", (role,)
 
 
 def require_schema_usage(
@@ -128,7 +128,7 @@ def refuse_sequence_privileges(
         "SELECT c.relname AS name FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
         "WHERE n.nspname=? AND c.relkind='S' "
-        "AND c.relname <> ALL(?::text[]) "
+        "AND c.relname <> ALL(CAST(? AS text)[]) "
         f"AND pg_catalog.has_sequence_privilege({clause}, c.oid, {_SEQUENCE_SURFACE}) "
         "ORDER BY c.relname LIMIT 1",
         (schema, list(declared), *prefix),
@@ -156,7 +156,7 @@ def refuse_foreign_relation_privileges(
         "SELECT c.relname AS name FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
         "WHERE n.nspname=? AND c.relkind IN ('r','p','v','m','f') "
-        "AND c.relname <> ALL(?::text[]) AND ("
+        "AND c.relname <> ALL(CAST(? AS text)[]) AND ("
         f"pg_catalog.has_table_privilege({clause}, c.oid, {_TABLE_SURFACE}) OR "
         f"pg_catalog.has_any_column_privilege({clause}, c.oid, {_COLUMN_SURFACE})) "
         "ORDER BY c.relname LIMIT 1",

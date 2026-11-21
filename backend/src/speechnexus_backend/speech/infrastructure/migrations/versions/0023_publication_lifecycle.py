@@ -54,7 +54,7 @@ def downgrade() -> None:
             f"WITH legacy AS (SELECT p.kind, p.object_id, p.revision, p.revision_id "
             f"FROM {TABLE} p WHERE NOT EXISTS (SELECT 1 FROM {TABLE} newer "
             "WHERE newer.kind=p.kind AND newer.object_id=p.object_id "
-            "AND newer.revision::numeric > p.revision::numeric) "
+            "AND CAST(newer.revision AS numeric) > CAST(p.revision AS numeric)) "
             f"AND NOT EXISTS (SELECT 1 FROM {RETIREMENT_TABLE} r "
             "WHERE r.kind=p.kind AND r.object_id=p.object_id "
             "AND r.revision=p.revision AND r.revision_id=p.revision_id)), "

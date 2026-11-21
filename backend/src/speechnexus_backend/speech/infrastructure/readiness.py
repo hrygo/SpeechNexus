@@ -777,7 +777,7 @@ JOIN {public_job_schema.JOBS} AS j ON j.job_id = f.job_id
 LEFT JOIN {job_cancellation_fence_schema.RECONCILIATION_TABLE} AS r ON r.job_id = f.job_id
 -- The database clock is read once by the probe and passed here, so the window, the
 -- grace filter and the `due` branch above all measure the same instant.
-CROSS JOIN (SELECT %(now_us)s::BIGINT AS now_us) AS now_clock
+CROSS JOIN (SELECT CAST(%(now_us)s AS BIGINT) AS now_us) AS now_clock
 -- Same capacity rule as `_DEBT`: a lease that still holds capacity is the blocker.
 JOIN admission_leases AS l
   ON l.operation_id = f.job_id
@@ -843,7 +843,7 @@ SELECT j.job_id, l.lease_id, l.lease_state, i.execution_state,
 FROM admission_leases AS l
 -- The database clock is read once by the probe and passed here, so the `due` branch
 -- above judges the schedule at the same instant as the fourth read.
-CROSS JOIN (SELECT %(now_us)s::BIGINT AS now_us) AS now_clock
+CROSS JOIN (SELECT CAST(%(now_us)s AS BIGINT) AS now_us) AS now_clock
 -- The Job row is not filtered (there is no state gate here), but it must exist and the
 -- detail prints its id, exactly as in the other reads.
 JOIN {public_job_schema.JOBS} AS j ON j.job_id = l.operation_id

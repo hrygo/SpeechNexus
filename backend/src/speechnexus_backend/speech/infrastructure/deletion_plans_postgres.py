@@ -471,8 +471,8 @@ def voice_revision_snapshot(
         "FROM speech_job_intents AS i "
         "JOIN speech_jobs AS j ON j.job_id = i.job_id "
         "WHERE i.request_document IS JSON "
-        "AND (i.request_document::jsonb -> 'input' ->> 'voice_draft_id') = ? "
-        "AND (i.request_document::jsonb -> 'input' ->> 'draft_revision') = ? "
+        "AND (CAST(i.request_document AS jsonb) -> 'input' ->> 'voice_draft_id') = ? "
+        "AND (CAST(i.request_document AS jsonb) -> 'input' ->> 'draft_revision') = ? "
         "ORDER BY i.job_id",
         (target.resource_id, str(target.revision)),
     ):

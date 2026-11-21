@@ -315,7 +315,7 @@ class PostgresVoiceDrafts:
                 "UPDATE speech_voice_drafts SET display_name=?, "
                 "metadata_revision=metadata_revision+1, "
                 "updated_at_us=GREATEST(updated_at_us, "
-                "(EXTRACT(EPOCH FROM clock_timestamp())*1000000)::bigint) "
+                "CAST((EXTRACT(EPOCH FROM clock_timestamp())*1000000) AS bigint)) "
                 "WHERE draft_id=? RETURNING *",
                 (command["display_name"], draft_id),
             ).fetchone()

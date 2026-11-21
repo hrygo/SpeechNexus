@@ -325,7 +325,7 @@ class PostgresVoicePublications:
             f"INSERT INTO {REVISION_TABLE} "
             "(kind, voice_id, revision, revision_id, source_type, document, material, "
             "evidence_id, draft_id, draft_revision, published_at_us) "
-            "VALUES ('voice', ?, ?, ?, 'cloned', ?::jsonb, ?::jsonb, ?, ?, ?, ?)",
+            "VALUES ('voice', ?, ?, ?, 'cloned', CAST(? AS jsonb), CAST(? AS jsonb), ?, ?, ?, ?)",
             (
                 voice_id,
                 voice_revision,
@@ -374,7 +374,7 @@ class PostgresVoicePublications:
                 f"INSERT INTO {INTENT_TABLE} "
                 "(key_digest, request_digest, intent, draft_id, draft_revision, "
                 "voice_id, voice_revision, result) "
-                "VALUES (?,?,?::jsonb,?,?,?,?,?::jsonb) "
+                "VALUES (?,?,CAST(? AS jsonb),?,?,?,?,CAST(? AS jsonb)) "
                 "ON CONFLICT (key_digest) DO NOTHING",
                 (
                     key_digest,
@@ -414,7 +414,7 @@ class PostgresVoicePublications:
 
     def _next_revision(self, cursor: _Cursor, voice_id: str) -> str:
         cursor.execute(
-            f"SELECT COALESCE(MAX(revision::numeric), 0) AS current FROM {REVISION_TABLE} "
+            f"SELECT COALESCE(MAX(CAST(revision AS numeric)), 0) AS current FROM {REVISION_TABLE} "
             "WHERE voice_id=?",
             (voice_id,),
         )

@@ -39,11 +39,11 @@ CREATE TABLE {s}.export_jobs (
     progress_completed integer NOT NULL CHECK (progress_completed >= 0),
     progress_total integer NOT NULL CHECK (progress_total >= 1),
     unit_ids jsonb CHECK (unit_ids IS NULL OR (jsonb_typeof(unit_ids) = 'array'
-        AND jsonb_array_length(unit_ids) >= 1 AND octet_length(unit_ids::text) <= 20000)),
+        AND jsonb_array_length(unit_ids) >= 1 AND octet_length(CAST(unit_ids AS text)) <= 20000)),
     artifact jsonb CHECK (artifact IS NULL OR (jsonb_typeof(artifact) = 'object'
-        AND octet_length(artifact::text) <= 4000)),
+        AND octet_length(CAST(artifact AS text)) <= 4000)),
     error jsonb CHECK (error IS NULL OR (jsonb_typeof(error) = 'object'
-        AND octet_length(error::text) <= 4000)),
+        AND octet_length(CAST(error AS text)) <= 4000)),
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL CHECK (updated_at >= created_at),
     UNIQUE (project_id, id),

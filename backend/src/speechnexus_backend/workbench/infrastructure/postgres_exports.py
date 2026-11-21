@@ -211,7 +211,7 @@ class PostgresExports(ExportJobStore):
             """
             SELECT b.project_id, b.casting_revision,
                 (SELECT count(*) FROM {s}.render_units u
-                    WHERE u.book_id = b.id AND u.id = ANY(?::text[])) AS units
+                    WHERE u.book_id = b.id AND u.id = ANY(CAST(? AS text)[])) AS units
             FROM {s}.books b WHERE b.id = ?
         """,
             (list(unit_ids), book_id),

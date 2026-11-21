@@ -54,7 +54,7 @@ def list_disable_event_ids(cursor: TargetCursor, *, after: str | None, limit: in
         identifier(after)
     cursor.execute(
         "SELECT event_id FROM speech_binding_disable_intents "
-        "WHERE (?::text IS NULL OR event_id > ?) ORDER BY event_id LIMIT %s",
+        "WHERE (CAST(? AS text) IS NULL OR event_id > ?) ORDER BY event_id LIMIT %s",
         (after, after, limit),
     )
     event_ids = [row["event_id"] for row in cursor.fetchall()]
@@ -84,9 +84,9 @@ def list_disable_targets(
         identifier(node_id)
     cursor.execute(
         f"SELECT {', '.join(_FIELDS)} FROM {TARGET_TABLE} "
-        "WHERE event_id=? AND (?::text IS NULL OR submit_intent_id > ?) "
-        "AND (?::text IS NULL OR gateway_id=?) "
-        "AND (?::text IS NULL OR host_node_id=?) "
+        "WHERE event_id=? AND (CAST(? AS text) IS NULL OR submit_intent_id > ?) "
+        "AND (CAST(? AS text) IS NULL OR gateway_id=?) "
+        "AND (CAST(? AS text) IS NULL OR host_node_id=?) "
         "ORDER BY submit_intent_id LIMIT %s",
         (event_id, after, after, gateway_id, gateway_id, node_id, node_id, limit),
     )
@@ -164,8 +164,8 @@ def capture_disable_targets(
         "AND s.attempt_id=l.attempt_id "
         "WHERE i.event_id=? AND e.action='model_binding.disable' "
         "AND s.execution_state IN ('submitting','executing','stopping','unknown_quarantined') "
-        "AND (?::text IS NULL OR l.gateway_id=?) "
-        "AND (?::text IS NULL OR l.host_node_id=?) "
+        "AND (CAST(? AS text) IS NULL OR l.gateway_id=?) "
+        "AND (CAST(? AS text) IS NULL OR l.host_node_id=?) "
         f"AND NOT EXISTS (SELECT 1 FROM {TARGET_TABLE} t "
         "WHERE t.event_id=i.event_id AND t.submit_intent_id=s.submit_intent_id) "
         "ORDER BY s.submit_intent_id LIMIT %s",

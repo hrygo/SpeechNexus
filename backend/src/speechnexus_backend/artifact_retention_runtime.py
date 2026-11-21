@@ -149,7 +149,7 @@ def _verify_retention_authority(connection: SpeechConnection, schema: str) -> No
             )
     stray = connection.execute(
         "SELECT count(*) AS total FROM pg_catalog.pg_attribute a "
-        "WHERE a.attrelid = ?::regclass AND a.attnum > 0 AND NOT a.attisdropped "
+        "WHERE a.attrelid = CAST(? AS regclass) AND a.attnum > 0 AND NOT a.attisdropped "
         "AND NOT (a.attname = ANY(?)) "
         "AND pg_catalog.has_column_privilege(CURRENT_USER, a.attrelid, a.attnum, 'UPDATE')",
         (qualified, list(ARTIFACT_RETENTION_UPDATE_COLUMNS)),

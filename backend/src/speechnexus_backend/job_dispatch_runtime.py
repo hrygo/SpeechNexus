@@ -332,11 +332,12 @@ def build_dispatch_dependencies(settings: JobDispatchSettings) -> DispatchDepend
 # inside the pool's ``search_path``; a preflight running psql must set the same
 # search_path. Order is the startup order.
 DISPATCH_ROLE_GUARD_SQL = (
-    "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(%(role)s::name,%(schema)s,'CREATE') "
-    "OR pg_catalog.pg_has_role(%(role)s::name,d.datdba,'MEMBER') OR EXISTS ("
+    "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(CAST(%(role)s AS "
+    "name),%(schema)s,'CREATE') "
+    "OR pg_catalog.pg_has_role(CAST(%(role)s AS name),d.datdba,'MEMBER') OR EXISTS ("
     "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
     "ON n.oid=c.relnamespace WHERE n.nspname=%(schema)s "
-    "AND pg_catalog.pg_has_role(%(role)s::name,c.relowner,'MEMBER')) AS forbidden "
+    "AND pg_catalog.pg_has_role(CAST(%(role)s AS name),c.relowner,'MEMBER')) AS forbidden "
     "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
     "WHERE r.rolname=%(role)s AND d.datname=CURRENT_DATABASE()"
 )

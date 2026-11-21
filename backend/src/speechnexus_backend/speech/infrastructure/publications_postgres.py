@@ -145,7 +145,8 @@ class PostgresPublications:
             # Bound estimates on fresh databases while retaining duplicate detection.
             cursor.execute(
                 "SELECT current_database() AS database_name, current_schema() AS schema_name, "
-                "i.installation_id::text AS installation_id, s.revision AS catalog_revision, "
+                "CAST(i.installation_id AS text) AS installation_id, s.revision AS "
+                "catalog_revision, "
                 "h.revision AS current_revision, EXISTS ("
                 "SELECT 1 FROM speech_publication_retirements r "
                 "WHERE r.kind=h.kind AND r.object_id=h.object_id AND r.revision=h.revision "
@@ -313,7 +314,8 @@ class PostgresPublications:
             )
             cursor.execute(
                 "SELECT current_database() AS database_name, current_schema() AS schema_name, "
-                "installation_id::text AS installation_id FROM speech_publication_installation "
+                "CAST(installation_id AS text) AS installation_id FROM "
+                "speech_publication_installation "
                 "WHERE singleton IS TRUE"
             )
             targets = cursor.fetchall()
@@ -360,7 +362,7 @@ class PostgresPublications:
             cursor.execute(
                 "INSERT INTO speech_binding_publish_intents "
                 "(key_digest, intent, binding_id, revision, original_created) "
-                "VALUES (?, ?::jsonb, ?, ?, ?)",
+                "VALUES (?, CAST(? AS jsonb), ?, ?, ?)",
                 (
                     intent.key_digest,
                     json.dumps(payload),

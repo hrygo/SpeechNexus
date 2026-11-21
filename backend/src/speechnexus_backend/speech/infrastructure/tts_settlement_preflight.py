@@ -38,11 +38,11 @@ class SettlementPreflightUnavailableError(RuntimeError):
 
 
 _TTS_KINDS = (
-    "o.request_document::jsonb->>'kind' IN ('tts_file','builtin_voice_qualification_probe')"
+    "CAST(o.request_document AS jsonb)->>'kind' IN ('tts_file','builtin_voice_qualification_probe')"
 )
 _TTS_COMMANDS = (
-    "o.request_document::jsonb#>>'{gateway_request,command,kind}'='tts' "
-    "OR o.request_document::jsonb#>>'{gateway_request,command,task_kind}'='tts_file'"
+    "CAST(o.request_document AS jsonb)#>>'{gateway_request,command,kind}'='tts' "
+    "OR CAST(o.request_document AS jsonb)#>>'{gateway_request,command,task_kind}'='tts_file'"
 )
 # The dispatcher settles a past-deadline Job as soon as its claim is due; allow
 # one bounded window beyond the frozen deadline before treating a still-held

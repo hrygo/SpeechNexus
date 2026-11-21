@@ -15,12 +15,13 @@ def verify_abort_authority(pool: GatewayPool, schema: str) -> bool:
                 return False
             for role in dict.fromkeys((identities["login"], identities["effective"])):
                 row = connection.execute(
-                    "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(?::name,?,'CREATE') "
-                    "OR pg_catalog.pg_has_role(?::name,d.datdba,'MEMBER') "
-                    "OR pg_catalog.pg_has_role(?::name,c.relowner,'MEMBER') AS unsafe, "
-                    "(pg_catalog.has_table_privilege(?::name,c.oid,'SELECT') AND "
-                    "pg_catalog.has_table_privilege(?::name,c.oid,'INSERT')) AS writable, "
-                    "pg_catalog.has_table_privilege(?::name,c.oid,"
+                    "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(CAST(? AS "
+                    "name),?,'CREATE') "
+                    "OR pg_catalog.pg_has_role(CAST(? AS name),d.datdba,'MEMBER') "
+                    "OR pg_catalog.pg_has_role(CAST(? AS name),c.relowner,'MEMBER') AS unsafe, "
+                    "(pg_catalog.has_table_privilege(CAST(? AS name),c.oid,'SELECT') AND "
+                    "pg_catalog.has_table_privilege(CAST(? AS name),c.oid,'INSERT')) AS writable, "
+                    "pg_catalog.has_table_privilege(CAST(? AS name),c.oid,"
                     "'DELETE,TRUNCATE,REFERENCES,TRIGGER') AS destructive "
                     "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
                     "JOIN pg_catalog.pg_namespace n ON n.nspname=? "
@@ -33,7 +34,7 @@ def verify_abort_authority(pool: GatewayPool, schema: str) -> bool:
                     return False
                 columns = connection.execute(
                     "SELECT a.attname, "
-                    "pg_catalog.has_column_privilege(?::name,c.oid,a.attnum,'UPDATE') "
+                    "pg_catalog.has_column_privilege(CAST(? AS name),c.oid,a.attnum,'UPDATE') "
                     "AS updatable "
                     "FROM pg_catalog.pg_class c "
                     "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "

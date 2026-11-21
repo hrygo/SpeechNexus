@@ -46,7 +46,7 @@ QUARANTINE_RELEASE_DDL = f"""CREATE TABLE {TABLE} (
     budget_released_at_us BIGINT NOT NULL CHECK (budget_released_at_us >= 0),
     released_submit_intent_ids TEXT NOT NULL,
     CHECK (evidence_observed_at_us <= budget_released_at_us),
-    CHECK (jsonb_typeof(released_submit_intent_ids::jsonb) = 'array'),
+    CHECK (jsonb_typeof(CAST(released_submit_intent_ids AS jsonb)) = 'array'),
     FOREIGN KEY (lease_id, operation_id, attempt_id)
         REFERENCES admission_leases (lease_id, operation_id, attempt_id)
 )"""

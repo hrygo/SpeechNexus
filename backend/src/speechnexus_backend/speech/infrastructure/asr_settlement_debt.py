@@ -118,11 +118,11 @@ def read_asr_settlement_debt(
     # A redacted document has no readable kind, so neither the backfill nor the
     # preflight can attribute it. It has no root and would otherwise be silent.
     redacted = (
-        "SELECT l.operation_id, l.lease_id, NULL::text AS gateway_id, "
-        "NULL::text AS host_node_id, NULL::bigint AS settled_at_us, "
-        "NULL::text AS execution_state, NULL::text AS cleanup_state, "
-        "NULL::text AS evidence_kind, NULL::int AS execution_stopped, "
-        "NULL::int AS resources_released, "
+        "SELECT l.operation_id, l.lease_id, CAST(NULL AS text) AS gateway_id, "
+        "CAST(NULL AS text) AS host_node_id, CAST(NULL AS bigint) AS settled_at_us, "
+        "CAST(NULL AS text) AS execution_state, CAST(NULL AS text) AS cleanup_state, "
+        "CAST(NULL AS text) AS evidence_kind, CAST(NULL AS int) AS execution_stopped, "
+        "CAST(NULL AS int) AS resources_released, "
         f"({_NOW}) - l.deadline_at_us AS overdue_us, 'redacted' AS source "
         "FROM admission_leases l "
         "JOIN admission_operations o ON o.operation_id=l.operation_id "

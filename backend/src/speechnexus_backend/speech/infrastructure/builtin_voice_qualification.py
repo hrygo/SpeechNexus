@@ -41,8 +41,9 @@ def require_builtin_voice(
     native_speaker_id: str | None = None,
 ) -> dict[str, Any]:
     cursor.execute(
-        "SELECT a.facts, floor(extract(epoch FROM a.expires_at)*1000000)::bigint AS expiry_us, "
-        "floor(extract(epoch FROM clock_timestamp())*1000000)::bigint AS now_us, "
+        "SELECT a.facts, CAST(floor(extract(epoch FROM a.expires_at)*1000000) AS bigint) AS "
+        "expiry_us, "
+        "CAST(floor(extract(epoch FROM clock_timestamp())*1000000) AS bigint) AS now_us, "
         f"({qualification_source_state_sql('q')}) AS source_state "
         "FROM speech_builtin_voice_qualifications q "
         "JOIN speech_builtin_voice_approvals a ON a.approval_id=q.approval_id "

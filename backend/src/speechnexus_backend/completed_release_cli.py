@@ -23,9 +23,7 @@ a testimony minted for another lease, another instance or another generation --
 or one recorded before the generation was drained -- cannot authorize a release.
 
 Run it under the dedicated release identity; the API runtime role deliberately
-does not hold these grants::
-
-    SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL=... \\
+does not hold these CAST(grants AS SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL)=... \\
     SPEECHNEXUS_DATABASE_SCHEMA=speech \\
     python -m speechnexus_backend.completed_release_cli \\
         --lease-id lease-stage-main-... \\

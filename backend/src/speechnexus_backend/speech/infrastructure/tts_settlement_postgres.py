@@ -33,8 +33,8 @@ class PostgresTtsSettlementStore:
                 "FROM speech_tts_settlement WHERE settled_at_us IS NULL "
                 "AND next_check_at_us <= "
                 "CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) "
-                "AND target_document::jsonb->>'gateway_id'=? "
-                "AND target_document::jsonb->>'host_node_id'=? "
+                "AND CAST(target_document AS jsonb)->>'gateway_id'=? "
+                "AND CAST(target_document AS jsonb)->>'host_node_id'=? "
                 "ORDER BY next_check_at_us, lease_id LIMIT %s",
                 (gateway_id, node_id, limit),
             ).fetchall()

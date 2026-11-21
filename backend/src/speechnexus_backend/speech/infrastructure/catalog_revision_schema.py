@@ -50,7 +50,7 @@ CATALOG_REVISION_DDL = (
     DECLARE
         changed_at_us BIGINT;
     BEGIN
-        changed_at_us := (to_jsonb(NEW) ->> TG_ARGV[0])::bigint;
+        changed_at_us :=CAST((to_jsonb(NEW) ->> TG_ARGV[0]) AS bigint);
         UPDATE {STATE_TABLE}
            SET revision = revision + 1,
                generated_at_us = GREATEST(generated_at_us, changed_at_us);

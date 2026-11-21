@@ -29,7 +29,7 @@ def require_complete_asr_roots(pool: SpeechPool, *, timeout_seconds: float = 3) 
         # `job-…` and qualification probes are not `asr_file`; neither is ours.
         "l.lease_state<>'released' AND o.operation_id LIKE 'operation-%' "
         "AND (CASE WHEN o.operation_id LIKE 'operation-%' "
-        "THEN o.request_document::jsonb->>'kind' END)='asr_file' "
+        "THEN CAST(o.request_document AS jsonb)->>'kind' END)='asr_file' "
         f"AND {_ROOT_ABSENT}"
         " OR "
         # A settled root still holding a lease means the marker ran without a

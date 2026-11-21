@@ -69,5 +69,5 @@ ASR_SETTLEMENT_BACKFILL = """INSERT INTO speech_asr_settlement
     WHERE l.lease_state <> 'released'
       AND o.operation_id LIKE 'operation-%'
       AND (CASE WHEN o.operation_id LIKE 'operation-%'
-                THEN o.request_document::jsonb->>'kind' END) = 'asr_file'
+                THEN CAST(o.request_document AS jsonb)->>'kind' END) = 'asr_file'
     ON CONFLICT (lease_id) DO NOTHING"""

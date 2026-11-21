@@ -197,7 +197,7 @@ def _verify_no_role_switch(connection: SpeechConnection, worker: str) -> None:
     # PG 16 introduced per-membership SET/INHERIT options and pg_has_role(...,'SET').
     # Use PostgreSQL's recursive semantics rather than approximating a role graph.
     version = connection.execute(
-        "SELECT pg_catalog.current_setting('server_version_num')::integer AS version"
+        "SELECT CAST(pg_catalog.current_setting('server_version_num') AS integer) AS version"
     ).fetchone()
     if version is None or version["version"] < 160000:
         raise ValueError(f"{worker} requires PostgreSQL 16 or newer")
@@ -242,12 +242,12 @@ def _verify_principal(pool: SpeechPool, schema: str) -> None:
             raise ValueError("Disable worker identity unavailable")
         for role in dict.fromkeys((identities["login"], identities["effective"])):
             unsafe = connection.execute(
-                "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(?::name,?,'CREATE') "
-                "OR pg_catalog.pg_has_role(?::name,d.datdba,'MEMBER') OR EXISTS ("
+                "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(CAST(? AS name),?,'CREATE') "
+                "OR pg_catalog.pg_has_role(CAST(? AS name),d.datdba,'MEMBER') OR EXISTS ("
                 "SELECT 1 FROM pg_catalog.pg_class c "
                 "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
                 "WHERE n.nspname=? "
-                "AND pg_catalog.pg_has_role(?::name,c.relowner,'MEMBER')) AS forbidden "
+                "AND pg_catalog.pg_has_role(CAST(? AS name),c.relowner,'MEMBER')) AS forbidden "
                 "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
                 "WHERE r.rolname=? AND d.datname=CURRENT_DATABASE()",
                 (role, schema, role, schema, role, role),
@@ -256,11 +256,14 @@ def _verify_principal(pool: SpeechPool, schema: str) -> None:
                 raise ValueError("Disable worker requires a non-owner identity")
             rows = connection.execute(
                 "SELECT c.relname, a.attname, "
-                "pg_catalog.has_column_privilege(?::name,c.oid,a.attnum,'SELECT') AS can_read, "
-                "pg_catalog.has_column_privilege(?::name,c.oid,a.attnum,'INSERT') AS can_insert, "
-                "pg_catalog.has_column_privilege(?::name,c.oid,a.attnum,'UPDATE,REFERENCES') "
+                "pg_catalog.has_column_privilege(CAST(? AS name),c.oid,a.attnum,'SELECT') AS "
+                "can_read, "
+                "pg_catalog.has_column_privilege(CAST(? AS name),c.oid,a.attnum,'INSERT') AS "
+                "can_insert, "
+                "pg_catalog.has_column_privilege(CAST(? AS "
+                "name),c.oid,a.attnum,'UPDATE,REFERENCES') "
                 "AS can_change, "
-                "pg_catalog.has_table_privilege(?::name,c.oid,'DELETE,TRUNCATE,TRIGGER') "
+                "pg_catalog.has_table_privilege(CAST(? AS name),c.oid,'DELETE,TRUNCATE,TRIGGER') "
                 "AS destructive "
                 "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
                 "JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid "
@@ -302,11 +305,11 @@ def _verify_settlement_principal(pool: SpeechPool, schema: str) -> None:
             raise ValueError("Settlement worker identity unavailable")
         for role in dict.fromkeys((identities["login"], identities["effective"])):
             unsafe = connection.execute(
-                "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(?::name,?,'CREATE') "
-                "OR pg_catalog.pg_has_role(?::name,d.datdba,'MEMBER') OR EXISTS ("
+                "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(CAST(? AS name),?,'CREATE') "
+                "OR pg_catalog.pg_has_role(CAST(? AS name),d.datdba,'MEMBER') OR EXISTS ("
                 "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
                 "ON n.oid=c.relnamespace WHERE n.nspname=? "
-                "AND pg_catalog.pg_has_role(?::name,c.relowner,'MEMBER')) AS forbidden "
+                "AND pg_catalog.pg_has_role(CAST(? AS name),c.relowner,'MEMBER')) AS forbidden "
                 "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
                 "WHERE r.rolname=? AND d.datname=CURRENT_DATABASE()",
                 (role, schema, role, schema, role, role),
@@ -315,13 +318,16 @@ def _verify_settlement_principal(pool: SpeechPool, schema: str) -> None:
                 raise ValueError("Settlement worker requires a non-owner identity")
             rows = connection.execute(
                 "SELECT c.relname,a.attname, "
-                "pg_catalog.has_column_privilege(?::name,c.oid,a.attnum,'SELECT') AS can_read, "
-                "pg_catalog.has_column_privilege(?::name,c.oid,a.attnum,'UPDATE') AS can_update, "
-                "pg_catalog.has_column_privilege(?::name,c.oid,a.attnum,'INSERT,REFERENCES') "
+                "pg_catalog.has_column_privilege(CAST(? AS name),c.oid,a.attnum,'SELECT') AS "
+                "can_read, "
+                "pg_catalog.has_column_privilege(CAST(? AS name),c.oid,a.attnum,'UPDATE') AS "
+                "can_update, "
+                "pg_catalog.has_column_privilege(CAST(? AS "
+                "name),c.oid,a.attnum,'INSERT,REFERENCES') "
                 "AS other_write, "
-                "pg_catalog.has_table_privilege(?::name,c.oid,'DELETE,TRUNCATE,TRIGGER') "
+                "pg_catalog.has_table_privilege(CAST(? AS name),c.oid,'DELETE,TRUNCATE,TRIGGER') "
                 "AS destructive, "
-                "pg_catalog.has_table_privilege(?::name,c.oid,'SELECT') AS table_read "
+                "pg_catalog.has_table_privilege(CAST(? AS name),c.oid,'SELECT') AS table_read "
                 "FROM pg_catalog.pg_class c "
                 "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
                 "JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid "

@@ -72,8 +72,10 @@ def find_probe_approval(store: PostgresPublications, request: dict[str, str]) ->
 
     def operation(cursor: Any) -> bool:
         cursor.execute(
-            "SELECT p.result_intent,a.intent,current_database() AS db,current_schema() AS schema, "
-            "i.installation_id::text AS installation_id FROM speech_builtin_voice_approvals p "
+            "SELECT p.result_intent,a.intent,current_database() AS db, "
+            "current_schema() AS schema, "
+            "CAST(i.installation_id AS text) AS installation_id "
+            "FROM speech_builtin_voice_approvals p "
             "LEFT JOIN speech_builtin_voice_probe_authorizations a "
             "ON a.authorization_id=p.probe_authorization_id "
             "CROSS JOIN speech_publication_installation i "
@@ -164,7 +166,7 @@ def _commit_verified_probe(
         )
         cursor.execute(
             "SELECT current_database() AS db,current_schema() AS schema,"
-            "installation_id::text AS installation_id FROM speech_publication_installation "
+            "CAST(installation_id AS text) AS installation_id FROM speech_publication_installation "
             "WHERE singleton IS TRUE"
         )
         target = cursor.fetchall()

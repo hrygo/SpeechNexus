@@ -752,8 +752,8 @@ class _Session:
                 FROM {s}.mutation_receipts
                 WHERE operation = ? AND scope_id = ? AND key_digest = ?
                 UNION ALL
-                SELECT intent_digest, NULL::text, NULL::numeric, NULL::text,
-                    NULL::numeric, true AS erased
+                SELECT intent_digest, CAST(NULL AS text), CAST(NULL AS numeric), CAST(NULL AS text),
+                    CAST(NULL AS numeric), true AS erased
                 FROM {s}.erased_mutation_receipts
                 WHERE operation = ? AND scope_id = ? AND key_digest = ?
             ) AS candidates ORDER BY erased DESC LIMIT 1

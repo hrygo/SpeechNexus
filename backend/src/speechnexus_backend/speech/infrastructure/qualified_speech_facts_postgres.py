@@ -134,8 +134,8 @@ class QualifiedPostgresSpeechFacts(PostgresSpeechFacts):
                     cursor.execute(
                         "SELECT p.kind,p.object_id,p.revision,p.revision_id,p.published_at_us "
                         "FROM speech_publications p WHERE p.kind='voice' AND p.object_id=? "
-                        "AND (?::text IS NULL OR p.revision=?) "
-                        "AND (?::text IS NOT NULL OR EXISTS "
+                        "AND (CAST(? AS text) IS NULL OR p.revision=?) "
+                        "AND (CAST(? AS text) IS NOT NULL OR EXISTS "
                         "(SELECT 1 FROM speech_publication_heads h "
                         "WHERE h.kind=p.kind AND h.object_id=p.object_id AND h.revision=p.revision "
                         "AND h.revision_id=p.revision_id)) "

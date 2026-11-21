@@ -56,7 +56,7 @@ def approve_builtin_voice_source(
     def operation(cursor: PublicationCursor) -> dict[str, str]:
         cursor.execute(
             "SELECT current_database() AS database,current_schema() AS schema,"
-            "installation_id::text AS installation_id FROM speech_publication_installation "
+            "CAST(installation_id AS text) AS installation_id FROM speech_publication_installation "
             "WHERE singleton IS TRUE"
         )
         targets = cursor.fetchall()
@@ -151,7 +151,7 @@ def approve_builtin_voice_source(
                 "schema": schema,
                 "installation_id": installation_id,
             }
-        cursor.execute("SELECT ?::timestamptz > clock_timestamp() AS live", (expiry,))
+        cursor.execute("SELECT CAST(? AS timestamptz) > clock_timestamp() AS live", (expiry,))
         if not cursor.fetchall()[0]["live"]:
             raise BuiltinSourceApprovalError("approval_expired")
         cursor.execute(
@@ -170,7 +170,7 @@ def approve_builtin_voice_source(
         )
         # INSERT may wait for a relation lock after the first expiry check.
         # Reject inside the transaction so the new row is rolled back.
-        cursor.execute("SELECT ?::timestamptz > clock_timestamp() AS live", (expiry,))
+        cursor.execute("SELECT CAST(? AS timestamptz) > clock_timestamp() AS live", (expiry,))
         if not cursor.fetchall()[0]["live"]:
             raise BuiltinSourceApprovalError("approval_expired")
         return {

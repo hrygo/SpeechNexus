@@ -181,7 +181,7 @@ def record_operator_attestation(
         )
         cursor.execute(
             "SELECT current_database() AS database,current_schema() AS schema,"
-            "installation_id::text AS installation_id FROM speech_publication_installation "
+            "CAST(installation_id AS text) AS installation_id FROM speech_publication_installation "
             "WHERE singleton IS TRUE"
         )
         targets = cursor.fetchall()
@@ -208,13 +208,13 @@ def record_operator_attestation(
         if cursor.fetchall():
             raise OperatorAttestationError("attestation_revision_already_attested")
         cursor.execute(
-            "SELECT floor(extract(epoch FROM clock_timestamp())*1000000)::bigint AS now_us"
+            "SELECT CAST(floor(extract(epoch FROM clock_timestamp())*1000000) AS bigint) AS now_us"
         )
         now_us = int(cursor.fetchall()[0]["now_us"])
         declaration.require_live(now_us)
         cursor.execute(
             "SELECT s.source_revision,s.source_digest,"
-            "floor(extract(epoch FROM s.expires_at)*1000000)::bigint AS expires_us "
+            "CAST(floor(extract(epoch FROM s.expires_at)*1000000) AS bigint) AS expires_us "
             "FROM speech_builtin_voice_source_approvals s "
             "WHERE s.source_approval_id=? AND s.voice_id=? AND s.native_speaker_id='Vivian' "
             "AND s.expires_at>clock_timestamp() "
@@ -339,7 +339,7 @@ def record_operator_attestation(
         cursor.execute(
             "INSERT INTO speech_builtin_voice_approvals "
             "(approval_id,voice_id,revision,revision_id,binding_revision_id,"
-            "source_approval_id,facts,expires_at) VALUES (?,?,?,?,?,?,?::jsonb,?)",
+            "source_approval_id,facts,expires_at) VALUES (?,?,?,?,?,?,CAST(? AS jsonb),?)",
             (
                 request.approval_id,
                 request.voice_id,
@@ -360,7 +360,7 @@ def record_operator_attestation(
             "model_artifact_digest,observed_at_us,expires_at_us,declaration,declaration_digest,"
             "attestation_intent,declared_by) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,"
-            "?::jsonb,?,?::jsonb,?)",
+            "CAST(? AS jsonb),?,CAST(? AS jsonb),?)",
             (
                 request.attestation_id,
                 request.approval_id,

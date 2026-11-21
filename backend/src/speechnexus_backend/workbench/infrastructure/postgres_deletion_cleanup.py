@@ -272,7 +272,7 @@ class PostgresDeletionCleanup:
                 await cursor.execute(
                     base._sql("""
                     SELECT id, head_revision FROM {s}.transcripts WHERE project_id = ?
-                    AND (id = ANY(?::text[]) OR ?) ORDER BY id FOR UPDATE
+                    AND (id = ANY(CAST(? AS text)[]) OR ?) ORDER BY id FOR UPDATE
                 """),
                     (project_id, transcripts, plan.target.kind == "project"),
                 )
@@ -286,7 +286,7 @@ class PostgresDeletionCleanup:
                 meeting_rows = await base._many(
                     _Meeting,
                     "SELECT id,version FROM {s}.meetings WHERE project_id=? "
-                    "AND (? OR transcript_id=ANY(?::text[])) ORDER BY id FOR UPDATE",
+                    "AND (? OR transcript_id=ANY(CAST(? AS text)[])) ORDER BY id FOR UPDATE",
                     (project_id, plan.target.kind == "project", transcripts),
                 )
                 if [row.id for row in meeting_rows] != meetings:
@@ -332,22 +332,24 @@ class PostgresDeletionCleanup:
             await base._execute(
                 """
                 DELETE FROM {s}.mutation_receipts
-                WHERE transcript_id = ANY(?::text[]) OR (project_id = ? AND ?)
+                WHERE transcript_id = ANY(CAST(? AS text)[]) OR (project_id = ? AND ?)
             """,
                 (transcripts, project_id, plan.target.kind == "project"),
             )
             if self._meetings:
                 # Remove only exact confirmed references before their source revisions
                 # and minutes tasks. Any execution guard failure rolls this back too.
-                await base._execute("DELETE FROM {s}.meetings WHERE id=ANY(?::text[])", (meetings,))
+                await base._execute(
+                    "DELETE FROM {s}.meetings WHERE id=ANY(CAST(? AS text)[])", (meetings,)
+                )
             await base._execute(
                 """
-                DELETE FROM {s}.transcript_revisions WHERE transcript_id = ANY(?::text[])
+                DELETE FROM {s}.transcript_revisions WHERE transcript_id = ANY(CAST(? AS text)[])
             """,
                 (transcripts,),
             )
             await base._execute(
-                "DELETE FROM {s}.transcripts WHERE id = ANY(?::text[])", (transcripts,)
+                "DELETE FROM {s}.transcripts WHERE id = ANY(CAST(? AS text)[])", (transcripts,)
             )
             if plan.target.kind == "project":
                 await base._execute(
@@ -363,7 +365,7 @@ class PostgresDeletionCleanup:
             )
             left = await base._one(
                 _Exists,
-                "SELECT EXISTS (SELECT 1 FROM {s}.transcripts WHERE id = ANY(?::text[])"
+                "SELECT EXISTS (SELECT 1 FROM {s}.transcripts WHERE id = ANY(CAST(? AS text)[])"
                 " UNION ALL SELECT 1 FROM {s}.projects WHERE id = ? AND ? "
                 + saved_presence
                 + ") AS present",

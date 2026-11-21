@@ -79,7 +79,7 @@ def _require_non_owner(connection: SpeechConnection, schema: str) -> None:
     if row is None or row["forbidden"]:
         raise ValueError(f"{SUBJECT} requires a restricted non-owner identity")
     version = connection.execute(
-        "SELECT pg_catalog.current_setting('server_version_num')::integer AS version"
+        "SELECT CAST(pg_catalog.current_setting('server_version_num') AS integer) AS version"
     ).fetchone()
     if version is None or version["version"] < 160000:
         raise ValueError(f"{SUBJECT} requires PostgreSQL 16 or newer")

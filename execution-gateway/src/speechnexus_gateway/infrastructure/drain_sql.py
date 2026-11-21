@@ -92,7 +92,7 @@ _SELECT_RECLAIM = (
     "SELECT i.loading_policy, i.binding_revision_id, i.last_fencing_token, i.ready_at_us, "
     "s.submit_intent_id, s.execution_state, s.terminated_at_us, s.dispatched_at_us, "
     "s.updated_at_us, l.lease_id, l.lease_state, "
-    "(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000)::bigint AS observed_at_us "
+    "CAST((EXTRACT(EPOCH FROM clock_timestamp()) * 1000000) AS bigint) AS observed_at_us "
     "FROM engine_instances i "
     "LEFT JOIN admission_leases l ON l.instance_id = i.instance_id "
     "AND l.instance_generation = i.instance_generation "

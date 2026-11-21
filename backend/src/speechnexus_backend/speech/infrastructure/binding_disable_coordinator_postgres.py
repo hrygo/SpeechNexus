@@ -60,7 +60,7 @@ class PostgresDisableCoordinatorStore:
                 "AND l.attempt_id=a.attempt_id WHERE i.event_id=? "
                 "AND e.action='model_binding.disable' AND l.gateway_id=? "
                 "AND l.host_node_id=? AND l.lease_state<>'released' "
-                "AND (?::text IS NULL OR l.lease_id>?) ORDER BY l.lease_id LIMIT %s",
+                "AND (CAST(? AS text) IS NULL OR l.lease_id>?) ORDER BY l.lease_id LIMIT %s",
                 (event_id, gateway_id, node_id, after, after, limit),
             )
             leases = [row["lease_id"] for row in cursor.fetchall()]

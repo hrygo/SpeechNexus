@@ -142,7 +142,7 @@ def issue_probe_authorization(
         )
         cursor.execute(
             "SELECT current_database() AS db,current_schema() AS schema,"
-            "installation_id::text AS installation_id FROM speech_publication_installation "
+            "CAST(installation_id AS text) AS installation_id FROM speech_publication_installation "
             "WHERE singleton IS TRUE"
         )
         targets = cursor.fetchall()
@@ -252,7 +252,7 @@ def issue_probe_authorization(
         ):
             raise ProbeAuthorizationError("probe_authorization_unverified")
         cursor.execute(
-            "SELECT floor(extract(epoch from clock_timestamp())*1000000)::bigint AS now_us"
+            "SELECT CAST(floor(extract(epoch from clock_timestamp())*1000000) AS bigint) AS now_us"
         )
         now_us = cursor.fetchall()[0]["now_us"]
         require_native_ready(

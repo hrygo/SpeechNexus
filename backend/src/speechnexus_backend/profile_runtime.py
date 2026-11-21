@@ -135,11 +135,11 @@ class ProfileRuntime:
     def _verify_role(self, connection: SpeechConnection, role: str) -> None:
         schema = self._settings.database_schema
         row = connection.execute(
-            "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(?::name,?,'CREATE') "
-            "OR pg_catalog.pg_has_role(?::name,d.datdba,'MEMBER') OR EXISTS ("
+            "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(CAST(? AS name),?,'CREATE') "
+            "OR pg_catalog.pg_has_role(CAST(? AS name),d.datdba,'MEMBER') OR EXISTS ("
             "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
             "ON n.oid=c.relnamespace WHERE n.nspname=? "
-            "AND pg_catalog.pg_has_role(?::name,c.relowner,'MEMBER')) AS forbidden "
+            "AND pg_catalog.pg_has_role(CAST(? AS name),c.relowner,'MEMBER')) AS forbidden "
             "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
             "WHERE r.rolname=? AND d.datname=CURRENT_DATABASE()",
             (role, schema, role, schema, role, role),
@@ -153,9 +153,9 @@ class ProfileRuntime:
             "AND c.relname NOT IN ('speech_profile_families','speech_profile_revisions',"
             "'speech_profile_commands','speech_profile_publications','speech_profile_lifecycle_intents',"
             "'speech_profile_lifecycle_results') AND ("
-            "pg_catalog.has_table_privilege(?::name,c.oid,"
+            "pg_catalog.has_table_privilege(CAST(? AS name),c.oid,"
             "'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') "
-            "OR pg_catalog.has_any_column_privilege(?::name,c.oid,"
+            "OR pg_catalog.has_any_column_privilege(CAST(? AS name),c.oid,"
             "'SELECT,INSERT,UPDATE,REFERENCES'))) AS forbidden",
             (schema, role, role),
         ).fetchone()
@@ -175,10 +175,11 @@ class ProfileRuntime:
             # explicitly, and never use has_table_privilege to infer a column
             # grant: under column-only grants it stays false (#549).
             broad = connection.execute(
-                "SELECT pg_catalog.has_table_privilege(?::name,?,'UPDATE') AS table_update, "
-                "pg_catalog.has_table_privilege(?::name,?,'REFERENCES') "
+                "SELECT pg_catalog.has_table_privilege("
+                "CAST(? AS name),?,'UPDATE') AS table_update, "
+                "pg_catalog.has_table_privilege(CAST(? AS name),?,'REFERENCES') "
                 "AS table_reference, "
-                "pg_catalog.has_any_column_privilege(?::name,?,'REFERENCES') "
+                "pg_catalog.has_any_column_privilege(CAST(? AS name),?,'REFERENCES') "
                 "AS column_reference",
                 (role, name, role, name, role, name),
             ).fetchone()
@@ -189,10 +190,11 @@ class ProfileRuntime:
             if broad["column_reference"] and not broad["table_reference"]:
                 raise ValueError("Profile writer holds column REFERENCES")
             row = connection.execute(
-                "SELECT pg_catalog.has_table_privilege(?::name,?,'SELECT') "
-                "AND pg_catalog.has_table_privilege(?::name,?,'INSERT') "
-                "AND NOT pg_catalog.has_table_privilege(?::name,?,'DELETE') "
-                "AND NOT pg_catalog.has_table_privilege(?::name,?,'TRUNCATE,REFERENCES,TRIGGER') "
+                "SELECT pg_catalog.has_table_privilege(CAST(? AS name),?,'SELECT') "
+                "AND pg_catalog.has_table_privilege(CAST(? AS name),?,'INSERT') "
+                "AND NOT pg_catalog.has_table_privilege(CAST(? AS name),?,'DELETE') "
+                "AND NOT pg_catalog.has_table_privilege(CAST(? AS "
+                "name),?,'TRUNCATE,REFERENCES,TRIGGER') "
                 "AS permitted",
                 (role, name, role, name, role, name, role, name),
             ).fetchone()
@@ -212,7 +214,7 @@ class ProfileRuntime:
                 else set()
             )
             columns = connection.execute(
-                "SELECT column_name, pg_catalog.has_column_privilege(?::name,?,column_name,"
+                "SELECT column_name, pg_catalog.has_column_privilege(CAST(? AS name),?,column_name,"
                 "'UPDATE') AS updatable FROM information_schema.columns "
                 "WHERE table_schema=? AND table_name=?",
                 (role, name, schema, table),

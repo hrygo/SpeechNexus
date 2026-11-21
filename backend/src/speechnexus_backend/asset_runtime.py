@@ -297,13 +297,16 @@ class AssetRuntime:
                 for role in dict.fromkeys((identities["login"], identities["effective"])):
                     row = connection.execute(
                         "SELECT r.rolsuper OR "
-                        "pg_catalog.has_schema_privilege(?::name,?,'CREATE') "
-                        "OR pg_catalog.pg_has_role(?::name,d.datdba,'MEMBER') OR EXISTS ("
+                        "pg_catalog.has_schema_privilege(CAST(? AS name),?,'CREATE') "
+                        "OR pg_catalog.pg_has_role(CAST(? AS name),d.datdba,'MEMBER') OR EXISTS ("
                         "SELECT 1 FROM pg_catalog.pg_namespace n WHERE n.nspname=? "
-                        "AND pg_catalog.pg_has_role(?::name,n.nspowner,'MEMBER')) OR EXISTS ("
-                        "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
-                        "ON n.oid = c.relnamespace WHERE n.nspname = ? "
-                        "AND pg_catalog.pg_has_role(?::name,c.relowner,'MEMBER')) AS forbidden "
+                        "AND pg_catalog.pg_has_role(CAST(? AS name),n.nspowner,'MEMBER')) "
+                        "OR EXISTS ("
+                        "SELECT 1 FROM pg_catalog.pg_class c "
+                        "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+                        "WHERE n.nspname = ? "
+                        "AND pg_catalog.pg_has_role(CAST(? AS name),c.relowner,'MEMBER')) AS "
+                        "forbidden "
                         "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
                         "WHERE r.rolname = ? AND d.datname = CURRENT_DATABASE()",
                         (role, self._schema, role, self._schema, role, self._schema, role, role),

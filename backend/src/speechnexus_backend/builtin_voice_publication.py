@@ -81,7 +81,7 @@ def publish_builtin_voice(
             }
         cursor.execute(
             "SELECT current_database() AS db, current_schema() AS schema, "
-            "installation_id::text AS installation_id FROM speech_publication_installation "
+            "CAST(installation_id AS text) AS installation_id FROM speech_publication_installation "
             "WHERE singleton IS TRUE"
         )
         targets = cursor.fetchall()
@@ -128,7 +128,8 @@ def publish_builtin_voice(
         ):
             raise BuiltinVoicePublicationRejectedError("evidence_mismatch")
         cursor.execute(
-            "SELECT floor(extract(epoch FROM clock_timestamp()) * 1000000)::bigint AS now_us"
+            "SELECT CAST(floor(extract(epoch FROM clock_timestamp()) * 1000000) AS bigint) AS "
+            "now_us"
         )
         now_us = int(cursor.fetchall()[0]["now_us"])
         if f["checked_at_us"] > now_us:
@@ -261,7 +262,7 @@ def publish_builtin_voice(
         cursor.execute(
             "INSERT INTO speech_builtin_voice_qualifications "
             "(voice_id, revision, revision_id, binding_revision_id, approval_id, document, "
-            "native_speaker_id) VALUES (?,?,?,?,?,?::jsonb,?)",
+            "native_speaker_id) VALUES (?,?,?,?,?,CAST(? AS jsonb),?)",
             (
                 a["voice_id"],
                 a["revision"],
@@ -294,7 +295,7 @@ def publish_builtin_voice(
         )
         cursor.execute(
             "INSERT INTO speech_builtin_voice_publish_intents "
-            "(key_digest,intent,voice_id,revision) VALUES (?,?::jsonb,?,?)",
+            "(key_digest,intent,voice_id,revision) VALUES (?,CAST(? AS jsonb),?,?)",
             (key_digest, json.dumps(saved), a["voice_id"], a["revision"]),
         )
         return {"status": "created", "voice_id": a["voice_id"], "revision": a["revision"]}

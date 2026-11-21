@@ -149,11 +149,11 @@ def _verify_recorder_worker(pool: SpeechPool, schema: str) -> None:
 
 def _verify_restricted_role(connection: SpeechConnection, role: str, schema: str) -> None:
     unsafe = connection.execute(
-        "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(?::name,?,'CREATE') "
-        "OR pg_catalog.pg_has_role(?::name,d.datdba,'MEMBER') OR EXISTS ("
+        "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(CAST(? AS name),?,'CREATE') "
+        "OR pg_catalog.pg_has_role(CAST(? AS name),d.datdba,'MEMBER') OR EXISTS ("
         "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
         "ON n.oid=c.relnamespace WHERE n.nspname=? "
-        "AND pg_catalog.pg_has_role(?::name,c.relowner,'MEMBER')) AS forbidden "
+        "AND pg_catalog.pg_has_role(CAST(? AS name),c.relowner,'MEMBER')) AS forbidden "
         "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
         "WHERE r.rolname=? AND d.datname=CURRENT_DATABASE()",
         (role, schema, role, schema, role, role),
@@ -165,13 +165,14 @@ def _verify_restricted_role(connection: SpeechConnection, role: str, schema: str
 def _verify_columns(connection: SpeechConnection, role: str, schema: str) -> None:
     rows = connection.execute(
         "SELECT c.relname AS table_name, a.attname AS column_name, "
-        "pg_catalog.has_column_privilege(?::name,c.oid,a.attnum,'SELECT') AS can_read, "
-        "pg_catalog.has_column_privilege(?::name,c.oid,a.attnum,'INSERT') AS can_insert, "
-        "pg_catalog.has_column_privilege(?::name,c.oid,a.attnum,'UPDATE') AS can_update, "
-        "pg_catalog.has_column_privilege(?::name,c.oid,a.attnum,'REFERENCES') AS can_reference, "
-        "pg_catalog.has_any_column_privilege(?::name,c.oid,"
+        "pg_catalog.has_column_privilege(CAST(? AS name),c.oid,a.attnum,'SELECT') AS can_read, "
+        "pg_catalog.has_column_privilege(CAST(? AS name),c.oid,a.attnum,'INSERT') AS can_insert, "
+        "pg_catalog.has_column_privilege(CAST(? AS name),c.oid,a.attnum,'UPDATE') AS can_update, "
+        "pg_catalog.has_column_privilege(CAST(? AS name),c.oid,a.attnum,'REFERENCES') AS "
+        "can_reference, "
+        "pg_catalog.has_any_column_privilege(CAST(? AS name),c.oid,"
         "'SELECT,INSERT,UPDATE,REFERENCES') AS any_column, "
-        "pg_catalog.has_table_privilege(?::name,c.oid,'DELETE,TRUNCATE,TRIGGER') "
+        "pg_catalog.has_table_privilege(CAST(? AS name),c.oid,'DELETE,TRUNCATE,TRIGGER') "
         "AS destructive "
         "FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
@@ -218,9 +219,9 @@ def _verify_foreign_schema(connection: SpeechConnection, role: str, schema: str)
         "WHERE n.nspname <> ? AND n.nspname <> 'information_schema' "
         "AND left(n.nspname, 3) <> 'pg_' "
         "AND c.relkind IN ('r','p','v','m','f') "
-        "AND (pg_catalog.has_any_column_privilege(?::name, c.oid, "
+        "AND (pg_catalog.has_any_column_privilege(CAST(? AS name), c.oid, "
         "'SELECT,INSERT,UPDATE,REFERENCES') "
-        "OR pg_catalog.has_table_privilege(?::name, c.oid, 'DELETE,TRUNCATE,TRIGGER')) "
+        "OR pg_catalog.has_table_privilege(CAST(? AS name), c.oid, 'DELETE,TRUNCATE,TRIGGER')) "
         "LIMIT 1",
         (schema, role, role),
     ).fetchone()

@@ -23,21 +23,21 @@ from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 
 _QUERY = """
 SELECT pool.pool_id, pool.pool_state, pool.service_class,
-       COALESCE(aggregate.node_ids::text[], ARRAY[]::text[]) AS node_ids,
+       COALESCE(CAST(aggregate.node_ids AS text)text[]) AS node_ids,
        COALESCE(aggregate.ready_instances, 0) AS ready_instances,
-       COALESCE(aggregate.max_active_slots, 0)::bigint AS max_active_slots,
-       COALESCE(aggregate.realtime_reserved_slots, 0)::bigint AS realtime_reserved_slots,
-       COALESCE(aggregate.active_slots, 0)::bigint AS active_slots,
-       COALESCE(aggregate.quarantine_slots, 0)::bigint AS quarantine_slots
+       CAST(COALESCE(aggregate.max_active_slots, 0) AS bigint) AS max_active_slots,
+       CAST(COALESCE(aggregate.realtime_reserved_slots, 0) AS bigint) AS realtime_reserved_slots,
+       CAST(COALESCE(aggregate.active_slots, 0) AS bigint) AS active_slots,
+       CAST(COALESCE(aggregate.quarantine_slots, 0) AS bigint) AS quarantine_slots
 FROM resource_pools AS pool
 LEFT JOIN (
     SELECT pool_id,
            array_agg(DISTINCT host_node_id ORDER BY host_node_id) AS node_ids,
            count(*) FILTER (WHERE instance_state = 'ready') AS ready_instances,
-           sum(max_slots)::bigint AS max_active_slots,
-           sum(realtime_reserved_slots)::bigint AS realtime_reserved_slots,
-           sum(held_slots)::bigint AS active_slots,
-           sum(quarantined_slots)::bigint AS quarantine_slots
+           CAST(sum(max_slots) AS bigint) AS max_active_slots,
+           CAST(sum(realtime_reserved_slots) AS bigint) AS realtime_reserved_slots,
+           CAST(sum(held_slots) AS bigint) AS active_slots,
+           CAST(sum(quarantined_slots) AS bigint) AS quarantine_slots
     FROM engine_instances
     WHERE instance_state <> 'stopped'
     GROUP BY pool_id

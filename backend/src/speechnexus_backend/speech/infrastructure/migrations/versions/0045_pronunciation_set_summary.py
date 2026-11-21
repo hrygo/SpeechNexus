@@ -35,8 +35,8 @@ def upgrade() -> None:
         DO $$
         BEGIN
             UPDATE {_TABLE} SET
-                encoding = definition_json::jsonb ->> 'encoding',
-                entry_count = jsonb_array_length(definition_json::jsonb -> 'entries');
+                encoding = CAST(definition_json AS jsonb) ->> 'encoding',
+                entry_count = jsonb_array_length(CAST(definition_json AS jsonb) -> 'entries');
         EXCEPTION WHEN others THEN
             RAISE EXCEPTION
                 'refusing to constrain {_TABLE}: cannot derive encoding/entry_count: %',

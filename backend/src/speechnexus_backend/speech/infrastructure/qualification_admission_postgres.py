@@ -76,12 +76,12 @@ class PostgresQualificationAdmission(PostgresAdmissionTransactions):
             "AND a.intent->>'binding_revision_id'=? AND a.intent->>'manifest_id'=? "
             "AND a.intent->>'policy_revision_id'=? AND a.intent->>'host_node_id'=? "
             "AND a.intent->>'gateway_id'=? AND a.intent->>'instance_id'=? "
-            "AND (a.intent->>'instance_generation')::bigint=? "
+            "CAST(AND (a.intent->>'instance_generation') AS bigint)=? "
             "AND a.intent->>'operation_id'=p.operation_id AND a.intent->>'attempt_id'=p.attempt_id "
             "AND a.intent->>'admission_request_digest'=p.request_digest "
             "AND s.expires_at>clock_timestamp() "
-            "AND (a.intent->>'expires_at_us')::bigint > "
-            "floor(extract(epoch FROM clock_timestamp())*1000000)::bigint "
+            "CAST(AND (a.intent->>'expires_at_us') AS bigint) > "
+            "CAST(floor(extract(epoch FROM clock_timestamp())*1000000) AS bigint) "
             "AND NOT EXISTS (SELECT 1 FROM speech_builtin_voice_source_revocations r "
             "WHERE r.source_approval_id=s.source_approval_id)",
             (
@@ -119,7 +119,7 @@ class PostgresQualificationAdmission(PostgresAdmissionTransactions):
                     "WHERE r.authorization_id=? AND i.singleton IS TRUE "
                     "AND a.intent->>'database'=current_database() "
                     "AND a.intent->>'schema'=current_schema() "
-                    "AND a.intent->>'installation_id'=i.installation_id::text",
+                    "AND a.intent->>'installation_id'=CAST(i.installation_id AS text)",
                     (self._authorization_id,),
                 ).fetchone()
             if receipt is None or (receipt["operation_id"], receipt["attempt_id"]) != (
@@ -140,7 +140,7 @@ class PostgresQualificationAdmission(PostgresAdmissionTransactions):
             "CROSS JOIN speech_publication_installation i "
             "WHERE r.authorization_id=? AND i.singleton IS TRUE "
             "AND a.intent->>'database'=current_database() AND a.intent->>'schema'=current_schema() "
-            "AND a.intent->>'installation_id'=i.installation_id::text",
+            "AND a.intent->>'installation_id'=CAST(i.installation_id AS text)",
             (self._authorization_id,),
         )
         receipts = cursor.fetchall()
@@ -267,7 +267,7 @@ class PostgresQualificationAdmission(PostgresAdmissionTransactions):
             raise AdmissionRejectedError("policy_or_resource_disabled") from None
         cursor.execute(
             "SELECT current_database() AS database, current_schema() AS schema, "
-            "installation_id::text AS installation_id FROM speech_publication_installation "
+            "CAST(installation_id AS text) AS installation_id FROM speech_publication_installation "
             "WHERE singleton IS TRUE"
         )
         targets = cursor.fetchall()
@@ -312,7 +312,7 @@ class PostgresQualificationAdmission(PostgresAdmissionTransactions):
             "AND i.gateway_id=? AND i.instance_id=? AND i.instance_generation=? "
             "AND i.binding_revision_id=? AND i.manifest_id=? AND i.approved_template_id=? "
             "AND i.config_digest=?) "
-            "AND floor(extract(epoch FROM clock_timestamp())*1000000)::bigint < ?",
+            "AND CAST(floor(extract(epoch FROM clock_timestamp())*1000000) AS bigint) < ?",
             (
                 auth["binding_id"],
                 request.binding_revision_id,

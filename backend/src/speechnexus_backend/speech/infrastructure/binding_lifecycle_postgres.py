@@ -423,7 +423,7 @@ class PostgresBindingLifecycle:
             " occurred_at_us, policy_revision, intent_digest, idempotency_key_digest, "
             " change_summary_json) "
             "VALUES (?, 'binding', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-            " ?::jsonb)",
+            " CAST(? AS jsonb))",
             (
                 event_id,
                 action,

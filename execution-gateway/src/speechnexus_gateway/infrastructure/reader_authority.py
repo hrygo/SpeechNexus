@@ -183,7 +183,7 @@ def verify_execution_reader_target(
                 if remaining <= 0:
                     return None
                 connection.execute(
-                    "SELECT pg_catalog.set_config('statement_timeout',?,true)",
+                    "SELECT pg_catalog.set_config('statement_timeout',%s,true)",
                     (str(max(1, int(remaining * 1000))),),
                 )
                 with connection.cursor() as raw:
@@ -217,7 +217,7 @@ def verify_execution_reader_authority(pool: GatewayPool, schema: str) -> bool:
                 if remaining <= 0:
                     raise TimeoutError
                 connection.execute(
-                    "SELECT pg_catalog.set_config('statement_timeout',?,true)",
+                    "SELECT pg_catalog.set_config('statement_timeout',%s,true)",
                     (str(max(1, int(remaining * 1000))),),
                 )
                 return connection.execute(statement, params)
@@ -236,7 +236,7 @@ def verify_execution_reader_authority(pool: GatewayPool, schema: str) -> bool:
                 return False
             role_rows = query(
                 "WITH RECURSIVE reachable(role_oid) AS ("
-                "SELECT oid FROM pg_catalog.pg_roles WHERE rolname IN (?,?) UNION "
+                "SELECT oid FROM pg_catalog.pg_roles WHERE rolname IN (%s,%s) UNION "
                 "SELECT m.roleid FROM pg_catalog.pg_auth_members AS m "
                 "JOIN reachable AS r ON m.member=r.role_oid) "
                 "SELECT r.rolname FROM pg_catalog.pg_roles AS r "
@@ -257,28 +257,28 @@ def verify_execution_reader_authority(pool: GatewayPool, schema: str) -> bool:
                 unsafe = query(
                     "SELECT r.rolsuper OR r.rolcreaterole OR r.rolcreatedb OR r.rolreplication "
                     "OR r.rolbypassrls "
-                    "OR pg_catalog.pg_has_role(?::name,d.datdba,'MEMBER') "
-                    "OR pg_catalog.has_database_privilege(?::name,d.oid,'CREATE,TEMPORARY') "
+                    "OR pg_catalog.pg_has_role(%s::name,d.datdba,'MEMBER') "
+                    "OR pg_catalog.has_database_privilege(%s::name,d.oid,'CREATE,TEMPORARY') "
                     "OR pg_catalog.has_database_privilege("
-                    "?::name,d.oid,'CONNECT WITH GRANT OPTION') "
+                    "%s::name,d.oid,'CONNECT WITH GRANT OPTION') "
                     "OR EXISTS (SELECT 1 FROM pg_catalog.pg_parameter_acl p "
-                    "WHERE pg_catalog.has_parameter_privilege(?::name,p.parname,'ALTER SYSTEM')) "
+                    "WHERE pg_catalog.has_parameter_privilege(%s::name,p.parname,'ALTER SYSTEM')) "
                     "OR EXISTS (SELECT 1 FROM pg_catalog.pg_shdepend dep "
                     "WHERE dep.refclassid='pg_catalog.pg_authid'::pg_catalog.regclass "
                     "AND dep.refobjid=r.oid AND dep.deptype='o' AND dep.dbid IN (0,d.oid)) "
                     "OR EXISTS (SELECT 1 FROM pg_catalog.pg_roles x "
-                    "WHERE x.oid<>r.oid AND pg_catalog.pg_has_role(?::name,x.oid,"
+                    "WHERE x.oid<>r.oid AND pg_catalog.pg_has_role(%s::name,x.oid,"
                     "'MEMBER WITH ADMIN OPTION')) "
                     "OR EXISTS (SELECT 1 FROM pg_catalog.pg_namespace n "
                     "WHERE ("
-                    "pg_catalog.pg_has_role(?::name,n.nspowner,'MEMBER') OR "
-                    "pg_catalog.has_schema_privilege(?::name,n.oid,'CREATE') OR "
-                    "pg_catalog.has_schema_privilege(?::name,n.oid,'USAGE WITH GRANT OPTION'))) "
+                    "pg_catalog.pg_has_role(%s::name,n.nspowner,'MEMBER') OR "
+                    "pg_catalog.has_schema_privilege(%s::name,n.oid,'CREATE') OR "
+                    "pg_catalog.has_schema_privilege(%s::name,n.oid,'USAGE WITH GRANT OPTION'))) "
                     "OR EXISTS (SELECT 1 FROM pg_catalog.pg_class c "
                     "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
-                    "WHERE pg_catalog.pg_has_role(?::name,c.relowner,'MEMBER')) AS forbidden "
+                    "WHERE pg_catalog.pg_has_role(%s::name,c.relowner,'MEMBER')) AS forbidden "
                     "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
-                    "WHERE r.rolname=? AND d.datname=CURRENT_DATABASE()",
+                    "WHERE r.rolname=%s AND d.datname=CURRENT_DATABASE()",
                     (role, role, role, role, role, role, role, role, role, role),
                 ).fetchone()
                 if unsafe is None or unsafe["forbidden"] is not False:
@@ -286,27 +286,27 @@ def verify_execution_reader_authority(pool: GatewayPool, schema: str) -> bool:
                 rows = query(
                     "SELECT n.nspname AS schema_name,c.relname,a.attname, "
                     "c.relrowsecurity AS row_security, "
-                    "pg_catalog.has_column_privilege(?::name,c.oid,a.attnum,'SELECT') "
+                    "pg_catalog.has_column_privilege(%s::name,c.oid,a.attnum,'SELECT') "
                     "AS can_read, "
-                    "pg_catalog.has_column_privilege(?::name,c.oid,a.attnum,'INSERT') "
+                    "pg_catalog.has_column_privilege(%s::name,c.oid,a.attnum,'INSERT') "
                     "AS can_insert, "
-                    "pg_catalog.has_column_privilege(?::name,c.oid,a.attnum,'UPDATE,REFERENCES') "
+                    "pg_catalog.has_column_privilege(%s::name,c.oid,a.attnum,'UPDATE,REFERENCES') "
                     "AS can_change, "
-                    "pg_catalog.has_column_privilege(?::name,c.oid,a.attnum,"
+                    "pg_catalog.has_column_privilege(%s::name,c.oid,a.attnum,"
                     "'SELECT WITH GRANT OPTION') AS can_delegate, "
-                    "pg_catalog.has_table_privilege(?::name,c.oid,"
+                    "pg_catalog.has_table_privilege(%s::name,c.oid,"
                     "'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') AS destructive, "
                     "EXISTS (SELECT 1 FROM pg_catalog.aclexplode("
                     "COALESCE(c.relacl,pg_catalog.acldefault('r',c.relowner))) acl "
                     "WHERE acl.grantee IN (0,(SELECT oid FROM pg_catalog.pg_roles "
-                    "WHERE rolname=?)) "
+                    "WHERE rolname=%s)) "
                     "AND (acl.privilege_type IN ('INSERT','UPDATE','DELETE','TRUNCATE',"
                     "'REFERENCES','TRIGGER','MAINTAIN') OR acl.is_grantable) "
                     "AND NOT (scope.native_settings AND acl.grantee=0 "
                     "AND acl.privilege_type='UPDATE' AND NOT acl.is_grantable)) "
                     "OR EXISTS (SELECT 1 FROM pg_catalog.aclexplode(a.attacl) acl "
                     "WHERE acl.grantee IN (0,(SELECT oid FROM pg_catalog.pg_roles "
-                    "WHERE rolname=?)) "
+                    "WHERE rolname=%s)) "
                     "AND (acl.privilege_type IN ('INSERT','UPDATE','REFERENCES') "
                     "OR acl.is_grantable)) AS explicit_write, "
                     "CASE WHEN n.nspname='pg_catalog' THEN EXISTS ("
@@ -363,32 +363,32 @@ def verify_execution_reader_authority(pool: GatewayPool, schema: str) -> bool:
                     "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c "
                     "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
                     "WHERE CASE WHEN c.relkind='S' THEN ("
-                    "pg_catalog.has_sequence_privilege(?::name,c.oid,'SELECT,UPDATE,USAGE') "
+                    "pg_catalog.has_sequence_privilege(%s::name,c.oid,'SELECT,UPDATE,USAGE') "
                     "OR EXISTS (SELECT 1 FROM pg_catalog.aclexplode("
                     "COALESCE(c.relacl,pg_catalog.acldefault('s',c.relowner))) acl "
                     "WHERE acl.grantee IN (0,(SELECT oid FROM pg_catalog.pg_roles "
-                    "WHERE rolname=?)))) "
+                    "WHERE rolname=%s)))) "
                     "ELSE false END) "
                     "OR EXISTS (SELECT 1 FROM pg_catalog.pg_proc p "
                     "JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace "
                     "WHERE p.prosecdef "
-                    "AND pg_catalog.has_function_privilege(?::name,p.oid,'EXECUTE')) "
+                    "AND pg_catalog.has_function_privilege(%s::name,p.oid,'EXECUTE')) "
                     "OR EXISTS (SELECT 1 FROM pg_catalog.pg_proc p WHERE "
-                    "pg_catalog.has_function_privilege(?::name,p.oid,"
+                    "pg_catalog.has_function_privilege(%s::name,p.oid,"
                     "'EXECUTE WITH GRANT OPTION')) "
                     "OR EXISTS (SELECT 1 FROM pg_catalog.pg_proc p "
                     "JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace "
                     "WHERE n.nspname='pg_catalog' AND p.proname IN "
                     "('lo_create','lo_creat','lo_from_bytea','lo_import','lo_export','lo_unlink',"
                     "'lo_put','lo_truncate','lo_truncate64','lowrite') "
-                    "AND pg_catalog.has_function_privilege(?::name,p.oid,'EXECUTE')) "
+                    "AND pg_catalog.has_function_privilege(%s::name,p.oid,'EXECUTE')) "
                     "AS other_capability",
                     (role, role, role, role, role),
                 ).fetchone()
                 if other is None or other["other_capability"] is not False:
                     return False
             usable = query(
-                "SELECT pg_catalog.has_schema_privilege(CURRENT_USER,?,'USAGE') AS usable",
+                "SELECT pg_catalog.has_schema_privilege(CURRENT_USER,%s,'USAGE') AS usable",
                 (schema,),
             ).fetchone()
             return usable is not None and usable["usable"] is True and time.monotonic() < deadline

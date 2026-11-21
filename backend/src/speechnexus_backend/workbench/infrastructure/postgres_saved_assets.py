@@ -93,7 +93,7 @@ class PostgresSavedAssets:
             SELECT r.intent_digest, a.id AS asset_id, a.created_at
             FROM {s}.saved_asset_receipts r
             JOIN {s}.saved_assets a ON a.id = r.asset_id
-            WHERE r.project_id = ? AND r.key_digest = ?
+            WHERE r.project_id = %s AND r.key_digest = %s
         """,
             (project_id, digest),
         )
@@ -167,7 +167,7 @@ class PostgresSavedAssets:
                 INSERT INTO {s}.saved_assets
                     (id, project_id, media_type, bytes, sha256, source_artifact_id,
                         source_receipt_id, display_name, object_key, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
                 (
                     asset.id,
@@ -188,7 +188,7 @@ class PostgresSavedAssets:
                     """
                     INSERT INTO {s}.saved_asset_receipts
                         (project_id, key_digest, intent_digest, asset_id, created_at)
-                    VALUES (?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s)
                 """,
                     (project_id, digest, intent_digest, asset.id, now),
                 )

@@ -18,14 +18,14 @@ _UNFINISHED_STATES = ("submitting", "executing", "stopping", "unknown_quarantine
 
 _SELECT_IDENTITY = (
     "SELECT instance_id, instance_generation, host_node_id, pool_id, gateway_id "
-    "FROM engine_instances WHERE instance_id = ? AND instance_generation = ?"
+    "FROM engine_instances WHERE instance_id = %s AND instance_generation = %s"
 )
 
 _SELECT_INVENTORY = (
     "SELECT s.submit_intent_id, s.execution_state FROM submit_intents s "
     "JOIN admission_leases l ON l.lease_id = s.lease_id "
-    "WHERE l.instance_id = ? AND l.instance_generation = ? "
-    "AND l.host_node_id = ? AND l.pool_id = ? AND l.gateway_id = ? "
+    "WHERE l.instance_id = %s AND l.instance_generation = %s "
+    "AND l.host_node_id = %s AND l.pool_id = %s AND l.gateway_id = %s "
     "AND s.execution_state IN ('submitting', 'executing', 'stopping', "
     "'unknown_quarantined') "
     "ORDER BY s.submit_intent_id"
@@ -99,8 +99,8 @@ _SELECT_RECLAIM = (
     "AND l.host_node_id = i.host_node_id AND l.pool_id = i.pool_id "
     "AND l.gateway_id = i.gateway_id "
     "LEFT JOIN submit_intents s ON s.lease_id = l.lease_id "
-    "WHERE i.instance_id = ? AND i.instance_generation = ? AND i.host_node_id = ? "
-    "AND i.pool_id = ? AND i.gateway_id = ? "
+    "WHERE i.instance_id = %s AND i.instance_generation = %s AND i.host_node_id = %s "
+    "AND i.pool_id = %s AND i.gateway_id = %s "
     "ORDER BY s.submit_intent_id"
 )
 

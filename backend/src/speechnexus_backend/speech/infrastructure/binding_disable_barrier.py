@@ -21,7 +21,7 @@ def lock_binding(executor: BindingLockExecutor, binding_id: str) -> None:
     identifier(binding_id)
     executor.execute(
         "SELECT pg_advisory_xact_lock(hashtextextended("
-        "'speechnexus:catalog:' || current_schema() || ':binding:' || ?, 0))",
+        "'speechnexus:catalog:' || current_schema() || ':binding:' || %s, 0))",
         (binding_id,),
     )
 

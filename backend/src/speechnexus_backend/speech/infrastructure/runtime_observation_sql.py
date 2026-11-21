@@ -57,7 +57,7 @@ def _validate_progress(record: RuntimeRecord, prepared: PreparedRuntimeObservati
 def _replay(cursor: RuntimeCursor, record: RuntimeRecord) -> RuntimeResult:
     instance = _one(
         cursor,
-        "SELECT * FROM engine_instances WHERE instance_id = ? AND instance_generation = ?",
+        "SELECT * FROM engine_instances WHERE instance_id = %s AND instance_generation = %s",
         (record.request.instance_id, record.request.instance_generation),
     )
     _instance(instance, record)
@@ -73,8 +73,8 @@ def _prerequisites(
     request = record.request
     leases = _rows(
         cursor,
-        "SELECT lease_id, lease_state FROM admission_leases WHERE instance_id = ? "
-        "AND instance_generation = ? ORDER BY lease_id FOR UPDATE",
+        "SELECT lease_id, lease_state FROM admission_leases WHERE instance_id = %s "
+        "AND instance_generation = %s ORDER BY lease_id FOR UPDATE",
         (request.instance_id, request.instance_generation),
     )
     if any(
@@ -85,8 +85,8 @@ def _prerequisites(
     submits = _rows(
         cursor,
         "SELECT execution_state, cleanup_state FROM submit_intents WHERE lease_id IN "
-        "(SELECT lease_id FROM admission_leases WHERE instance_id = ? "
-        "AND instance_generation = ?) "
+        "(SELECT lease_id FROM admission_leases WHERE instance_id = %s "
+        "AND instance_generation = %s) "
         "ORDER BY submit_intent_id FOR UPDATE",
         (request.instance_id, request.instance_generation),
     )
@@ -137,7 +137,7 @@ def observe_in_transaction(
     located = _record(
         _one(
             cursor,
-            "SELECT * FROM runtime_instance_intents WHERE target_node_id = ? AND intent_id = ?",
+            "SELECT * FROM runtime_instance_intents WHERE target_node_id = %s AND intent_id = %s",
             (identity.target_node_id, identity.intent_id),
         )
     )
@@ -150,18 +150,18 @@ def observe_in_transaction(
     request = located.request
     pool = _one(
         cursor,
-        "SELECT * FROM resource_pools WHERE pool_id = ? FOR UPDATE",
+        "SELECT * FROM resource_pools WHERE pool_id = %s FOR UPDATE",
         (request.binding.pool_id,),
     )
     host_row = _one(
         cursor,
-        "SELECT * FROM host_nodes WHERE host_node_id = ? FOR UPDATE",
+        "SELECT * FROM host_nodes WHERE host_node_id = %s FOR UPDATE",
         (request.binding.target_node_id,),
     )
     head = _head(
         _one(
             cursor,
-            "SELECT * FROM runtime_instance_heads WHERE instance_id = ? FOR UPDATE",
+            "SELECT * FROM runtime_instance_heads WHERE instance_id = %s FOR UPDATE",
             (request.instance_id,),
         )
     )
@@ -169,8 +169,8 @@ def observe_in_transaction(
         raise RuntimeRejectedError("stale_instance_generation")
     instance_row = _one(
         cursor,
-        "SELECT * FROM engine_instances WHERE instance_id = ? "
-        "AND instance_generation = ? FOR UPDATE",
+        "SELECT * FROM engine_instances WHERE instance_id = %s "
+        "AND instance_generation = %s FOR UPDATE",
         (request.instance_id, request.instance_generation),
     )
     records = _related_records(cursor, request, instance_row)
@@ -242,9 +242,9 @@ def observe_in_transaction(
         )
     _changed(
         cursor,
-        "UPDATE engine_instances SET instance_state = ?, base_budget_kind = ?, ready_at_us = ?, "
-        "stopped_at_us = ?, quarantine_reason = ?, version = version + 1 "
-        "WHERE instance_id = ? AND instance_generation = ? AND version = ?",
+        "UPDATE engine_instances SET instance_state = %s, base_budget_kind = %s, ready_at_us = %s, "
+        "stopped_at_us = %s, quarantine_reason = %s, version = version + 1 "
+        "WHERE instance_id = %s AND instance_generation = %s AND version = %s",
         (
             decision.instance_state,
             decision.base_budget_kind,
@@ -264,10 +264,10 @@ def observe_in_transaction(
     original_document = record.observation_document if same else prepared.document
     _changed(
         cursor,
-        "UPDATE runtime_instance_intents SET intent_state = ?, observation_document = ?, "
-        "stop_evidence_document = ?, readiness_document = ?, error_code = ?, "
-        "updated_at_us = ?, version = version + 1 WHERE target_node_id = ? "
-        "AND intent_id = ? AND version = ?",
+        "UPDATE runtime_instance_intents SET intent_state = %s, observation_document = %s, "
+        "stop_evidence_document = %s, readiness_document = %s, error_code = %s, "
+        "updated_at_us = %s, version = version + 1 WHERE target_node_id = %s "
+        "AND intent_id = %s AND version = %s",
         (
             decision.intent_state,
             original_document,

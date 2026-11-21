@@ -117,7 +117,7 @@ def read_original(
     """Missing means unobserved, not permission to perform a fresh execution."""
     key = identity.operation_id, identity.attempt_id
     attempts = rows(
-        cursor, "SELECT * FROM admission_attempts WHERE operation_id = ? AND attempt_id = ?", key
+        cursor, "SELECT * FROM admission_attempts WHERE operation_id = %s AND attempt_id = %s", key
     )
     if not attempts:
         return None
@@ -127,13 +127,13 @@ def read_original(
     try:
         envelope = one(
             cursor,
-            "SELECT * FROM admission_requests WHERE operation_id = ? AND attempt_id = ?",
+            "SELECT * FROM admission_requests WHERE operation_id = %s AND attempt_id = %s",
             key,
         )
         operation = one(
             cursor,
             "SELECT operation_id, workspace_id, request_digest, initial_attempt_id, "
-            "current_attempt_id, recorded_at_us FROM admission_operations WHERE operation_id = ?",
+            "current_attempt_id, recorded_at_us FROM admission_operations WHERE operation_id = %s",
             (identity.operation_id,),
         )
     except AdmissionRejectedError:
@@ -151,7 +151,7 @@ def read_original(
             raise AdmissionRejectedError("idempotency_conflict")
         body = one(
             cursor,
-            "SELECT request_document FROM admission_operations WHERE operation_id = ?",
+            "SELECT request_document FROM admission_operations WHERE operation_id = %s",
             (identity.operation_id,),
         )["request_document"]
         # A tombstone cannot restore content or authorize dispatch. Original
@@ -163,7 +163,7 @@ def read_original(
         raise AdmissionRejectedError("reconciliation_required")
     leases = rows(
         cursor,
-        "SELECT * FROM admission_leases WHERE operation_id = ? AND attempt_id = ? "
+        "SELECT * FROM admission_leases WHERE operation_id = %s AND attempt_id = %s "
         "ORDER BY stage_id LIMIT 65",
         key,
     )

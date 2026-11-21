@@ -127,8 +127,8 @@ def refuse_sequence_privileges(
     row = connection.execute(
         "SELECT c.relname AS name FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
-        "WHERE n.nspname=? AND c.relkind='S' "
-        "AND c.relname <> ALL(?::text[]) "
+        "WHERE n.nspname=%s AND c.relkind='S' "
+        "AND c.relname <> ALL(%s::text[]) "
         f"AND pg_catalog.has_sequence_privilege({clause}, c.oid, {_SEQUENCE_SURFACE}) "
         "ORDER BY c.relname LIMIT 1",
         (schema, list(declared), *prefix),
@@ -155,8 +155,8 @@ def refuse_foreign_relation_privileges(
     row = connection.execute(
         "SELECT c.relname AS name FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
-        "WHERE n.nspname=? AND c.relkind IN ('r','p','v','m','f') "
-        "AND c.relname <> ALL(?::text[]) AND ("
+        "WHERE n.nspname=%s AND c.relkind IN ('r','p','v','m','f') "
+        "AND c.relname <> ALL(%s::text[]) AND ("
         f"pg_catalog.has_table_privilege({clause}, c.oid, {_TABLE_SURFACE}) OR "
         f"pg_catalog.has_any_column_privilege({clause}, c.oid, {_COLUMN_SURFACE})) "
         "ORDER BY c.relname LIMIT 1",

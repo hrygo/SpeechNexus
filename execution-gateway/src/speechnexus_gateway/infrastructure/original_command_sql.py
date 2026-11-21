@@ -22,9 +22,9 @@ _READ_ORIGINAL = (
     "SELECT version, request_digest, command_digest, "
     "request_document IS NOT NULL AS document_present, "
     "OCTET_LENGTH(request_document) AS document_bytes, "
-    "CASE WHEN OCTET_LENGTH(request_document) <= ? THEN request_document ELSE NULL END "
+    "CASE WHEN OCTET_LENGTH(request_document) <= %s THEN request_document ELSE NULL END "
     "AS bounded_document, command_redacted_at_us, command_deletion_job_id, "
-    "command_deletion_evidence_digest FROM submit_intents WHERE submit_intent_id = ?"
+    "command_deletion_evidence_digest FROM submit_intents WHERE submit_intent_id = %s"
 )
 
 

@@ -41,7 +41,7 @@ def find_evidence(
         "qualification_report_id, evidence_source, recorded_at_us, "
         "capacity_manifest_digest, qualification_report_digest "
         "FROM speech_binding_publication_evidence "
-        "WHERE kind = 'binding' AND object_id = ? AND revision = ?",
+        "WHERE kind = 'binding' AND object_id = %s AND revision = %s",
         (object_id, str(revision)),
     )
     rows = cursor.fetchall()
@@ -102,7 +102,7 @@ def insert_evidence(cursor: EvidenceCursor, evidence: BindingPublicationEvidence
         "(kind, object_id, revision, revision_id, capacity_manifest_id, "
         "qualification_report_id, evidence_source, recorded_at_us, "
         "capacity_manifest_digest, qualification_report_digest) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
         "ON CONFLICT (kind, object_id, revision) DO NOTHING",
         (
             evidence.kind,
@@ -126,7 +126,7 @@ def find_binding_revision_document(
     """Return the stored revision identity and its immutable definition JSON."""
     cursor.execute(
         "SELECT revision_id, definition_json FROM speech_binding_revisions "
-        "WHERE binding_id = ? AND revision = ?",
+        "WHERE binding_id = %s AND revision = %s",
         (binding_id, str(revision)),
     )
     rows = cursor.fetchall()

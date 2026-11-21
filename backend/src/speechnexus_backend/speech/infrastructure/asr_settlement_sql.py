@@ -46,12 +46,12 @@ def insert_asr_settlement(cursor: SettlementCursor, request: AdmissionRequest) -
     cursor.execute(
         "INSERT INTO speech_asr_settlement "
         "(lease_id,operation_id,attempt_id,gateway_id,host_node_id,next_check_at_us) "
-        "VALUES (?,?,?,?,?,0) ON CONFLICT (lease_id) DO NOTHING",
+        "VALUES (%s,%s,%s,%s,%s,0) ON CONFLICT (lease_id) DO NOTHING",
         values,
     )
     cursor.execute(
         "SELECT lease_id,operation_id,attempt_id,gateway_id,host_node_id "
-        "FROM speech_asr_settlement WHERE lease_id=?",
+        "FROM speech_asr_settlement WHERE lease_id=%s",
         (stage.lease_id,),
     )
     rows = cursor.fetchall()

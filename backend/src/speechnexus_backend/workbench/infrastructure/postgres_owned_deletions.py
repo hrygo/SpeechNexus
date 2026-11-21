@@ -52,46 +52,46 @@ class PostgresOwnedDeletionCatalog:
         """Caller must hold the project row lock until acceptance/cleanup commits."""
         books = await self._rows(
             base,
-            "SELECT id,casting_revision,status FROM {s}.books WHERE project_id=? ORDER BY id",
+            "SELECT id,casting_revision,status FROM {s}.books WHERE project_id=%s ORDER BY id",
             project_id,
         )
         chapters = await self._rows(
             base,
             "SELECT c.id,c.book_id,c.text_revision,c.ordinal FROM {s}.chapters c "
-            "JOIN {s}.books b ON b.id=c.book_id WHERE b.project_id=? ORDER BY c.id",
+            "JOIN {s}.books b ON b.id=c.book_id WHERE b.project_id=%s ORDER BY c.id",
             project_id,
         )
         units = await self._rows(
             base,
             "SELECT id,book_id,chapter_id,revision,status,dependencies_sha256,speech_job_id,"
             "saved_asset_id,source_artifact_id,source_receipt_id FROM {s}.render_units "
-            "WHERE project_id=? ORDER BY id",
+            "WHERE project_id=%s ORDER BY id",
             project_id,
         )
         generations = await self._rows(
             base,
             "SELECT g.id,g.unit_id,g.job_id,g.dependencies_sha256,g.revision,u.book_id "
             "FROM {s}.render_unit_generations g JOIN {s}.render_units u ON u.id=g.unit_id "
-            "WHERE u.project_id=? ORDER BY g.unit_id,g.revision,g.id",
+            "WHERE u.project_id=%s ORDER BY g.unit_id,g.revision,g.id",
             project_id,
         )
         exports = await self._rows(
             base,
             "SELECT id,book_id,status,manifest_revision,artifact,progress_completed,"
-            "progress_total FROM {s}.export_jobs WHERE project_id=? ORDER BY id",
+            "progress_total FROM {s}.export_jobs WHERE project_id=%s ORDER BY id",
             project_id,
         )
         assets = await self._rows(
             base,
             "SELECT id,sha256,object_key,source_artifact_id,source_receipt_id,bytes "
-            "FROM {s}.saved_assets WHERE project_id=? ORDER BY id",
+            "FROM {s}.saved_assets WHERE project_id=%s ORDER BY id",
             project_id,
         )
         references = await self._rows(
             base,
             "SELECT u.id,u.project_id,u.revision,u.saved_asset_id FROM {s}.render_units u "
             "JOIN {s}.saved_assets a ON a.id=u.saved_asset_id "
-            "WHERE a.project_id=? AND u.project_id<>a.project_id ORDER BY u.id",
+            "WHERE a.project_id=%s AND u.project_id<>a.project_id ORDER BY u.id",
             project_id,
         )
         pending = await pending_content_write(base, project_id)
@@ -159,7 +159,8 @@ class PostgresOwnedDeletionCatalog:
         async with base._connection.cursor(row_factory=dict_row) as cursor:
             await cursor.execute(
                 base._sql(
-                    "SELECT content_snapshot FROM {s}.deletion_plans WHERE workspace_id=? AND id=?"
+                    "SELECT content_snapshot FROM {s}.deletion_plans "
+                    "WHERE workspace_id=%s AND id=%s"
                 ),
                 (workspace_id, plan_id),
             )

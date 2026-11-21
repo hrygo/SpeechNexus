@@ -61,7 +61,7 @@ class _Cursor:
         if remaining <= 0:
             raise PublicationUnavailableError
         self.raw.execute(
-            "SELECT set_config('statement_timeout', ?, true)",
+            "SELECT set_config('statement_timeout', %s, true)",
             (str(max(1, int(remaining * 1000))),),
         )
         return self.raw.execute(query, parameters)
@@ -156,7 +156,7 @@ class PostgresPublications:
                 "WHERE singleton IS TRUE LIMIT 2) s "
                 "LEFT JOIN speech_publication_heads h ON h.kind='binding' "
                 "AND h.object_id=f.binding_id "
-                "WHERE f.binding_id=?",
+                "WHERE f.binding_id=%s",
                 (binding_id,),
             )
             rows = cursor.fetchall()
@@ -199,7 +199,7 @@ class PostgresPublications:
         ) -> tuple[Publication, BindingPublicationEvidence, bool]:
             cursor.execute(
                 "SELECT pg_advisory_xact_lock(hashtextextended("
-                "'speechnexus:catalog:' || current_schema() || ':' || ? || ':' || ?, 0))",
+                "'speechnexus:catalog:' || current_schema() || ':' || %s || ':' || %s, 0))",
                 (publication.kind, publication.object_id),
             )
             existing = find_publication(
@@ -308,7 +308,7 @@ class PostgresPublications:
                 raise BindingHeadPreconditionError("observation_mismatch")
             cursor.execute(
                 "SELECT pg_advisory_xact_lock(hashtextextended("
-                "'speechnexus:publish-intent:' || current_schema() || ':' || ?, 0))",
+                "'speechnexus:publish-intent:' || current_schema() || ':' || %s, 0))",
                 (intent.key_digest,),
             )
             cursor.execute(
@@ -340,7 +340,7 @@ class PostgresPublications:
             }
             cursor.execute(
                 "SELECT intent, original_created FROM speech_binding_publish_intents "
-                "WHERE key_digest=?",
+                "WHERE key_digest=%s",
                 (intent.key_digest,),
             )
             rows = cursor.fetchall()
@@ -360,7 +360,7 @@ class PostgresPublications:
             cursor.execute(
                 "INSERT INTO speech_binding_publish_intents "
                 "(key_digest, intent, binding_id, revision, original_created) "
-                "VALUES (?, ?::jsonb, ?, ?, ?)",
+                "VALUES (%s, %s::jsonb, %s, %s, %s)",
                 (
                     intent.key_digest,
                     json.dumps(payload),

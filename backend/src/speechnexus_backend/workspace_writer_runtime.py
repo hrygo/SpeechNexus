@@ -140,7 +140,7 @@ class WorkspaceWriterRuntime:
         for table in DECLARED:
             qualified = f'"{schema}"."{table}"'
             held = connection.execute(
-                "SELECT pg_catalog.has_table_privilege(CURRENT_USER, ?, 'SELECT') AS held",
+                "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, 'SELECT') AS held",
                 (qualified,),
             ).fetchone()
             if held is None or not held["held"]:
@@ -172,9 +172,9 @@ class WorkspaceWriterRuntime:
         declared: tuple[str, ...],
     ) -> None:
         rows = connection.execute(
-            "SELECT column_name, pg_catalog.has_column_privilege(CURRENT_USER, ?, "
-            "column_name, ?) AS held FROM information_schema.columns "
-            "WHERE table_schema=? AND table_name=?",
+            "SELECT column_name, pg_catalog.has_column_privilege(CURRENT_USER, %s, "
+            "column_name, %s) AS held FROM information_schema.columns "
+            "WHERE table_schema=%s AND table_name=%s",
             (f'"{schema}"."{table}"', privilege, schema, table),
         ).fetchall()
         granted = {row["column_name"] for row in rows if row["held"]}

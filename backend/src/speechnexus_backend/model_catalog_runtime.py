@@ -138,7 +138,7 @@ class ModelCatalogRuntime:
             raise ValueError("Model catalogue reader identity unavailable")
         reached = connection.execute(
             "WITH RECURSIVE reachable(role_oid) AS ("
-            "SELECT oid FROM pg_catalog.pg_roles WHERE rolname IN (?,?) UNION "
+            "SELECT oid FROM pg_catalog.pg_roles WHERE rolname IN (%s,%s) UNION "
             "SELECT membership.roleid FROM pg_catalog.pg_auth_members AS membership "
             "JOIN reachable ON membership.member=reachable.role_oid"
             ") SELECT role.rolname FROM pg_catalog.pg_roles AS role "
@@ -168,19 +168,19 @@ class ModelCatalogRuntime:
         privileged = connection.execute(
             "SELECT r.rolsuper OR r.rolcreaterole OR r.rolcreatedb OR r.rolreplication "
             "OR r.rolbypassrls "
-            "OR NOT COALESCE(pg_catalog.has_schema_privilege(?::name,?,'USAGE'),false) "
+            "OR NOT COALESCE(pg_catalog.has_schema_privilege(%s::name,%s,'USAGE'),false) "
             "OR EXISTS (SELECT 1 FROM pg_catalog.pg_namespace n "
             "WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema' "
-            "AND (pg_catalog.pg_has_role(?::name,n.nspowner,'MEMBER') "
-            "OR pg_catalog.has_schema_privilege(?::name,n.oid,'CREATE'))) "
-            "OR pg_catalog.pg_has_role(?::name,d.datdba,'MEMBER') "
-            "OR pg_catalog.has_database_privilege(?::name,d.oid,'CREATE') OR EXISTS ("
+            "AND (pg_catalog.pg_has_role(%s::name,n.nspowner,'MEMBER') "
+            "OR pg_catalog.has_schema_privilege(%s::name,n.oid,'CREATE'))) "
+            "OR pg_catalog.pg_has_role(%s::name,d.datdba,'MEMBER') "
+            "OR pg_catalog.has_database_privilege(%s::name,d.oid,'CREATE') OR EXISTS ("
             "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
             "ON n.oid=c.relnamespace WHERE n.nspname !~ '^pg_' "
             "AND n.nspname <> 'information_schema' "
-            "AND pg_catalog.pg_has_role(?::name,c.relowner,'MEMBER')) AS forbidden "
+            "AND pg_catalog.pg_has_role(%s::name,c.relowner,'MEMBER')) AS forbidden "
             "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
-            "WHERE r.rolname=? AND d.datname=CURRENT_DATABASE()",
+            "WHERE r.rolname=%s AND d.datname=CURRENT_DATABASE()",
             (role, schema, role, role, role, role, role, role),
         ).fetchone()
         if privileged is None or privileged["forbidden"]:
@@ -199,11 +199,11 @@ class ModelCatalogRuntime:
 
         rows: list[dict[str, Any]] = connection.execute(
             "SELECT n.nspname AS schema_name, c.relname, "
-            "pg_catalog.has_table_privilege(?::name,c.oid,'SELECT') AS can_select, "
-            "pg_catalog.has_any_column_privilege(?::name,c.oid,'SELECT') AS can_select_column, "
-            "pg_catalog.has_table_privilege(?::name,c.oid,"
+            "pg_catalog.has_table_privilege(%s::name,c.oid,'SELECT') AS can_select, "
+            "pg_catalog.has_any_column_privilege(%s::name,c.oid,'SELECT') AS can_select_column, "
+            "pg_catalog.has_table_privilege(%s::name,c.oid,"
             "'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') AS can_write, "
-            "pg_catalog.has_any_column_privilege(?::name,c.oid,"
+            "pg_catalog.has_any_column_privilege(%s::name,c.oid,"
             "'INSERT,UPDATE,REFERENCES') AS can_write_column "
             "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
             "WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema' "
@@ -229,9 +229,9 @@ class ModelCatalogRuntime:
             "JOIN pg_catalog.pg_namespace AS n ON n.oid=c.relnamespace "
             "WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema' "
             "AND c.relkind='S' AND ("
-            "pg_catalog.has_sequence_privilege(?::name,c.oid,'SELECT') OR "
-            "pg_catalog.has_sequence_privilege(?::name,c.oid,'USAGE') OR "
-            "pg_catalog.has_sequence_privilege(?::name,c.oid,'UPDATE'))",
+            "pg_catalog.has_sequence_privilege(%s::name,c.oid,'SELECT') OR "
+            "pg_catalog.has_sequence_privilege(%s::name,c.oid,'USAGE') OR "
+            "pg_catalog.has_sequence_privilege(%s::name,c.oid,'UPDATE'))",
             (role, role, role),
         ).fetchall()
         if sequences:
@@ -241,7 +241,7 @@ class ModelCatalogRuntime:
             "SELECT p.oid::regprocedure::text AS signature FROM pg_catalog.pg_proc AS p "
             "JOIN pg_catalog.pg_namespace AS n ON n.oid=p.pronamespace "
             "WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema' AND p.prosecdef "
-            "AND pg_catalog.has_function_privilege(?::name,p.oid,'EXECUTE') LIMIT 1",
+            "AND pg_catalog.has_function_privilege(%s::name,p.oid,'EXECUTE') LIMIT 1",
             (role,),
         ).fetchone()
         if definer is not None:

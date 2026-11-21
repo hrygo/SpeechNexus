@@ -136,13 +136,13 @@ async def _load_result(
         SELECT l.id, GREATEST(l.completed_at, o.objects_erased_at) AS completed_at,
             l.deleted, l.retained_independent_copies
         FROM {s}.deletion_ledger l JOIN {s}.deletion_outbox o USING (deletion_id)
-        WHERE l.deletion_id = ? AND o.completed_at IS NOT NULL
+        WHERE l.deletion_id = %s AND o.completed_at IS NOT NULL
             AND o.objects_erased_at IS NOT NULL
         """
         if complete_only
         else """
         SELECT id, completed_at, deleted, retained_independent_copies
-        FROM {s}.deletion_ledger WHERE deletion_id = ?
+        FROM {s}.deletion_ledger WHERE deletion_id = %s
         """
     )
     row = await base._one(
@@ -221,7 +221,7 @@ class _DeletionSession:
             project_id = target.id
         else:
             parent = await base._one(
-                _Parent, "SELECT project_id FROM {s}.transcripts WHERE id = ?", (target.id,)
+                _Parent, "SELECT project_id FROM {s}.transcripts WHERE id = %s", (target.id,)
             )
             if parent is None:
                 return None
@@ -237,7 +237,7 @@ class _DeletionSession:
                 await cursor.execute(
                     base._sql(
                         "SELECT id, head_revision FROM {s}.transcripts "
-                        "WHERE project_id = ? ORDER BY id"
+                        "WHERE project_id = %s ORDER BY id"
                     ),
                     (project_id,),
                 )
@@ -273,7 +273,7 @@ class _DeletionSession:
             meetings = await base._many(
                 _MeetingDependency,
                 "SELECT id,workspace_id,version FROM {s}.meetings "
-                "WHERE project_id=? AND (? OR transcript_id=?) ORDER BY id FOR UPDATE",
+                "WHERE project_id=%s AND (%s OR transcript_id=%s) ORDER BY id FOR UPDATE",
                 (project_id, target.kind == "project", target.id),
             )
             for meeting in meetings:
@@ -301,7 +301,7 @@ class _DeletionSession:
             SELECT id, workspace_id, target_kind, target_id, target_revision, mode,
                 created_at, expires_at, dependencies, plan_digest, content_snapshot
             FROM {s}.deletion_plans
-            WHERE workspace_id = ? AND id = ?
+            WHERE workspace_id = %s AND id = %s
         """,
             (workspace_id, plan_id),
         )
@@ -330,7 +330,7 @@ class _DeletionSession:
             INSERT INTO {s}.deletion_plans (id, workspace_id, target_kind, target_id,
                 target_revision, mode, created_at, expires_at, dependencies, plan_digest,
                 content_snapshot)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
             (
                 plan.id,
@@ -360,7 +360,7 @@ class _DeletionSession:
             _RecordRow,
             """
             SELECT id, plan_id, plan_digest, created_at FROM {s}.deletion_records
-            WHERE workspace_id = ? AND id = ?
+            WHERE workspace_id = %s AND id = %s
         """,
             (workspace_id, deletion_id),
         )
@@ -387,7 +387,7 @@ class _DeletionSession:
         await self._base._execute(
             """
             INSERT INTO {s}.deletion_records (id, workspace_id, plan_id, plan_digest, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s)
         """,
             (record.id, plan.workspace_id, plan.id, record.plan_digest, record.created_at),
         )
@@ -396,13 +396,13 @@ class _DeletionSession:
                 """
                 INSERT INTO {s}.resource_tombstones
                     (resource_kind, resource_id, resource_revision, deletion_id, created_at)
-                VALUES (?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s)
             """,
                 (target.kind, target.id, target.revision, record.id, record.created_at),
             )
         await self._base._execute(
             """
-            INSERT INTO {s}.deletion_outbox (deletion_id, created_at) VALUES (?, ?)
+            INSERT INTO {s}.deletion_outbox (deletion_id, created_at) VALUES (%s, %s)
         """,
             (record.id, record.created_at),
         )
@@ -435,14 +435,14 @@ class _DeletionSession:
             ).encode()
         ).digest()[:8]
         await self._base._execute(
-            "SELECT pg_advisory_xact_lock(?)", (int.from_bytes(lock, signed=True),)
+            "SELECT pg_advisory_xact_lock(%s)", (int.from_bytes(lock, signed=True),)
         )
         self._claims.add((workspace_id, family, digest))
         row = await self._base._one(
             _ReceiptRow,
             """
             SELECT intent_digest, plan_id, deletion_id FROM {s}.deletion_receipts
-            WHERE workspace_id = ? AND family = ? AND key_digest = ?
+            WHERE workspace_id = %s AND family = %s AND key_digest = %s
         """,
             (workspace_id, family, digest),
         )
@@ -483,7 +483,7 @@ class _DeletionSession:
             """
             INSERT INTO {s}.deletion_receipts
                 (workspace_id, family, key_digest, intent_digest, plan_id, deletion_id)
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s)
         """,
             (workspace_id, family, digest, receipt.intent_digest, plan_id, deletion_id),
         )

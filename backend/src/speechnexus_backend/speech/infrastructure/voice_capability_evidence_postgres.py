@@ -41,7 +41,7 @@ class _Cursor:
         if remaining <= 0:
             raise VoiceEvidenceUnavailableError
         self.raw.execute(
-            "SELECT set_config('statement_timeout', ?, true)",
+            "SELECT set_config('statement_timeout', %s, true)",
             (str(max(1, int(remaining * 1000))),),
         )
         return self.raw.execute(query, parameters)
@@ -204,8 +204,8 @@ class PostgresVoiceEvidenceRecorder:
             "WHERE j.kind = 'voice_validation' AND j.state = 'succeeded' "
             "AND NOT EXISTS (SELECT 1 FROM speech_voice_capability_evidence AS e "
             "WHERE e.validation_job_id = j.job_id) "
-            "AND (?::bigint IS NULL OR (j.updated_at_us, j.job_id) > (?::bigint, ?::varchar)) "
-            "ORDER BY j.updated_at_us, j.job_id LIMIT ?",
+            "AND (%s::bigint IS NULL OR (j.updated_at_us, j.job_id) > (%s::bigint, %s::varchar)) "
+            "ORDER BY j.updated_at_us, j.job_id LIMIT %s",
             (after_us, after_us, after_id, limit),
         )
         return [(int(row["updated_at_us"]), str(row["job_id"])) for row in cursor.fetchall()]
@@ -218,7 +218,8 @@ class PostgresVoiceEvidenceRecorder:
         self, cursor: _Cursor, validation_job_id: str
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         cursor.execute(
-            "SELECT job_id, kind, state, result_json, workspace_id FROM speech_jobs WHERE job_id=?",
+            "SELECT job_id, kind, state, result_json, workspace_id FROM speech_jobs "
+            "WHERE job_id=%s",
             (validation_job_id,),
         )
         jobs = cursor.fetchall()
@@ -244,7 +245,7 @@ class PostgresVoiceEvidenceRecorder:
         cursor.execute(
             "SELECT artifact_id, artifact_state, artifact_kind, media_type, bytes, sha256, "
             "receipt_id, source_operation_id, object_key, storage_version_id, created_at_us, "
-            "expires_at_us FROM speech_artifacts WHERE workspace_id=? AND artifact_id=?",
+            "expires_at_us FROM speech_artifacts WHERE workspace_id=%s AND artifact_id=%s",
             (job["workspace_id"], artifact_id),
         )
         artifacts = cursor.fetchall()
@@ -284,7 +285,7 @@ class PostgresVoiceEvidenceRecorder:
 
         cursor.execute(
             "SELECT kind, input_json, binding_json FROM speech_voice_draft_revisions "
-            "WHERE draft_id=? AND revision=?",
+            "WHERE draft_id=%s AND revision=%s",
             (draft_id, draft_revision),
         )
         revisions = cursor.fetchall()
@@ -297,7 +298,7 @@ class PostgresVoiceEvidenceRecorder:
             raise VoiceEvidenceNotEligibleError("draft_revision_invalid")
 
         cursor.execute(
-            "SELECT revision_id FROM speech_binding_revisions WHERE binding_id=? AND revision=?",
+            "SELECT revision_id FROM speech_binding_revisions WHERE binding_id=%s AND revision=%s",
             (binding["id"], binding["revision"]),
         )
         bindings = cursor.fetchall()
@@ -312,7 +313,7 @@ class PostgresVoiceEvidenceRecorder:
                 raise VoiceEvidenceNotEligibleError("clone_material_missing")
             cursor.execute(
                 "SELECT asset_id, asset_state, bytes, sha256, media_type FROM speech_assets "
-                "WHERE asset_id=? AND workspace_id=?",
+                "WHERE asset_id=%s AND workspace_id=%s",
                 (asset_id, job["workspace_id"]),
             )
             assets = cursor.fetchall()
@@ -321,7 +322,7 @@ class PostgresVoiceEvidenceRecorder:
             source_asset = _material(assets[0])
             cursor.execute(
                 "SELECT 1 AS proof FROM speech_asset_objects "
-                "WHERE asset_id=? AND bytes=? AND sha256=?",
+                "WHERE asset_id=%s AND bytes=%s AND sha256=%s",
                 (source_asset.asset_id, source_asset.bytes, source_asset.sha256),
             )
             if not cursor.fetchall():
@@ -362,8 +363,8 @@ class PostgresVoiceEvidenceRecorder:
             "(evidence_id, draft_id, draft_revision, validation_job_id, validation_id, "
             "binding_revision_id, report_artifact_id, report_sha256, report_receipt_id, "
             "evidence_kind, measured_by, measured_at_us, capabilities, coverage, material, "
-            "evidence_digest) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?::jsonb,"
-            "?::jsonb,?::jsonb,?) ON CONFLICT (evidence_id) DO NOTHING",
+            "evidence_digest) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,"
+            "%s::jsonb,%s::jsonb,%s) ON CONFLICT (evidence_id) DO NOTHING",
             (
                 row["evidence_id"],
                 row["draft_id"],

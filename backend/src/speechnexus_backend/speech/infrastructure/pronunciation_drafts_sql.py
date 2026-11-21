@@ -56,7 +56,7 @@ def read_draft(
 ) -> PronunciationDraft | None:
     rows = _rows(
         cursor,
-        "SELECT * FROM speech_pronunciation_revisions WHERE pronunciation_id=? AND revision=?",
+        "SELECT * FROM speech_pronunciation_revisions WHERE pronunciation_id=%s AND revision=%s",
         (pronunciation_id, revision),
     )
     if not rows:
@@ -91,7 +91,7 @@ def read_published_draft(
     rows = _rows(
         cursor,
         "SELECT 1 AS published FROM speech_publications "
-        "WHERE kind='pronunciation' AND object_id=? AND revision=?",
+        "WHERE kind='pronunciation' AND object_id=%s AND revision=%s",
         (pronunciation_id, revision),
     )
     if len(rows) > 1:
@@ -160,7 +160,7 @@ def list_summaries(
         "FROM speech_pronunciation_families f "
         "JOIN speech_pronunciation_revisions r "
         "ON r.pronunciation_id = f.pronunciation_id AND r.revision = f.latest_revision "
-        "WHERE f.pronunciation_id > ? ORDER BY f.pronunciation_id LIMIT ?",
+        "WHERE f.pronunciation_id > %s ORDER BY f.pronunciation_id LIMIT %s",
         (after or "", limit + 1),
     )
 
@@ -171,7 +171,7 @@ def recover_draft(
     check_command(command)
     rows = _rows(
         cursor,
-        "SELECT * FROM speech_pronunciation_commands WHERE key_digest=?",
+        "SELECT * FROM speech_pronunciation_commands WHERE key_digest=%s",
         (command.key_digest,),
     )
     return _result(cursor, command, rows[0]) if rows else PronunciationDraftResult("unknown")
@@ -197,13 +197,13 @@ def create_draft(
     cursor.execute(
         "INSERT INTO speech_pronunciation_commands "
         "(key_digest,intent_json,request_digest,command_state) "
-        "VALUES (?,?,?,'pending') ON CONFLICT (key_digest) DO NOTHING",
+        "VALUES (%s,%s,%s,'pending') ON CONFLICT (key_digest) DO NOTHING",
         (command.key_digest, command.intent.decode(), command.request_digest),
     )
     inserted = cursor.rowcount == 1
     rows = _rows(
         cursor,
-        "SELECT * FROM speech_pronunciation_commands WHERE key_digest=? FOR UPDATE",
+        "SELECT * FROM speech_pronunciation_commands WHERE key_digest=%s FOR UPDATE",
         (command.key_digest,),
     )
     if len(rows) != 1:
@@ -213,14 +213,14 @@ def create_draft(
     pronunciation_id = command.pronunciation_id or allocate_id()
     identifier(pronunciation_id)
     cursor.execute(
-        "INSERT INTO speech_pronunciation_families (pronunciation_id) VALUES (?) "
+        "INSERT INTO speech_pronunciation_families (pronunciation_id) VALUES (%s) "
         "ON CONFLICT (pronunciation_id) DO NOTHING",
         (pronunciation_id,),
     )
     families = _rows(
         cursor,
         "SELECT latest_revision FROM speech_pronunciation_families "
-        "WHERE pronunciation_id=? FOR UPDATE",
+        "WHERE pronunciation_id=%s FOR UPDATE",
         (pronunciation_id,),
     )
     if len(families) != 1:
@@ -235,7 +235,7 @@ def create_draft(
         _update(
             cursor,
             "UPDATE speech_pronunciation_commands SET command_state='rejected',"
-            "error_code='configuration_changed' WHERE key_digest=? AND command_state='pending'",
+            "error_code='configuration_changed' WHERE key_digest=%s AND command_state='pending'",
             (command.key_digest,),
         )
         return PronunciationDraftResult("rejected", error_code="configuration_changed")
@@ -253,7 +253,7 @@ def create_draft(
         "INSERT INTO speech_pronunciation_revisions "
         "(pronunciation_id,revision,encoding,entry_count,definition_json,"
         "definition_digest,key_digest,request_digest,created_at_us) "
-        "VALUES (?,?,?,?,?,?,?,?,?)",
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
         (
             pronunciation_id,
             revision,
@@ -271,7 +271,7 @@ def create_draft(
     )
     _update(
         cursor,
-        "UPDATE speech_pronunciation_families SET latest_revision=? WHERE pronunciation_id=? AND "
+        "UPDATE speech_pronunciation_families SET latest_revision=%s WHERE pronunciation_id=%s AND "
         + suffix,
         (revision, pronunciation_id, *args),
     )
@@ -291,8 +291,8 @@ def create_draft(
         draft = replace(draft, published=True)
     _update(
         cursor,
-        "UPDATE speech_pronunciation_commands SET command_state='created',pronunciation_id=?,"
-        "revision=? WHERE key_digest=? AND command_state='pending'",
+        "UPDATE speech_pronunciation_commands SET command_state='created',pronunciation_id=%s,"
+        "revision=%s WHERE key_digest=%s AND command_state='pending'",
         (pronunciation_id, revision, command.key_digest),
     )
     return PronunciationDraftResult("created", draft)

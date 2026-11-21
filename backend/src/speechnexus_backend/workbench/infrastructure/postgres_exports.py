@@ -173,7 +173,7 @@ class PostgresExports(ExportJobStore):
             """
             SELECT b.project_id, b.casting_revision,
                 (SELECT count(*) FROM {s}.render_units u WHERE u.book_id = b.id) AS units
-            FROM {s}.books b WHERE b.id = ?
+            FROM {s}.books b WHERE b.id = %s
         """,
             (book_id,),
         )
@@ -200,7 +200,7 @@ class PostgresExports(ExportJobStore):
             _ReceiptRow,
             """
             SELECT intent_digest, export_id FROM {s}.export_job_receipts
-            WHERE scope_id = ? AND key_digest = ?
+            WHERE scope_id = %s AND key_digest = %s
         """,
             (scope_id, key_digest),
         )
@@ -211,8 +211,8 @@ class PostgresExports(ExportJobStore):
             """
             SELECT b.project_id, b.casting_revision,
                 (SELECT count(*) FROM {s}.render_units u
-                    WHERE u.book_id = b.id AND u.id = ANY(?::text[])) AS units
-            FROM {s}.books b WHERE b.id = ?
+                    WHERE u.book_id = b.id AND u.id = ANY(%s::text[])) AS units
+            FROM {s}.books b WHERE b.id = %s
         """,
             (list(unit_ids), book_id),
         )
@@ -289,7 +289,7 @@ class PostgresExports(ExportJobStore):
                     id, project_id, book_id, status, export_format, manifest_revision,
                     progress_completed, progress_total, unit_ids, artifact, error,
                     created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, NULL, %s, %s)
             """,
                 (
                     export.id,
@@ -310,7 +310,7 @@ class PostgresExports(ExportJobStore):
                     """
                     INSERT INTO {s}.export_job_receipts
                         (scope_id, key_digest, intent_digest, export_id, created_at)
-                    VALUES (?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s)
                 """,
                     (scope.project_id, digest, intent, export.id, now),
                 )

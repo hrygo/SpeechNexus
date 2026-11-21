@@ -68,15 +68,15 @@ class PostgresQualificationAdmission(PostgresAdmissionTransactions):
             "JOIN speech_builtin_voice_probe_admissions p USING (authorization_id) "
             "JOIN speech_builtin_voice_source_approvals s "
             "ON s.source_approval_id=a.source_approval_id AND s.voice_id=a.voice_id "
-            "WHERE a.authorization_id=? AND p.operation_id=? AND p.attempt_id=? "
-            "AND p.request_digest=? AND a.intent->>'authorization_id'=a.authorization_id "
+            "WHERE a.authorization_id=%s AND p.operation_id=%s AND p.attempt_id=%s "
+            "AND p.request_digest=%s AND a.intent->>'authorization_id'=a.authorization_id "
             "AND a.intent->>'source_approval_id'=s.source_approval_id "
             "AND a.intent->>'voice_id'=s.voice_id AND s.native_speaker_id='Vivian' "
             "AND a.intent->>'native_speaker_id'=s.native_speaker_id "
-            "AND a.intent->>'binding_revision_id'=? AND a.intent->>'manifest_id'=? "
-            "AND a.intent->>'policy_revision_id'=? AND a.intent->>'host_node_id'=? "
-            "AND a.intent->>'gateway_id'=? AND a.intent->>'instance_id'=? "
-            "AND (a.intent->>'instance_generation')::bigint=? "
+            "AND a.intent->>'binding_revision_id'=%s AND a.intent->>'manifest_id'=%s "
+            "AND a.intent->>'policy_revision_id'=%s AND a.intent->>'host_node_id'=%s "
+            "AND a.intent->>'gateway_id'=%s AND a.intent->>'instance_id'=%s "
+            "AND (a.intent->>'instance_generation')::bigint=%s "
             "AND a.intent->>'operation_id'=p.operation_id AND a.intent->>'attempt_id'=p.attempt_id "
             "AND a.intent->>'admission_request_digest'=p.request_digest "
             "AND s.expires_at>clock_timestamp() "
@@ -108,7 +108,7 @@ class PostgresQualificationAdmission(PostgresAdmissionTransactions):
             with self._pool.connection(timeout=self._timeout) as connection:
                 connection.execute("SET TRANSACTION READ ONLY")
                 connection.execute(
-                    "SELECT set_config('statement_timeout', ?, true)",
+                    "SELECT set_config('statement_timeout', %s, true)",
                     (str(max(1, int(self._timeout * 1000))),),
                 )
                 receipt = connection.execute(
@@ -116,7 +116,7 @@ class PostgresQualificationAdmission(PostgresAdmissionTransactions):
                     "FROM speech_builtin_voice_probe_admissions r "
                     "JOIN speech_builtin_voice_probe_authorizations a USING (authorization_id) "
                     "CROSS JOIN speech_publication_installation i "
-                    "WHERE r.authorization_id=? AND i.singleton IS TRUE "
+                    "WHERE r.authorization_id=%s AND i.singleton IS TRUE "
                     "AND a.intent->>'database'=current_database() "
                     "AND a.intent->>'schema'=current_schema() "
                     "AND a.intent->>'installation_id'=i.installation_id::text",
@@ -138,7 +138,7 @@ class PostgresQualificationAdmission(PostgresAdmissionTransactions):
             "FROM speech_builtin_voice_probe_admissions r "
             "JOIN speech_builtin_voice_probe_authorizations a USING (authorization_id) "
             "CROSS JOIN speech_publication_installation i "
-            "WHERE r.authorization_id=? AND i.singleton IS TRUE "
+            "WHERE r.authorization_id=%s AND i.singleton IS TRUE "
             "AND a.intent->>'database'=current_database() AND a.intent->>'schema'=current_schema() "
             "AND a.intent->>'installation_id'=i.installation_id::text",
             (self._authorization_id,),
@@ -166,7 +166,8 @@ class PostgresQualificationAdmission(PostgresAdmissionTransactions):
         ):
             raise AdmissionRejectedError("idempotency_conflict")
         cursor.execute(
-            "SELECT intent FROM speech_builtin_voice_probe_authorizations WHERE authorization_id=?",
+            "SELECT intent FROM speech_builtin_voice_probe_authorizations "
+            "WHERE authorization_id=%s",
             (self._authorization_id,),
         )
         rows = cursor.fetchall()
@@ -280,13 +281,13 @@ class PostgresQualificationAdmission(PostgresAdmissionTransactions):
         lock_binding(cursor, auth["binding_id"])
         cursor.execute(
             "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:' || current_schema() || ':voice:' || ?, 0))",
+            "'speechnexus:catalog:' || current_schema() || ':voice:' || %s, 0))",
             (auth["voice_id"],),
         )
         # Recheck single-use and the original after waiting for the common locks.
         cursor.execute(
             "SELECT operation_id FROM speech_builtin_voice_probe_admissions "
-            "WHERE authorization_id=?",
+            "WHERE authorization_id=%s",
             (self._authorization_id,),
         )
         if cursor.fetchall():
@@ -297,22 +298,22 @@ class PostgresQualificationAdmission(PostgresAdmissionTransactions):
             "SELECT 1 FROM speech_builtin_voice_probe_authorizations a "
             "JOIN speech_builtin_voice_source_approvals s "
             "ON s.source_approval_id=a.source_approval_id AND s.voice_id=a.voice_id "
-            "JOIN speech_binding_revisions b ON b.binding_id=? AND b.revision_id=? "
+            "JOIN speech_binding_revisions b ON b.binding_id=%s AND b.revision_id=%s "
             "JOIN speech_binding_publication_evidence e ON e.object_id=b.binding_id "
             "AND e.revision=b.revision AND e.revision_id=b.revision_id "
             "JOIN speech_publications p ON p.kind='binding' AND p.object_id=b.binding_id "
             "AND p.revision=b.revision AND p.revision_id=b.revision_id "
-            "WHERE a.authorization_id=? AND a.voice_id=? AND a.source_approval_id=? "
+            "WHERE a.authorization_id=%s AND a.voice_id=%s AND a.source_approval_id=%s "
             "AND s.expires_at > clock_timestamp() AND s.native_speaker_id='Vivian' "
             "AND NOT EXISTS (SELECT 1 FROM speech_builtin_voice_source_revocations r "
             "WHERE r.source_approval_id=s.source_approval_id) "
-            "AND e.capacity_manifest_id=? AND e.qualification_report_id=? "
-            "AND e.capacity_manifest_digest=? AND e.qualification_report_digest=? "
-            "AND EXISTS (SELECT 1 FROM engine_instances i WHERE i.host_node_id=? "
-            "AND i.gateway_id=? AND i.instance_id=? AND i.instance_generation=? "
-            "AND i.binding_revision_id=? AND i.manifest_id=? AND i.approved_template_id=? "
-            "AND i.config_digest=?) "
-            "AND floor(extract(epoch FROM clock_timestamp())*1000000)::bigint < ?",
+            "AND e.capacity_manifest_id=%s AND e.qualification_report_id=%s "
+            "AND e.capacity_manifest_digest=%s AND e.qualification_report_digest=%s "
+            "AND EXISTS (SELECT 1 FROM engine_instances i WHERE i.host_node_id=%s "
+            "AND i.gateway_id=%s AND i.instance_id=%s AND i.instance_generation=%s "
+            "AND i.binding_revision_id=%s AND i.manifest_id=%s AND i.approved_template_id=%s "
+            "AND i.config_digest=%s) "
+            "AND floor(extract(epoch FROM clock_timestamp())*1000000)::bigint < %s",
             (
                 auth["binding_id"],
                 request.binding_revision_id,
@@ -350,8 +351,8 @@ class PostgresQualificationAdmission(PostgresAdmissionTransactions):
             "SELECT r.observation_document FROM runtime_instance_heads h "
             "JOIN runtime_instance_intents r ON r.instance_id=h.instance_id "
             "AND r.instance_generation=h.current_generation "
-            "AND r.intent_id=h.current_prepare_intent_id AND r.target_node_id=? "
-            "WHERE h.instance_id=? AND h.current_generation=? "
+            "AND r.intent_id=h.current_prepare_intent_id AND r.target_node_id=%s "
+            "WHERE h.instance_id=%s AND h.current_generation=%s "
             "AND r.action='prepare' AND r.intent_state='succeeded'",
             (auth["host_node_id"], auth["instance_id"], auth["instance_generation"]),
         )
@@ -388,7 +389,7 @@ class PostgresQualificationAdmission(PostgresAdmissionTransactions):
             raise AdmissionRejectedError("policy_or_resource_disabled") from None
         cursor.execute(
             "INSERT INTO speech_builtin_voice_probe_admissions "
-            "(authorization_id,operation_id,attempt_id,request_digest) VALUES (?,?,?,?)",
+            "(authorization_id,operation_id,attempt_id,request_digest) VALUES (%s,%s,%s,%s)",
             (
                 self._authorization_id,
                 request.identity.operation_id,

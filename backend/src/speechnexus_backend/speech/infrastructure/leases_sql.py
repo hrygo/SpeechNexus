@@ -62,7 +62,7 @@ def _record(row: Row) -> LeaseRecord:
 
 def query_in_transaction(cursor: LeaseCursor, lease_id: str) -> LeaseResult:
     identifier(lease_id)
-    rows = _rows(cursor, "SELECT * FROM admission_leases WHERE lease_id = ?", (lease_id,))
+    rows = _rows(cursor, "SELECT * FROM admission_leases WHERE lease_id = %s", (lease_id,))
     if not rows:
         return unknown(lease_id)
     if len(rows) != 1:
@@ -81,49 +81,49 @@ def quarantine_in_transaction(
 ) -> LeaseResult:
     # Unlocked reads locate parent keys only. Every reference is rechecked after
     # the ordered locks; neither a TTL nor a caller's timestamp grants authority.
-    hint = _one(cursor, "SELECT * FROM admission_leases WHERE lease_id = ?", (request.lease_id,))
+    hint = _one(cursor, "SELECT * FROM admission_leases WHERE lease_id = %s", (request.lease_id,))
     identity = (hint["operation_id"], hint["attempt_id"])
     attempt_hint = _one(
         cursor,
-        "SELECT * FROM admission_attempts WHERE operation_id = ? AND attempt_id = ?",
+        "SELECT * FROM admission_attempts WHERE operation_id = %s AND attempt_id = %s",
         identity,
     )
     _one(
         cursor,
-        "SELECT pool_id FROM resource_pools WHERE pool_id = ? FOR UPDATE",
+        "SELECT pool_id FROM resource_pools WHERE pool_id = %s FOR UPDATE",
         (hint["pool_id"],),
     )
     quota = _one(
         cursor,
-        "SELECT * FROM workspace_quotas WHERE workspace_id = ? FOR UPDATE",
+        "SELECT * FROM workspace_quotas WHERE workspace_id = %s FOR UPDATE",
         (attempt_hint["workspace_id"],),
     )
     host = _one(
         cursor,
-        "SELECT * FROM host_nodes WHERE host_node_id = ? FOR UPDATE",
+        "SELECT * FROM host_nodes WHERE host_node_id = %s FOR UPDATE",
         (hint["host_node_id"],),
     )
     instance_key = (hint["instance_id"], hint["instance_generation"])
     instance = _one(
         cursor,
-        "SELECT * FROM engine_instances WHERE instance_id = ? "
-        "AND instance_generation = ? FOR UPDATE",
+        "SELECT * FROM engine_instances WHERE instance_id = %s "
+        "AND instance_generation = %s FOR UPDATE",
         instance_key,
     )
     attempt = _one(
         cursor,
-        "SELECT * FROM admission_attempts WHERE operation_id = ? AND attempt_id = ? FOR UPDATE",
+        "SELECT * FROM admission_attempts WHERE operation_id = %s AND attempt_id = %s FOR UPDATE",
         identity,
     )
     lease = _one(
         cursor,
-        "SELECT * FROM admission_leases WHERE lease_id = ? FOR UPDATE",
+        "SELECT * FROM admission_leases WHERE lease_id = %s FOR UPDATE",
         (request.lease_id,),
     )
     submits = _rows(
         cursor,
         "SELECT submit_intent_id, lease_id, operation_id, attempt_id, execution_state, "
-        "cleanup_state, version FROM submit_intents WHERE lease_id = ? "
+        "cleanup_state, version FROM submit_intents WHERE lease_id = %s "
         "ORDER BY submit_intent_id FOR UPDATE",
         (request.lease_id,),
     )
@@ -186,8 +186,8 @@ def quarantine_in_transaction(
     if updated.quota_version != accounting.quota_version:
         _update(
             cursor,
-            "UPDATE workspace_quotas SET held_attempts = ?, quarantined_attempts = ?, "
-            "version = ? WHERE workspace_id = ? AND version = ?",
+            "UPDATE workspace_quotas SET held_attempts = %s, quarantined_attempts = %s, "
+            "version = %s WHERE workspace_id = %s AND version = %s",
             (
                 updated.held_attempts,
                 updated.quarantined_attempts,
@@ -216,8 +216,8 @@ def quarantine_in_transaction(
     )
     _update(
         cursor,
-        "UPDATE engine_instances SET held_slots = ?, quarantined_slots = ?, version = ? "
-        "WHERE instance_id = ? AND instance_generation = ? AND version = ?",
+        "UPDATE engine_instances SET held_slots = %s, quarantined_slots = %s, version = %s "
+        "WHERE instance_id = %s AND instance_generation = %s AND version = %s",
         (
             updated.held_slots,
             updated.quarantined_slots,
@@ -229,15 +229,15 @@ def quarantine_in_transaction(
     if updated.attempt_version != accounting.attempt_version:
         _update(
             cursor,
-            "UPDATE admission_attempts SET quota_state = ?, version = ? "
-            "WHERE operation_id = ? AND attempt_id = ? AND version = ?",
+            "UPDATE admission_attempts SET quota_state = %s, version = %s "
+            "WHERE operation_id = %s AND attempt_id = %s AND version = %s",
             (updated.quota_state, updated.attempt_version, *identity, accounting.attempt_version),
         )
     _update(
         cursor,
-        "UPDATE admission_leases SET lease_state = ?, cleanup_state = ?, "
-        "quarantine_observed_at_us = ?, quarantine_reason_code = ?, version = ? "
-        "WHERE lease_id = ? AND version = ?",
+        "UPDATE admission_leases SET lease_state = %s, cleanup_state = %s, "
+        "quarantine_observed_at_us = %s, quarantine_reason_code = %s, version = %s "
+        "WHERE lease_id = %s AND version = %s",
         (
             fact.lease_state,
             fact.cleanup_state,

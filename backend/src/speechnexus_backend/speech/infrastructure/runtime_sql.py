@@ -213,7 +213,7 @@ def _verify_event(cursor: RuntimeCursor, record: RuntimeRecord) -> None:
     rows = _rows(
         cursor,
         "SELECT event_kind, job_id, target_node_id, intent_id, event_digest "
-        "FROM coordination_outbox WHERE event_id = ?",
+        "FROM coordination_outbox WHERE event_id = %s",
         (prepared.event_id,),
     )
     if rows != [
@@ -233,7 +233,7 @@ def _existing(
 ) -> RuntimeResult | None:
     rows = _rows(
         cursor,
-        "SELECT * FROM runtime_instance_intents WHERE target_node_id = ? AND intent_id = ?",
+        "SELECT * FROM runtime_instance_intents WHERE target_node_id = %s AND intent_id = %s",
         (identity.target_node_id, identity.intent_id),
     )
     if not rows:
@@ -247,7 +247,7 @@ def _existing(
         raise RuntimeRejectedError("intent_conflict")
     engine = _one(
         cursor,
-        "SELECT * FROM engine_instances WHERE instance_id = ? AND instance_generation = ?",
+        "SELECT * FROM engine_instances WHERE instance_id = %s AND instance_generation = %s",
         (record.request.instance_id, record.request.instance_generation),
     )
     _instance(engine, record)
@@ -301,7 +301,7 @@ def _prerequisites(
     leases = _rows(
         cursor,
         "SELECT lease_id, lease_state, fencing_token, reserved_slots FROM admission_leases "
-        "WHERE instance_id = ? AND instance_generation = ? ORDER BY lease_id FOR UPDATE",
+        "WHERE instance_id = %s AND instance_generation = %s ORDER BY lease_id FOR UPDATE",
         (instance.instance_id, instance.instance_generation),
     )
     held = quarantined = 0
@@ -320,7 +320,7 @@ def _prerequisites(
     barrier = _rows(
         cursor,
         "SELECT min_fencing_token, sealed_evidence_digest FROM gateway_fencing_barriers "
-        "WHERE gateway_id = ? AND pool_id = ? FOR UPDATE",
+        "WHERE gateway_id = %s AND pool_id = %s FOR UPDATE",
         (instance.plan.binding.gateway_id, instance.plan.binding.pool_id),
     )
     sealed = False
@@ -333,8 +333,8 @@ def _prerequisites(
     submits = _rows(
         cursor,
         "SELECT execution_state FROM submit_intents WHERE lease_id IN "
-        "(SELECT lease_id FROM admission_leases WHERE instance_id = ? AND "
-        "instance_generation = ?) "
+        "(SELECT lease_id FROM admission_leases WHERE instance_id = %s AND "
+        "instance_generation = %s) "
         "ORDER BY submit_intent_id FOR UPDATE",
         (instance.instance_id, instance.instance_generation),
     )
@@ -399,7 +399,7 @@ def create_in_transaction(
         cursor,
         "SELECT e.pool_id, e.host_node_id FROM runtime_instance_heads h JOIN engine_instances e "
         "ON e.instance_id = h.instance_id AND e.instance_generation = h.current_generation "
-        "WHERE h.instance_id = ?",
+        "WHERE h.instance_id = %s",
         (request.instance_id,),
     )
     if len(located) > 1:
@@ -407,11 +407,11 @@ def create_in_transaction(
     pool_ids = {request.binding.pool_id, *(row["pool_id"] for row in located)}
     node_ids = {request.binding.target_node_id, *(row["host_node_id"] for row in located)}
     pools = {
-        key: _one(cursor, "SELECT * FROM resource_pools WHERE pool_id = ? FOR UPDATE", (key,))
+        key: _one(cursor, "SELECT * FROM resource_pools WHERE pool_id = %s FOR UPDATE", (key,))
         for key in sorted(pool_ids)
     }
     hosts = {
-        key: _one(cursor, "SELECT * FROM host_nodes WHERE host_node_id = ? FOR UPDATE", (key,))
+        key: _one(cursor, "SELECT * FROM host_nodes WHERE host_node_id = %s FOR UPDATE", (key,))
         for key in sorted(node_ids)
     }
     replay = _existing(cursor, request.identity, prepared.request_digest)
@@ -419,7 +419,7 @@ def create_in_transaction(
         return replay
     heads = _rows(
         cursor,
-        "SELECT * FROM runtime_instance_heads WHERE instance_id = ? FOR UPDATE",
+        "SELECT * FROM runtime_instance_heads WHERE instance_id = %s FOR UPDATE",
         (request.instance_id,),
     )
     if len(heads) > 1:
@@ -429,21 +429,21 @@ def create_in_transaction(
     if head is not None:
         located_current = _one(
             cursor,
-            "SELECT host_node_id, pool_id FROM engine_instances WHERE instance_id = ? "
-            "AND instance_generation = ?",
+            "SELECT host_node_id, pool_id FROM engine_instances WHERE instance_id = %s "
+            "AND instance_generation = %s",
             (head.instance_id, head.current_generation),
         )
         if located_current["host_node_id"] not in hosts or located_current["pool_id"] not in pools:
             raise RuntimeRejectedError("version_conflict")
         current = _one(
             cursor,
-            "SELECT * FROM engine_instances WHERE instance_id = ? AND "
-            "instance_generation = ? FOR UPDATE",
+            "SELECT * FROM engine_instances WHERE instance_id = %s AND "
+            "instance_generation = %s FOR UPDATE",
             (head.instance_id, head.current_generation),
         )
     elif _rows(
         cursor,
-        "SELECT instance_generation FROM engine_instances WHERE instance_id = ?",
+        "SELECT instance_generation FROM engine_instances WHERE instance_id = %s",
         (request.instance_id,),
     ):
         raise RuntimeRejectedError("reconciliation_required")
@@ -552,7 +552,7 @@ def create_in_transaction(
         if head is None:
             cursor.execute(
                 "INSERT INTO runtime_instance_heads (instance_id, current_generation, "
-                "generation_high_water, current_prepare_intent_id) VALUES (?, ?, ?, ?)",
+                "generation_high_water, current_prepare_intent_id) VALUES (%s, %s, %s, %s)",
                 (
                     request.instance_id,
                     request.instance_generation,
@@ -563,10 +563,10 @@ def create_in_transaction(
         else:
             _changed(
                 cursor,
-                "UPDATE runtime_instance_heads SET current_generation = ?, "
-                "generation_high_water = ?, current_prepare_intent_id = ?, "
+                "UPDATE runtime_instance_heads SET current_generation = %s, "
+                "generation_high_water = %s, current_prepare_intent_id = %s, "
                 "current_stop_intent_id = NULL, version = version + 1 WHERE instance_id = "
-                "? AND version = ?",
+                "%s AND version = %s",
                 (
                     request.instance_generation,
                     request.instance_generation,
@@ -592,8 +592,8 @@ def create_in_transaction(
         _changed(
             cursor,
             "UPDATE engine_instances SET instance_state = 'draining', "
-            "last_fencing_token = ?, version = version + 1 WHERE instance_id = ? AND "
-            "instance_generation = ? AND version = ?",
+            "last_fencing_token = %s, version = version + 1 WHERE instance_id = %s AND "
+            "instance_generation = %s AND version = %s",
             (
                 request.fencing_token,
                 previous.instance_id,
@@ -603,8 +603,8 @@ def create_in_transaction(
         )
         _changed(
             cursor,
-            "UPDATE runtime_instance_heads SET current_stop_intent_id = ?, version = "
-            "version + 1 WHERE instance_id = ? AND version = ?",
+            "UPDATE runtime_instance_heads SET current_stop_intent_id = %s, version = "
+            "version + 1 WHERE instance_id = %s AND version = %s",
             (request.intent_id, head.instance_id, head.version),
         )
     # A conflicting global instance/head insertion can wait on a transaction
@@ -616,7 +616,7 @@ def create_in_transaction(
         "INSERT INTO runtime_instance_intents (target_node_id, intent_id, "
         "instance_id, instance_generation, action, request_digest, "
         "request_document, intent_state, recorded_at_us, updated_at_us) VALUES "
-        "(?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
+        "(%s, %s, %s, %s, %s, %s, %s, 'pending', %s, %s)",
         (
             request.binding.target_node_id,
             request.intent_id,
@@ -631,7 +631,7 @@ def create_in_transaction(
     )
     cursor.execute(
         "INSERT INTO coordination_outbox (event_id, event_digest, event_kind, "
-        "target_node_id, intent_id) VALUES (?, ?, 'runtime', ?, ?)",
+        "target_node_id, intent_id) VALUES (%s, %s, 'runtime', %s, %s)",
         (
             prepared.event_id,
             prepared.request_digest,
@@ -644,7 +644,7 @@ def create_in_transaction(
     cursor.execute(
         "INSERT INTO runtime_intent_deliveries "
         "(event_id, delivery_phase, created_at_us, updated_at_us) "
-        "VALUES (?, 'unsent', ?, ?)",
+        "VALUES (%s, 'unsent', %s, %s)",
         (prepared.event_id, now_us, now_us),
     )
     # The global outbox identity can introduce one last uniqueness wait. A

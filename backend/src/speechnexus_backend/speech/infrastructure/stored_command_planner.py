@@ -260,12 +260,12 @@ class StoredCommandPlanner:
             with self._pool.connection(timeout=self._timeout) as connection:
                 connection.execute("SET TRANSACTION READ ONLY")
                 connection.execute(
-                    "SELECT set_config('statement_timeout',?,true)",
+                    "SELECT set_config('statement_timeout',%s,true)",
                     (str(max(1, int(self._timeout * 1000))),),
                 )
                 operations = connection.execute(
                     "SELECT operation_id, workspace_id, request_digest, request_document, "
-                    "current_attempt_id FROM admission_operations WHERE operation_id = ?",
+                    "current_attempt_id FROM admission_operations WHERE operation_id = %s",
                     (job.job_id,),
                 ).fetchall()
                 if len(operations) != 1:
@@ -284,7 +284,7 @@ class StoredCommandPlanner:
                 attempts = connection.execute(
                     "SELECT attempt_id, workspace_id, binding_revision_id, policy_revision_id, "
                     "request_digest FROM admission_attempts "
-                    "WHERE operation_id = ? AND attempt_id = ?",
+                    "WHERE operation_id = %s AND attempt_id = %s",
                     (operation.operation_id, operation.current_attempt_id),
                 ).fetchall()
                 if len(attempts) != 1:
@@ -300,7 +300,7 @@ class StoredCommandPlanner:
                 )
                 requests = connection.execute(
                     "SELECT request_document, request_digest FROM admission_requests "
-                    "WHERE operation_id = ? AND attempt_id = ?",
+                    "WHERE operation_id = %s AND attempt_id = %s",
                     (operation.operation_id, attempt.attempt_id),
                 ).fetchall()
                 if len(requests) != 1:
@@ -315,7 +315,7 @@ class StoredCommandPlanner:
                     "SELECT lease_id, stage_id, host_node_id, instance_id, instance_generation, "
                     "pool_id, gateway_id, fencing_token, deadline_at_us, lease_state, "
                     "cleanup_state FROM admission_leases "
-                    "WHERE operation_id = ? AND attempt_id = ? ORDER BY lease_id",
+                    "WHERE operation_id = %s AND attempt_id = %s ORDER BY lease_id",
                     (operation.operation_id, attempt.attempt_id),
                 ).fetchall()
                 if len(leases) != 1:

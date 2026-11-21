@@ -67,11 +67,11 @@ def _verify_no_identity_escape(connection: SpeechConnection) -> None:
 
 def _require_non_owner(connection: SpeechConnection, schema: str) -> None:
     row = connection.execute(
-        "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(CURRENT_USER,?,'CREATE') "
+        "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(CURRENT_USER,%s,'CREATE') "
         "OR pg_catalog.pg_has_role(CURRENT_USER,d.datdba,'MEMBER') OR EXISTS ("
         "SELECT 1 FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
-        "WHERE n.nspname=? AND pg_catalog.pg_has_role(CURRENT_USER,c.relowner,'MEMBER')) "
+        "WHERE n.nspname=%s AND pg_catalog.pg_has_role(CURRENT_USER,c.relowner,'MEMBER')) "
         "AS forbidden FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
         "WHERE r.rolname=CURRENT_USER AND d.datname=CURRENT_DATABASE()",
         (schema, schema),
@@ -117,7 +117,7 @@ def _require_minimum_surface(connection: SpeechConnection, schema: str) -> None:
         "AS destructive "
         "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
         "JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid AND a.attnum>0 "
-        "AND NOT a.attisdropped WHERE n.nspname=? AND c.relkind IN ('r','p','v','m')",
+        "AND NOT a.attisdropped WHERE n.nspname=%s AND c.relkind IN ('r','p','v','m')",
         (schema,),
     ).fetchall()
     seen: set[str] = set()
@@ -148,7 +148,7 @@ def _require_minimum_surface(connection: SpeechConnection, schema: str) -> None:
         ("execution_stop_evidence", "reason", "UPDATE"),
     ):
         held = connection.execute(
-            "SELECT pg_catalog.has_column_privilege(CURRENT_USER,?,?,?) AS held",
+            "SELECT pg_catalog.has_column_privilege(CURRENT_USER,%s,%s,%s) AS held",
             (f'"{schema}"."{table}"', name, privilege),
         ).fetchone()
         if held is None or held["held"]:
@@ -160,7 +160,7 @@ def _require_append_only_trigger(connection: SpeechConnection, schema: str) -> N
         "SELECT t.tgenabled AS state FROM pg_catalog.pg_trigger t "
         "JOIN pg_catalog.pg_class c ON c.oid=t.tgrelid "
         "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
-        "WHERE n.nspname=? AND c.relname=? AND t.tgname=? AND NOT t.tgisinternal",
+        "WHERE n.nspname=%s AND c.relname=%s AND t.tgname=%s AND NOT t.tgisinternal",
         (schema, TABLE, TRIGGER),
     ).fetchone()
     if row is None or row["state"] not in ("O", "A"):

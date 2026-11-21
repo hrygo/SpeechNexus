@@ -17,7 +17,7 @@ def recover_intent(
 ) -> ProfileLifecycleIntentResult:
     check_lifecycle_command(command)
     cursor.execute(
-        "SELECT * FROM speech_profile_lifecycle_intents WHERE key_digest=?",
+        "SELECT * FROM speech_profile_lifecycle_intents WHERE key_digest=%s",
         (command.key_digest,),
     )
     rows = cursor.fetchall()
@@ -55,7 +55,7 @@ def record_intent(
     cursor.execute(
         "INSERT INTO speech_profile_lifecycle_intents "
         "(key_digest,operation,profile_id,revision,intent_json,request_digest,recorded_at_us) "
-        "VALUES (?,?,?,?,?,?,?) ON CONFLICT (key_digest) DO NOTHING",
+        "VALUES (%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (key_digest) DO NOTHING",
         (
             command.key_digest,
             command.operation,

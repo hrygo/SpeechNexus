@@ -145,13 +145,13 @@ class _BindingRuntime[T]:
         schema = self._settings.database_schema
         subject = "Binding writer"
         row = connection.execute(
-            "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(?::name,?,'CREATE') "
-            "OR pg_catalog.pg_has_role(?::name,d.datdba,'MEMBER') OR EXISTS ("
+            "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(%s::name,%s,'CREATE') "
+            "OR pg_catalog.pg_has_role(%s::name,d.datdba,'MEMBER') OR EXISTS ("
             "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
-            "ON n.oid=c.relnamespace WHERE n.nspname=? "
-            "AND pg_catalog.pg_has_role(?::name,c.relowner,'MEMBER')) AS forbidden "
+            "ON n.oid=c.relnamespace WHERE n.nspname=%s "
+            "AND pg_catalog.pg_has_role(%s::name,c.relowner,'MEMBER')) AS forbidden "
             "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
-            "WHERE r.rolname=? AND d.datname=CURRENT_DATABASE()",
+            "WHERE r.rolname=%s AND d.datname=CURRENT_DATABASE()",
             (role, schema, role, schema, role, role),
         ).fetchone()
         if row is None or row["forbidden"]:
@@ -171,7 +171,7 @@ class _BindingRuntime[T]:
         for table in self._tables:
             qualified = f"{schema}.{table}"
             readable = connection.execute(
-                "SELECT pg_catalog.has_table_privilege(?::name,?,'SELECT') AS held",
+                "SELECT pg_catalog.has_table_privilege(%s::name,%s,'SELECT') AS held",
                 (role, qualified),
             ).fetchone()
             if readable is None or not readable["held"]:
@@ -180,7 +180,7 @@ class _BindingRuntime[T]:
                     "or correct the configured schema"
                 )
             writable = connection.execute(
-                "SELECT pg_catalog.has_table_privilege(?::name,?,'INSERT') AS held",
+                "SELECT pg_catalog.has_table_privilege(%s::name,%s,'INSERT') AS held",
                 (role, qualified),
             ).fetchone()
             if writable is None or not writable["held"]:
@@ -203,9 +203,9 @@ class _BindingRuntime[T]:
             )
             mutable = {"latest_revision"} if table == "speech_binding_families" else set()
             columns = connection.execute(
-                "SELECT column_name, pg_catalog.has_column_privilege(?::name,?,column_name,"
+                "SELECT column_name, pg_catalog.has_column_privilege(%s::name,%s,column_name,"
                 "'UPDATE') AS updatable FROM information_schema.columns "
-                "WHERE table_schema=? AND table_name=?",
+                "WHERE table_schema=%s AND table_name=%s",
                 (role, qualified, schema, table),
             ).fetchall()
             if not columns or {c["column_name"] for c in columns if c["updatable"]} != mutable:
@@ -309,13 +309,13 @@ class BindingAdminReaderRuntime:
         schema = self._settings.database_schema
         subject = "Binding admin reader"
         row = connection.execute(
-            "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(?::name,?,'CREATE') "
-            "OR pg_catalog.pg_has_role(?::name,d.datdba,'MEMBER') OR EXISTS ("
+            "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(%s::name,%s,'CREATE') "
+            "OR pg_catalog.pg_has_role(%s::name,d.datdba,'MEMBER') OR EXISTS ("
             "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
-            "ON n.oid=c.relnamespace WHERE n.nspname=? "
-            "AND pg_catalog.pg_has_role(?::name,c.relowner,'MEMBER')) AS forbidden "
+            "ON n.oid=c.relnamespace WHERE n.nspname=%s "
+            "AND pg_catalog.pg_has_role(%s::name,c.relowner,'MEMBER')) AS forbidden "
             "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
-            "WHERE r.rolname=? AND d.datname=CURRENT_DATABASE()",
+            "WHERE r.rolname=%s AND d.datname=CURRENT_DATABASE()",
             (role, schema, role, schema, role, role),
         ).fetchone()
         if row is None or row["forbidden"]:
@@ -335,7 +335,7 @@ class BindingAdminReaderRuntime:
         for table in _ADMIN_READER_TABLES:
             qualified = f"{schema}.{table}"
             readable = connection.execute(
-                "SELECT pg_catalog.has_table_privilege(?::name,?,'SELECT') AS held",
+                "SELECT pg_catalog.has_table_privilege(%s::name,%s,'SELECT') AS held",
                 (role, qualified),
             ).fetchone()
             if readable is None or not readable["held"]:
@@ -405,7 +405,7 @@ _LIFECYCLE_REFERENCE_SELECT = frozenset(
 
 def _table_privilege(connection: SpeechConnection, role: str, table: str, privileges: str) -> bool:
     row = connection.execute(
-        "SELECT pg_catalog.has_table_privilege(?::name,?,?) AS permitted",
+        "SELECT pg_catalog.has_table_privilege(%s::name,%s,%s) AS permitted",
         (role, table, privileges),
     ).fetchone()
     return row is not None and bool(row["permitted"])
@@ -415,7 +415,7 @@ def _any_column_privilege(
     connection: SpeechConnection, role: str, table: str, privileges: str
 ) -> bool:
     row = connection.execute(
-        "SELECT pg_catalog.has_any_column_privilege(?::name,?,?) AS permitted",
+        "SELECT pg_catalog.has_any_column_privilege(%s::name,%s,%s) AS permitted",
         (role, table, privileges),
     ).fetchone()
     return row is not None and bool(row["permitted"])
@@ -425,9 +425,9 @@ def _selected_columns(
     connection: SpeechConnection, role: str, schema: str, table: str, qualified: str
 ) -> set[str]:
     rows = connection.execute(
-        "SELECT column_name, pg_catalog.has_column_privilege(?::name,?,column_name,"
+        "SELECT column_name, pg_catalog.has_column_privilege(%s::name,%s,column_name,"
         "'SELECT') AS readable FROM information_schema.columns "
-        "WHERE table_schema=? AND table_name=?",
+        "WHERE table_schema=%s AND table_name=%s",
         (role, qualified, schema, table),
     ).fetchall()
     return {row["column_name"] for row in rows if row["readable"]}
@@ -437,9 +437,9 @@ def _updated_columns(
     connection: SpeechConnection, role: str, schema: str, table: str, qualified: str
 ) -> set[str]:
     rows = connection.execute(
-        "SELECT column_name, pg_catalog.has_column_privilege(?::name,?,column_name,"
+        "SELECT column_name, pg_catalog.has_column_privilege(%s::name,%s,column_name,"
         "'UPDATE') AS updatable FROM information_schema.columns "
-        "WHERE table_schema=? AND table_name=?",
+        "WHERE table_schema=%s AND table_name=%s",
         (role, qualified, schema, table),
     ).fetchall()
     return {row["column_name"] for row in rows if row["updatable"]}
@@ -513,13 +513,13 @@ class BindingLifecycleRuntime:
     def _verify_role(self, connection: SpeechConnection, role: str) -> None:
         schema = self._settings.database_schema
         row = connection.execute(
-            "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(?::name,?,'CREATE') "
-            "OR pg_catalog.pg_has_role(?::name,d.datdba,'MEMBER') OR EXISTS ("
+            "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(%s::name,%s,'CREATE') "
+            "OR pg_catalog.pg_has_role(%s::name,d.datdba,'MEMBER') OR EXISTS ("
             "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
-            "ON n.oid=c.relnamespace WHERE n.nspname=? "
-            "AND pg_catalog.pg_has_role(?::name,c.relowner,'MEMBER')) AS forbidden "
+            "ON n.oid=c.relnamespace WHERE n.nspname=%s "
+            "AND pg_catalog.pg_has_role(%s::name,c.relowner,'MEMBER')) AS forbidden "
             "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
-            "WHERE r.rolname=? AND d.datname=CURRENT_DATABASE()",
+            "WHERE r.rolname=%s AND d.datname=CURRENT_DATABASE()",
             (role, schema, role, schema, role, role),
         ).fetchone()
         if row is None or row["forbidden"]:
@@ -527,11 +527,11 @@ class BindingLifecycleRuntime:
         other = connection.execute(
             "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c "
             "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
-            "WHERE n.nspname=? AND c.relkind IN ('r','p','v','m','f') "
+            "WHERE n.nspname=%s AND c.relkind IN ('r','p','v','m','f') "
             "AND c.relname NOT IN (" + ",".join("%s" for _ in _LIFECYCLE_TABLES) + ") AND ("
-            "pg_catalog.has_table_privilege(?::name,c.oid,"
+            "pg_catalog.has_table_privilege(%s::name,c.oid,"
             "'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') "
-            "OR pg_catalog.has_any_column_privilege(?::name,c.oid,"
+            "OR pg_catalog.has_any_column_privilege(%s::name,c.oid,"
             "'SELECT,INSERT,UPDATE,REFERENCES'))) AS forbidden",
             (schema, *_LIFECYCLE_TABLES, role, role),
         ).fetchone()
@@ -540,9 +540,9 @@ class BindingLifecycleRuntime:
         sequences = connection.execute(
             "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c "
             "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
-            "WHERE n.nspname=? AND c.relkind='S' "
+            "WHERE n.nspname=%s AND c.relkind='S' "
             "AND CASE WHEN c.relkind='S' THEN pg_catalog.has_sequence_privilege("
-            "?::name,c.oid,'USAGE,SELECT,UPDATE') ELSE FALSE END) AS forbidden",
+            "%s::name,c.oid,'USAGE,SELECT,UPDATE') ELSE FALSE END) AS forbidden",
             (schema, role),
         ).fetchone()
         if sequences is None or sequences["forbidden"]:

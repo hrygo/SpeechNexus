@@ -42,7 +42,7 @@ def read_ownership(cursor: OwnerCursor, pool_id: str, *, lock: bool) -> PoolOwne
         raise ValueError("Invalid owner pool")
     cursor.execute(
         "SELECT pool_id, owner_id, fencing_token, owner_expires_at_us AS expires_at_us, "
-        "owner_state, version FROM resource_pools WHERE pool_id = ?"
+        "owner_state, version FROM resource_pools WHERE pool_id = %s"
         + (" FOR UPDATE" if lock else ""),
         (pool_id,),
     )
@@ -66,13 +66,13 @@ def query_in_transaction(cursor: OwnerCursor, pool_id: str) -> OwnerResult:
 
 def activation_facts(cursor: OwnerCursor, pool_id: str) -> ActivationFacts:
     cursor.execute(
-        "SELECT gateway_id FROM engine_instances WHERE pool_id = ? "
+        "SELECT gateway_id FROM engine_instances WHERE pool_id = %s "
         "AND instance_state <> 'stopped' ORDER BY instance_id, instance_generation FOR UPDATE",
         (pool_id,),
     )
     gateways = frozenset(row["gateway_id"] for row in cursor.fetchall())
     cursor.execute(
-        "SELECT * FROM admission_leases WHERE pool_id = ? "
+        "SELECT * FROM admission_leases WHERE pool_id = %s "
         "AND lease_state <> 'released' ORDER BY lease_id FOR UPDATE",
         (pool_id,),
     )
@@ -86,7 +86,7 @@ def activation_facts(cursor: OwnerCursor, pool_id: str) -> ActivationFacts:
         raise OwnerRejectedError("reconciliation_required") from None
     cursor.execute(
         "SELECT gateway_id, min_fencing_token, sealed_evidence_digest AS evidence_digest "
-        "FROM gateway_fencing_barriers WHERE pool_id = ? ORDER BY gateway_id FOR UPDATE",
+        "FROM gateway_fencing_barriers WHERE pool_id = %s ORDER BY gateway_id FOR UPDATE",
         (pool_id,),
     )
     try:
@@ -96,7 +96,7 @@ def activation_facts(cursor: OwnerCursor, pool_id: str) -> ActivationFacts:
     cursor.execute(
         "SELECT submit_intent_id, lease_id, execution_state, cleanup_state "
         "FROM submit_intents WHERE lease_id IN "
-        "(SELECT lease_id FROM admission_leases WHERE pool_id = ?) "
+        "(SELECT lease_id FROM admission_leases WHERE pool_id = %s) "
         "AND execution_state IN ('submitting', 'executing', 'stopping', 'unknown_quarantined') "
         "ORDER BY submit_intent_id FOR UPDATE",
         (pool_id,),
@@ -135,8 +135,8 @@ def mutate_in_transaction(
         # Time is obtained after every lock wait, not before entering the txn.
         updated = activated(current, request, clock(), evidence)
     cursor.execute(
-        "UPDATE resource_pools SET owner_id = ?, fencing_token = ?, owner_expires_at_us = ?, "
-        "owner_state = ?, version = ? WHERE pool_id = ? AND version = ?",
+        "UPDATE resource_pools SET owner_id = %s, fencing_token = %s, owner_expires_at_us = %s, "
+        "owner_state = %s, version = %s WHERE pool_id = %s AND version = %s",
         (
             updated.owner_id,
             updated.fencing_token,

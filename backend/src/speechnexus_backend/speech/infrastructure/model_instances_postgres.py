@@ -59,7 +59,7 @@ _ORDER = " ORDER BY instance.instance_id, instance.instance_generation LIMIT %s"
 # any recorded generation at all.
 _FIND = (
     "WITH presence AS (SELECT EXISTS (SELECT 1 FROM engine_instances AS listed "
-    "WHERE listed.instance_id = ?) AS instance_exists) "
+    "WHERE listed.instance_id = %s) AS instance_exists) "
     "SELECT presence.instance_exists, " + _COLUMNS + " FROM presence "
     "LEFT JOIN engine_instances AS instance ON instance.instance_id = %s "
     "AND instance.instance_generation = %s "
@@ -113,7 +113,7 @@ class PostgresModelInstanceReads:
                     raise ModelInstanceUnavailableError
                 connection.execute("SET TRANSACTION READ ONLY")
                 connection.execute(
-                    "SELECT set_config('statement_timeout', ?, true)",
+                    "SELECT set_config('statement_timeout', %s, true)",
                     (str(max(1, int(remaining * 1000))),),
                 )
                 records = connection.execute(text, parameters).fetchall()
@@ -142,7 +142,7 @@ class PostgresModelInstanceReads:
                     raise ModelInstanceUnavailableError
                 connection.execute("SET TRANSACTION READ ONLY")
                 connection.execute(
-                    "SELECT set_config('statement_timeout', ?, true)",
+                    "SELECT set_config('statement_timeout', %s, true)",
                     (str(max(1, int(remaining * 1000))),),
                 )
                 row = connection.execute(_FIND, (instance_id, instance_id, generation)).fetchone()

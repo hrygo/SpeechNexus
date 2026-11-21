@@ -81,7 +81,7 @@ class PostgresTeleprompter:
             _Row,
             """
             SELECT project_id, script_revision, visible_position, manual_hold, updated_at
-            FROM {s}.teleprompter_states WHERE project_id = ?
+            FROM {s}.teleprompter_states WHERE project_id = %s
         """,
             (project_id,),
         )
@@ -123,7 +123,7 @@ class PostgresTeleprompter:
                     SELECT intent_digest, script_revision, visible_position, manual_hold,
                         updated_at
                     FROM {s}.teleprompter_receipts
-                    WHERE project_id = ? AND key_digest = ?
+                    WHERE project_id = %s AND key_digest = %s
                 """,
                     (project_id, digest),
                 )
@@ -153,7 +153,7 @@ class PostgresTeleprompter:
                 """
                 INSERT INTO {s}.teleprompter_states
                     (project_id, script_revision, visible_position, manual_hold, updated_at)
-                VALUES (?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s)
                 ON CONFLICT (project_id) DO UPDATE SET
                     script_revision = EXCLUDED.script_revision,
                     visible_position = EXCLUDED.visible_position,
@@ -175,7 +175,7 @@ class PostgresTeleprompter:
                     INSERT INTO {s}.teleprompter_receipts
                         (project_id, key_digest, intent_digest, script_revision,
                             visible_position, manual_hold, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
                     (
                         project_id,

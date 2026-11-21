@@ -47,7 +47,7 @@ class _DeadlineCursor:
         if remaining <= 0:
             raise _BudgetExpiredError
         self._cursor.execute(
-            "SELECT set_config('statement_timeout', ?, true)",
+            "SELECT set_config('statement_timeout', %s, true)",
             (str(max(1, int(remaining * 1000))),),
         )
         return self._cursor.execute(query, parameters)

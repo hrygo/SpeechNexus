@@ -66,7 +66,7 @@ class QualifiedPostgresSpeechFacts(PostgresSpeechFacts):
         """
         rows = self._read(
             "SELECT q.voice_id,q.revision FROM speech_builtin_voice_qualifications q "
-            "WHERE q.binding_revision_id=? "
+            "WHERE q.binding_revision_id=%s "
             f"AND ({qualification_source_evidenced_sql('q')}) "
             "ORDER BY q.voice_id,q.revision LIMIT 64",
             (self._recipe.approved.binding_revision_id,),
@@ -81,12 +81,13 @@ class QualifiedPostgresSpeechFacts(PostgresSpeechFacts):
             with self._qualified_pool.connection(timeout=self._qualified_timeout) as connection:
                 connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
                 connection.execute(
-                    "SELECT set_config('statement_timeout', ?, true)",
+                    "SELECT set_config('statement_timeout', %s, true)",
                     (str(max(1, int(self._qualified_timeout * 1000))),),
                 )
                 with connection.cursor() as cursor:
                     cursor.execute(
-                        "SELECT current_generation FROM runtime_instance_heads WHERE instance_id=?",
+                        "SELECT current_generation FROM runtime_instance_heads "
+                        "WHERE instance_id=%s",
                         (recipe.instance_id,),
                     )
                     rows = cursor.fetchall()
@@ -127,15 +128,15 @@ class QualifiedPostgresSpeechFacts(PostgresSpeechFacts):
             with self._qualified_pool.connection(timeout=self._qualified_timeout) as connection:
                 connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
                 connection.execute(
-                    "SELECT set_config('statement_timeout', ?, true)",
+                    "SELECT set_config('statement_timeout', %s, true)",
                     (str(max(1, int(self._qualified_timeout * 1000))),),
                 )
                 with connection.cursor() as cursor:
                     cursor.execute(
                         "SELECT p.kind,p.object_id,p.revision,p.revision_id,p.published_at_us "
-                        "FROM speech_publications p WHERE p.kind='voice' AND p.object_id=? "
-                        "AND (?::text IS NULL OR p.revision=?) "
-                        "AND (?::text IS NOT NULL OR EXISTS "
+                        "FROM speech_publications p WHERE p.kind='voice' AND p.object_id=%s "
+                        "AND (%s::text IS NULL OR p.revision=%s) "
+                        "AND (%s::text IS NOT NULL OR EXISTS "
                         "(SELECT 1 FROM speech_publication_heads h "
                         "WHERE h.kind=p.kind AND h.object_id=p.object_id AND h.revision=p.revision "
                         "AND h.revision_id=p.revision_id)) "
@@ -161,7 +162,7 @@ class QualifiedPostgresSpeechFacts(PostgresSpeechFacts):
                         "FROM runtime_instance_heads h JOIN engine_instances i "
                         "ON i.instance_id=h.instance_id "
                         "AND i.instance_generation=h.current_generation "
-                        "WHERE h.instance_id=?",
+                        "WHERE h.instance_id=%s",
                         (recipe.instance_id,),
                     )
                     current = cursor.fetchall()

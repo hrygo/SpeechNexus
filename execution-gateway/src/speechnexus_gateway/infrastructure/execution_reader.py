@@ -54,7 +54,7 @@ class _DeadlineCursor:
         if remaining <= 0:
             raise _BudgetExpiredError
         self._cursor.execute(
-            "SELECT set_config('statement_timeout', ?, true)",
+            "SELECT set_config('statement_timeout', %s, true)",
             (str(max(1, int(remaining * 1000))),),
         )
         return self._cursor.execute(query, parameters)
@@ -73,7 +73,7 @@ def _read_receipt(cursor: SubmitCursor, intent: SubmissionIntent) -> AbortReceip
     cursor.execute(
         "SELECT submit_intent_id, operation_id, attempt_id, fencing_token, reason, "
         "wait_timeout_ms, received_at_us, dispatched_at_us "
-        "FROM gateway_abort_intents WHERE submit_intent_id=?",
+        "FROM gateway_abort_intents WHERE submit_intent_id=%s",
         (intent.identity.submit_intent_id,),
     )
     rows = cursor.fetchall()

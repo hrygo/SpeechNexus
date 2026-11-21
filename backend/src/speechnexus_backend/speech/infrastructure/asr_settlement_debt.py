@@ -10,9 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import psycopg
 from psycopg.rows import dict_row
-
-from speechnexus_portable_sql.psycopg_driver import connect as portable_connect
 
 _NOW = "CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT)"
 _LIMIT = 200
@@ -129,15 +128,15 @@ def read_asr_settlement_debt(
         "WHERE l.lease_state<>'released' AND o.operation_id LIKE 'operation-%%' "
         "AND o.request_document IS NULL "
         "AND NOT EXISTS (SELECT 1 FROM speech_asr_settlement s WHERE s.lease_id=l.lease_id) "
-        "ORDER BY l.lease_id LIMIT ?"
+        "ORDER BY l.lease_id LIMIT %s"
     )
-    with portable_connect(
+    with psycopg.connect(
         dsn, connect_timeout=int(timeout_seconds), row_factory=dict_row
     ) as connection:
         connection.execute("SET TRANSACTION READ ONLY")
-        connection.execute("SELECT set_config('search_path', ?, true)", (schema + ",pg_catalog",))
+        connection.execute("SELECT set_config('search_path', %s, true)", (schema + ",pg_catalog",))
         connection.execute(
-            "SELECT set_config('statement_timeout', ?, true)",
+            "SELECT set_config('statement_timeout', %s, true)",
             (str(max(1, int(timeout_seconds * 1000))),),
         )
         rows = [

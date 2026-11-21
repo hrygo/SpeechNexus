@@ -62,11 +62,11 @@ def publish_builtin_voice(
     def operation(cursor: Any) -> dict[str, Any]:
         cursor.execute(
             "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:builtin-voice-intent:' || current_schema() || ':' || ?, 0))",
+            "'speechnexus:builtin-voice-intent:' || current_schema() || ':' || %s, 0))",
             (key_digest,),
         )
         cursor.execute(
-            "SELECT intent FROM speech_builtin_voice_publish_intents WHERE key_digest=?",
+            "SELECT intent FROM speech_builtin_voice_publish_intents WHERE key_digest=%s",
             (key_digest,),
         )
         existing = cursor.fetchall()
@@ -94,7 +94,7 @@ def publish_builtin_voice(
         cursor.execute(
             "SELECT a.*, s.source_revision, s.source_digest, s.native_speaker_id AS source_speaker "
             "FROM speech_builtin_voice_approvals a JOIN speech_builtin_voice_source_approvals s "
-            "ON s.source_approval_id=a.source_approval_id WHERE a.approval_id=? "
+            "ON s.source_approval_id=a.source_approval_id WHERE a.approval_id=%s "
             "AND a.expires_at > clock_timestamp() AND s.expires_at > clock_timestamp() "
             "AND NOT EXISTS (SELECT 1 FROM speech_builtin_voice_revocations r "
             "WHERE r.approval_id=a.approval_id) "
@@ -143,17 +143,17 @@ def publish_builtin_voice(
             raise BuiltinVoicePublicationRejectedError("expiry_mismatch")
         cursor.execute(
             "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:' || current_schema() || ':binding:' || ?, 0))",
+            "'speechnexus:catalog:' || current_schema() || ':binding:' || %s, 0))",
             (f["binding_id"],),
         )
         cursor.execute(
             "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:' || current_schema() || ':voice:' || ?, 0))",
+            "'speechnexus:catalog:' || current_schema() || ':voice:' || %s, 0))",
             (a["voice_id"],),
         )
         cursor.execute(
             "SELECT 1 FROM speech_publication_heads WHERE kind='binding' "
-            "AND object_id=? AND revision=? AND revision_id=?",
+            "AND object_id=%s AND revision=%s AND revision_id=%s",
             (f["binding_id"], f["binding_revision"], f["binding_revision_id"]),
         )
         if len(cursor.fetchall()) != 1:
@@ -228,7 +228,7 @@ def publish_builtin_voice(
         cursor.execute(
             "SELECT 1 FROM speech_builtin_voice_approvals a "
             "JOIN speech_builtin_voice_source_approvals s "
-            "ON s.source_approval_id=a.source_approval_id WHERE a.approval_id=? "
+            "ON s.source_approval_id=a.source_approval_id WHERE a.approval_id=%s "
             "AND a.expires_at > clock_timestamp() AND s.expires_at > clock_timestamp() "
             "AND NOT EXISTS (SELECT 1 FROM speech_builtin_voice_revocations r "
             "WHERE r.approval_id=a.approval_id) "
@@ -239,7 +239,7 @@ def publish_builtin_voice(
         if len(cursor.fetchall()) != 1:
             raise BuiltinVoicePublicationRejectedError("not_qualified")
         cursor.execute(
-            "SELECT revision FROM speech_publication_heads WHERE kind='voice' AND object_id=?",
+            "SELECT revision FROM speech_publication_heads WHERE kind='voice' AND object_id=%s",
             (a["voice_id"],),
         )
         heads = cursor.fetchall()
@@ -261,7 +261,7 @@ def publish_builtin_voice(
         cursor.execute(
             "INSERT INTO speech_builtin_voice_qualifications "
             "(voice_id, revision, revision_id, binding_revision_id, approval_id, document, "
-            "native_speaker_id) VALUES (?,?,?,?,?,?::jsonb,?)",
+            "native_speaker_id) VALUES (%s,%s,%s,%s,%s,%s::jsonb,%s)",
             (
                 a["voice_id"],
                 a["revision"],
@@ -282,7 +282,7 @@ def publish_builtin_voice(
         cursor.execute(
             "INSERT INTO speech_builtin_voice_qualification_provenance "
             "(voice_id,revision,source_kind,evidence_kind,attestation_id,"
-            "probe_authorization_id) VALUES (?,?,?,?,?,?)",
+            "probe_authorization_id) VALUES (%s,%s,%s,%s,%s,%s)",
             (
                 a["voice_id"],
                 a["revision"],
@@ -294,7 +294,7 @@ def publish_builtin_voice(
         )
         cursor.execute(
             "INSERT INTO speech_builtin_voice_publish_intents "
-            "(key_digest,intent,voice_id,revision) VALUES (?,?::jsonb,?,?)",
+            "(key_digest,intent,voice_id,revision) VALUES (%s,%s::jsonb,%s,%s)",
             (key_digest, json.dumps(saved), a["voice_id"], a["revision"]),
         )
         return {"status": "created", "voice_id": a["voice_id"], "revision": a["revision"]}
@@ -332,7 +332,7 @@ def _recorded_source(
         "source_approval_id,instance_id,instance_generation,fencing_token,image_digest,"
         "template_digest,declared_lifecycle_digest,model_artifact_digest,observed_at_us,"
         "expires_at_us,declaration_digest "
-        "FROM speech_builtin_voice_operator_attestations WHERE approval_id=?",
+        "FROM speech_builtin_voice_operator_attestations WHERE approval_id=%s",
         (approval_id,),
     )
     rows = cursor.fetchall()

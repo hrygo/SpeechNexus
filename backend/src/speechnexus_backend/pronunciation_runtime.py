@@ -58,14 +58,14 @@ class _PoolDiagnostics(logging.Filter):
 def _require_non_owner(connection: SpeechConnection, schema: str, role: str) -> None:
     forbidden = connection.execute(
         "SELECT r.rolsuper OR r.rolcreaterole OR r.rolcreatedb OR r.rolreplication "
-        "OR r.rolbypassrls OR pg_catalog.has_schema_privilege(?::name,?,'CREATE') "
-        "OR pg_catalog.pg_has_role(?::name,n.nspowner,'MEMBER') "
-        "OR pg_catalog.pg_has_role(?::name,d.datdba,'MEMBER') OR EXISTS ("
+        "OR r.rolbypassrls OR pg_catalog.has_schema_privilege(%s::name,%s,'CREATE') "
+        "OR pg_catalog.pg_has_role(%s::name,n.nspowner,'MEMBER') "
+        "OR pg_catalog.pg_has_role(%s::name,d.datdba,'MEMBER') OR EXISTS ("
         "SELECT 1 FROM pg_catalog.pg_class c WHERE c.relnamespace=n.oid "
-        "AND pg_catalog.pg_has_role(?::name,c.relowner,'MEMBER')) AS forbidden "
+        "AND pg_catalog.pg_has_role(%s::name,c.relowner,'MEMBER')) AS forbidden "
         "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
-        "CROSS JOIN pg_catalog.pg_namespace n WHERE r.rolname=? "
-        "AND n.nspname=? AND d.datname=CURRENT_DATABASE()",
+        "CROSS JOIN pg_catalog.pg_namespace n WHERE r.rolname=%s "
+        "AND n.nspname=%s AND d.datname=CURRENT_DATABASE()",
         (role, schema, role, role, role, role, schema),
     ).fetchone()
     if forbidden is None or forbidden["forbidden"]:
@@ -88,25 +88,25 @@ def verify_reader_role(connection: SpeechConnection, schema: str, role: str) -> 
     extra = connection.execute(
         "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
-        "WHERE n.nspname=? AND c.relkind IN ('r','p','v','m','f') AND ("
-        "(c.relname <> ALL(?::text[]) AND ("
-        "pg_catalog.has_table_privilege(?::name,c.oid,'SELECT') OR "
-        "pg_catalog.has_any_column_privilege(?::name,c.oid,'SELECT') OR "
-        "pg_catalog.has_table_privilege(?::name,c.oid,"
+        "WHERE n.nspname=%s AND c.relkind IN ('r','p','v','m','f') AND ("
+        "(c.relname <> ALL(%s::text[]) AND ("
+        "pg_catalog.has_table_privilege(%s::name,c.oid,'SELECT') OR "
+        "pg_catalog.has_any_column_privilege(%s::name,c.oid,'SELECT') OR "
+        "pg_catalog.has_table_privilege(%s::name,c.oid,"
         "'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') OR "
-        "pg_catalog.has_any_column_privilege(?::name,c.oid,"
+        "pg_catalog.has_any_column_privilege(%s::name,c.oid,"
         "'INSERT,UPDATE,REFERENCES'))) OR "
-        "(c.relname = ANY(?::text[]) AND ("
-        "pg_catalog.has_table_privilege(?::name,c.oid,"
+        "(c.relname = ANY(%s::text[]) AND ("
+        "pg_catalog.has_table_privilege(%s::name,c.oid,"
         "'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') OR "
-        "pg_catalog.has_any_column_privilege(?::name,c.oid,"
+        "pg_catalog.has_any_column_privilege(%s::name,c.oid,"
         "'INSERT,UPDATE,REFERENCES'))))) AS forbidden",
         (schema, tables, role, role, role, role, tables, role, role),
     ).fetchone()
     permitted = connection.execute(
-        "SELECT pg_catalog.has_table_privilege(?::name,?,'SELECT') AS revisions, "
-        "pg_catalog.has_table_privilege(?::name,?,'SELECT') AS families, "
-        "pg_catalog.has_table_privilege(?::name,?,'SELECT') AS publications",
+        "SELECT pg_catalog.has_table_privilege(%s::name,%s,'SELECT') AS revisions, "
+        "pg_catalog.has_table_privilege(%s::name,%s,'SELECT') AS families, "
+        "pg_catalog.has_table_privilege(%s::name,%s,'SELECT') AS publications",
         (
             role,
             f'"{schema}".{_REVISIONS}',
@@ -135,32 +135,32 @@ def verify_writer_role(connection: SpeechConnection, schema: str, role: str) -> 
     other = connection.execute(
         "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
-        "WHERE n.nspname=? AND c.relkind IN ('r','p','v','m','f') "
-        "AND c.relname <> ALL(?::text[]) AND ("
-        "pg_catalog.has_table_privilege(?::name,c.oid,"
+        "WHERE n.nspname=%s AND c.relkind IN ('r','p','v','m','f') "
+        "AND c.relname <> ALL(%s::text[]) AND ("
+        "pg_catalog.has_table_privilege(%s::name,c.oid,"
         "'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') OR "
-        "pg_catalog.has_any_column_privilege(?::name,c.oid,"
+        "pg_catalog.has_any_column_privilege(%s::name,c.oid,"
         "'SELECT,INSERT,UPDATE,REFERENCES'))) AS forbidden",
         (schema, list(_WRITER_TABLES), role, role),
     ).fetchone()
     tables = connection.execute(
         "SELECT c.relname AS relname, "
-        "pg_catalog.has_table_privilege(?::name,c.oid,'SELECT') AS can_select, "
-        "pg_catalog.has_table_privilege(?::name,c.oid,'INSERT') AS can_insert, "
-        "pg_catalog.has_table_privilege(?::name,c.oid,'UPDATE') AS can_update, "
-        "pg_catalog.has_table_privilege(?::name,c.oid,"
+        "pg_catalog.has_table_privilege(%s::name,c.oid,'SELECT') AS can_select, "
+        "pg_catalog.has_table_privilege(%s::name,c.oid,'INSERT') AS can_insert, "
+        "pg_catalog.has_table_privilege(%s::name,c.oid,'UPDATE') AS can_update, "
+        "pg_catalog.has_table_privilege(%s::name,c.oid,"
         "'DELETE,TRUNCATE,REFERENCES,TRIGGER') AS forbidden_table "
         "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
-        "WHERE n.nspname=? AND c.relkind IN ('r','p','v','m','f') "
-        "AND c.relname = ANY(?::text[]) ORDER BY c.relname",
+        "WHERE n.nspname=%s AND c.relkind IN ('r','p','v','m','f') "
+        "AND c.relname = ANY(%s::text[]) ORDER BY c.relname",
         (role, role, role, role, schema, list(_WRITER_TABLES)),
     ).fetchall()
     columns = connection.execute(
         "SELECT c.relname AS relname, a.attname AS attname FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
         "JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid AND a.attnum>0 "
-        "AND NOT a.attisdropped WHERE n.nspname=? AND c.relname = ANY(?::text[]) "
-        "AND pg_catalog.has_column_privilege(?::name,c.oid,a.attname,'UPDATE')",
+        "AND NOT a.attisdropped WHERE n.nspname=%s AND c.relname = ANY(%s::text[]) "
+        "AND pg_catalog.has_column_privilege(%s::name,c.oid,a.attname,'UPDATE')",
         (schema, list(_WRITER_TABLES), role),
     ).fetchall()
     observed = {(row["relname"], row["attname"]) for row in columns}
@@ -212,11 +212,11 @@ def verify_publisher_role(connection: SpeechConnection, schema: str, role: str) 
     other = connection.execute(
         "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
-        "WHERE n.nspname=? AND c.relkind IN ('r','p','v','m','f') "
-        "AND c.relname <> ALL(?::text[]) AND ("
-        "pg_catalog.has_table_privilege(?::name,c.oid,"
+        "WHERE n.nspname=%s AND c.relkind IN ('r','p','v','m','f') "
+        "AND c.relname <> ALL(%s::text[]) AND ("
+        "pg_catalog.has_table_privilege(%s::name,c.oid,"
         "'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') OR "
-        "pg_catalog.has_any_column_privilege(?::name,c.oid,"
+        "pg_catalog.has_any_column_privilege(%s::name,c.oid,"
         "'SELECT,INSERT,UPDATE,REFERENCES'))) AS forbidden",
         (schema, tables, role, role),
     ).fetchone()
@@ -224,31 +224,31 @@ def verify_publisher_role(connection: SpeechConnection, schema: str, role: str) 
         raise ValueError("Pronunciation publisher requires exactly its declared tables")
     table_rows = connection.execute(
         "SELECT c.relname AS relname, "
-        "pg_catalog.has_table_privilege(?::name,c.oid,'SELECT') AS can_select, "
-        "pg_catalog.has_table_privilege(?::name,c.oid,'INSERT') AS can_insert, "
-        "pg_catalog.has_table_privilege(?::name,c.oid,'UPDATE') AS can_update, "
-        "pg_catalog.has_table_privilege(?::name,c.oid,"
+        "pg_catalog.has_table_privilege(%s::name,c.oid,'SELECT') AS can_select, "
+        "pg_catalog.has_table_privilege(%s::name,c.oid,'INSERT') AS can_insert, "
+        "pg_catalog.has_table_privilege(%s::name,c.oid,'UPDATE') AS can_update, "
+        "pg_catalog.has_table_privilege(%s::name,c.oid,"
         "'DELETE,TRUNCATE,REFERENCES,TRIGGER') AS destructive, "
-        "pg_catalog.has_any_column_privilege(?::name,c.oid,'REFERENCES') AS column_reference "
+        "pg_catalog.has_any_column_privilege(%s::name,c.oid,'REFERENCES') AS column_reference "
         "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
-        "WHERE n.nspname=? AND c.relkind IN ('r','p','v','m','f') "
-        "AND c.relname = ANY(?::text[]) ORDER BY c.relname",
+        "WHERE n.nspname=%s AND c.relkind IN ('r','p','v','m','f') "
+        "AND c.relname = ANY(%s::text[]) ORDER BY c.relname",
         (role, role, role, role, role, schema, tables),
     ).fetchall()
     columns = connection.execute(
         "SELECT c.relname AS relname, a.attname AS attname FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
         "JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid AND a.attnum>0 "
-        "AND NOT a.attisdropped WHERE n.nspname=? AND c.relname = ANY(?::text[]) "
-        "AND pg_catalog.has_column_privilege(?::name,c.oid,a.attname,'UPDATE')",
+        "AND NOT a.attisdropped WHERE n.nspname=%s AND c.relname = ANY(%s::text[]) "
+        "AND pg_catalog.has_column_privilege(%s::name,c.oid,a.attname,'UPDATE')",
         (schema, tables, role),
     ).fetchall()
     column_inserts = connection.execute(
         "SELECT c.relname AS relname FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
-        "WHERE n.nspname=? AND c.relname = ANY(?::text[]) "
-        "AND pg_catalog.has_any_column_privilege(?::name,c.oid,'INSERT') "
-        "AND NOT pg_catalog.has_table_privilege(?::name,c.oid,'INSERT')",
+        "WHERE n.nspname=%s AND c.relname = ANY(%s::text[]) "
+        "AND pg_catalog.has_any_column_privilege(%s::name,c.oid,'INSERT') "
+        "AND NOT pg_catalog.has_table_privilege(%s::name,c.oid,'INSERT')",
         (schema, tables, role, role),
     ).fetchall()
     observed = {(row["relname"], row["attname"]) for row in columns}

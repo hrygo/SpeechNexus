@@ -98,7 +98,7 @@ class PostgresMeetings:
     async def _row(self, base: _Session, meeting_id: str, *, lock: bool = False) -> Meeting:
         row = await base._one(
             _Row,
-            "SELECT * FROM {s}.meetings WHERE id=?" + (" FOR UPDATE" if lock else ""),
+            "SELECT * FROM {s}.meetings WHERE id=%s" + (" FOR UPDATE" if lock else ""),
             (meeting_id,),
         )
         if row is None:
@@ -149,12 +149,12 @@ class PostgresMeetings:
             ).digest()[:8],
             signed=True,
         )
-        await base._execute("SELECT pg_advisory_xact_lock(?)", (bucket,))
+        await base._execute("SELECT pg_advisory_xact_lock(%s)", (bucket,))
         row = await base._one(
             _Receipt,
             """SELECT intent_digest,meeting_id,version,updated_at,ended_at,
             sealed_revision,sealed_revision_id,source_sha256,minutes_id FROM {s}.meeting_receipts
-            WHERE workspace_id=? AND operation=? AND scope_id=? AND key_digest=?""",
+            WHERE workspace_id=%s AND operation=%s AND scope_id=%s AND key_digest=%s""",
             (workspace, operation, scope, digest),
         )
         if row is not None and row.intent_digest != intent_digest:
@@ -170,7 +170,7 @@ class PostgresMeetings:
             """INSERT INTO {s}.meeting_receipts
             (workspace_id,operation,scope_id,key_digest,intent_digest,meeting_id,version,updated_at,
              ended_at,sealed_revision,sealed_revision_id,source_sha256,minutes_id)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (
                 meeting.workspace_id,
                 operation,
@@ -252,7 +252,7 @@ class PostgresMeetings:
             await session._execute(
                 """INSERT INTO {s}.meetings
                 (id,workspace_id,project_id,transcript_id,display_name,save_audio,started_at,updated_at,version)
-                VALUES (?,?,?,?,?,?,?,?,?)""",
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     meeting.id,
                     workspace_id,
@@ -399,7 +399,7 @@ class PostgresMeetings:
                 """SELECT intent_digest,meeting_id,version,updated_at,ended_at,
                 sealed_revision,sealed_revision_id,source_sha256,minutes_id
                 FROM {s}.meeting_receipts
-                WHERE meeting_id=? AND minutes_id=? AND operation='minutes' LIMIT 1""",
+                WHERE meeting_id=%s AND minutes_id=%s AND operation='minutes' LIMIT 1""",
                 (meeting_id, minutes_id),
             )
             if receipt is None:

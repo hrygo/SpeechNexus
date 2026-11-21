@@ -114,7 +114,7 @@ class PostgresCancellationReconciliationStore:
         try:
             with self._pool.connection(timeout=self._timeout) as connection:
                 connection.execute(
-                    "SELECT set_config('statement_timeout', ?, true)",
+                    "SELECT set_config('statement_timeout', %s, true)",
                     (str(max(1, int(self._timeout * 1000))),),
                 )
                 return work(connection)

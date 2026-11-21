@@ -68,7 +68,7 @@ def record_stop_in_transaction(
     cursor.execute(
         "SELECT evidence_id, submit_intent_id, evidence_kind, evidence_digest, observed_at_us, "
         "execution_stopped, resources_released, reason FROM execution_stop_evidence "
-        "WHERE evidence_id = ? OR submit_intent_id = ?",
+        "WHERE evidence_id = %s OR submit_intent_id = %s",
         (evidence.evidence_id, evidence.submit_intent_id),
     )
     rows = cursor.fetchall()
@@ -92,9 +92,9 @@ def record_stop_in_transaction(
         return updated  # An exact replay does not rewrite time, version or immutable evidence.
     cursor.execute(STOP_EVIDENCE_INSERT_SQL, stop_evidence_values(evidence))
     cursor.execute(
-        "UPDATE submit_intents SET execution_state = ?, cleanup_state = ?, error_code = ?, "
-        "terminated_at_us = ?, updated_at_us = ?, version = version + 1 "
-        "WHERE submit_intent_id = ? AND version = ?",
+        "UPDATE submit_intents SET execution_state = %s, cleanup_state = %s, error_code = %s, "
+        "terminated_at_us = %s, updated_at_us = %s, version = version + 1 "
+        "WHERE submit_intent_id = %s AND version = %s",
         (
             updated.execution_state.value,
             updated.cleanup_state.value,

@@ -96,8 +96,8 @@ _REGISTRATION = (
     "JOIN runtime_instance_heads h ON h.instance_id=i.instance_id "
     "AND h.current_generation=i.instance_generation "
     "JOIN resource_pools p ON p.pool_id=i.pool_id "
-    "JOIN workspace_quotas w ON w.workspace_id=? "
-    "WHERE i.instance_id=? AND i.instance_generation=?"
+    "JOIN workspace_quotas w ON w.workspace_id=%s "
+    "WHERE i.instance_id=%s AND i.instance_generation=%s"
 )
 
 
@@ -176,7 +176,7 @@ def record_operator_attestation(
         lock_binding(cursor, request.binding_id)
         cursor.execute(
             "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:'||current_schema()||':voice:'||?,0))",
+            "'speechnexus:catalog:'||current_schema()||':voice:'||%s,0))",
             (request.voice_id,),
         )
         cursor.execute(
@@ -202,7 +202,7 @@ def record_operator_attestation(
         # the revision reusable.
         cursor.execute(
             "SELECT attestation_id FROM speech_builtin_voice_operator_attestations "
-            "WHERE voice_id=? AND revision=? AND revision_id=? AND binding_revision_id=?",
+            "WHERE voice_id=%s AND revision=%s AND revision_id=%s AND binding_revision_id=%s",
             (request.voice_id, request.revision, request.revision_id, request.binding_revision_id),
         )
         if cursor.fetchall():
@@ -216,7 +216,7 @@ def record_operator_attestation(
             "SELECT s.source_revision,s.source_digest,"
             "floor(extract(epoch FROM s.expires_at)*1000000)::bigint AS expires_us "
             "FROM speech_builtin_voice_source_approvals s "
-            "WHERE s.source_approval_id=? AND s.voice_id=? AND s.native_speaker_id='Vivian' "
+            "WHERE s.source_approval_id=%s AND s.voice_id=%s AND s.native_speaker_id='Vivian' "
             "AND s.expires_at>clock_timestamp() "
             "AND NOT EXISTS (SELECT 1 FROM speech_builtin_voice_source_revocations r "
             "WHERE r.source_approval_id=s.source_approval_id)",
@@ -227,7 +227,7 @@ def record_operator_attestation(
             raise OperatorAttestationError("source_approval_unavailable")
         source = sources[0]
         cursor.execute(
-            "SELECT revision FROM speech_binding_revisions WHERE binding_id=? AND revision_id=?",
+            "SELECT revision FROM speech_binding_revisions WHERE binding_id=%s AND revision_id=%s",
             (request.binding_id, request.binding_revision_id),
         )
         revisions = cursor.fetchall()
@@ -264,7 +264,7 @@ def record_operator_attestation(
         registrations = cursor.fetchall()
         if len(registrations) != 1:
             cursor.execute(
-                "SELECT current_generation FROM runtime_instance_heads WHERE instance_id=?",
+                "SELECT current_generation FROM runtime_instance_heads WHERE instance_id=%s",
                 (request.instance_id,),
             )
             if cursor.fetchall():
@@ -339,7 +339,7 @@ def record_operator_attestation(
         cursor.execute(
             "INSERT INTO speech_builtin_voice_approvals "
             "(approval_id,voice_id,revision,revision_id,binding_revision_id,"
-            "source_approval_id,facts,expires_at) VALUES (?,?,?,?,?,?,?::jsonb,?)",
+            "source_approval_id,facts,expires_at) VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s)",
             (
                 request.approval_id,
                 request.voice_id,
@@ -359,8 +359,8 @@ def record_operator_attestation(
             "template_digest,declared_lifecycle_digest,model_id,model_revision,"
             "model_artifact_digest,observed_at_us,expires_at_us,declaration,declaration_digest,"
             "attestation_intent,declared_by) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,"
-            "?::jsonb,?,?::jsonb,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
+            "%s::jsonb,%s,%s::jsonb,%s)",
             (
                 request.attestation_id,
                 request.approval_id,
@@ -411,7 +411,7 @@ def _replay(
     """Return the original result for the identical attestation, or refuse a conflict."""
     cursor.execute(
         "SELECT attestation_id,approval_id,declaration_digest,expires_at_us "
-        "FROM speech_builtin_voice_operator_attestations WHERE attestation_id=?",
+        "FROM speech_builtin_voice_operator_attestations WHERE attestation_id=%s",
         (request.attestation_id,),
     )
     rows = cursor.fetchall()
@@ -433,13 +433,14 @@ def _replay(
             "expires_at_us": int(row["expires_at_us"]),
         }
     cursor.execute(
-        "SELECT attestation_id FROM speech_builtin_voice_operator_attestations WHERE approval_id=?",
+        "SELECT attestation_id FROM speech_builtin_voice_operator_attestations "
+        "WHERE approval_id=%s",
         (request.approval_id,),
     )
     if cursor.fetchall():
         raise OperatorAttestationError("attestation_conflict")
     cursor.execute(
-        "SELECT approval_id FROM speech_builtin_voice_approvals WHERE approval_id=?",
+        "SELECT approval_id FROM speech_builtin_voice_approvals WHERE approval_id=%s",
         (request.approval_id,),
     )
     if cursor.fetchall():

@@ -57,11 +57,11 @@ from speechnexus_backend.speech.infrastructure.voice_publication_schema import (
 
 _SELECT_DRAFT = (
     "SELECT draft_id, kind, status, head_revision, display_name "
-    "FROM speech_voice_drafts WHERE draft_id=?"
+    "FROM speech_voice_drafts WHERE draft_id=%s"
 )
 _SELECT_REVISION = (
     "SELECT kind, input_json, binding_json FROM speech_voice_draft_revisions "
-    "WHERE draft_id=? AND revision=?"
+    "WHERE draft_id=%s AND revision=%s"
 )
 _SELECT_EVIDENCE = (
     "SELECT evidence_id, draft_id, draft_revision, validation_job_id, validation_id, "
@@ -90,7 +90,7 @@ class _Cursor:
         if remaining <= 0:
             raise VoicePublicationUnavailableError
         self.raw.execute(
-            "SELECT set_config('statement_timeout', ?, true)",
+            "SELECT set_config('statement_timeout', %s, true)",
             (str(max(1, int(remaining * 1000))),),
         )
         return self.raw.execute(query, parameters)
@@ -180,7 +180,7 @@ class PostgresVoicePublications:
     ) -> tuple[dict[str, Any], bool]:
         cursor.execute(
             "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:voice-publication:' || current_schema() || ':' || ?, 0))",
+            "'speechnexus:voice-publication:' || current_schema() || ':' || %s, 0))",
             (draft_id,),
         )
         cursor.execute(_SELECT_DRAFT + " FOR UPDATE", (draft_id,))
@@ -239,7 +239,7 @@ class PostgresVoicePublications:
             raise VoicePublicationNotEligibleError("synthesis_path_not_reusable")
 
         cursor.execute(
-            "SELECT revision_id FROM speech_binding_revisions WHERE binding_id=? AND revision=?",
+            "SELECT revision_id FROM speech_binding_revisions WHERE binding_id=%s AND revision=%s",
             (binding["id"], binding["revision"]),
         )
         bindings = cursor.fetchall()
@@ -247,7 +247,7 @@ class PostgresVoicePublications:
             raise VoicePublicationNotEligibleError("binding_revision_mismatch")
 
         cursor.execute(
-            "SELECT state, kind, result_json, workspace_id FROM speech_jobs WHERE job_id=?",
+            "SELECT state, kind, result_json, workspace_id FROM speech_jobs WHERE job_id=%s",
             (request.validation_job_id,),
         )
         jobs = cursor.fetchall()
@@ -341,7 +341,7 @@ class PostgresVoicePublications:
         cursor.execute(
             "INSERT INTO speech_asset_references "
             "(reference_id, asset_id, consumer_kind, consumer_id, consumer_revision, "
-            "created_at_us) VALUES (?,?,'voice_revision',?,?,?) "
+            "created_at_us) VALUES (%s,%s,'voice_revision',%s,%s,%s) "
             "ON CONFLICT (asset_id, consumer_kind, consumer_id, consumer_revision) "
             "DO NOTHING",
             (
@@ -353,7 +353,7 @@ class PostgresVoicePublications:
             ),
         )
         cursor.execute(
-            "UPDATE speech_voice_drafts SET status='published' WHERE draft_id=?",
+            "UPDATE speech_voice_drafts SET status='published' WHERE draft_id=%s",
             (draft_id,),
         )
         if cursor.rowcount != 1:
@@ -429,7 +429,7 @@ class PostgresVoicePublications:
         cursor.execute(
             "SELECT asset_state, bytes, sha256, expires_at_us, "
             "CAST(EXTRACT(EPOCH FROM clock_timestamp())*1000000 AS BIGINT) AS now_us "
-            "FROM speech_assets WHERE asset_id=? AND workspace_id=?",
+            "FROM speech_assets WHERE asset_id=%s AND workspace_id=%s",
             (material.asset_id, workspace_id),
         )
         rows = cursor.fetchall()
@@ -443,7 +443,8 @@ class PostgresVoicePublications:
         if int(rows[0]["expires_at_us"]) <= int(rows[0]["now_us"]):
             raise VoicePublicationNotEligibleError("clone_material_expired")
         cursor.execute(
-            "SELECT 1 AS proof FROM speech_asset_objects WHERE asset_id=? AND bytes=? AND sha256=?",
+            "SELECT 1 AS proof FROM speech_asset_objects "
+            "WHERE asset_id=%s AND bytes=%s AND sha256=%s",
             (material.asset_id, material.bytes, material.sha256),
         )
         if not cursor.fetchall():
@@ -454,7 +455,7 @@ class PostgresVoicePublications:
     ) -> None:
         cursor.execute(
             "SELECT artifact_state, artifact_kind, sha256, receipt_id FROM speech_artifacts "
-            "WHERE workspace_id=? AND artifact_id=?",
+            "WHERE workspace_id=%s AND artifact_id=%s",
             (workspace_id, evidence["report_artifact_id"]),
         )
         rows = cursor.fetchall()

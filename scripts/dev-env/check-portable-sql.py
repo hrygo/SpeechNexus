@@ -62,13 +62,7 @@ PRODUCT_ROOTS = (
 )
 
 #: 唯一豁免:规则本身的定义点。它必须豁免,否则禁止清单会命中自己的正则字面量。
-#: 唯一允许 import 厂商数据库 SDK 的地方是**驱动实现**:ADR 0016 允许部署期 driver / DSN /
-#: profile 选择。业务层导入 psycopg 仍然逐条基线化,直到 #1100 收敛完。
-DRIVER_PREFIXES = ("packages/portable-sql/src/speechnexus_portable_sql/psycopg_driver.py",)
-EXCLUDED_PREFIXES = (
-    "packages/portable-sql/src/speechnexus_portable_sql/subset.py",
-    *DRIVER_PREFIXES,
-)
+EXCLUDED_PREFIXES = ("packages/portable-sql/src/speechnexus_portable_sql/subset.py",)
 
 #: Alembic 版本文件是**迁移输入**,不是目标实现:它们按 PostgreSQL 方言写 DDL,由
 #: #1100 / #1102 以单一可移植 SQL migration 取代。这里只统计数量,不逐条进门禁——
@@ -399,14 +393,6 @@ def selftest() -> list[str]:
             problems.append(f"{rule} did not fire for its DDL injection")
 
     sample_fingerprint = "d99bfdf39af69477376fbe5ef2f96ac752a82f2b03a3fe4c745e2e961fda4ed6"
-    driver = "packages/portable-sql/src/speechnexus_portable_sql/psycopg_driver.py"
-    if not any(driver.startswith(prefix) for prefix in EXCLUDED_PREFIXES):
-        problems.append("the driver adapter is not exempt from the vendor SDK rule")
-    elif "import psycopg" not in (REPO_ROOT / driver).read_text(encoding="utf-8"):
-        problems.append("the driver exemption is not load-bearing")
-    if any("backend/src/" in prefix for prefix in EXCLUDED_PREFIXES):
-        problems.append("a business module is wrongly exempt from the vendor SDK rule")
-
     clean_ddl = (
         "CREATE TABLE schema_meta (meta_id VARCHAR(32) NOT NULL, schema_rev VARCHAR(64) NOT NULL,\n"
         "    PRIMARY KEY (meta_id));\n"

@@ -48,7 +48,7 @@ def read_default_snapshot(
         return None
     cursor.execute(
         "SELECT c.* FROM speech_binding_commands c JOIN speech_binding_revisions r "
-        "ON c.key_digest=r.key_digest WHERE r.binding_id=? AND r.revision=?",
+        "ON c.key_digest=r.key_digest WHERE r.binding_id=%s AND r.revision=%s",
         (binding_id, revision),
     )
     originals = cursor.fetchall()
@@ -67,7 +67,7 @@ def read_default_snapshot(
     ):
         raise BindingUnavailableError
     cursor.execute(
-        "SELECT * FROM speech_binding_defaults WHERE binding_id=? AND revision=?",
+        "SELECT * FROM speech_binding_defaults WHERE binding_id=%s AND revision=%s",
         (binding_id, revision),
     )
     rows = cursor.fetchall()
@@ -131,7 +131,7 @@ def create_default_draft(
             "(snapshot_id,binding_id,revision,revision_id,key_digest,request_digest,"
             "document_version,schema_version,parameters_json,parameters_digest,"
             "record_digest,created_at_us) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 snapshot.snapshot_id,
                 snapshot.binding_id,

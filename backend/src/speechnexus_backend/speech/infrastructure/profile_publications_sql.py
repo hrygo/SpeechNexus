@@ -60,7 +60,7 @@ def read_publication(
 ) -> PublishedProfile | None:
     rows = _rows(
         cursor,
-        "SELECT * FROM speech_profile_publications WHERE profile_id=? AND revision=?",
+        "SELECT * FROM speech_profile_publications WHERE profile_id=%s AND revision=%s",
         (profile_id, revision),
     )
     if not rows:
@@ -92,7 +92,7 @@ def _snapshot(publication: PublishedProfile) -> bytes:
 def _original(cursor: ProfileCursor, command: ProfileLifecycleCommand) -> ProfileLifecycleResult:
     rows = _rows(
         cursor,
-        "SELECT * FROM speech_profile_lifecycle_results WHERE key_digest=?",
+        "SELECT * FROM speech_profile_lifecycle_results WHERE key_digest=%s",
         (command.key_digest,),
     )
     if not rows:
@@ -142,7 +142,7 @@ def mutate_profile(
         return ProfileLifecycleResult("conflict", error_code="idempotency_conflict")
     _rows(
         cursor,
-        "SELECT key_digest FROM speech_profile_lifecycle_intents WHERE key_digest=? FOR UPDATE",
+        "SELECT key_digest FROM speech_profile_lifecycle_intents WHERE key_digest=%s FOR UPDATE",
         (command.key_digest,),
     )
     original = _original(cursor, command)
@@ -151,13 +151,13 @@ def mutate_profile(
     # The intent journal may predate this writer. Its immutable identity is reused.
     families = _rows(
         cursor,
-        "SELECT current_revision FROM speech_profile_families WHERE profile_id=? FOR UPDATE",
+        "SELECT current_revision FROM speech_profile_families WHERE profile_id=%s FOR UPDATE",
         (command.profile_id,),
     )
 
     def reject(code: str) -> ProfileLifecycleResult:
         cursor.execute(
-            "INSERT INTO speech_profile_lifecycle_results (key_digest,error_code) VALUES (?,?)",
+            "INSERT INTO speech_profile_lifecycle_results (key_digest,error_code) VALUES (%s,%s)",
             (command.key_digest, code),
         )
         return ProfileLifecycleResult("rejected", error_code=code)
@@ -185,8 +185,8 @@ def mutate_profile(
             _update(
                 cursor,
                 "UPDATE speech_profile_publications "
-                "SET status='disabled',retired_at_us=NULL,disabled_reason=? "
-                "WHERE profile_id=? AND revision=? AND status='published'",
+                "SET status='disabled',retired_at_us=NULL,disabled_reason=%s "
+                "WHERE profile_id=%s AND revision=%s AND status='published'",
                 (retirement.disabled_reason, command.profile_id, command.revision),
             )
         else:
@@ -199,8 +199,8 @@ def mutate_profile(
             _update(
                 cursor,
                 "UPDATE speech_profile_publications "
-                "SET status='retired',retired_at_us=?,disabled_reason=NULL "
-                "WHERE profile_id=? AND revision=? AND status='published'",
+                "SET status='retired',retired_at_us=%s,disabled_reason=NULL "
+                "WHERE profile_id=%s AND revision=%s AND status='published'",
                 (retirement.retired_at_us, command.profile_id, command.revision),
             )
         # Retiring or disabling the current revision clears the family pointer.
@@ -208,13 +208,13 @@ def mutate_profile(
         if current == command.revision:
             _update(
                 cursor,
-                "UPDATE speech_profile_families SET current_revision=NULL WHERE profile_id=?",
+                "UPDATE speech_profile_families SET current_revision=NULL WHERE profile_id=%s",
                 (command.profile_id,),
             )
         snapshot = _snapshot(retirement)
         cursor.execute(
             "INSERT INTO speech_profile_lifecycle_results (key_digest,result_json,result_digest) "
-            "VALUES (?,?,?)",
+            "VALUES (%s,%s,%s)",
             (command.key_digest, snapshot.decode(), document_digest(snapshot)),
         )
         return ProfileLifecycleResult("completed", retirement)
@@ -233,7 +233,7 @@ def mutate_profile(
             "INSERT INTO speech_profile_publications "
             "(profile_id,revision,validation_json,validation_digest,authority_digest,"
             "published_at_us,status) "
-            "VALUES (?,?,?,?,?,?,'published')",
+            "VALUES (%s,%s,%s,%s,%s,%s,'published')",
             (
                 command.profile_id,
                 command.revision,
@@ -252,14 +252,14 @@ def mutate_profile(
     if current != command.revision:
         _update(
             cursor,
-            "UPDATE speech_profile_families SET current_revision=? WHERE profile_id=?",
+            "UPDATE speech_profile_families SET current_revision=%s WHERE profile_id=%s",
             (command.revision, command.profile_id),
         )
     assert publication is not None
     snapshot = _snapshot(publication)
     cursor.execute(
         "INSERT INTO speech_profile_lifecycle_results (key_digest,result_json,result_digest) "
-        "VALUES (?,?,?)",
+        "VALUES (%s,%s,%s)",
         (command.key_digest, snapshot.decode(), document_digest(snapshot)),
     )
     return ProfileLifecycleResult("completed", publication)

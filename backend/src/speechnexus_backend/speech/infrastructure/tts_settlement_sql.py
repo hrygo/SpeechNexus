@@ -45,11 +45,11 @@ def insert_tts_settlement(cursor: SettlementCursor, request: Any, deadline_at_us
     )
     cursor.execute(
         "SELECT pg_advisory_xact_lock(hashtextextended('speechnexus:tts-cancel:' "
-        "|| current_schema() || ':' || ?, 0))",
+        "|| current_schema() || ':' || %s, 0))",
         (gateway["operation_id"],),
     )
     cursor.execute(
-        "SELECT reason FROM speech_tts_cancellation WHERE operation_id=?",
+        "SELECT reason FROM speech_tts_cancellation WHERE operation_id=%s",
         (gateway["operation_id"],),
     )
     cancellation = cursor.fetchall()
@@ -66,13 +66,13 @@ def insert_tts_settlement(cursor: SettlementCursor, request: Any, deadline_at_us
     )
     cursor.execute(
         "INSERT INTO speech_tts_settlement (lease_id,operation_id,attempt_id,submit_intent_id,"
-        "target_document,deadline_at_us,abort_reason) VALUES (?,?,?,?,?,?,?) "
+        "target_document,deadline_at_us,abort_reason) VALUES (%s,%s,%s,%s,%s,%s,%s) "
         "ON CONFLICT (lease_id) DO NOTHING",
         (*values, reason),
     )
     cursor.execute(
         "SELECT lease_id,operation_id,attempt_id,submit_intent_id,target_document,deadline_at_us "
-        "FROM speech_tts_settlement WHERE lease_id=?",
+        "FROM speech_tts_settlement WHERE lease_id=%s",
         (gateway["lease_id"],),
     )
     rows = cursor.fetchall()

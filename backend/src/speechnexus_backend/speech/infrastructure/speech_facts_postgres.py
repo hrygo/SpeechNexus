@@ -34,7 +34,8 @@ class SpeechFactsView:
 
     def workspace(self, workspace_id: str) -> WorkspaceFact | None:
         rows = self._read(
-            "SELECT workspace_state, policy_revision FROM speech_workspaces WHERE workspace_id = ?",
+            "SELECT workspace_state, policy_revision FROM speech_workspaces "
+            "WHERE workspace_id = %s",
             (workspace_id,),
         )
         if not rows:
@@ -55,7 +56,7 @@ class SpeechFactsView:
             "AND h.revision_id = p.revision_id "
             "JOIN speech_published_binding_revisions AS v ON v.binding_id = p.object_id "
             "AND v.revision = p.revision AND v.revision_id = p.revision_id "
-            "WHERE p.kind = 'binding' AND p.object_id = ? "
+            "WHERE p.kind = 'binding' AND p.object_id = %s "
             "AND NOT EXISTS (SELECT 1 FROM speech_publication_retirements AS retired "
             "WHERE retired.kind = p.kind AND retired.object_id = p.object_id "
             "AND retired.revision = p.revision AND retired.revision_id = p.revision_id)",
@@ -81,7 +82,7 @@ class SpeechFactsView:
             "JOIN speech_publication_heads AS h ON h.kind = p.kind "
             "AND h.object_id = p.object_id AND h.revision = p.revision "
             "AND h.revision_id = p.revision_id "
-            "WHERE p.kind = ? AND p.object_id = ? "
+            "WHERE p.kind = %s AND p.object_id = %s "
             "AND NOT EXISTS (SELECT 1 FROM speech_publication_retirements AS retired "
             "WHERE retired.kind = p.kind AND retired.object_id = p.object_id "
             "AND retired.revision = p.revision AND retired.revision_id = p.revision_id)",
@@ -98,7 +99,7 @@ class SpeechFactsView:
     ) -> Publication | None:
         rows = self._read(
             "SELECT kind, object_id, revision, revision_id, published_at_us "
-            "FROM speech_publications WHERE kind = ? AND object_id = ? AND revision = ?",
+            "FROM speech_publications WHERE kind = %s AND object_id = %s AND revision = %s",
             (kind, object_id, str(revision)),
         )
         if not rows:
@@ -110,7 +111,7 @@ class SpeechFactsView:
     def pronunciation_exists(self, object_id: str, revision: int) -> bool:
         rows = self._read(
             "SELECT 1 AS present FROM speech_pronunciation_revisions "
-            "WHERE pronunciation_id = ? AND revision = ?",
+            "WHERE pronunciation_id = %s AND revision = %s",
             (object_id, str(revision)),
         )
         return len(rows) == 1
@@ -126,7 +127,7 @@ class SpeechFactsView:
         rows = self._read(
             "SELECT p.kind, p.object_id, p.revision, p.revision_id, p.published_at_us "
             "FROM speech_publications AS p "
-            "WHERE p.kind = 'voice' AND p.object_id = ? AND p.revision = ? "
+            "WHERE p.kind = 'voice' AND p.object_id = %s AND p.revision = %s "
             "AND NOT EXISTS (SELECT 1 FROM speech_publication_retirements AS retired "
             "WHERE retired.kind = p.kind AND retired.object_id = p.object_id "
             "AND retired.revision = p.revision AND retired.revision_id = p.revision_id)",
@@ -201,7 +202,7 @@ class _SnapshotSpeechFacts(SpeechFactsView):
     def _read(self, query: str, parameters: tuple[object, ...]) -> list[dict[str, Any]]:
         remaining = self.check_deadline()
         self._connection.execute(
-            "SELECT set_config('statement_timeout', ?, true)",
+            "SELECT set_config('statement_timeout', %s, true)",
             (str(max(1, int(remaining * 1000))),),
         )
         rows = self._connection.execute(query, parameters).fetchall()

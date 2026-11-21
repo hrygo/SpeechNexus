@@ -77,7 +77,7 @@ class _Cursor:
         if remaining <= 0:
             raise PublicationUnavailableError
         self.raw.execute(
-            "SELECT set_config('statement_timeout', ?, true)",
+            "SELECT set_config('statement_timeout', %s, true)",
             (str(max(1, int(remaining * 1000))),),
         )
         return self.raw.execute(query, parameters)

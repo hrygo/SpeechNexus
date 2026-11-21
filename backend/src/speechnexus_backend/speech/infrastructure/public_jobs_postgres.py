@@ -165,7 +165,7 @@ class _DeadlineConnection:
     def arm(self) -> None:
         remaining = _remaining(self.deadline)
         self.raw.execute(
-            "SELECT set_config('statement_timeout', ?, true)",
+            "SELECT set_config('statement_timeout', %s, true)",
             (str(max(1, int(remaining * 1000))),),
         )
         # Control round trips also consume time. Refuse the next SQL/COMMIT
@@ -232,7 +232,8 @@ class PostgresPublicJobs:
 
     def workspace(self, workspace_id: str) -> WorkspaceFact | None:
         rows = self._read(
-            "SELECT workspace_state, policy_revision FROM speech_workspaces WHERE workspace_id = ?",
+            "SELECT workspace_state, policy_revision FROM speech_workspaces "
+            "WHERE workspace_id = %s",
             (identifier(workspace_id),),
         )
         if not rows:
@@ -252,7 +253,7 @@ class PostgresPublicJobs:
             " AND h.revision = p.revision AND h.revision_id = p.revision_id "
             "JOIN speech_binding_revisions AS r ON r.binding_id = p.object_id "
             "AND r.revision = p.revision AND r.revision_id = p.revision_id "
-            "WHERE h.kind = 'binding' AND h.object_id = ? "
+            "WHERE h.kind = 'binding' AND h.object_id = %s "
             "AND NOT EXISTS ("
             f"SELECT 1 FROM {RETIREMENT_TABLE} AS retired "
             "WHERE retired.kind = 'binding' AND retired.object_id = p.object_id "
@@ -284,7 +285,7 @@ class PostgresPublicJobs:
         rows = self._read(
             "SELECT e.instance_state FROM engine_instances AS e "
             "JOIN speech_binding_revisions AS r ON r.revision_id = e.binding_revision_id "
-            "WHERE r.binding_id = ? ORDER BY e.instance_state",
+            "WHERE r.binding_id = %s ORDER BY e.instance_state",
             (model_id,),
         )
         return tuple(str(row["instance_state"]) for row in rows)
@@ -297,7 +298,7 @@ class PostgresPublicJobs:
     ) -> Publication | None:
         rows = self._read(
             "SELECT kind, object_id, revision, revision_id, published_at_us "
-            "FROM speech_publications AS p WHERE kind = ? AND object_id = ? AND revision = ? "
+            "FROM speech_publications AS p WHERE kind = %s AND object_id = %s AND revision = %s "
             "AND NOT EXISTS ("
             f"SELECT 1 FROM {RETIREMENT_TABLE} AS retired "
             "WHERE retired.kind = p.kind AND retired.object_id = p.object_id "
@@ -314,7 +315,7 @@ class PostgresPublicJobs:
     def pronunciation_exists(self, object_id: str, revision: int) -> bool:
         rows = self._read(
             "SELECT 1 AS present FROM speech_pronunciation_revisions "
-            "WHERE pronunciation_id = ? AND revision = ?",
+            "WHERE pronunciation_id = %s AND revision = %s",
             (object_id, str(revision)),
         )
         return len(rows) == 1
@@ -322,7 +323,7 @@ class PostgresPublicJobs:
     def asset(self, workspace_id: str, asset_id: str) -> tuple[str, str] | None:
         rows = self._read(
             "SELECT asset_state, purpose FROM speech_assets "
-            "WHERE workspace_id = ? AND asset_id = ?",
+            "WHERE workspace_id = %s AND asset_id = %s",
             (workspace_id, asset_id),
         )
         if not rows:
@@ -352,7 +353,7 @@ class PostgresPublicJobs:
             "(i.job_id IS NOT NULL) AS intent_present "
             "FROM speech_jobs AS j "
             "LEFT JOIN speech_job_intents AS i ON i.job_id = j.job_id "
-            "WHERE j.job_id = ?",
+            "WHERE j.job_id = %s",
             (identifier(job_id),),
         )
         if len(rows) != 1:
@@ -377,7 +378,7 @@ class PostgresPublicJobs:
         rows = self._read(
             "SELECT event_seq, state, occurred_at_us, kind, progress_unit, "
             "progress_completed, progress_total FROM speech_job_events "
-            "WHERE job_id = ? AND event_seq > ? ORDER BY event_seq ASC LIMIT ?",
+            "WHERE job_id = %s AND event_seq > %s ORDER BY event_seq ASC LIMIT %s",
             (identifier(job_id), after_seq, limit),
         )
         try:
@@ -414,7 +415,7 @@ class PostgresPublicJobs:
             "FROM speech_voice_draft_revisions AS r "
             "JOIN speech_voice_drafts AS d ON d.draft_id = r.draft_id "
             "JOIN speech_jobs AS j ON j.job_id = r.generation_job_id "
-            "WHERE r.draft_id = ? AND r.revision = ?",
+            "WHERE r.draft_id = %s AND r.revision = %s",
             (identifier(draft_id), revision),
         )
         if not rows:
@@ -550,7 +551,7 @@ class PostgresPublicJobs:
     def revision_for_job(self, draft_id: str, job_id: str) -> str | None:
         rows = self._read(
             "SELECT revision FROM speech_voice_draft_revisions "
-            "WHERE draft_id = ? AND generation_job_id = ?",
+            "WHERE draft_id = %s AND generation_job_id = %s",
             (identifier(draft_id), identifier(job_id)),
         )
         if not rows:
@@ -787,7 +788,7 @@ class PostgresPublicJobs:
                     "d.metadata_revision, d.created_at_us, j.workspace_id "
                     "FROM speech_voice_drafts AS d "
                     "JOIN speech_jobs AS j ON j.job_id = d.generation_job_id "
-                    "WHERE d.draft_id = ? FOR UPDATE OF d",
+                    "WHERE d.draft_id = %s FOR UPDATE OF d",
                     (draft_id,),
                 ).fetchone()
                 if row is None or row["workspace_id"] != job.workspace_id:
@@ -807,7 +808,7 @@ class PostgresPublicJobs:
                 connection.execute(
                     "INSERT INTO speech_voice_draft_revisions "
                     "(draft_id, revision, kind, generation_job_id, input_json, binding_json, "
-                    "created_at_us) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "created_at_us) VALUES (%s, %s, %s, %s, %s, %s, %s)",
                     (
                         draft_id,
                         revision,
@@ -822,9 +823,9 @@ class PostgresPublicJobs:
                 # repeating head_revision in this predicate is unreachable and
                 # must not be mistaken for an independent CAS guard.
                 updated = connection.execute(
-                    "UPDATE speech_voice_drafts SET head_revision = ?, "
-                    "generation_job_id = ?, updated_at_us = GREATEST(updated_at_us, ?) "
-                    "WHERE draft_id = ?",
+                    "UPDATE speech_voice_drafts SET head_revision = %s, "
+                    "generation_job_id = %s, updated_at_us = GREATEST(updated_at_us, %s) "
+                    "WHERE draft_id = %s",
                     (
                         revision,
                         job.job_id,
@@ -907,9 +908,9 @@ class PostgresPublicJobs:
                     changed = connection.execute(
                         "WITH clock AS (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) "
                         "* 1000000 AS BIGINT) AS now_us) "
-                        "UPDATE speech_jobs AS j SET state = ?, "
+                        "UPDATE speech_jobs AS j SET state = %s, "
                         "status_version = j.status_version + 1, updated_at_us = clock.now_us "
-                        "FROM clock WHERE j.job_id = ? AND j.status_version = ? AND j.state = ? "
+                        "FROM clock WHERE j.job_id = %s AND j.status_version = %s AND j.state = %s "
                         "RETURNING clock.now_us AS now_us",
                         (target, job.job_id, job.status_version, job.state),
                     ).fetchone()
@@ -918,8 +919,8 @@ class PostgresPublicJobs:
                     connection.execute(
                         "INSERT INTO speech_job_events "
                         "(job_id, event_seq, state, occurred_at_us) "
-                        "SELECT ?, COALESCE(MAX(event_seq), -1) + 1, ?, ? "
-                        "FROM speech_job_events WHERE job_id = ?",
+                        "SELECT %s, COALESCE(MAX(event_seq), -1) + 1, %s, %s "
+                        "FROM speech_job_events WHERE job_id = %s",
                         (job.job_id, target, int(changed["now_us"]), job.job_id),
                     )
                 if changed is not None:
@@ -936,7 +937,7 @@ class PostgresPublicJobs:
                     "INSERT INTO speech_job_cancellations "
                     "(job_id, workspace_id, operation_id, attempt_id, request_id, "
                     "request_digest, idempotency_key_digest, accepted, requested_at_us) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         job.job_id,
                         job.workspace_id,
@@ -991,8 +992,8 @@ class PostgresPublicJobs:
                     "* 1000000 AS BIGINT) AS now_us) "
                     "UPDATE speech_jobs AS j SET state = 'cancelled', "
                     "status_version = j.status_version + 1, updated_at_us = clock.now_us "
-                    "FROM clock WHERE j.job_id = ? AND j.state = 'cancelling' "
-                    "AND j.status_version = ? RETURNING clock.now_us AS now_us",
+                    "FROM clock WHERE j.job_id = %s AND j.state = 'cancelling' "
+                    "AND j.status_version = %s RETURNING clock.now_us AS now_us",
                     (job_id, expected_version),
                 ).fetchone()
                 if changed is None:
@@ -1000,8 +1001,8 @@ class PostgresPublicJobs:
                 connection.execute(
                     "INSERT INTO speech_job_events "
                     "(job_id, event_seq, state, occurred_at_us) "
-                    "SELECT ?, COALESCE(MAX(event_seq), -1) + 1, 'cancelled', ? "
-                    "FROM speech_job_events WHERE job_id = ?",
+                    "SELECT %s, COALESCE(MAX(event_seq), -1) + 1, 'cancelled', %s "
+                    "FROM speech_job_events WHERE job_id = %s",
                     (job_id, int(changed["now_us"]), job_id),
                 )
                 updated = _select_job(connection, job_id)
@@ -1022,9 +1023,9 @@ class PostgresPublicJobs:
         try:
             with self._transaction(deadline) as connection:
                 changed = connection.execute(
-                    "UPDATE speech_jobs SET state = ?, status_version = status_version + 1, "
-                    "result_json = ?, error_code = ?, updated_at_us = ? "
-                    "WHERE job_id = ? AND status_version = ? AND state = ?",
+                    "UPDATE speech_jobs SET state = %s, status_version = status_version + 1, "
+                    "result_json = %s, error_code = %s, updated_at_us = %s "
+                    "WHERE job_id = %s AND status_version = %s AND state = %s",
                     (
                         target,
                         result_json,
@@ -1042,8 +1043,8 @@ class PostgresPublicJobs:
                 connection.execute(
                     "INSERT INTO speech_job_events "
                     "(job_id, event_seq, state, occurred_at_us) "
-                    "SELECT ?, COALESCE(MAX(event_seq), -1) + 1, ?, ? "
-                    "FROM speech_job_events WHERE job_id = ?",
+                    "SELECT %s, COALESCE(MAX(event_seq), -1) + 1, %s, %s "
+                    "FROM speech_job_events WHERE job_id = %s",
                     (current.job_id, target, now_us, current.job_id),
                 )
                 row = _select_job(connection, current.job_id)
@@ -1164,7 +1165,7 @@ def _lock_cancellation_key(connection: _Executor, workspace_id: str, key_digest:
     # namespace. Acquire this lock before any receipt row write.
     connection.execute(
         "SELECT pg_advisory_xact_lock(hashtextextended("
-        "'speechnexus:public-job-cancel-key:' || current_schema() || ':' || ?, 0))",
+        "'speechnexus:public-job-cancel-key:' || current_schema() || ':' || %s, 0))",
         (json.dumps([workspace_id, key_digest], separators=(",", ":")),),
     )
 
@@ -1234,7 +1235,7 @@ def _binding_is_still_selected(
         "SELECT h.revision FROM speech_publication_heads h "
         "JOIN speech_publications p ON p.kind=h.kind AND p.object_id=h.object_id "
         "AND p.revision=h.revision AND p.revision_id=h.revision_id "
-        "WHERE h.kind='binding' AND h.object_id=? AND NOT EXISTS ("
+        "WHERE h.kind='binding' AND h.object_id=%s AND NOT EXISTS ("
         f"SELECT 1 FROM {RETIREMENT_TABLE} r WHERE r.kind=h.kind AND r.object_id=h.object_id "
         "AND r.revision=h.revision AND r.revision_id=h.revision_id)",
         (model_id,),
@@ -1280,7 +1281,7 @@ def _lock_submission_key(connection: _Executor, workspace_id: str, key_digest: s
     # Canonical tuple encoding prevents ambiguous workspace/key concatenation.
     connection.execute(
         "SELECT pg_advisory_xact_lock(hashtextextended("
-        "'speechnexus:public-job-key:' || current_schema() || ':' || ?, 0))",
+        "'speechnexus:public-job-key:' || current_schema() || ':' || %s, 0))",
         (json.dumps([workspace_id, key_digest], separators=(",", ":")),),
     )
 
@@ -1337,9 +1338,9 @@ def _lock_validation_target(connection: _Executor, job: NewPublicJob) -> str | N
         "j.workspace_id AS generation_workspace "
         "FROM speech_voice_drafts AS d "
         "JOIN speech_voice_draft_revisions AS r "
-        "ON r.draft_id = d.draft_id AND r.revision = ? "
+        "ON r.draft_id = d.draft_id AND r.revision = %s "
         "JOIN speech_jobs AS j ON j.job_id = r.generation_job_id "
-        "WHERE d.draft_id = ? FOR UPDATE OF d",
+        "WHERE d.draft_id = %s FOR UPDATE OF d",
         (revision, draft_id),
     ).fetchone()
     if row is None or row["generation_workspace"] != job.workspace_id:
@@ -1391,9 +1392,9 @@ def _lock_preview_target(connection: _Executor, job: NewPublicJob) -> str | None
         "j.workspace_id AS generation_workspace "
         "FROM speech_voice_drafts AS d "
         "JOIN speech_voice_draft_revisions AS r "
-        "ON r.draft_id = d.draft_id AND r.revision = ? "
+        "ON r.draft_id = d.draft_id AND r.revision = %s "
         "JOIN speech_jobs AS j ON j.job_id = r.generation_job_id "
-        "WHERE d.draft_id = ? FOR UPDATE OF d",
+        "WHERE d.draft_id = %s FOR UPDATE OF d",
         (revision, draft_id),
     ).fetchone()
     if row is None or row["generation_workspace"] != job.workspace_id:
@@ -1428,7 +1429,7 @@ def _validate_pinned_create(connection: _Executor, job: NewPublicJob) -> None:
         ):
             raise ModelBindingError("model_binding_not_current")
         row = connection.execute(
-            "SELECT kind FROM speech_voice_drafts WHERE draft_id = ?",
+            "SELECT kind FROM speech_voice_drafts WHERE draft_id = %s",
             (request_input["voice_draft_id"],),
         ).fetchone()
         if row is None:
@@ -1580,7 +1581,7 @@ def _insert_job_rows(connection: _Executor, job: NewPublicJob, *, admitted: bool
         "(job_id, workspace_id, kind, model_id, request_digest, idempotency_key_digest, "
         "retry_of_job_id, state, status_version, result_json, error_code, "
         "created_at_us, updated_at_us) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 1, NULL, NULL, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending', 1, NULL, NULL, %s, %s)",
         (
             job.job_id,
             job.workspace_id,
@@ -1595,14 +1596,14 @@ def _insert_job_rows(connection: _Executor, job: NewPublicJob, *, admitted: bool
     )
     connection.execute(
         "INSERT INTO speech_job_events (job_id, event_seq, state, occurred_at_us) "
-        "VALUES (?, 0, 'pending', ?)",
+        "VALUES (%s, 0, 'pending', %s)",
         (job.job_id, submission.submitted_at_us),
     )
     connection.execute(
         "INSERT INTO speech_job_submissions "
         "(job_id, request_id, client_reference, effective_configuration_json, "
         "execution_revision, progress_unit, progress_total, submitted_at_us) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
         (
             job.job_id,
             submission.request_id,
@@ -1626,7 +1627,7 @@ def _insert_job_rows(connection: _Executor, job: NewPublicJob, *, admitted: bool
             "INSERT INTO admission_operations "
             "(operation_id, workspace_id, request_digest, request_document, "
             "initial_attempt_id, current_attempt_id, recorded_at_us) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
                 job.job_id,
                 job.workspace_id,
@@ -1642,7 +1643,7 @@ def _insert_job_rows(connection: _Executor, job: NewPublicJob, *, admitted: bool
     connection.execute(
         "INSERT INTO speech_job_intents "
         "(job_id, request_digest, request_document, recorded_at_us) "
-        "VALUES (?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s)",
         (
             job.job_id,
             job.request_digest,
@@ -1656,7 +1657,7 @@ def _insert_job_rows(connection: _Executor, job: NewPublicJob, *, admitted: bool
         connection.execute(
             "INSERT INTO coordination_jobs "
             "(job_id, operation_id, attempt_id, initial_event_id, initial_event_digest, "
-            "request_digest) VALUES (?, ?, ?, ?, ?, ?)",
+            "request_digest) VALUES (%s, %s, %s, %s, %s, %s)",
             (
                 job.job_id,
                 job.job_id,
@@ -1667,7 +1668,7 @@ def _insert_job_rows(connection: _Executor, job: NewPublicJob, *, admitted: bool
             ),
         )
         connection.execute(
-            "INSERT INTO coordination_outbox (event_id, job_id, event_digest) VALUES (?, ?, ?)",
+            "INSERT INTO coordination_outbox (event_id, job_id, event_digest) VALUES (%s, %s, %s)",
             (job.job_id + "-queued", job.job_id, job.initial_event_digest),
         )
 
@@ -1709,7 +1710,7 @@ def _next_revision(current: str) -> str | None:
 def _revision_for_job(connection: _Executor, draft_id: str, job_id: str) -> str | None:
     rows = connection.execute(
         "SELECT revision FROM speech_voice_draft_revisions "
-        "WHERE draft_id = ? AND generation_job_id = ?",
+        "WHERE draft_id = %s AND generation_job_id = %s",
         (draft_id, job_id),
     ).fetchall()
     if not rows:
@@ -1727,7 +1728,7 @@ def _insert_creation_draft(connection: _Executor, job: NewPublicJob) -> None:
         "INSERT INTO speech_voice_drafts "
         "(draft_id, generation_job_id, kind, status, head_revision, metadata_revision, "
         "display_name, input_json, binding_json, created_at_us, updated_at_us) "
-        "VALUES (?,?,?,'generating','1',1,?,?,?,?,?)",
+        "VALUES (%s,%s,%s,'generating','1',1,%s,%s,%s,%s,%s)",
         (
             draft_id_for_job(job.job_id),
             job.job_id,
@@ -1742,7 +1743,7 @@ def _insert_creation_draft(connection: _Executor, job: NewPublicJob) -> None:
     connection.execute(
         "INSERT INTO speech_voice_draft_revisions "
         "(draft_id, revision, kind, generation_job_id, input_json, binding_json, "
-        "created_at_us) VALUES (?,'1',?,?,?,?,?)",
+        "created_at_us) VALUES (%s,'1',%s,%s,%s,%s,%s)",
         (
             draft_id_for_job(job.job_id),
             voice_kind,

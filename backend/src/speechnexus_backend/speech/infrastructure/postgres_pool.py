@@ -33,7 +33,7 @@ def speech_pool(
         connection.isolation_level = IsolationLevel.READ_COMMITTED
         # PostgreSQL otherwise implicitly searches pg_temp before trusted schemas.
         connection.execute(
-            "SELECT set_config('search_path', ?, false)", (schema + ",pg_catalog,pg_temp",)
+            "SELECT set_config('search_path', %s, false)", (schema + ",pg_catalog,pg_temp",)
         )
         connection.execute("SET TIME ZONE 'UTC'")
         connection.commit()

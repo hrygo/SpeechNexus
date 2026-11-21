@@ -43,7 +43,7 @@ def read_original_document_state(
             "s.command_redacted_at_us, s.command_deletion_job_id, "
             "s.command_deletion_evidence_digest "
             "FROM submit_intents AS s JOIN admission_leases AS l ON l.lease_id=s.lease_id "
-            "WHERE s.submit_intent_id=?",
+            "WHERE s.submit_intent_id=%s",
             (intent.identity.submit_intent_id,),
         )
         rows = cursor.fetchall()

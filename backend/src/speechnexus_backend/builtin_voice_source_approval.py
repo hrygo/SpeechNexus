@@ -120,17 +120,17 @@ def approve_builtin_voice_source(
         # ID lock makes cross-voice collisions serialize; revocation takes only voice.
         cursor.execute(
             "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:source-approval:'||current_schema()||':'||?,0))",
+            "'speechnexus:source-approval:'||current_schema()||':'||%s,0))",
             (source_approval_id,),
         )
         cursor.execute(
             "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:'||current_schema()||':voice:'||?,0))",
+            "'speechnexus:catalog:'||current_schema()||':voice:'||%s,0))",
             (voice_id,),
         )
         cursor.execute(
             "SELECT voice_id,source_revision,source_digest,native_speaker_id,expires_at "
-            "FROM speech_builtin_voice_source_approvals WHERE source_approval_id=?",
+            "FROM speech_builtin_voice_source_approvals WHERE source_approval_id=%s",
             (source_approval_id,),
         )
         existing = cursor.fetchall()
@@ -151,14 +151,14 @@ def approve_builtin_voice_source(
                 "schema": schema,
                 "installation_id": installation_id,
             }
-        cursor.execute("SELECT ?::timestamptz > clock_timestamp() AS live", (expiry,))
+        cursor.execute("SELECT %s::timestamptz > clock_timestamp() AS live", (expiry,))
         if not cursor.fetchall()[0]["live"]:
             raise BuiltinSourceApprovalError("approval_expired")
         cursor.execute(
             "INSERT INTO speech_builtin_voice_source_approvals "
             "(source_approval_id,voice_id,source_revision,source_digest,"
             "native_speaker_id,expires_at) "
-            "VALUES (?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s)",
             (
                 source_approval_id,
                 voice_id,
@@ -170,7 +170,7 @@ def approve_builtin_voice_source(
         )
         # INSERT may wait for a relation lock after the first expiry check.
         # Reject inside the transaction so the new row is rolled back.
-        cursor.execute("SELECT ?::timestamptz > clock_timestamp() AS live", (expiry,))
+        cursor.execute("SELECT %s::timestamptz > clock_timestamp() AS live", (expiry,))
         if not cursor.fetchall()[0]["live"]:
             raise BuiltinSourceApprovalError("approval_expired")
         return {

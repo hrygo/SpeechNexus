@@ -26,9 +26,8 @@ import sys
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, TextIO, cast
 
+import psycopg
 from psycopg.rows import dict_row
-
-from speechnexus_portable_sql.psycopg_driver import connect as portable_connect
 
 SOURCE_CONTROLLER = "controller_observed"
 SOURCE_OPERATOR = "operator_attested"
@@ -259,7 +258,7 @@ def main(
 
 
 def _connect(database_url: str, schema: str) -> tuple[list[Row], int]:
-    with portable_connect(database_url, row_factory=dict_row) as connection:
+    with psycopg.connect(database_url, row_factory=dict_row) as connection:
         connection.execute("SET TRANSACTION READ ONLY")
         connection.execute(f'SET search_path TO "{schema}", pg_catalog')
         rows = connection.execute(REPORT_SQL).fetchall()

@@ -122,7 +122,7 @@ def run_original_probe(
                 "AND l.attempt_id=x.attempt_id "
                 "JOIN submit_intents s ON s.lease_id=l.lease_id "
                 "JOIN execution_stop_evidence e ON e.submit_intent_id=s.submit_intent_id "
-                "WHERE p.authorization_id=? AND s.submit_intent_id=?",
+                "WHERE p.authorization_id=%s AND s.submit_intent_id=%s",
                 (port._authorization_id, original["submit_intent_id"]),
             ).fetchall()
         if len(row) != 1:

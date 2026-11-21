@@ -83,7 +83,7 @@ class _DeadlineCursor:
         if remaining <= 0:
             raise _BudgetExpiredError
         self._cursor.execute(
-            "SELECT set_config('statement_timeout', ?, true)",
+            "SELECT set_config('statement_timeout', %s, true)",
             (str(max(1, int(remaining * 1000))),),
         )
         return self._cursor.execute(query, parameters)
@@ -117,7 +117,7 @@ _SNAPSHOT = (
     "LEFT JOIN speech_jobs AS j ON j.job_id = l.operation_id "
     "LEFT JOIN speech_job_cancellation_fences AS f ON f.job_id = l.operation_id "
     "LEFT JOIN speech_job_cancellation_reconciliations AS r ON r.job_id = l.operation_id "
-    "WHERE l.lease_id = ?"
+    "WHERE l.lease_id = %s"
 )
 
 

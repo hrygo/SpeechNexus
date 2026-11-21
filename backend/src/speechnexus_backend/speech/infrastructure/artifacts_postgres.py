@@ -28,7 +28,7 @@ class PostgresArtifactMetadata:
                     raise ArtifactError("artifact_storage_unavailable")
                 connection.execute("SET TRANSACTION READ ONLY")
                 connection.execute(
-                    "SELECT set_config('statement_timeout', ?, true)",
+                    "SELECT set_config('statement_timeout', %s, true)",
                     (str(max(1, int(remaining * 1000))),),
                 )
                 rows = connection.execute(
@@ -39,7 +39,7 @@ class PostgresArtifactMetadata:
                     "CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) AS now_us "
                     "FROM speech_artifacts AS a JOIN speech_workspaces AS w "
                     "ON w.workspace_id = a.workspace_id "
-                    "WHERE a.artifact_id = ? AND a.workspace_id = ? "
+                    "WHERE a.artifact_id = %s AND a.workspace_id = %s "
                     "AND w.workspace_state = 'active'",
                     (identifier(artifact_id), identifier(workspace_id)),
                 ).fetchall()
@@ -83,7 +83,7 @@ class PostgresArtifactWriter:
             with self._pool.connection(timeout=self._timeout) as connection:
                 connection.execute("SET TRANSACTION READ ONLY")
                 connection.execute(
-                    "SELECT set_config('statement_timeout', ?, true)",
+                    "SELECT set_config('statement_timeout', %s, true)",
                     (str(max(1, int(self._timeout * 1000))),),
                 )
                 row = connection.execute(
@@ -101,7 +101,7 @@ class PostgresArtifactWriter:
         try:
             with self._pool.connection(timeout=self._timeout) as connection:
                 connection.execute(
-                    "SELECT set_config('statement_timeout', ?, true)",
+                    "SELECT set_config('statement_timeout', %s, true)",
                     (str(max(1, int(self._timeout * 1000))),),
                 )
                 inserted = connection.execute(
@@ -202,7 +202,7 @@ class PostgresArtifactRetention:
         """Move one elapsed row to `expired`, or report that another pass did."""
         row = self._transition(
             "UPDATE speech_artifacts SET artifact_state = 'expired' "
-            "WHERE artifact_id = ? AND artifact_state = 'ready' AND " + _ELAPSED + " "
+            "WHERE artifact_id = %s AND artifact_state = 'ready' AND " + _ELAPSED + " "
             "RETURNING " + _READ_COLUMNS,
             artifact_id,
         )
@@ -244,7 +244,7 @@ class PostgresArtifactRetention:
             with self._pool.connection(timeout=self._timeout) as connection:
                 connection.execute("SET TRANSACTION READ ONLY")
                 connection.execute(
-                    "SELECT set_config('statement_timeout', ?, true)",
+                    "SELECT set_config('statement_timeout', %s, true)",
                     (str(max(1, int(self._timeout * 1000))),),
                 )
                 row = connection.execute(
@@ -264,7 +264,7 @@ class PostgresArtifactRetention:
             with self._pool.connection(timeout=self._timeout) as connection:
                 connection.execute("SET TRANSACTION READ ONLY")
                 connection.execute(
-                    "SELECT set_config('statement_timeout', ?, true)",
+                    "SELECT set_config('statement_timeout', %s, true)",
                     (str(max(1, int(self._timeout * 1000))),),
                 )
                 rows = connection.execute(statement, parameters).fetchall()
@@ -285,7 +285,7 @@ class PostgresArtifactRetention:
         try:
             with self._pool.connection(timeout=self._timeout) as connection:
                 connection.execute(
-                    "SELECT set_config('statement_timeout', ?, true)",
+                    "SELECT set_config('statement_timeout', %s, true)",
                     (str(max(1, int(self._timeout * 1000))),),
                 )
                 return connection.execute(statement, (artifact_id,)).fetchone()

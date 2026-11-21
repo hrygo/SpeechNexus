@@ -56,7 +56,7 @@ class _PendingId:
 _PENDING_OBJECTS = """
     SELECT o.deletion_id FROM {s}.deletion_outbox o
     WHERE o.completed_at IS NULL OR o.objects_erased_at IS NULL
-    ORDER BY o.created_at, o.deletion_id LIMIT ?
+    ORDER BY o.created_at, o.deletion_id LIMIT %s
 """
 
 
@@ -152,7 +152,7 @@ class PostgresDeletionCleanup:
                     _Pending,
                     "SELECT r.workspace_id,r.plan_id,r.plan_digest,o.completed_at,"
                     "o.objects_erased_at FROM {s}.deletion_records r "
-                    "JOIN {s}.deletion_outbox o ON o.deletion_id=r.id WHERE r.id=?",
+                    "JOIN {s}.deletion_outbox o ON o.deletion_id=r.id WHERE r.id=%s",
                     (deletion_id,),
                 )
                 if pending is None:
@@ -194,7 +194,7 @@ class PostgresDeletionCleanup:
                 SELECT r.workspace_id, r.plan_id, r.plan_digest, o.completed_at,
                     o.objects_erased_at
                 FROM {s}.deletion_outbox o JOIN {s}.deletion_records r ON r.id = o.deletion_id
-                WHERE o.deletion_id = ? FOR UPDATE OF o
+                WHERE o.deletion_id = %s FOR UPDATE OF o
             """,
                 (deletion_id,),
             )
@@ -227,7 +227,7 @@ class PostgresDeletionCleanup:
             elif plan.target.kind == "transcript":
                 parent = await base._one(
                     _Parent,
-                    "SELECT project_id FROM {s}.transcripts WHERE id = ?",
+                    "SELECT project_id FROM {s}.transcripts WHERE id = %s",
                     (plan.target.id,),
                 )
                 if parent is None:
@@ -238,7 +238,7 @@ class PostgresDeletionCleanup:
             project = await base._one(
                 _Project,
                 """
-                SELECT workspace_id, metadata_revision FROM {s}.projects WHERE id = ? FOR UPDATE
+                SELECT workspace_id, metadata_revision FROM {s}.projects WHERE id = %s FOR UPDATE
             """,
                 (project_id,),
             )
@@ -271,8 +271,8 @@ class PostgresDeletionCleanup:
             async with base._connection.cursor(row_factory=class_row(_Child)) as cursor:
                 await cursor.execute(
                     base._sql("""
-                    SELECT id, head_revision FROM {s}.transcripts WHERE project_id = ?
-                    AND (id = ANY(?::text[]) OR ?) ORDER BY id FOR UPDATE
+                    SELECT id, head_revision FROM {s}.transcripts WHERE project_id = %s
+                    AND (id = ANY(%s::text[]) OR %s) ORDER BY id FOR UPDATE
                 """),
                     (project_id, transcripts, plan.target.kind == "project"),
                 )
@@ -285,8 +285,8 @@ class PostgresDeletionCleanup:
             if self._meetings:
                 meeting_rows = await base._many(
                     _Meeting,
-                    "SELECT id,version FROM {s}.meetings WHERE project_id=? "
-                    "AND (? OR transcript_id=ANY(?::text[])) ORDER BY id FOR UPDATE",
+                    "SELECT id,version FROM {s}.meetings WHERE project_id=%s "
+                    "AND (%s OR transcript_id=ANY(%s::text[])) ORDER BY id FOR UPDATE",
                     (project_id, plan.target.kind == "project", transcripts),
                 )
                 if [row.id for row in meeting_rows] != meetings:
@@ -299,7 +299,7 @@ class PostgresDeletionCleanup:
                     _Pin,
                     """
                     SELECT resource_revision, deletion_id FROM {s}.resource_tombstones
-                    WHERE resource_kind = ? AND resource_id = ?
+                    WHERE resource_kind = %s AND resource_id = %s
                 """,
                     (target.kind, target.id),
                 )
@@ -325,46 +325,48 @@ class PostgresDeletionCleanup:
                 FROM {s}.mutation_receipts m JOIN {s}.resource_tombstones t
                     ON (t.resource_kind = 'project' AND m.project_id = t.resource_id)
                     OR (t.resource_kind = 'transcript' AND m.transcript_id = t.resource_id)
-                WHERE t.deletion_id = ?
+                WHERE t.deletion_id = %s
             """,
                 (deletion_id,),
             )
             await base._execute(
                 """
                 DELETE FROM {s}.mutation_receipts
-                WHERE transcript_id = ANY(?::text[]) OR (project_id = ? AND ?)
+                WHERE transcript_id = ANY(%s::text[]) OR (project_id = %s AND %s)
             """,
                 (transcripts, project_id, plan.target.kind == "project"),
             )
             if self._meetings:
                 # Remove only exact confirmed references before their source revisions
                 # and minutes tasks. Any execution guard failure rolls this back too.
-                await base._execute("DELETE FROM {s}.meetings WHERE id=ANY(?::text[])", (meetings,))
+                await base._execute(
+                    "DELETE FROM {s}.meetings WHERE id=ANY(%s::text[])", (meetings,)
+                )
             await base._execute(
                 """
-                DELETE FROM {s}.transcript_revisions WHERE transcript_id = ANY(?::text[])
+                DELETE FROM {s}.transcript_revisions WHERE transcript_id = ANY(%s::text[])
             """,
                 (transcripts,),
             )
             await base._execute(
-                "DELETE FROM {s}.transcripts WHERE id = ANY(?::text[])", (transcripts,)
+                "DELETE FROM {s}.transcripts WHERE id = ANY(%s::text[])", (transcripts,)
             )
             if plan.target.kind == "project":
                 await base._execute(
-                    "DELETE FROM {s}.project_versions WHERE project_id = ?", (project_id,)
+                    "DELETE FROM {s}.project_versions WHERE project_id = %s", (project_id,)
                 )
-                await base._execute("DELETE FROM {s}.projects WHERE id = ?", (project_id,))
+                await base._execute("DELETE FROM {s}.projects WHERE id = %s", (project_id,))
             # Row cascades always remove the project's saved-asset rows. The explicit
             # existence check is admitted only with the object zone that erases bytes.
             saved_presence = (
-                "UNION ALL SELECT 1 FROM {s}.saved_assets WHERE project_id = ? AND ?"
+                "UNION ALL SELECT 1 FROM {s}.saved_assets WHERE project_id = %s AND %s"
                 if self._objects is not None
                 else ""
             )
             left = await base._one(
                 _Exists,
-                "SELECT EXISTS (SELECT 1 FROM {s}.transcripts WHERE id = ANY(?::text[])"
-                " UNION ALL SELECT 1 FROM {s}.projects WHERE id = ? AND ? "
+                "SELECT EXISTS (SELECT 1 FROM {s}.transcripts WHERE id = ANY(%s::text[])"
+                " UNION ALL SELECT 1 FROM {s}.projects WHERE id = %s AND %s "
                 + saved_presence
                 + ") AS present",
                 (transcripts, project_id, plan.target.kind == "project")
@@ -389,7 +391,7 @@ class PostgresDeletionCleanup:
                 """
                 INSERT INTO {s}.deletion_ledger
                     (id, deletion_id, completed_at, deleted, retained_independent_copies)
-                VALUES (?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s)
             """,
                 (
                     result.ledger_id,

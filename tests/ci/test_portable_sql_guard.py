@@ -143,11 +143,7 @@ class GuardScopeTests(unittest.TestCase):
     def test_exemptions_are_exactly_the_documented_ones(self) -> None:
         self.assertEqual(
             GUARD.EXCLUDED_PREFIXES,
-            (
-                "packages/portable-sql/src/speechnexus_portable_sql/subset.py",
-                # 驱动实现是唯一允许 import 厂商 SDK 的地方(部署期 driver 选择)。
-                "packages/portable-sql/src/speechnexus_portable_sql/psycopg_driver.py",
-            ),
+            ("packages/portable-sql/src/speechnexus_portable_sql/subset.py",),
         )
         self.assertEqual(
             GUARD.MIGRATION_INPUT_PREFIXES,

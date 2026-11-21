@@ -89,14 +89,14 @@ def verify_reader_role(connection: SpeechConnection, schema: str, role: str) -> 
         "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
         "WHERE n.nspname=? AND c.relkind IN ('r','p','v','m','f') AND ("
-        "(c.relname <> ALL(CAST(? AS text)[]) AND ("
+        "(c.relname <> ALL(CAST(? AS text[])) AND ("
         "pg_catalog.has_table_privilege(CAST(? AS name),c.oid,'SELECT') OR "
         "pg_catalog.has_any_column_privilege(CAST(? AS name),c.oid,'SELECT') OR "
         "pg_catalog.has_table_privilege(CAST(? AS name),c.oid,"
         "'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') OR "
         "pg_catalog.has_any_column_privilege(CAST(? AS name),c.oid,"
         "'INSERT,UPDATE,REFERENCES'))) OR "
-        "(c.relname = ANY(CAST(? AS text)[]) AND ("
+        "(c.relname = ANY(CAST(? AS text[])) AND ("
         "pg_catalog.has_table_privilege(CAST(? AS name),c.oid,"
         "'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') OR "
         "pg_catalog.has_any_column_privilege(CAST(? AS name),c.oid,"
@@ -136,7 +136,7 @@ def verify_writer_role(connection: SpeechConnection, schema: str, role: str) -> 
         "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
         "WHERE n.nspname=? AND c.relkind IN ('r','p','v','m','f') "
-        "AND c.relname <> ALL(CAST(? AS text)[]) AND ("
+        "AND c.relname <> ALL(CAST(? AS text[])) AND ("
         "pg_catalog.has_table_privilege(CAST(? AS name),c.oid,"
         "'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') OR "
         "pg_catalog.has_any_column_privilege(CAST(? AS name),c.oid,"
@@ -152,14 +152,14 @@ def verify_writer_role(connection: SpeechConnection, schema: str, role: str) -> 
         "'DELETE,TRUNCATE,REFERENCES,TRIGGER') AS forbidden_table "
         "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
         "WHERE n.nspname=? AND c.relkind IN ('r','p','v','m','f') "
-        "AND c.relname = ANY(CAST(? AS text)[]) ORDER BY c.relname",
+        "AND c.relname = ANY(CAST(? AS text[])) ORDER BY c.relname",
         (role, role, role, role, schema, list(_WRITER_TABLES)),
     ).fetchall()
     columns = connection.execute(
         "SELECT c.relname AS relname, a.attname AS attname FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
         "JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid AND a.attnum>0 "
-        "AND NOT a.attisdropped WHERE n.nspname=? AND c.relname = ANY(CAST(? AS text)[]) "
+        "AND NOT a.attisdropped WHERE n.nspname=? AND c.relname = ANY(CAST(? AS text[])) "
         "AND pg_catalog.has_column_privilege(CAST(? AS name),c.oid,a.attname,'UPDATE')",
         (schema, list(_WRITER_TABLES), role),
     ).fetchall()
@@ -213,7 +213,7 @@ def verify_publisher_role(connection: SpeechConnection, schema: str, role: str) 
         "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
         "WHERE n.nspname=? AND c.relkind IN ('r','p','v','m','f') "
-        "AND c.relname <> ALL(CAST(? AS text)[]) AND ("
+        "AND c.relname <> ALL(CAST(? AS text[])) AND ("
         "pg_catalog.has_table_privilege(CAST(? AS name),c.oid,"
         "'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') OR "
         "pg_catalog.has_any_column_privilege(CAST(? AS name),c.oid,"
@@ -233,21 +233,21 @@ def verify_publisher_role(connection: SpeechConnection, schema: str, role: str) 
         "column_reference "
         "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
         "WHERE n.nspname=? AND c.relkind IN ('r','p','v','m','f') "
-        "AND c.relname = ANY(CAST(? AS text)[]) ORDER BY c.relname",
+        "AND c.relname = ANY(CAST(? AS text[])) ORDER BY c.relname",
         (role, role, role, role, role, schema, tables),
     ).fetchall()
     columns = connection.execute(
         "SELECT c.relname AS relname, a.attname AS attname FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
         "JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid AND a.attnum>0 "
-        "AND NOT a.attisdropped WHERE n.nspname=? AND c.relname = ANY(CAST(? AS text)[]) "
+        "AND NOT a.attisdropped WHERE n.nspname=? AND c.relname = ANY(CAST(? AS text[])) "
         "AND pg_catalog.has_column_privilege(CAST(? AS name),c.oid,a.attname,'UPDATE')",
         (schema, tables, role),
     ).fetchall()
     column_inserts = connection.execute(
         "SELECT c.relname AS relname FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
-        "WHERE n.nspname=? AND c.relname = ANY(CAST(? AS text)[]) "
+        "WHERE n.nspname=? AND c.relname = ANY(CAST(? AS text[])) "
         "AND pg_catalog.has_any_column_privilege(CAST(? AS name),c.oid,'INSERT') "
         "AND NOT pg_catalog.has_table_privilege(CAST(? AS name),c.oid,'INSERT')",
         (schema, tables, role, role),

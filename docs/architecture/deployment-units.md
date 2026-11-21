@@ -1,8 +1,8 @@
 ---
 title: "SpeechNexus 部署单元与平台规划"
 status: active
-version: "0.2.0"
-date: 2026-10-26
+version: "0.3.0"
+date: 2026-11-21
 ---
 
 # SpeechNexus 部署单元与平台规划
@@ -206,3 +206,26 @@ Windows 等平台保持未验证，支持范围扩展以单元的安装、启动
 
 [部署入口](../../deploy/README.md) · [整体技术方案](technical-blueprint.md) ·
 [工程目录与依赖](../components/repository-layout.md) · [验证指南](../agent-verification.md)
+
+## 8. 开发环境同构
+
+开发环境的职责是验证生产形态，不是"能跑就行"。基线规则见
+[ADR 0014](../decisions/0014-development-environment-isomorphism.md)：
+部署单元清单以生产为基线，只允许两类差异——数据面实现（自建 PostgreSQL / MinIO
+代替 SaaS）与 GPU 有无。省略一个单元就少一条被验证过的路径。
+
+当前两台开发机：MacBook（Docker Desktop k8s）承担应用面与数据面，MegaCube（k3s）
+承担算力面并为引擎提供真实 GPU。逐单元状态与同构缺口见
+[目标架构图](target-architecture.svg)。
+
+已声明为**开发环境无法验证**的项，不得在验收材料中计为覆盖：
+
+| 项 | 原因 |
+| --- | --- |
+| 实时链路（Realtime Gateway） | 入口尚未实现，两台机器都不部署 |
+| 中心级切换与对账 | 只有单库，无跨中心复制；只能靠演练脚本验证收敛 |
+| 平台侧 GPU 行为 | 开发机是裸卡，不经智算平台 |
+| 真实 RTT 与带宽 | 只能注入固定延迟 |
+
+显存额度不依赖硬件上报，由部署配置声明并由 `libvgpu` 执行，见
+[ADR 0015](../decisions/0015-gpu-memory-quota-by-configuration.md)。

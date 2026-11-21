@@ -3,6 +3,7 @@
 本规划把「MegaCube 算力面 + 本机 k8s 应用面」从「能跑通一次文件 ASR」推进到「支撑后续完整研发」：
 单元齐全、装配与参考 Compose 一致、差异只允许以具名白名单存在，并且差异能被机器检查发现。
 
+- 决定依据：[ADR 0014](../decisions/0014-development-environment-isomorphism.md)（开发环境同构与差异边界）
 - 架构基准：`docs/architecture/deployment-units.md`（部署单元与边界）
 - 参考装配：`deploy/compose.yaml`（profile 化的完整组合）
 - 已完成的最小验证：`docs/plans/2026-11-20-minimal-isomorphic-cluster.md`
@@ -31,6 +32,34 @@
 | 入口代理 | — | 无（只有 `port-forward`） | **缺** |
 | `node-controller` | 独立单元 | MegaCube Compose | 有，但作业路径用的是手工容器 |
 | 推理引擎 | 独立单元 | 手工 `docker start` | **未由控制器托管** |
+
+### 1.1 现状复核（2026-11-21 实测）
+
+上表写于集群拆除期间，随后 `deploy/cluster/app-plane/` 已实际装配。`kubectl -n speechnexus
+get pods` 当前 **10 个 Running**：
+
+| 已运行 | 说明 |
+| --- | --- |
+| `postgres-0`、`minio-0` | StatefulSet，各 1/1 |
+| `api`、`workbench-api` | 两个业务入口 |
+| `workbench`、`admin` | 前端与控制台 |
+| `asset-inspector` | 音频沙箱检查 |
+| `admission-watch`、`artifact-retention` | 后台单元 |
+| `bridge` | SSH 隧道（开发期替代内网 TLS） |
+
+与上表相比，**已由缺转为一致**：`workbench-api`、`workbench-migrate`、`admin` 与 `workbench`
+前端、`admission-watch`、`artifact-retention`。`migrate` 与 `minio-init` 以 Job 形式跑完即退出，
+`get jobs` 已为空属正常。
+
+仍缺：
+
+| 单元 | 现状 | 备注 |
+| --- | --- | --- |
+| `binding-disable-worker` | 已定义、未启用 | `binding-disable` profile 按需启用 |
+| `engine-readiness` / `engine-readiness-renew` | 已定义、未启用 | 依赖引擎登记 |
+| `job-dispatch-worker` | 在 MegaCube，与网关同置 | 与参考 Compose 的摆放一致 |
+| `gateway`、`node-controller` | 在 MegaCube | **同构缺口**：Mac 侧未部署，见 ADR 0014 |
+| 推理引擎 | MegaCube 手工 `docker start` | 尚未由控制器托管 |
 
 另有四类非单元级差异，都会在真实研发中咬人：
 

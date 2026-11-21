@@ -66,9 +66,11 @@ class PostgresVoiceCatalogue:
             if db.fetchall():
                 raise PublicationUnavailableError
             db.execute(
+                # 这里用的是 JSONB `?` 存在运算符,不是占位符;整条语句保持旧式 `%s`,
+                # 直到运算符改成 `@>` 形式再迁。混进 `?` 会让翻译层把运算符当占位符。
                 f"SELECT * FROM {VOICE_READER_VIEW} WHERE selected AND retired_at_us IS NULL "
-                "AND (?::text IS NULL OR document->'capabilities'->'languages' ? ?) "
-                "AND (?::text IS NULL OR voice_id > ?) ORDER BY voice_id LIMIT ?",
+                "AND (%s::text IS NULL OR document->'capabilities'->'languages' ? %s) "
+                "AND (%s::text IS NULL OR voice_id > %s) ORDER BY voice_id LIMIT %s",
                 (language, language, cursor, cursor, limit + 1),
             )
             rows = db.fetchall()

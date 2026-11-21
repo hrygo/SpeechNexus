@@ -34,6 +34,8 @@ from tests.support.coordination import (
 )
 from tests.support.portable_pg import connect as portable_pg_connect
 
+from speechnexus_portable_sql.pymysql_driver import connect as portable_mysql_connect
+
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
 DIGEST = "sha256:" + "a" * 64
@@ -73,7 +75,7 @@ def database(request: pytest.FixtureRequest) -> Iterator[Database]:
             cursor.execute(f'CREATE SCHEMA "{namespace}"')
     else:
         parsed = urlparse(url)
-        admin = pymysql.connect(
+        admin = portable_mysql_connect(
             host=parsed.hostname or "127.0.0.1",
             port=parsed.port or 3306,
             user=unquote(parsed.username or ""),

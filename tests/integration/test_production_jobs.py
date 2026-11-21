@@ -45,6 +45,7 @@ from speechnexus_backend.speech.infrastructure.jobs_postgres import (
 )
 from speechnexus_backend.speech.infrastructure.jobs_sql import JobCursor, create_in_transaction
 from speechnexus_backend.speech.interfaces.job_transactions import JobTransactionBoundary
+from speechnexus_portable_sql.pymysql_driver import connect as portable_mysql_connect
 
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
@@ -162,7 +163,7 @@ def database(request: pytest.FixtureRequest) -> Iterator[JobDatabase]:
         port: JobTransactions = PostgresJobTransactions(pool)
     else:
         parsed = urlparse(url)
-        admin = pymysql.connect(
+        admin = portable_mysql_connect(
             host=parsed.hostname or "127.0.0.1",
             port=parsed.port or 3306,
             user=unquote(parsed.username or ""),

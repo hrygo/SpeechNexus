@@ -13,15 +13,20 @@ import pytest
 from speechnexus_portable_sql.contract import PoolUnavailableError, Row
 from speechnexus_portable_sql.psycopg_pool_driver import create_pool
 
-DSN = os.environ.get("SPEECHNEXUS_TEST_DATABASE_URL")
 
-pytestmark = pytest.mark.skipif(
-    not DSN, reason="portable pool contract requires an isolated PostgreSQL DSN"
-)
+def _dsn() -> str:
+    """缺 DSN 时失败而不是跳过:数据库用例不得把「没配环境」降级成通过。"""
+
+    value = os.environ.get("SPEECHNEXUS_TEST_DATABASE_URL")
+    if not value:
+        raise AssertionError(
+            "Configure an isolated PostgreSQL DSN in SPEECHNEXUS_TEST_DATABASE_URL"
+        )
+    return value
 
 
 def test_a_pooled_statement_returns_contract_rows() -> None:
-    pool = create_pool(DSN or "", schema="public", max_size=1, name="portable-contract")
+    pool = create_pool(_dsn(), schema="public", max_size=1, name="portable-contract")
     try:
         pool.open()
         with pool.connection(timeout=3) as connection:

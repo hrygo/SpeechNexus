@@ -6,8 +6,7 @@ from typing import Any
 
 from speechnexus_backend.speech.domain.asr_settlement import AsrSettlementRoot
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
-
-_NOW = "CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT)"
+from speechnexus_portable_sql.clock import now_us
 
 
 class PostgresAsrSettlementStore:
@@ -24,14 +23,15 @@ class PostgresAsrSettlementStore:
         with self._pool.connection(timeout=self._timeout) as conn:
             conn.execute("SET TRANSACTION READ ONLY")
             self._deadline(conn)
+            # 「现在」从唯一的时间读取点来,语句里只剩一个普通参数。
             rows = conn.execute(
                 "SELECT lease_id,operation_id,attempt_id,gateway_id,host_node_id "
                 "FROM speech_asr_settlement WHERE settled_at_us IS NULL "
-                f"AND next_check_at_us <= {_NOW} "
+                "AND next_check_at_us <= CAST(? AS BIGINT) "
                 "AND gateway_id=? AND host_node_id=? "
-                "ORDER BY next_check_at_us, lease_id LIMIT ?",
-                (gateway_id, host_node_id, limit),
-            ).fetchall()
+                "ORDER BY next_check_at_us, lease_id",
+                (now_us(conn), gateway_id, host_node_id),
+            ).fetchmany(limit)
         return [
             AsrSettlementRoot(
                 str(row["lease_id"]),
@@ -63,18 +63,18 @@ class PostgresAsrSettlementStore:
         with self._pool.connection(timeout=self._timeout) as conn:
             self._deadline(conn)
             conn.execute(
-                "UPDATE speech_asr_settlement SET next_check_at_us="
-                f"{_NOW}+? WHERE lease_id=? AND settled_at_us IS NULL",
-                (int(seconds * 1_000_000), lease_id),
+                "UPDATE speech_asr_settlement SET next_check_at_us=CAST(? AS BIGINT)+? "
+                "WHERE lease_id=? AND settled_at_us IS NULL",
+                (now_us(conn), int(seconds * 1_000_000), lease_id),
             )
 
     def mark_settled(self, lease_id: str) -> None:
         with self._pool.connection(timeout=self._timeout) as conn:
             self._deadline(conn)
             conn.execute(
-                "UPDATE speech_asr_settlement SET settled_at_us="
-                f"{_NOW} WHERE lease_id=? AND settled_at_us IS NULL",
-                (lease_id,),
+                "UPDATE speech_asr_settlement SET settled_at_us=CAST(? AS BIGINT) "
+                "WHERE lease_id=? AND settled_at_us IS NULL",
+                (now_us(conn), lease_id),
             )
 
     def _deadline(self, conn: Any) -> None:

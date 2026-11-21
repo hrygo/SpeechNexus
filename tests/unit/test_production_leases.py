@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 import psycopg
@@ -57,6 +58,12 @@ LEDGER = LeaseAccounting(
     1,
     1,
 )
+
+
+def _epoch_us(microseconds: int) -> datetime:
+    """替身回答时钟时用的时间点:epoch 起算的微秒,必须是带时区的时间。"""
+
+    return datetime(1970, 1, 1, tzinfo=UTC) + timedelta(microseconds=microseconds)
 
 
 def decide(**changes: Any) -> Any:
@@ -339,7 +346,8 @@ def test_expired_statement_budget_prevents_any_sql(monkeypatch: pytest.MonkeyPat
             pytest.fail("Expired transaction must not send SQL")
 
         def fetchall(self) -> list[dict[str, Any]]:
-            return [{"now_us": 1}]
+            # 时钟语句是 `SELECT CURRENT_TIMESTAMP AS now`,替身按同一列名回答。
+            return [{"now": _epoch_us(1)}]
 
     monkeypatch.setattr(
         "speechnexus_backend.speech.infrastructure.leases_postgres.time.monotonic", lambda: 10
@@ -361,7 +369,7 @@ def test_lost_commit_acknowledgement_discards_tentative_success_and_does_not_ret
             pass
 
         def fetchall(self) -> list[dict[str, Any]]:
-            return [{"now_us": 101}]
+            return [{"now": _epoch_us(101)}]
 
     class Connection:
         @contextmanager

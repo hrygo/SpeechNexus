@@ -65,9 +65,13 @@ PRODUCT_ROOTS = (
 #: 唯一允许 import 厂商数据库 SDK 的地方是**驱动实现**:ADR 0016 允许部署期 driver / DSN /
 #: profile 选择。业务层导入 psycopg 仍逐条基线化,直到 #1100 收敛完。
 DRIVER_PREFIXES = ("packages/portable-sql/src/speechnexus_portable_sql/psycopg_driver.py",)
+#: 时钟语句按 profile 登记:各家「现在」的写法不同(`clock_timestamp()` / 等价函数),
+#: 这里是那份登记表的唯一载体,和驱动一样属于部署期 profile 选择。
+CLOCK_PREFIXES = ("packages/portable-sql/src/speechnexus_portable_sql/clock.py",)
 EXCLUDED_PREFIXES = (
     "packages/portable-sql/src/speechnexus_portable_sql/subset.py",
     *DRIVER_PREFIXES,
+    *CLOCK_PREFIXES,
 )
 
 #: Alembic 版本文件是**迁移输入**,不是目标实现:它们按 PostgreSQL 方言写 DDL,由

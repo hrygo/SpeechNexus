@@ -33,42 +33,42 @@ def release_in_transaction(
     *,
     clock: Callable[[], int],
 ) -> LeaseResult:
-    hint = _one(cursor, "SELECT * FROM admission_leases WHERE lease_id = %s", (request.lease_id,))
+    hint = _one(cursor, "SELECT * FROM admission_leases WHERE lease_id = ?", (request.lease_id,))
     identity = (hint["operation_id"], hint["attempt_id"])
     attempt_hint = _one(
         cursor,
-        "SELECT * FROM admission_attempts WHERE operation_id = %s AND attempt_id = %s",
+        "SELECT * FROM admission_attempts WHERE operation_id = ? AND attempt_id = ?",
         identity,
     )
     _one(
         cursor,
-        "SELECT pool_id FROM resource_pools WHERE pool_id = %s FOR UPDATE",
+        "SELECT pool_id FROM resource_pools WHERE pool_id = ? FOR UPDATE",
         (hint["pool_id"],),
     )
     quota = _one(
         cursor,
-        "SELECT * FROM workspace_quotas WHERE workspace_id = %s FOR UPDATE",
+        "SELECT * FROM workspace_quotas WHERE workspace_id = ? FOR UPDATE",
         (attempt_hint["workspace_id"],),
     )
     host = _one(
         cursor,
-        "SELECT * FROM host_nodes WHERE host_node_id = %s FOR UPDATE",
+        "SELECT * FROM host_nodes WHERE host_node_id = ? FOR UPDATE",
         (hint["host_node_id"],),
     )
     instance_key = (hint["instance_id"], hint["instance_generation"])
     instance = _one(
         cursor,
-        "SELECT * FROM engine_instances WHERE instance_id = %s "
-        "AND instance_generation = %s FOR UPDATE",
+        "SELECT * FROM engine_instances WHERE instance_id = ? "
+        "AND instance_generation = ? FOR UPDATE",
         instance_key,
     )
     attempt = _one(
         cursor,
-        "SELECT * FROM admission_attempts WHERE operation_id = %s AND attempt_id = %s FOR UPDATE",
+        "SELECT * FROM admission_attempts WHERE operation_id = ? AND attempt_id = ? FOR UPDATE",
         identity,
     )
     lease = _one(
-        cursor, "SELECT * FROM admission_leases WHERE lease_id = %s FOR UPDATE", (request.lease_id,)
+        cursor, "SELECT * FROM admission_leases WHERE lease_id = ? FOR UPDATE", (request.lease_id,)
     )
     frozen = (
         "lease_id",
@@ -98,7 +98,7 @@ def release_in_transaction(
     submits = _rows(
         cursor,
         "SELECT submit_intent_id, lease_id, operation_id, attempt_id, execution_state, "
-        "cleanup_state, version FROM submit_intents WHERE lease_id = %s "
+        "cleanup_state, version FROM submit_intents WHERE lease_id = ? "
         "ORDER BY submit_intent_id FOR UPDATE",
         (request.lease_id,),
     )
@@ -119,7 +119,7 @@ def release_in_transaction(
             history = _one(
                 cursor,
                 "SELECT no_dispatch_metadata_absent FROM execution_release_guards "
-                "WHERE submit_intent_id = %s",
+                "WHERE submit_intent_id = ?",
                 (submit["submit_intent_id"],),
             )
             absent = history["no_dispatch_metadata_absent"]
@@ -132,7 +132,7 @@ def release_in_transaction(
             cursor,
             "SELECT submit_intent_id, evidence_kind, evidence_digest, observed_at_us, "
             "execution_stopped, resources_released FROM execution_stop_evidence "
-            "WHERE submit_intent_id = %s ORDER BY evidence_id",
+            "WHERE submit_intent_id = ? ORDER BY evidence_id",
             (submit["submit_intent_id"],),
         )
         if len(stops) > 1:
@@ -160,8 +160,8 @@ def release_in_transaction(
     # need no inverted cross-host/pool lease locks; B cannot modify their state.
     siblings = _rows(
         cursor,
-        "SELECT * FROM admission_leases WHERE operation_id = %s "
-        "AND attempt_id = %s ORDER BY lease_id",
+        "SELECT * FROM admission_leases WHERE operation_id = ? "
+        "AND attempt_id = ? ORDER BY lease_id",
         identity,
     )
     required = json.loads(attempt["required_stage_ids"])
@@ -213,8 +213,8 @@ def release_in_transaction(
     if updated.quota_version != accounting.quota_version:
         _update(
             cursor,
-            "UPDATE workspace_quotas SET held_attempts = %s, quarantined_attempts = %s, "
-            "version = %s WHERE workspace_id = %s AND version = %s",
+            "UPDATE workspace_quotas SET held_attempts = ?, quarantined_attempts = ?, "
+            "version = ? WHERE workspace_id = ? AND version = ?",
             (
                 updated.held_attempts,
                 updated.quarantined_attempts,
@@ -228,8 +228,7 @@ def release_in_transaction(
     )
     _update(
         cursor,
-        f"UPDATE host_nodes SET {assignments}, version = %s "
-        "WHERE host_node_id = %s AND version = %s",
+        f"UPDATE host_nodes SET {assignments}, version = ? WHERE host_node_id = ? AND version = ?",
         (
             *updated.held.values,
             *updated.quarantined.values,
@@ -240,8 +239,8 @@ def release_in_transaction(
     )
     _update(
         cursor,
-        "UPDATE engine_instances SET held_slots = %s, quarantined_slots = %s, "
-        "version = %s WHERE instance_id = %s AND instance_generation = %s AND version = %s",
+        "UPDATE engine_instances SET held_slots = ?, quarantined_slots = ?, "
+        "version = ? WHERE instance_id = ? AND instance_generation = ? AND version = ?",
         (
             updated.held_slots,
             updated.quarantined_slots,
@@ -253,14 +252,14 @@ def release_in_transaction(
     if updated.attempt_version != accounting.attempt_version:
         _update(
             cursor,
-            "UPDATE admission_attempts SET quota_state = %s, version = %s "
-            "WHERE operation_id = %s AND attempt_id = %s AND version = %s",
+            "UPDATE admission_attempts SET quota_state = ?, version = ? "
+            "WHERE operation_id = ? AND attempt_id = ? AND version = ?",
             (updated.quota_state, updated.attempt_version, *identity, accounting.attempt_version),
         )
     _update(
         cursor,
         "UPDATE admission_leases SET lease_state = 'released', cleanup_state = 'complete', "
-        "budget_released_at_us = %s, version = %s WHERE lease_id = %s AND version = %s",
+        "budget_released_at_us = ?, version = ? WHERE lease_id = ? AND version = ?",
         (released.budget_released_at_us, released.version, request.lease_id, fact.version),
     )
     return LeaseResult("committed", request.lease_id, released)

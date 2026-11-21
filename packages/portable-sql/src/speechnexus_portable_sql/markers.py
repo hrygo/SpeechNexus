@@ -136,21 +136,29 @@ def placeholder_positions(sql: str, *, legacy: bool = False) -> list[int]:
 
 
 def qmark_to_pyformat(sql: str, params: Sequence[Any] | None) -> str:
-    """把 qmark 语句翻成 `%s`;已有 `%` 按字面量转义,旧语句原样放过。"""
+    """把 qmark 语句翻成 `%s`.
+
+    三种输入:
+
+    * 纯 qmark:占位符逐个换成 `%s`,字面量 `%` 转义成 `%%`;
+    * 纯旧式(`%s` / `%(name)s`,可含 JSONB `?` 运算符):原样放过;
+    * 混合(整句已迁成 `?`,拼接片段仍是 `%s`):只换占位符,不再转义 `%`——片段里的 `%`
+      本来就是驱动风格的转义。占位符顺序不变,参数顺序仍与标记出现顺序一致。
+    """
 
     if params is None or "?" not in sql:
         return sql
     legacy = "%s" in sql or bool(PYFORMAT.search(sql))
     positions = placeholder_positions(sql, legacy=legacy)
-    if legacy:
-        if positions:
-            raise AmbiguousMarkerError("statement mixes `?` and `%s` placeholders")
+    if not positions:
         return sql
     pieces: list[str] = []
     cursor = 0
     for position in positions:
-        pieces.append(sql[cursor:position].replace("%", "%%"))
+        segment = sql[cursor:position]
+        pieces.append(segment if legacy else segment.replace("%", "%%"))
         pieces.append("%s")
         cursor = position + 1
-    pieces.append(sql[cursor:].replace("%", "%%"))
+    tail = sql[cursor:]
+    pieces.append(tail if legacy else tail.replace("%", "%%"))
     return "".join(pieces)

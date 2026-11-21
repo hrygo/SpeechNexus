@@ -179,7 +179,7 @@ class PostgresMinutesTasks:
     async def _row(self, base: _Session, task_id: str, *, lock: bool = False) -> _TaskRow:
         row = await base._one(
             _TaskRow,
-            "SELECT * FROM {s}.minutes_tasks WHERE id=%s" + (" FOR UPDATE" if lock else ""),
+            "SELECT * FROM {s}.minutes_tasks WHERE id=?" + (" FOR UPDATE" if lock else ""),
             (task_id,),
         )
         if row is None:
@@ -194,7 +194,7 @@ class PostgresMinutesTasks:
         # acceptance. Public reads still deny tombstones, and no text is published.
         parent = await base._one(
             _Parent,
-            "SELECT id,workspace_id FROM {s}.projects WHERE id=%s FOR UPDATE",
+            "SELECT id,workspace_id FROM {s}.projects WHERE id=? FOR UPDATE",
             (probe.project_id,),
         )
         if parent is None or parent.workspace_id != probe.workspace_id:
@@ -223,9 +223,9 @@ class PostgresMinutesTasks:
             return
         row = await base._one(
             _Id,
-            """UPDATE {s}.minutes_tasks SET status=%s,attempt=%s,
-            attempt_token=%s,version=%s,updated_at=%s,result_text=%s,error_code=%s
-            WHERE id=%s AND version=%s RETURNING id""",
+            """UPDATE {s}.minutes_tasks SET status=?,attempt=?,
+            attempt_token=?,version=?,updated_at=?,result_text=?,error_code=?
+            WHERE id=? AND version=? RETURNING id""",
             (
                 task.status,
                 task.attempt,
@@ -292,11 +292,11 @@ class PostgresMinutesTasks:
             sha256((base._schema.as_string() + workspace_id + digest).encode()).digest()[:8],
             signed=True,
         )
-        await base._execute("SELECT pg_advisory_xact_lock(%s)", (bucket,))
+        await base._execute("SELECT pg_advisory_xact_lock(?)", (bucket,))
         prior = await base._one(
             _Key,
             "SELECT task_id,intent_digest FROM {s}.minutes_request_keys "
-            "WHERE workspace_id=%s AND key_digest=%s",
+            "WHERE workspace_id=? AND key_digest=?",
             (workspace_id, digest),
         )
         if prior is not None:
@@ -327,7 +327,7 @@ class PostgresMinutesTasks:
             (task_id,workspace_id,project_id,transcript_id,source_revision,source_revision_id,
              source_sha256,profile_sha256,binding_id,model,template_revision,
              max_input_characters,max_output_characters,max_output_tokens,created_at,intent_digest)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 task.id,
                 task.workspace_id,
@@ -352,7 +352,7 @@ class PostgresMinutesTasks:
             (id,workspace_id,project_id,transcript_id,source_revision,source_revision_id,
              source_sha256,profile_sha256,binding_id,profile,status,attempt,attempt_token,
              version,created_at,updated_at,result_text,error_code)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NULL,NULL)""",
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,NULL)""",
             (
                 task.id,
                 task.workspace_id,
@@ -373,7 +373,7 @@ class PostgresMinutesTasks:
             ),
         )
         await base._execute(
-            "INSERT INTO {s}.minutes_request_keys VALUES (%s,%s,%s,%s)",
+            "INSERT INTO {s}.minutes_request_keys VALUES (?,?,?,?)",
             (workspace_id, digest, intent, task.id),
         )
         return MinutesTaskView(task, profile)
@@ -389,7 +389,7 @@ class PostgresMinutesTasks:
             rows = await base._many(
                 _Id,
                 """SELECT j.id FROM {s}.minutes_tasks j
-                WHERE j.workspace_id=%s AND j.status='queued' AND NOT EXISTS (
+                WHERE j.workspace_id=? AND j.status='queued' AND NOT EXISTS (
                     SELECT 1 FROM {s}.resource_tombstones d
                     WHERE (d.resource_kind='project' AND d.resource_id=j.project_id)
                        OR (d.resource_kind='transcript' AND d.resource_id=j.transcript_id)
@@ -416,7 +416,7 @@ class PostgresMinutesTasks:
             await self._save(base, view.task, running)
             await base._execute(
                 """INSERT INTO {s}.minutes_attempts
-                (task_id,number,token,started_at,outcome) VALUES (%s,%s,%s,%s,'running')""",
+                (task_id,number,token,started_at,outcome) VALUES (?,?,?,?,'running')""",
                 (task_id, running.attempt, running.attempt_token, running.updated_at),
             )
             return MinutesWork(MinutesTaskView(running, profile), request.text)
@@ -439,7 +439,7 @@ class PostgresMinutesTasks:
             prior = await base._one(
                 _Retry,
                 "SELECT expected_attempt FROM {s}.minutes_retry_keys "
-                "WHERE task_id=%s AND key_digest=%s",
+                "WHERE task_id=? AND key_digest=?",
                 (task_id, digest),
             )
             if prior is not None:
@@ -450,7 +450,7 @@ class PostgresMinutesTasks:
             queued = view.task.retry(expected_attempt=expected_attempt, now=await base.now())
             await self._save(base, view.task, queued)
             await base._execute(
-                "INSERT INTO {s}.minutes_retry_keys VALUES (%s,%s,%s)",
+                "INSERT INTO {s}.minutes_retry_keys VALUES (?,?,?)",
                 (task_id, digest, expected_attempt),
             )
             return MinutesTaskView(queued, view.profile)
@@ -481,7 +481,7 @@ class PostgresMinutesTasks:
             view, source = await self._locked(base, work.view.task.id, include_deleted=True)
             row = await base._one(
                 _AttemptRow,
-                "SELECT * FROM {s}.minutes_attempts WHERE task_id=%s AND number=%s AND token=%s",
+                "SELECT * FROM {s}.minutes_attempts WHERE task_id=? AND number=? AND token=?",
                 (view.task.id, work.view.task.attempt, work.view.task.attempt_token),
             )
             if row is None:
@@ -513,9 +513,9 @@ class PostgresMinutesTasks:
                 else "failed"
             )
             await base._execute(
-                """UPDATE {s}.minutes_attempts SET outcome=%s,finished_at=%s,
-                input_tokens=%s,output_tokens=%s,completion_digest=%s,completion_confirmed=%s
-                WHERE task_id=%s AND number=%s AND token=%s""",
+                """UPDATE {s}.minutes_attempts SET outcome=?,finished_at=?,
+                input_tokens=?,output_tokens=?,completion_digest=?,completion_confirmed=?
+                WHERE task_id=? AND number=? AND token=?""",
                 (
                     outcome,
                     now,
@@ -535,7 +535,7 @@ class PostgresMinutesTasks:
             await self._visible(base, task_id)
             rows = await base._many(
                 _AttemptRow,
-                "SELECT * FROM {s}.minutes_attempts WHERE task_id=%s ORDER BY number",
+                "SELECT * FROM {s}.minutes_attempts WHERE task_id=? ORDER BY number",
                 (task_id,),
             )
             return tuple(row.fact() for row in rows)

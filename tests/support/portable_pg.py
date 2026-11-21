@@ -9,8 +9,18 @@ from __future__ import annotations
 from typing import Any
 
 import psycopg
+from psycopg.rows import dict_row
 
 from speechnexus_portable_sql.psycopg_driver import PortableCursor
+
+
+def connect_kwargs(**overrides: Any) -> dict[str, Any]:
+    """连接池的 kwargs:与 `connect()` 同一个翻译点。"""
+
+    kwargs: dict[str, Any] = {"row_factory": dict_row, "connect_timeout": 3}
+    kwargs.update(overrides)
+    kwargs["cursor_factory"] = PortableCursor
+    return kwargs
 
 
 def connect(*args: Any, **kwargs: Any) -> psycopg.Connection[Any]:

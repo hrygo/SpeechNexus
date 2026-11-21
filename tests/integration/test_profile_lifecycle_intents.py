@@ -13,7 +13,6 @@ import pytest
 from alembic import command as migration
 from alembic.config import Config
 from psycopg.conninfo import make_conninfo
-from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
@@ -21,6 +20,7 @@ from tests.integration.test_production_jobs import ROOT, FaultConnection
 from tests.integration.test_production_jobs import database as database
 from tests.integration.test_profile_drafts import Profiles
 from tests.integration.test_profile_drafts import profiles as profiles
+from tests.support.portable_pg import connect_kwargs as portable_connect_kwargs
 from tests.support.profile_database import MySQLProfileDrafts
 
 from speechnexus_backend.speech.application.profile_lifecycle_intents import ProfileLifecycleIntents
@@ -264,7 +264,7 @@ def test_committed_reply_loss_is_unknown_until_read_only_original_recovery(
         with ConnectionPool[FaultConnection](
             make_conninfo(db.url, user=db.role, password="synthetic_job_test"),
             connection_class=FaultConnection,
-            kwargs={"row_factory": dict_row},
+            kwargs=portable_connect_kwargs(),
             configure=configure,
             min_size=1,
             max_size=1,

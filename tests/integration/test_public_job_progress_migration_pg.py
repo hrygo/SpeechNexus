@@ -16,6 +16,7 @@ from alembic.config import Config
 from psycopg.rows import dict_row
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
+from tests.support.portable_pg import connect as portable_pg_connect
 
 ROOT = Path(__file__).resolve().parents[2]
 VARIABLE = "SPEECHNEXUS_TEST_DATABASE_URL"
@@ -52,8 +53,8 @@ def _isolated_schema(
     engine = create_engine(
         url.replace("postgresql://", "postgresql+psycopg://", 1), poolclass=NullPool
     )
-    admin = psycopg.connect(url, autocommit=True, row_factory=dict_row)
-    query = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+    admin = portable_pg_connect(url, autocommit=True, row_factory=dict_row)
+    query = portable_pg_connect(url, autocommit=True, row_factory=dict_row)
     try:
         admin.execute(f'CREATE SCHEMA "{schema}"')
         query.execute(f'SET search_path TO "{schema}", pg_catalog')

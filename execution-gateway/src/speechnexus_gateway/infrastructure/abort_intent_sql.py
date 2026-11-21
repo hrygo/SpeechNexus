@@ -82,8 +82,7 @@ def _row_drifted(row: Mapping[str, Any], intent: SubmissionIntent) -> bool:
 
 def _receipt(cursor: SubmitCursor, request: AbortExecutionRequest) -> dict[str, Any] | None:
     cursor.execute(
-        f"SELECT {_RECEIPT_COLUMNS} FROM gateway_abort_intents "
-        "WHERE submit_intent_id=%s FOR UPDATE",
+        f"SELECT {_RECEIPT_COLUMNS} FROM gateway_abort_intents WHERE submit_intent_id=? FOR UPDATE",
         (request.submit_intent_id,),
     )
     rows = cursor.fetchall()
@@ -121,7 +120,7 @@ def receive_abort(
     cursor.execute(
         "INSERT INTO gateway_abort_intents (submit_intent_id, operation_id, attempt_id, "
         "fencing_token, reason, wait_timeout_ms, received_at_us, instance_id, "
-        "instance_generation) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+        "instance_generation) VALUES (?,?,?,?,?,?,?,?,?)",
         (
             request.submit_intent_id,
             request.operation_id,
@@ -152,10 +151,10 @@ def _start_attempt(
     the exhausted terminal write records its decision without inflating attempts.
     """
     cursor.execute(
-        "UPDATE gateway_abort_intents SET dispatched_at_us=COALESCE(dispatched_at_us,%s), "
-        "dispatch_attempt_id=%s, dispatch_started_at_us=%s, dispatch_deadline_at_us=%s, "
-        "dispatch_outcome=%s, dispatch_outcome_at_us=%s, "
-        "dispatch_attempts=dispatch_attempts+%s WHERE submit_intent_id=%s",
+        "UPDATE gateway_abort_intents SET dispatched_at_us=COALESCE(dispatched_at_us,?), "
+        "dispatch_attempt_id=?, dispatch_started_at_us=?, dispatch_deadline_at_us=?, "
+        "dispatch_outcome=?, dispatch_outcome_at_us=?, "
+        "dispatch_attempts=dispatch_attempts+? WHERE submit_intent_id=?",
         (
             started_at_us,
             attempt_id,
@@ -261,9 +260,9 @@ def record_abort_dispatch(
     undecided = result.outcome is AbortDispatchOutcome.UNCONFIRMED
     next_check_us = to_unix_micros(clock()) + (result.retry_delay_ms or 0) * 1_000
     cursor.execute(
-        "UPDATE gateway_abort_intents SET dispatch_outcome=%s, dispatch_outcome_at_us=%s, "
-        "next_check_at_us=CASE WHEN %s THEN %s ELSE next_check_at_us END "
-        "WHERE submit_intent_id=%s AND dispatch_attempt_id=%s AND dispatch_outcome IS NULL",
+        "UPDATE gateway_abort_intents SET dispatch_outcome=?, dispatch_outcome_at_us=?, "
+        "next_check_at_us=CASE WHEN ? THEN ? ELSE next_check_at_us END "
+        "WHERE submit_intent_id=? AND dispatch_attempt_id=? AND dispatch_outcome IS NULL",
         (
             result.outcome.value,
             observed_us,

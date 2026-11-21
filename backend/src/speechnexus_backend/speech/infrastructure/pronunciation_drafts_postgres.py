@@ -43,7 +43,7 @@ class _Cursor:
         if remaining <= 0:
             raise PronunciationUnavailableError
         self.raw.execute(
-            "SELECT set_config('statement_timeout', %s, true)",
+            "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(remaining * 1000))),),
         )
         return self.raw.execute(query, parameters)

@@ -77,12 +77,12 @@ class PostgresTranscriptionAdmissionFacts:
             with self._pool.connection(timeout=self._timeout) as connection:
                 connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
                 quota = connection.execute(
-                    "SELECT version, policy_revision FROM workspace_quotas WHERE workspace_id = %s",
+                    "SELECT version, policy_revision FROM workspace_quotas WHERE workspace_id = ?",
                     (plan.workspace_id,),
                 ).fetchone()
                 pool = connection.execute(
                     "SELECT version, service_class, owner_id, fencing_token "
-                    "FROM resource_pools WHERE pool_id = %s",
+                    "FROM resource_pools WHERE pool_id = ?",
                     (binding.pool_id,),
                 ).fetchone()
                 instance = connection.execute(
@@ -92,7 +92,7 @@ class PostgresTranscriptionAdmissionFacts:
                     "FROM runtime_instance_heads AS h JOIN engine_instances AS i "
                     "ON i.instance_id = h.instance_id "
                     "AND i.instance_generation = h.current_generation "
-                    "WHERE h.instance_id = %s",
+                    "WHERE h.instance_id = ?",
                     (recipe.instance_id,),
                 ).fetchone()
                 clock = connection.execute(

@@ -52,17 +52,17 @@ _BASE = (
     "ON revision.revision_id = instance.binding_revision_id"
 )
 
-_ORDER = " ORDER BY instance.instance_id, instance.instance_generation LIMIT %s"
+_ORDER = " ORDER BY instance.instance_id, instance.instance_generation LIMIT ?"
 
 # The presence CTE holds exactly one row, so the left join below always returns
 # exactly one row: an absent generation still reports whether its instance id has
 # any recorded generation at all.
 _FIND = (
     "WITH presence AS (SELECT EXISTS (SELECT 1 FROM engine_instances AS listed "
-    "WHERE listed.instance_id = %s) AS instance_exists) "
+    "WHERE listed.instance_id = ?) AS instance_exists) "
     "SELECT presence.instance_exists, " + _COLUMNS + " FROM presence "
-    "LEFT JOIN engine_instances AS instance ON instance.instance_id = %s "
-    "AND instance.instance_generation = %s "
+    "LEFT JOIN engine_instances AS instance ON instance.instance_id = ? "
+    "AND instance.instance_generation = ? "
     "LEFT JOIN speech_binding_revisions AS revision "
     "ON revision.revision_id = instance.binding_revision_id"
 )
@@ -80,8 +80,8 @@ def statement(query: ModelInstanceQuery) -> tuple[str, tuple[Any, ...]]:
         raise ModelInstanceUnavailableError
     after_id = query.after.instance_id if query.after is not None else ""
     after_generation = query.after.generation if query.after is not None else 0
-    predicate = " AND instance.host_node_id = %s" if query.host_node_id is not None else ""
-    predicate += " AND instance.instance_state = %s" if query.state is not None else ""
+    predicate = " AND instance.host_node_id = ?" if query.host_node_id is not None else ""
+    predicate += " AND instance.instance_state = ?" if query.state is not None else ""
     parameters: list[Any] = [after_id, after_generation]
     if query.host_node_id is not None:
         parameters.append(query.host_node_id)
@@ -90,7 +90,7 @@ def statement(query: ModelInstanceQuery) -> tuple[str, tuple[Any, ...]]:
     parameters.append(query.limit + 1)
     text = (
         _BASE
-        + " WHERE (instance.instance_id, instance.instance_generation) > (%s, %s)"
+        + " WHERE (instance.instance_id, instance.instance_generation) > (?, ?)"
         + predicate
         + _ORDER
     )
@@ -113,7 +113,7 @@ class PostgresModelInstanceReads:
                     raise ModelInstanceUnavailableError
                 connection.execute("SET TRANSACTION READ ONLY")
                 connection.execute(
-                    "SELECT set_config('statement_timeout', %s, true)",
+                    "SELECT set_config('statement_timeout', ?, true)",
                     (str(max(1, int(remaining * 1000))),),
                 )
                 records = connection.execute(text, parameters).fetchall()
@@ -142,7 +142,7 @@ class PostgresModelInstanceReads:
                     raise ModelInstanceUnavailableError
                 connection.execute("SET TRANSACTION READ ONLY")
                 connection.execute(
-                    "SELECT set_config('statement_timeout', %s, true)",
+                    "SELECT set_config('statement_timeout', ?, true)",
                     (str(max(1, int(remaining * 1000))),),
                 )
                 row = connection.execute(_FIND, (instance_id, instance_id, generation)).fetchone()

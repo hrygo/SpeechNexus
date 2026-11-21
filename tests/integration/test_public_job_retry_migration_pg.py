@@ -7,13 +7,13 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-import psycopg
 import pytest
 from alembic import command
 from alembic.config import Config
 from psycopg.rows import dict_row
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
+from tests.support.portable_pg import connect as portable_pg_connect
 
 ROOT = Path(__file__).resolve().parents[2]
 VARIABLE = "SPEECHNEXUS_TEST_DATABASE_URL"
@@ -37,13 +37,13 @@ def test_retry_migration_round_trip_and_safe_downgrade() -> None:
     engine = create_engine(
         url.replace("postgresql://", "postgresql+psycopg://", 1), poolclass=NullPool
     )
-    admin = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+    admin = portable_pg_connect(url, autocommit=True, row_factory=dict_row)
     try:
         admin.execute(f'CREATE SCHEMA "{schema}"')
         with engine.connect() as connection:
             config = _config(schema, connection)
             command.upgrade(config, "0036_abort_dispatch_attempts")
-            columns = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+            columns = portable_pg_connect(url, autocommit=True, row_factory=dict_row)
             columns.execute(f'SET search_path TO "{schema}", pg_catalog')
             assert (
                 columns.execute(

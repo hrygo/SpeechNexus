@@ -18,7 +18,6 @@ import pytest
 from alembic import command as migration
 from alembic.config import Config
 from psycopg.conninfo import make_conninfo
-from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 from sqlalchemy import create_engine, event
 from sqlalchemy.exc import ProgrammingError
@@ -29,6 +28,7 @@ from tests.integration.test_production_jobs import ROOT, FaultConnection, JobDat
 from tests.integration.test_production_jobs import database as database
 from tests.support.job_database import MySQLJobTransactions
 from tests.support.migrations import HEAD
+from tests.support.portable_pg import connect_kwargs as portable_connect_kwargs
 from tests.support.profile_database import ProfileCursor
 from tests.support.pronunciation_database import MySQLPronunciationDrafts
 from tests.support.pronunciation_examples import pronunciation_request
@@ -346,7 +346,7 @@ def test_real_pg_commit_boundary_and_original_recovery(
     with ConnectionPool[FaultConnection](
         make_conninfo(p.db.url, user=p.db.role, password="synthetic_job_test"),
         connection_class=FaultConnection,
-        kwargs={"row_factory": dict_row},
+        kwargs=portable_connect_kwargs(),
         configure=configure,
         min_size=1,
         max_size=1,

@@ -21,6 +21,7 @@ from tests.integration.test_profile_publications import Sandbox
 from tests.integration.test_profile_publications import (  # noqa: F401
     sandbox as _profile_sandbox,
 )
+from tests.support.portable_pg import connect as portable_pg_connect
 
 pytestmark = pytest.mark.integration
 
@@ -63,7 +64,7 @@ def test_competing_publications_of_one_head_serialize_to_one_winner(
     s.draft()
     commands = [s.publish(key="qualify-publish-alpha"), s.publish(key="qualify-publish-bravo")]
     blocked: list[str] = []
-    blocker = psycopg.connect(s.url)
+    blocker = portable_pg_connect(s.url)
     try:
         blocker.execute(f'SET search_path TO "{s.schema}",pg_catalog')
         blocker.execute("SELECT * FROM speech_profile_families FOR UPDATE").fetchall()

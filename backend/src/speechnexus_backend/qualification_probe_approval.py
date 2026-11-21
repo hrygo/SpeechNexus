@@ -77,7 +77,7 @@ def find_probe_approval(store: PostgresPublications, request: dict[str, str]) ->
             "LEFT JOIN speech_builtin_voice_probe_authorizations a "
             "ON a.authorization_id=p.probe_authorization_id "
             "CROSS JOIN speech_publication_installation i "
-            "WHERE p.approval_id=%s AND i.singleton IS TRUE",
+            "WHERE p.approval_id=? AND i.singleton IS TRUE",
             (request["approval_id"],),
         )
         rows = cursor.fetchall()
@@ -136,7 +136,7 @@ def _commit_verified_probe(
         cursor.execute(
             "SELECT a.intent FROM speech_builtin_voice_probe_authorizations a "
             "JOIN speech_builtin_voice_probe_admissions p USING (authorization_id) "
-            "WHERE a.authorization_id=%s",
+            "WHERE a.authorization_id=?",
             (authorization_id,),
         )
         rows = cursor.fetchall()
@@ -154,12 +154,12 @@ def _commit_verified_probe(
                 raise ProbeApprovalError("probe_approval_conflict")
         cursor.execute(
             "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:'||current_schema()||':binding:'||%s,0))",
+            "'speechnexus:catalog:'||current_schema()||':binding:'||?,0))",
             (auth["binding_id"],),
         )
         cursor.execute(
             "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:'||current_schema()||':voice:'||%s,0))",
+            "'speechnexus:catalog:'||current_schema()||':voice:'||?,0))",
             (auth["voice_id"],),
         )
         cursor.execute(
@@ -177,7 +177,7 @@ def _commit_verified_probe(
         cursor.execute(
             "SELECT voice_id,revision,revision_id,binding_revision_id,source_approval_id,facts,"
             "probe_authorization_id,result_intent "
-            "FROM speech_builtin_voice_approvals WHERE approval_id=%s",
+            "FROM speech_builtin_voice_approvals WHERE approval_id=?",
             (approval_id,),
         )
         existing = cursor.fetchall()
@@ -209,7 +209,7 @@ def _commit_verified_probe(
             "FROM speech_builtin_voice_probe_authorizations a "
             "JOIN speech_builtin_voice_source_approvals s "
             "ON s.source_approval_id=a.source_approval_id AND s.voice_id=a.voice_id "
-            "WHERE a.authorization_id=%s AND s.expires_at>clock_timestamp() "
+            "WHERE a.authorization_id=? AND s.expires_at>clock_timestamp() "
             "AND NOT EXISTS (SELECT 1 FROM speech_builtin_voice_source_revocations r "
             "WHERE r.source_approval_id=s.source_approval_id)",
             (authorization_id,),
@@ -227,7 +227,7 @@ def _commit_verified_probe(
             "AND l.attempt_id=p.attempt_id "
             "JOIN submit_intents s ON s.lease_id=l.lease_id "
             "JOIN execution_stop_evidence e ON e.submit_intent_id=s.submit_intent_id "
-            "WHERE p.authorization_id=%s AND s.submit_intent_id=%s",
+            "WHERE p.authorization_id=? AND s.submit_intent_id=?",
             (authorization_id, probe.submit_intent_id),
         )
         terminals = cursor.fetchall()
@@ -248,7 +248,7 @@ def _commit_verified_probe(
         if revision_is_disabled(cursor, auth["binding_id"], auth["binding_revision_id"]):
             raise ProbeApprovalError("probe_approval_unverified")
         cursor.execute(
-            "SELECT revision FROM speech_binding_revisions WHERE binding_id=%s AND revision_id=%s",
+            "SELECT revision FROM speech_binding_revisions WHERE binding_id=? AND revision_id=?",
             (auth["binding_id"], auth["binding_revision_id"]),
         )
         revisions = cursor.fetchall()
@@ -397,7 +397,7 @@ def _commit_verified_probe(
         BuiltinVoiceFacts(facts)
         validate_response("getVoiceRevision", 200, {"body": document})
         cursor.execute(
-            "SELECT facts FROM speech_builtin_voice_approvals WHERE approval_id=%s", (approval_id,)
+            "SELECT facts FROM speech_builtin_voice_approvals WHERE approval_id=?", (approval_id,)
         )
         existing = cursor.fetchall()
         if existing:
@@ -409,7 +409,7 @@ def _commit_verified_probe(
             "INSERT INTO speech_builtin_voice_approvals "
             "(approval_id,voice_id,revision,revision_id,binding_revision_id,"
             "source_approval_id,facts,expires_at,probe_authorization_id,result_intent) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
             (
                 approval_id,
                 auth["voice_id"],

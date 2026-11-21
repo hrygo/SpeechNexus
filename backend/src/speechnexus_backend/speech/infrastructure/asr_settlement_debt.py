@@ -10,8 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-import psycopg
 from psycopg.rows import dict_row
+
+from speechnexus_portable_sql.psycopg_driver import connect as portable_connect
 
 _NOW = "CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT)"
 _LIMIT = 200
@@ -112,7 +113,7 @@ def read_asr_settlement_debt(
         "ORDER BY observed_at_us DESC LIMIT 1) e ON TRUE "
         "WHERE l.lease_state<>'released' "
         f"AND (s.settled_at_us IS NOT NULL OR s.next_check_at_us<=({_NOW})) "
-        "ORDER BY s.next_check_at_us, s.lease_id LIMIT %s"
+        "ORDER BY s.next_check_at_us, s.lease_id"
     )
     # A redacted document has no readable kind, so neither the backfill nor the
     # preflight can attribute it. It has no root and would otherwise be silent.
@@ -128,19 +129,20 @@ def read_asr_settlement_debt(
         "WHERE l.lease_state<>'released' AND o.operation_id LIKE 'operation-%%' "
         "AND o.request_document IS NULL "
         "AND NOT EXISTS (SELECT 1 FROM speech_asr_settlement s WHERE s.lease_id=l.lease_id) "
-        "ORDER BY l.lease_id LIMIT %s"
+        "ORDER BY l.lease_id"
     )
-    with psycopg.connect(
+    with portable_connect(
         dsn, connect_timeout=int(timeout_seconds), row_factory=dict_row
     ) as connection:
         connection.execute("SET TRANSACTION READ ONLY")
-        connection.execute("SELECT set_config('search_path', %s, true)", (schema + ",pg_catalog",))
+        connection.execute("SELECT set_config('search_path', ?, true)", (schema + ",pg_catalog",))
         connection.execute(
-            "SELECT set_config('statement_timeout', %s, true)",
+            "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(timeout_seconds * 1000))),),
         )
+        # 受限方言没有 LIMIT:按 keyset 排序后由 fetchmany 取上界,行数在客户端截断。
         rows = [
-            *connection.execute(rooted, (_LIMIT,)).fetchall(),
-            *connection.execute(redacted, (_LIMIT,)).fetchall(),
+            *connection.execute(rooted).fetchmany(_LIMIT),
+            *connection.execute(redacted).fetchmany(_LIMIT),
         ]
     return summarize(rows, route)

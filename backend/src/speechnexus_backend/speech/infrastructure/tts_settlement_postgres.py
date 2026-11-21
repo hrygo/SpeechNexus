@@ -33,8 +33,8 @@ class PostgresTtsSettlementStore:
                 "FROM speech_tts_settlement WHERE settled_at_us IS NULL "
                 "AND next_check_at_us <= "
                 "CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) "
-                "AND target_document::jsonb->>'gateway_id'=%s "
-                "AND target_document::jsonb->>'host_node_id'=%s "
+                "AND target_document::jsonb->>'gateway_id'=? "
+                "AND target_document::jsonb->>'host_node_id'=? "
                 "ORDER BY next_check_at_us, lease_id LIMIT %s",
                 (gateway_id, node_id, limit),
             ).fetchall()
@@ -65,19 +65,19 @@ class PostgresTtsSettlementStore:
             self._deadline(conn)
             conn.execute(
                 "SELECT pg_advisory_xact_lock(hashtextextended('speechnexus:tts-cancel:' "
-                "|| current_schema() || ':' || %s, 0))",
+                "|| current_schema() || ':' || ?, 0))",
                 (operation_id,),
             )
             conn.execute(
                 "INSERT INTO speech_tts_cancellation (operation_id,reason,requested_at_us) "
-                "VALUES (%s,%s,CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT)) "
+                "VALUES (?,?,CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT)) "
                 "ON CONFLICT (operation_id) DO NOTHING",
                 (operation_id, reason),
             )
             conn.execute(
                 "UPDATE speech_tts_settlement SET abort_reason=COALESCE(abort_reason, "
-                "(SELECT reason FROM speech_tts_cancellation WHERE operation_id=%s)), "
-                "next_check_at_us=0 WHERE operation_id=%s AND settled_at_us IS NULL",
+                "(SELECT reason FROM speech_tts_cancellation WHERE operation_id=?)), "
+                "next_check_at_us=0 WHERE operation_id=? AND settled_at_us IS NULL",
                 (operation_id, operation_id),
             )
 
@@ -87,8 +87,8 @@ class PostgresTtsSettlementStore:
         with self._pool.connection(timeout=self._timeout) as conn:
             self._deadline(conn)
             row = conn.execute(
-                "UPDATE speech_tts_settlement SET abort_reason=COALESCE(abort_reason,%s), "
-                "next_check_at_us=0 WHERE lease_id=%s AND settled_at_us IS NULL "
+                "UPDATE speech_tts_settlement SET abort_reason=COALESCE(abort_reason,?), "
+                "next_check_at_us=0 WHERE lease_id=? AND settled_at_us IS NULL "
                 "RETURNING abort_reason",
                 (reason, lease_id),
             ).fetchone()
@@ -101,8 +101,8 @@ class PostgresTtsSettlementStore:
             self._deadline(conn)
             conn.execute(
                 "UPDATE speech_tts_settlement SET next_check_at_us="
-                "CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT)+%s "
-                "WHERE lease_id=%s AND settled_at_us IS NULL",
+                "CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT)+? "
+                "WHERE lease_id=? AND settled_at_us IS NULL",
                 (int(seconds * 1_000_000), lease_id),
             )
 
@@ -112,12 +112,12 @@ class PostgresTtsSettlementStore:
             conn.execute(
                 "UPDATE speech_tts_settlement SET settled_at_us="
                 "CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) "
-                "WHERE lease_id=%s AND settled_at_us IS NULL",
+                "WHERE lease_id=? AND settled_at_us IS NULL",
                 (lease_id,),
             )
 
     def _deadline(self, conn: Any) -> None:
         conn.execute(
-            "SELECT set_config('statement_timeout', %s, true)",
+            "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(self._timeout * 1000))),),
         )

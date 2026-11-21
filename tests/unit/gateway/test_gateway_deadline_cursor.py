@@ -32,9 +32,9 @@ GATEWAY_ROOT = Path(__file__).resolve().parents[3] / "execution-gateway"
 SOURCE_ROOT = GATEWAY_ROOT / "src"
 CURSOR_DECLARATION = re.compile(r"^\s*class _DeadlineCursor\b", re.MULTILINE)
 
-QUERY = "SELECT payload FROM example WHERE identity = %s"
+QUERY = "SELECT payload FROM example WHERE identity = ?"
 PARAMETERS = ("row-a",)
-SET_TIMEOUT = "SELECT set_config('statement_timeout', %s, true)"
+SET_TIMEOUT = "SELECT set_config('statement_timeout', ?, true)"
 CLOCK_QUERY = "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) AS now_us"
 
 

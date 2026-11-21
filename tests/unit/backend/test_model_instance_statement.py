@@ -31,13 +31,13 @@ BASE = (
     "LEFT JOIN speech_binding_revisions AS revision "
     "ON revision.revision_id = instance.binding_revision_id"
 )
-ORDER = " ORDER BY instance.instance_id, instance.instance_generation LIMIT %s"
+ORDER = " ORDER BY instance.instance_id, instance.instance_generation LIMIT ?"
 
 
 def test_an_unfiltered_page_starts_before_every_key_and_over_reads_one_row() -> None:
     text, parameters = statement(ModelInstanceQuery(50))
     assert text == BASE + (
-        " WHERE (instance.instance_id, instance.instance_generation) > (%s, %s)" + ORDER
+        " WHERE (instance.instance_id, instance.instance_generation) > (?, ?)" + ORDER
     )
     assert parameters == ("", 0, 51)
 
@@ -46,8 +46,8 @@ def test_the_frontier_and_both_filters_are_bound_in_order() -> None:
     query = ModelInstanceQuery(2, InstancePosition("inst-a", 3), "node-a", "ready")
     text, parameters = statement(query)
     assert text == BASE + (
-        " WHERE (instance.instance_id, instance.instance_generation) > (%s, %s)"
-        " AND instance.host_node_id = %s AND instance.instance_state = %s" + ORDER
+        " WHERE (instance.instance_id, instance.instance_generation) > (?, ?)"
+        " AND instance.host_node_id = ? AND instance.instance_state = ?" + ORDER
     )
     assert parameters == ("inst-a", 3, "node-a", "ready", 3)
 
@@ -74,7 +74,7 @@ def test_each_filter_combination_keeps_one_statement(
 
 def test_the_ordering_names_both_key_columns_and_no_mutable_column() -> None:
     text, _ = statement(ModelInstanceQuery(10))
-    assert " ORDER BY instance.instance_id, instance.instance_generation LIMIT %s" in text
+    assert " ORDER BY instance.instance_id, instance.instance_generation LIMIT ?" in text
     for mutable in ("ready_at_us", "stopped_at_us", "instance_state", "host_node_id"):
         assert f"ORDER BY instance.{mutable}" not in text
     # Selected once, compared once in the frontier, ordered once.
@@ -84,11 +84,11 @@ def test_the_ordering_names_both_key_columns_and_no_mutable_column() -> None:
 def test_the_single_lookup_reports_presence_and_the_requested_generation_in_one_statement() -> None:
     assert _FIND.startswith(
         "WITH presence AS (SELECT EXISTS (SELECT 1 FROM engine_instances AS listed "
-        "WHERE listed.instance_id = %s) AS instance_exists) "
+        "WHERE listed.instance_id = ?) AS instance_exists) "
     )
     assert (
-        "LEFT JOIN engine_instances AS instance ON instance.instance_id = %s "
-        "AND instance.instance_generation = %s" in _FIND
+        "LEFT JOIN engine_instances AS instance ON instance.instance_id = ? "
+        "AND instance.instance_generation = ?" in _FIND
     )
     # The one-row presence CTE answers "does the id exist" and "does this
     # generation exist" together, so an absent generation still reports presence.

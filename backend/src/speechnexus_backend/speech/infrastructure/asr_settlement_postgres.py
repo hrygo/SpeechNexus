@@ -28,8 +28,8 @@ class PostgresAsrSettlementStore:
                 "SELECT lease_id,operation_id,attempt_id,gateway_id,host_node_id "
                 "FROM speech_asr_settlement WHERE settled_at_us IS NULL "
                 f"AND next_check_at_us <= {_NOW} "
-                "AND gateway_id=%s AND host_node_id=%s "
-                "ORDER BY next_check_at_us, lease_id LIMIT %s",
+                "AND gateway_id=? AND host_node_id=? "
+                "ORDER BY next_check_at_us, lease_id LIMIT ?",
                 (gateway_id, host_node_id, limit),
             ).fetchall()
         return [
@@ -48,7 +48,7 @@ class PostgresAsrSettlementStore:
             conn.execute("SET TRANSACTION READ ONLY")
             self._deadline(conn)
             rows = conn.execute(
-                "SELECT submit_intent_id FROM submit_intents WHERE lease_id=%s "
+                "SELECT submit_intent_id FROM submit_intents WHERE lease_id=? "
                 "ORDER BY submit_intent_id",
                 (lease_id,),
             ).fetchall()
@@ -64,7 +64,7 @@ class PostgresAsrSettlementStore:
             self._deadline(conn)
             conn.execute(
                 "UPDATE speech_asr_settlement SET next_check_at_us="
-                f"{_NOW}+%s WHERE lease_id=%s AND settled_at_us IS NULL",
+                f"{_NOW}+? WHERE lease_id=? AND settled_at_us IS NULL",
                 (int(seconds * 1_000_000), lease_id),
             )
 
@@ -73,12 +73,12 @@ class PostgresAsrSettlementStore:
             self._deadline(conn)
             conn.execute(
                 "UPDATE speech_asr_settlement SET settled_at_us="
-                f"{_NOW} WHERE lease_id=%s AND settled_at_us IS NULL",
+                f"{_NOW} WHERE lease_id=? AND settled_at_us IS NULL",
                 (lease_id,),
             )
 
     def _deadline(self, conn: Any) -> None:
         conn.execute(
-            "SELECT set_config('statement_timeout', %s, true)",
+            "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(self._timeout * 1000))),),
         )

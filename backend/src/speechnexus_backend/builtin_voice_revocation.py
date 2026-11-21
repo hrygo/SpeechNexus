@@ -64,7 +64,7 @@ def revoke_builtin_voice(
             raise BuiltinVoiceRevocationRejectedError("approval_not_found")
         cursor.execute(
             "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:' || current_schema() || ':voice:' || %s, 0))",
+            "'speechnexus:catalog:' || current_schema() || ':voice:' || ?, 0))",
             (approvals_found[0]["voice_id"],),
         )
         cursor.execute(
@@ -76,7 +76,7 @@ def revoke_builtin_voice(
                 raise BuiltinVoiceRevocationRejectedError("intent_conflict")
             return {"outcome": "replayed", "kind": kind, "approval_id": approval_id}
         cursor.execute(
-            f"INSERT INTO {revocations} ({identity_column}, reason) VALUES (%s,%s)",
+            f"INSERT INTO {revocations} ({identity_column}, reason) VALUES (?,?)",
             (approval_id, reason),
         )
         return {"outcome": "revoked", "kind": kind, "approval_id": approval_id}

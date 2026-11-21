@@ -19,6 +19,7 @@ from alembic.config import Config
 from psycopg.rows import dict_row
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.speech.domain.admission import AdmissionRejectedError
 from speechnexus_backend.speech.infrastructure.builtin_voice_grants import (
@@ -54,7 +55,7 @@ def pg() -> Iterator[tuple[psycopg.Connection[dict[str, Any]], str, str]]:
         config.attributes["connection"] = migration_connection
         command.upgrade(config, "head")
     engine.dispose()
-    connection = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+    connection = portable_pg_connect(url, autocommit=True, row_factory=dict_row)
     connection.execute(f'SET search_path TO "{schema}", pg_catalog')
     connection.execute(f'CREATE ROLE "{role}"')
     try:
@@ -231,7 +232,7 @@ def test_migration_admission_revocation_and_reader_permissions(
     with db.cursor() as cursor, pytest.raises(AdmissionRejectedError):
         _require(cursor, 2)
     # Revocation and first admission serialize on the voice advisory lock.
-    second = psycopg.connect(os.environ["SPEECHNEXUS_TEST_DATABASE_URL"], row_factory=dict_row)
+    second = portable_pg_connect(os.environ["SPEECHNEXUS_TEST_DATABASE_URL"], row_factory=dict_row)
     second.execute(f'SET search_path TO "{schema}", pg_catalog')
     pid = second.info.backend_pid
     lock_sql = (

@@ -22,6 +22,7 @@ from pydantic import SecretStr
 from speechnexus_contracts.voice_retirement_http import validate_response
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
+from tests.support.portable_pg import connect as portable_pg_connect
 from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app
@@ -138,7 +139,7 @@ def retirement_db() -> Iterator[RetirementDB]:
         poolclass=NullPool,
         hide_parameters=True,
     )
-    owner = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+    owner = portable_pg_connect(url, autocommit=True, row_factory=dict_row)
     config = Config(str(ROOT / "alembic.ini"))
     config.attributes["schema"] = schema
     try:
@@ -289,7 +290,7 @@ def test_lifecycle_writer_grants_keep_the_binding_lifecycle_surface(
 ) -> None:
     # The reused writer identity must still pass the existing lifecycle startup
     # verification; a new grant would silently widen its authority.
-    with psycopg.connect(retirement_db.lifecycle_dsn, autocommit=True) as writer:
+    with portable_pg_connect(retirement_db.lifecycle_dsn, autocommit=True) as writer:
         for statement in (
             f'SELECT count(*) FROM "{retirement_db.schema}".' + RETIREMENT_TABLE,
             f'SELECT count(*) FROM "{retirement_db.schema}".' + HEAD_TABLE,

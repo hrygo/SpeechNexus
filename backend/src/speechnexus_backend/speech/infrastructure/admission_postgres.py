@@ -136,7 +136,7 @@ class PostgresAdmissionTransactions:
             if existing is not None:
                 return existing
             cursor.execute(
-                "SELECT binding_id FROM speech_binding_revisions WHERE revision_id=%s",
+                "SELECT binding_id FROM speech_binding_revisions WHERE revision_id=?",
                 (request.binding_revision_id,),
             )
             revisions = cursor.fetchall()
@@ -226,7 +226,7 @@ class PostgresAdmissionTransactions:
         if not recheck:
             cursor.execute(
                 "SELECT pg_advisory_xact_lock(hashtextextended("
-                "'speechnexus:catalog:' || current_schema() || ':voice:' || %s, 0))",
+                "'speechnexus:catalog:' || current_schema() || ':voice:' || ?, 0))",
                 (voice_id,),
             )
             # A duplicate admission can commit while the voice lock is awaited.
@@ -240,7 +240,7 @@ class PostgresAdmissionTransactions:
                 return
         cursor.execute(
             "SELECT p.revision_id FROM speech_publications p WHERE p.kind='voice' "
-            "AND p.object_id=%s AND p.revision=%s AND p.revision_id=%s "
+            "AND p.object_id=? AND p.revision=? AND p.revision_id=? "
             "AND NOT EXISTS (SELECT 1 FROM speech_publication_retirements r "
             "WHERE r.kind=p.kind AND r.object_id=p.object_id AND r.revision=p.revision "
             "AND r.revision_id=p.revision_id)",

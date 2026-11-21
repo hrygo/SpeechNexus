@@ -221,7 +221,7 @@ class PostgresRenderUnits(RenderUnitStore):
                     AND a.source_receipt_id = u.source_receipt_id
                 ORDER BY a.created_at DESC, a.id DESC LIMIT 1
             ) sa ON true
-            WHERE u.id = %s
+            WHERE u.id = ?
         """,
             (unit_id,),
         )
@@ -231,7 +231,7 @@ class PostgresRenderUnits(RenderUnitStore):
             _GenerationRow,
             """
             SELECT id, job_id, dependencies_sha256, revision
-            FROM {s}.render_unit_generations WHERE unit_id = %s ORDER BY revision
+            FROM {s}.render_unit_generations WHERE unit_id = ? ORDER BY revision
         """,
             (unit_id,),
         )
@@ -242,7 +242,7 @@ class PostgresRenderUnits(RenderUnitStore):
     ) -> tuple[RenderUnitSummary, ...] | None:
         # One statement resolves chapter visibility and its page; the generations of
         # that page follow in a second statement, so no unit is read on its own.
-        seek = "" if after is None else " AND (u.created_at, u.id) < (%s, %s)"
+        seek = "" if after is None else " AND (u.created_at, u.id) < (?, ?)"
         params: list[object] = []
         if after is not None:
             params.extend((after.created_at, after.item_id))
@@ -274,7 +274,7 @@ class PostgresRenderUnits(RenderUnitStore):
                         AND a.source_receipt_id = u.source_receipt_id
                     ORDER BY a.created_at DESC, a.id DESC LIMIT 1
                 ) sa ON true
-                WHERE c.id = %s AND p.workspace_id = %s AND NOT EXISTS (
+                WHERE c.id = ? AND p.workspace_id = ? AND NOT EXISTS (
                     SELECT 1 FROM {s}.resource_tombstones d
                     WHERE d.resource_kind = 'project' AND d.resource_id = p.id
                     UNION ALL
@@ -295,7 +295,7 @@ class PostgresRenderUnits(RenderUnitStore):
             _UnitGenerationRow,
             """
             SELECT unit_id, id, job_id, dependencies_sha256, revision
-            FROM {s}.render_unit_generations WHERE unit_id = ANY(%s)
+            FROM {s}.render_unit_generations WHERE unit_id = ANY(?)
             ORDER BY unit_id, revision
         """,
             (list(unit_ids),),
@@ -310,7 +310,7 @@ class PostgresRenderUnits(RenderUnitStore):
             _ScopeRow,
             """
             SELECT c.id, c.book_id, b.project_id, c.text_revision FROM {s}.chapters c
-            JOIN {s}.books b ON b.id = c.book_id WHERE c.id = %s
+            JOIN {s}.books b ON b.id = c.book_id WHERE c.id = ?
         """,
             (chapter_id,),
         )
@@ -320,7 +320,7 @@ class PostgresRenderUnits(RenderUnitStore):
             _ReceiptRow,
             """
             SELECT intent_digest, unit_id FROM {s}.render_unit_receipts
-            WHERE scope_id = %s AND key_digest = %s
+            WHERE scope_id = ? AND key_digest = ?
         """,
             (scope_id, key_digest),
         )
@@ -401,7 +401,7 @@ class PostgresRenderUnits(RenderUnitStore):
                     """
                     INSERT INTO {s}.render_unit_receipts
                         (scope_id, key_digest, intent_digest, unit_id, created_at)
-                    VALUES (%s, %s, %s, %s, %s)
+                    VALUES (?, ?, ?, ?, ?)
                 """,
                     (chapter_id, digest, intent, unit.id, now),
                 )
@@ -419,8 +419,8 @@ class PostgresRenderUnits(RenderUnitStore):
                 role_id, text_plan_revision, original_revision, working_revision,
                 dependencies_sha256, created_at, updated_at
             ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             )
         """,
             (
@@ -486,8 +486,8 @@ class PostgresRenderUnits(RenderUnitStore):
             generation = started.generations[-1]
             await base._execute(
                 """
-                UPDATE {s}.render_units SET revision = %s, status = %s, updated_at = %s
-                WHERE id = %s
+                UPDATE {s}.render_units SET revision = ?, status = ?, updated_at = ?
+                WHERE id = ?
             """,
                 (started.revision, started.status, started.updated_at, unit_id),
             )
@@ -495,7 +495,7 @@ class PostgresRenderUnits(RenderUnitStore):
                 """
                 INSERT INTO {s}.render_unit_generations
                     (id, unit_id, job_id, dependencies_sha256, revision, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                VALUES (?, ?, ?, ?, ?, ?)
             """,
                 (
                     generation.id,
@@ -530,9 +530,9 @@ class PostgresRenderUnits(RenderUnitStore):
             await base._execute(
                 """
                 UPDATE {s}.render_units SET
-                    revision = %s, status = %s, speech_job_id = %s,
-                    source_artifact_id = %s, source_receipt_id = %s, updated_at = %s
-                WHERE id = %s
+                    revision = ?, status = ?, speech_job_id = ?,
+                    source_artifact_id = ?, source_receipt_id = ?, updated_at = ?
+                WHERE id = ?
             """,
                 (
                     completed.revision,
@@ -561,9 +561,9 @@ class PostgresRenderUnits(RenderUnitStore):
             await base._execute(
                 """
                 UPDATE {s}.render_units SET
-                    revision = %s, status = %s, source_artifact_id = NULL,
-                    source_receipt_id = NULL, updated_at = %s
-                WHERE id = %s
+                    revision = ?, status = ?, source_artifact_id = NULL,
+                    source_receipt_id = NULL, updated_at = ?
+                WHERE id = ?
             """,
                 (failed.revision, failed.status, failed.updated_at, unit_id),
             )
@@ -577,7 +577,7 @@ class PostgresRenderUnits(RenderUnitStore):
                 """
                 SELECT u.id FROM {s}.render_units u
                 JOIN {s}.projects p ON p.id = u.project_id
-                WHERE u.status = 'generating' AND p.workspace_id = %s
+                WHERE u.status = 'generating' AND p.workspace_id = ?
                     AND NOT EXISTS (
                         SELECT 1 FROM {s}.resource_tombstones d
                         WHERE d.resource_kind = 'project' AND d.resource_id = p.id
@@ -600,7 +600,7 @@ class PostgresRenderUnits(RenderUnitStore):
                 SELECT u.id FROM {s}.render_units u
                 JOIN {s}.projects p ON p.id = u.project_id
                 WHERE u.status = 'ready' AND u.source_artifact_id IS NOT NULL
-                    AND p.workspace_id = %s
+                    AND p.workspace_id = ?
                     AND NOT EXISTS (
                         SELECT 1 FROM {s}.saved_assets a
                         WHERE a.project_id = u.project_id
@@ -671,10 +671,10 @@ class PostgresRenderUnits(RenderUnitStore):
                 await base._execute(
                     """
                     UPDATE {s}.render_units SET
-                        revision = %s, status = %s, text = %s, voice_id = %s, voice_revision = %s,
-                        model = %s, model_binding_id = %s, model_binding_revision = %s,
-                        dependencies_sha256 = %s, updated_at = %s
-                    WHERE id = %s
+                        revision = ?, status = ?, text = ?, voice_id = ?, voice_revision = ?,
+                        model = ?, model_binding_id = ?, model_binding_revision = ?,
+                        dependencies_sha256 = ?, updated_at = ?
+                    WHERE id = ?
                 """,
                     (
                         revised.revision,

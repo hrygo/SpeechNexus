@@ -30,13 +30,13 @@ def order_clause(text: str) -> str:
 def test_the_page_is_ordered_by_the_unique_keyset_key_and_nothing_else() -> None:
     text, _ = statement(BindingSummaryQuery(2))
     clause = order_clause(text)
-    assert clause == "ORDER BY family.binding_id LIMIT %s"
+    assert clause == "ORDER BY family.binding_id LIMIT ?"
     # A secondary term would make the order depend on equal keys, and a missing
     # ordering would let the physical scan order leak into the page.
     assert "," not in clause.split(" LIMIT ")[0]
     assert clause.count("ORDER BY") == 1
     # The frontier must be compared on the same key the page is ordered by.
-    assert "WHERE family.binding_id > %s" in text
+    assert "WHERE family.binding_id > ?" in text
 
 
 def test_binding_id_is_the_only_mutable_free_ordering_column() -> None:
@@ -108,7 +108,7 @@ def test_each_status_predicate_is_exactly_the_derived_status(status: str) -> Non
     # Exactly one filter form can be present, otherwise two statuses would leak
     # into one page.
     assert sum(text.count(shape) for shape in predicates.values()) == 1
-    assert order_clause(text) == "ORDER BY family.binding_id LIMIT %s"
+    assert order_clause(text) == "ORDER BY family.binding_id LIMIT ?"
 
 
 def test_a_foreign_query_object_is_refused() -> None:

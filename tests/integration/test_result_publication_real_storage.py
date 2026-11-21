@@ -26,6 +26,7 @@ from pydantic import AnyHttpUrl, SecretStr
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 from tests.fake.readiness import StaticProbe
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.app import create_app
 from speechnexus_backend.job_dispatch_runtime import (
@@ -232,7 +233,7 @@ def sandbox() -> Iterator[Sandbox]:
     writer_role, reader_role = "sn_result_writer_" + suffix, "sn_result_reader_" + suffix
     artifacts_bucket, staging_bucket = "sn-artifacts-" + suffix, "sn-results-" + suffix
     _migrate(url, schema)
-    admin = psycopg.connect(url, row_factory=dict_row, autocommit=True)
+    admin = portable_pg_connect(url, row_factory=dict_row, autocommit=True)
     admin.execute(f'SET search_path TO "{schema}", pg_catalog')
     objects = Minio(
         endpoint.removeprefix("http://").removeprefix("https://"),

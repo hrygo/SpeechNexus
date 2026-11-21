@@ -443,7 +443,7 @@ class JobDispatchRuntime:
         # role and its column grants separately.
         with self._pool.connection(timeout=self.settings.storage_timeout_seconds) as connection:
             connection.execute(
-                "SELECT set_config('statement_timeout', %s, true)",
+                "SELECT set_config('statement_timeout', ?, true)",
                 (str(max(1, int(self.settings.storage_timeout_seconds * 1000))),),
             )
             identities = connection.execute(

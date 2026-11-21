@@ -29,7 +29,7 @@ async def pending_content_write(base: _Session, project_id: str) -> bool:
     row = await base._one(
         _Pending,
         "SELECT EXISTS(SELECT 1 FROM {s}.content_write_intents "
-        "WHERE project_id=%s AND state <> 'settled') AS present",
+        "WHERE project_id=? AND state <> 'settled') AS present",
         (project_id,),
     )
     assert row is not None
@@ -90,13 +90,13 @@ class PostgresContentWrites:
         async with self._versions.transaction() as base:
             assert isinstance(base, _Session)
             row = await base._one(
-                _Export, "SELECT project_id,status FROM {s}.export_jobs WHERE id=%s", (export_id,)
+                _Export, "SELECT project_id,status FROM {s}.export_jobs WHERE id=?", (export_id,)
             )
             if row is None or await base.get_project(row.project_id, for_update=True) is None:
                 raise ResourceNotFoundError
             row = await base._one(
                 _Export,
-                "SELECT project_id,status FROM {s}.export_jobs WHERE id=%s FOR UPDATE",
+                "SELECT project_id,status FROM {s}.export_jobs WHERE id=? FOR UPDATE",
                 (export_id,),
             )
             if row is None:
@@ -126,7 +126,7 @@ class PostgresContentWrites:
             await base._one(
                 _Write,
                 "SELECT id,resource_id,intent_digest,state FROM {s}.content_write_intents "
-                "WHERE project_id=%s AND resource_kind=%s AND key_digest=%s",
+                "WHERE project_id=? AND resource_kind=? AND key_digest=?",
                 (project_id, kind, key_digest),
             )
             if key_digest is not None
@@ -142,8 +142,8 @@ class PostgresContentWrites:
             if previous.state in {"writing", "unknown"}:
                 raise VersionStoreError(sqlstate=None, commit_unknown=True)
             await base._execute(
-                "UPDATE {s}.content_write_intents SET token=%s,intent=%s,state='reserved',"
-                "object_key=NULL,sha256=NULL,bytes=NULL,updated_at=%s WHERE id=%s",
+                "UPDATE {s}.content_write_intents SET token=?,intent=?,state='reserved',"
+                "object_key=NULL,sha256=NULL,bytes=NULL,updated_at=? WHERE id=?",
                 (token, Jsonb(intent), now, previous.id),
             )
             return ContentWrite(previous.id, project_id, previous.resource_id, token)
@@ -151,7 +151,7 @@ class PostgresContentWrites:
         await base._execute(
             "INSERT INTO {s}.content_write_intents "
             "(id,project_id,resource_kind,resource_id,token,key_digest,intent_digest,intent,"
-            "state,created_at,updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'reserved',%s,%s)",
+            "state,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,'reserved',?,?)",
             (
                 identity,
                 project_id,
@@ -176,8 +176,8 @@ class PostgresContentWrites:
                 raise ResourceNotFoundError
             changed = await base._one(
                 _Changed,
-                "UPDATE {s}.content_write_intents SET state='writing',object_key=%s,sha256=%s,"
-                "bytes=%s,updated_at=%s WHERE id=%s AND token=%s AND state='reserved' RETURNING id",
+                "UPDATE {s}.content_write_intents SET state='writing',object_key=?,sha256=?,"
+                "bytes=?,updated_at=? WHERE id=? AND token=? AND state='reserved' RETURNING id",
                 (object_key, sha256, size, await base.now(), write.id, write.token),
             )
             if changed is None:
@@ -193,9 +193,9 @@ class PostgresContentWrites:
         async with self._versions.transaction() as base:
             assert isinstance(base, _Session)
             await base._execute(
-                "UPDATE {s}.content_write_intents SET state=%s,"
-                "intent=CASE WHEN %s THEN intent ELSE NULL END,updated_at=%s "
-                "WHERE id=%s AND token=%s AND state IN ('reserved','writing')",
+                "UPDATE {s}.content_write_intents SET state=?,"
+                "intent=CASE WHEN ? THEN intent ELSE NULL END,updated_at=? "
+                "WHERE id=? AND token=? AND state IN ('reserved','writing')",
                 (
                     "unknown" if unknown else "settled",
                     unknown,

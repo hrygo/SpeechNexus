@@ -36,7 +36,7 @@ _COLUMNS = (
     "occurred_at_us, policy_revision, change_summary_json"
 )
 _BASE = f"SELECT {_COLUMNS} FROM {EVENT_TABLE} WHERE kind = 'binding'"
-_ORDER = " ORDER BY occurred_at_us DESC, event_id DESC LIMIT %s"
+_ORDER = " ORDER BY occurred_at_us DESC, event_id DESC LIMIT ?"
 _SUMMARY_KEYS = frozenset({"changed_fields", "reason"})
 
 
@@ -53,10 +53,10 @@ def statement(query: AuditEventQuery) -> tuple[str, tuple[object, ...]]:
     text = _BASE
     parameters: list[object] = []
     if query.after is not None:
-        text += " AND (occurred_at_us, event_id) < (%s, %s)"
+        text += " AND (occurred_at_us, event_id) < (?, ?)"
         parameters.extend((query.after.occurred_at_us, query.after.event_id))
     if query.action is not None:
-        text += " AND action = %s"
+        text += " AND action = ?"
         parameters.append(query.action)
     text += _ORDER
     parameters.append(query.limit + 1)
@@ -79,7 +79,7 @@ class PostgresAuditEventReads:
                     raise AuditEventUnavailableError
                 connection.execute("SET TRANSACTION READ ONLY")
                 connection.execute(
-                    "SELECT set_config('statement_timeout', %s, true)",
+                    "SELECT set_config('statement_timeout', ?, true)",
                     (str(max(1, int(remaining * 1000))),),
                 )
                 records = connection.execute(text, parameters).fetchall()

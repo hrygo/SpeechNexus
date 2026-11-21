@@ -39,7 +39,7 @@ START = 1_000.0
 TIMEOUT = 3.0
 NOW_US = 1_700_000_000_000_000
 EXPIRED = START + TIMEOUT + 0.5
-SET_TIMEOUT = "SELECT set_config('statement_timeout', %s, true)"
+SET_TIMEOUT = "SELECT set_config('statement_timeout', ?, true)"
 
 
 class Clock:

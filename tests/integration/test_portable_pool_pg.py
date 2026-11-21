@@ -7,6 +7,7 @@ import uuid
 
 import psycopg
 import pytest
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
 
@@ -17,7 +18,7 @@ def _url_schema() -> tuple[str, str]:
     if DATABASE_URL is None:
         pytest.fail("portable pool behavior requires SPEECHNEXUS_TEST_DATABASE_URL")
     schema = f"sn_pool_{uuid.uuid4().hex[:12]}"
-    admin = psycopg.connect(DATABASE_URL, autocommit=True)
+    admin = portable_pg_connect(DATABASE_URL, autocommit=True)
     try:
         admin.execute(f"CREATE SCHEMA {schema}")
     finally:
@@ -57,7 +58,7 @@ def test_pool_translates_qmark_and_keeps_legacy_pyformat() -> None:
             connection.rollback()
     finally:
         pool.close()
-        admin = psycopg.connect(url, autocommit=True)
+        admin = portable_pg_connect(url, autocommit=True)
         try:
             admin.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
         finally:
@@ -75,7 +76,7 @@ def test_pool_rejects_untranslated_marker() -> None:
             connection.cursor().execute("SELECT ? AS broken", None)
     finally:
         pool.close()
-        admin = psycopg.connect(url, autocommit=True)
+        admin = portable_pg_connect(url, autocommit=True)
         try:
             admin.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
         finally:

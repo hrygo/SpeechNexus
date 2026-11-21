@@ -56,9 +56,9 @@ def verify_settlement_worker(pool: SpeechPool, schema: str, *, label: str) -> No
         _verify_no_role_switch(conn, label)
         row = conn.execute(
             "SELECT CURRENT_USER AS role, current_schema() AS schema, "
-            "pg_catalog.has_schema_privilege(CURRENT_USER,%s,'CREATE') AS creates, "
+            "pg_catalog.has_schema_privilege(CURRENT_USER,?,'CREATE') AS creates, "
             "EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
-            "ON c.relnamespace=n.oid WHERE n.nspname=%s "
+            "ON c.relnamespace=n.oid WHERE n.nspname=? "
             "AND pg_catalog.pg_has_role(CURRENT_USER,c.relowner,'MEMBER')) AS owns",
             (schema, schema),
         ).fetchone()
@@ -74,7 +74,7 @@ def verify_settlement_worker(pool: SpeechPool, schema: str, *, label: str) -> No
             "AS destructive "
             "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
             "JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid AND a.attnum>0 "
-            "AND NOT a.attisdropped WHERE n.nspname=%s AND c.relkind IN ('r','p','v','m')",
+            "AND NOT a.attisdropped WHERE n.nspname=? AND c.relkind IN ('r','p','v','m')",
             (schema,),
         ).fetchall()
         for column in rows:
@@ -102,7 +102,7 @@ def verify_settlement_worker(pool: SpeechPool, schema: str, *, label: str) -> No
             ("speech_asr_settlement", "SELECT"),
         ):
             result = conn.execute(
-                "SELECT pg_catalog.has_table_privilege(CURRENT_USER,%s,%s) AS allowed",
+                "SELECT pg_catalog.has_table_privilege(CURRENT_USER,?,?) AS allowed",
                 (f"{schema}.{table}", privilege),
             ).fetchone()
             if result is None or not result["allowed"]:
@@ -110,8 +110,7 @@ def verify_settlement_worker(pool: SpeechPool, schema: str, *, label: str) -> No
         for table, columns in UPDATE_COLUMNS.items():
             for update_column in columns:
                 result = conn.execute(
-                    "SELECT pg_catalog.has_column_privilege(CURRENT_USER,%s,%s,'UPDATE') "
-                    "AS allowed",
+                    "SELECT pg_catalog.has_column_privilege(CURRENT_USER,?,?,'UPDATE') AS allowed",
                     (f"{schema}.{table}", update_column),
                 ).fetchone()
                 if result is None or not result["allowed"]:

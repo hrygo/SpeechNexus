@@ -28,6 +28,7 @@ from tests.integration.test_production_admission import admission_database as ad
 from tests.integration.test_production_jobs import JobDatabase
 from tests.integration.test_production_runtime_intents import runtime_database as runtime_database
 from tests.integration.test_transcription_disable_barrier_pg import _seed
+from tests.support.portable_pg import connect as portable_pg_connect
 from tests.unit.backend.test_tts_durable_intent import plan
 
 from speechnexus_backend.speech.application.admission import AdmissionService
@@ -81,7 +82,7 @@ def database() -> Iterator[JobDatabase]:
             command.upgrade(config, "head")
     finally:
         engine.dispose()
-    admin = psycopg.connect(url, row_factory=dict_row, autocommit=True)
+    admin = portable_pg_connect(url, row_factory=dict_row, autocommit=True)
     pool = None
     role_created = False
     try:

@@ -154,11 +154,11 @@ class PostgresDispatchQueue:
             # A Job outside this queue's lane is filtered inside the claim so it
             # neither consumes the batch limit nor turns into a
             # DispatchProtocolError that starves the kinds this worker owns.
-            "AND j.kind = ANY(%s) "
+            "AND j.kind = ANY(?) "
             "ORDER BY j.created_at_us, c.job_id FOR UPDATE OF c SKIP LOCKED LIMIT %s"
             "), updated AS (UPDATE coordination_jobs AS c "
-            "SET claim_owner_id = %s, claim_version = c.claim_version + 1, "
-            "claim_expires_at_us = clock.now_us + %s "
+            "SET claim_owner_id = ?, claim_version = c.claim_version + 1, "
+            "claim_expires_at_us = clock.now_us + ? "
             "FROM due, clock WHERE c.job_id = due.job_id "
             "RETURNING c.job_id, c.claim_version, c.claim_expires_at_us"
             ") SELECT u.job_id, u.claim_version, u.claim_expires_at_us, j.workspace_id, "
@@ -172,7 +172,7 @@ class PostgresDispatchQueue:
         try:
             with self._pool.connection(timeout=self._timeout) as connection:
                 connection.execute(
-                    "SELECT set_config('statement_timeout', %s, true)",
+                    "SELECT set_config('statement_timeout', ?, true)",
                     (str(max(1, int(self._timeout * 1000))),),
                 )
                 rows = connection.execute(
@@ -245,7 +245,7 @@ class PostgresDispatchStateStore:
         try:
             with self._pool.connection(timeout=self._timeout) as connection:
                 connection.execute("SET TRANSACTION READ ONLY")
-                rows = connection.execute(_JOB_SELECT + "WHERE j.job_id = %s", (job_id,)).fetchall()
+                rows = connection.execute(_JOB_SELECT + "WHERE j.job_id = ?", (job_id,)).fetchall()
         except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
             raise DispatchUnavailableError("Dispatch state is unavailable") from None
         if len(rows) != 1:
@@ -267,7 +267,7 @@ class PostgresDispatchStateStore:
             "AS BIGINT) AS now_us), changed AS (UPDATE speech_jobs AS j "
             "SET state = 'running', status_version = j.status_version + 1, "
             "updated_at_us = clock.now_us FROM clock "
-            "WHERE j.job_id = %s AND j.status_version = %s AND j.state = 'pending' "
+            "WHERE j.job_id = ? AND j.status_version = ? AND j.state = 'pending' "
             "RETURNING j.job_id, j.status_version, clock.now_us AS now_us"
             ") INSERT INTO speech_job_events (job_id, event_seq, state, occurred_at_us) "
             "SELECT changed.job_id, (SELECT COALESCE(MAX(event_seq), -1) + 1 "
@@ -277,7 +277,7 @@ class PostgresDispatchStateStore:
         try:
             with self._pool.connection(timeout=self._timeout) as connection:
                 connection.execute(
-                    "SELECT set_config('statement_timeout', %s, true)",
+                    "SELECT set_config('statement_timeout', ?, true)",
                     (str(max(1, int(self._timeout * 1000))),),
                 )
                 rows = connection.execute(query, (job.job_id, job.status_version)).fetchall()
@@ -296,15 +296,15 @@ class PostgresDispatchStateStore:
         query = (
             "WITH clock AS (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 "
             "AS BIGINT) AS now_us) "
-            "UPDATE coordination_jobs AS c SET claim_expires_at_us = clock.now_us + %s "
-            "FROM clock WHERE c.job_id = %s AND c.claim_owner_id = %s "
-            "AND c.claim_version = %s AND c.job_state = 'pending' "
+            "UPDATE coordination_jobs AS c SET claim_expires_at_us = clock.now_us + ? "
+            "FROM clock WHERE c.job_id = ? AND c.claim_owner_id = ? "
+            "AND c.claim_version = ? AND c.job_state = 'pending' "
             "RETURNING c.claim_expires_at_us"
         )
         try:
             with self._pool.connection(timeout=self._timeout) as connection:
                 connection.execute(
-                    "SELECT set_config('statement_timeout', %s, true)",
+                    "SELECT set_config('statement_timeout', ?, true)",
                     (str(max(1, int(self._timeout * 1000))),),
                 )
                 rows = connection.execute(
@@ -332,7 +332,7 @@ class PostgresDispatchStateStore:
             "WITH clock AS (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) "
             "* 1000000 AS BIGINT) AS now_us) "
             "SELECT c.job_id FROM coordination_jobs AS c CROSS JOIN clock "
-            "WHERE c.job_id = %s AND c.claim_owner_id = %s AND c.claim_version = %s "
+            "WHERE c.job_id = ? AND c.claim_owner_id = ? AND c.claim_version = ? "
             "AND c.job_state = 'pending' AND c.claim_expires_at_us > clock.now_us "
             "FOR UPDATE OF c"
         )
@@ -342,7 +342,7 @@ class PostgresDispatchStateStore:
                 connection.transaction(),
             ):
                 connection.execute(
-                    "SELECT set_config('statement_timeout', %s, true)",
+                    "SELECT set_config('statement_timeout', ?, true)",
                     (str(max(1, int(self._timeout * 1000))),),
                 )
                 owned = connection.execute(
@@ -353,7 +353,7 @@ class PostgresDispatchStateStore:
                 current = connection.execute(
                     "SELECT j.state, s.progress_unit FROM speech_jobs AS j "
                     "JOIN speech_job_submissions AS s ON s.job_id = j.job_id "
-                    "WHERE j.job_id = %s FOR UPDATE OF j",
+                    "WHERE j.job_id = ? FOR UPDATE OF j",
                     (job.job_id,),
                 ).fetchone()
                 if (
@@ -366,7 +366,7 @@ class PostgresDispatchStateStore:
                     "SELECT COALESCE(MAX(event_seq), -1) AS seq, "
                     "COALESCE(MAX(progress_completed) FILTER "
                     "(WHERE kind = 'progress'), -1) AS completed "
-                    "FROM speech_job_events WHERE job_id = %s",
+                    "FROM speech_job_events WHERE job_id = ?",
                     (job.job_id,),
                 ).fetchone()
                 if latest is None or completed <= int(latest["completed"]):
@@ -374,9 +374,9 @@ class PostgresDispatchStateStore:
                 connection.execute(
                     "INSERT INTO speech_job_events "
                     "(job_id, event_seq, state, occurred_at_us, kind, progress_unit, "
-                    "progress_completed, progress_total) VALUES (%s, %s, 'running', "
+                    "progress_completed, progress_total) VALUES (?, ?, 'running', "
                     "CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT), "
-                    "'progress', %s, %s, %s)",
+                    "'progress', ?, ?, ?)",
                     (job.job_id, int(latest["seq"]) + 1, unit, completed, total),
                 )
             return True
@@ -388,14 +388,14 @@ class PostgresDispatchStateStore:
             "WITH clock AS (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 "
             "AS BIGINT) AS now_us) "
             f"INSERT INTO {NOT_SUBMITTED_TABLE} (job_id, observed_at_us, observer) "
-            "SELECT j.job_id, clock.now_us, %s FROM speech_jobs AS j CROSS JOIN clock "
-            "WHERE j.job_id = %s AND j.state = 'cancelling' "
+            "SELECT j.job_id, clock.now_us, ? FROM speech_jobs AS j CROSS JOIN clock "
+            "WHERE j.job_id = ? AND j.state = 'cancelling' "
             "ON CONFLICT (job_id) DO NOTHING"
         )
         try:
             with self._pool.connection(timeout=self._timeout) as connection:
                 connection.execute(
-                    "SELECT set_config('statement_timeout', %s, true)",
+                    "SELECT set_config('statement_timeout', ?, true)",
                     (str(max(1, int(self._timeout * 1000))),),
                 )
                 connection.execute(query, (observer, job_id))
@@ -421,15 +421,15 @@ class PostgresDispatchStateStore:
                 connection.transaction(),
             ):
                 connection.execute(
-                    "SELECT set_config('statement_timeout', %s, true)",
+                    "SELECT set_config('statement_timeout', ?, true)",
                     (str(max(1, int(self._timeout * 1000))),),
                 )
                 owned = connection.execute(
                     "WITH clock AS (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) "
                     "* 1000000 AS BIGINT) AS now_us) "
                     "SELECT c.job_id FROM coordination_jobs AS c CROSS JOIN clock "
-                    "WHERE c.job_id = %s AND c.claim_owner_id = %s "
-                    "AND c.claim_version = %s AND c.job_state = 'pending' "
+                    "WHERE c.job_id = ? AND c.claim_owner_id = ? "
+                    "AND c.claim_version = ? AND c.job_state = 'pending' "
                     "AND c.claim_expires_at_us > clock.now_us FOR UPDATE OF c",
                     (job.job_id, claim.worker_id, claim.claim_version),
                 ).fetchone()
@@ -439,10 +439,10 @@ class PostgresDispatchStateStore:
                 changed = connection.execute(
                     "WITH clock AS (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) "
                     "* 1000000 AS BIGINT) AS now_us) "
-                    "UPDATE speech_jobs AS j SET state = %s, "
-                    "status_version = j.status_version + 1, result_json = %s, "
-                    "error_code = %s, updated_at_us = clock.now_us FROM clock "
-                    "WHERE j.job_id = %s AND j.status_version = %s AND j.state = %s "
+                    "UPDATE speech_jobs AS j SET state = ?, "
+                    "status_version = j.status_version + 1, result_json = ?, "
+                    "error_code = ?, updated_at_us = clock.now_us FROM clock "
+                    "WHERE j.job_id = ? AND j.status_version = ? AND j.state = ? "
                     "RETURNING clock.now_us AS now_us",
                     (
                         target,
@@ -459,16 +459,16 @@ class PostgresDispatchStateStore:
                 evented = connection.execute(
                     "INSERT INTO speech_job_events "
                     "(job_id, event_seq, state, occurred_at_us) "
-                    "SELECT %s, COALESCE(MAX(event_seq), -1) + 1, %s, %s "
-                    "FROM speech_job_events WHERE job_id = %s RETURNING job_id",
+                    "SELECT ?, COALESCE(MAX(event_seq), -1) + 1, ?, ? "
+                    "FROM speech_job_events WHERE job_id = ? RETURNING job_id",
                     (job.job_id, target, int(changed["now_us"]), job.job_id),
                 ).fetchone()
                 if evented is None:
                     raise _TerminalGuardLostError
                 closed = connection.execute(
-                    "UPDATE coordination_jobs AS c SET job_state = %s, claim_expires_at_us = 0 "
-                    "WHERE c.job_id = %s AND c.job_state = 'pending' "
-                    "AND c.claim_owner_id = %s AND c.claim_version = %s "
+                    "UPDATE coordination_jobs AS c SET job_state = ?, claim_expires_at_us = 0 "
+                    "WHERE c.job_id = ? AND c.job_state = 'pending' "
+                    "AND c.claim_owner_id = ? AND c.claim_version = ? "
                     "AND c.claim_expires_at_us > CAST(EXTRACT(EPOCH FROM clock_timestamp()) "
                     "* 1000000 AS BIGINT) RETURNING c.job_id",
                     (target, job.job_id, claim.worker_id, claim.claim_version),
@@ -525,7 +525,7 @@ class PostgresLeaseSettler:
             with self._pool.connection(timeout=self._timeout) as connection:
                 connection.execute("SET TRANSACTION READ ONLY")
                 rows = connection.execute(
-                    "SELECT lease_id FROM admission_leases WHERE operation_id = %s "
+                    "SELECT lease_id FROM admission_leases WHERE operation_id = ? "
                     "ORDER BY lease_id",
                     (operation_id,),
                 ).fetchall()
@@ -554,7 +554,7 @@ class PostgresLeaseSettler:
                     "s.execution_state, s.cleanup_state AS execution_cleanup_state "
                     "FROM admission_leases AS l "
                     "LEFT JOIN submit_intents AS s ON s.lease_id = l.lease_id "
-                    "WHERE l.operation_id = %s "
+                    "WHERE l.operation_id = ? "
                     "ORDER BY l.lease_id",
                     (operation_id,),
                 ).fetchall()

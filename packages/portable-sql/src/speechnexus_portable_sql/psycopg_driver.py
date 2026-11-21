@@ -21,7 +21,15 @@ import psycopg
 
 from .markers import PYFORMAT, qmark_to_pyformat
 
-__all__ = ["PYFORMAT", "PortableConnection", "PortableCursor", "connect", "qmark_to_pyformat"]
+__all__ = [
+    "PYFORMAT",
+    "AsyncPortableCursor",
+    "PortableConnection",
+    "PortableCursor",
+    "connect",
+    "connect_async",
+    "qmark_to_pyformat",
+]
 
 
 def _translated(query: Any, params: Any) -> Any:
@@ -117,3 +125,44 @@ def connect(*args: Any, **kwargs: Any) -> PortableConnection:
 
     kwargs.setdefault("cursor_factory", PortableCursor)
     return PortableConnection(psycopg.connect(*args, **kwargs))
+
+
+class AsyncPortableCursor:
+    """异步连接的同一处翻译:业务 SQL 与同步路径完全一致。"""
+
+    __slots__ = ("_cursor",)
+
+    def __init__(self, connection: Any, *args: Any, **kwargs: Any) -> None:
+        self._cursor = psycopg.AsyncCursor(connection, *args, **kwargs)
+
+    async def execute(
+        self,
+        query: Any,
+        params: Any = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> AsyncPortableCursor:
+        await self._cursor.execute(
+            _translated(query, params), params, prepare=prepare, binary=binary
+        )
+        return self
+
+    async def executemany(self, query: Any, params_seq: Any, *, returning: bool = False) -> None:
+        await self._cursor.executemany(_translated(query, ()), params_seq, returning=returning)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._cursor, name)
+
+    async def __aenter__(self) -> AsyncPortableCursor:
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        await self._cursor.close()
+
+
+async def connect_async(*args: Any, **kwargs: Any) -> Any:
+    """与 `psycopg.AsyncConnection.connect` 同签名,游标工厂已接翻译。"""
+
+    kwargs.setdefault("cursor_factory", AsyncPortableCursor)
+    return await psycopg.AsyncConnection.connect(*args, **kwargs)

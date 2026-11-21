@@ -22,6 +22,7 @@ from psycopg.rows import dict_row
 from pydantic import SecretStr
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
+from tests.support.portable_pg import connect as portable_pg_connect
 from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app
@@ -133,7 +134,7 @@ def jobs_db() -> Iterator[JobSandbox]:
             command.upgrade(config, "head")
     finally:
         engine.dispose()
-    admin = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+    admin = portable_pg_connect(url, autocommit=True, row_factory=dict_row)
     admin.execute(f'SET search_path TO "{schema}", pg_catalog')
     pool = None
     try:
@@ -689,7 +690,7 @@ def test_publisher_startup_rejects_each_misgranted_privilege(
         # The startup check itself names the missing authority type and table; the
         # lifespan deliberately masks the cause, so assert the precise message here.
         with (
-            psycopg.connect(dsn, row_factory=dict_row) as connection,
+            portable_pg_connect(dsn, row_factory=dict_row) as connection,
             pytest.raises(ValueError, match=re.escape(detail)),
         ):
             _verify_publication_privileges(connection, jobs_db.schema)
@@ -719,7 +720,7 @@ def test_undeclared_table_rejection_says_how_to_extend_the_whitelist(
             f'GRANT INSERT ON "{jobs_db.schema}".speech_publication_retirements TO "{role}"'
         )
         with (
-            psycopg.connect(dsn, row_factory=dict_row) as connection,
+            portable_pg_connect(dsn, row_factory=dict_row) as connection,
             pytest.raises(ValueError) as caught,
         ):
             _verify_publication_privileges(connection, jobs_db.schema)

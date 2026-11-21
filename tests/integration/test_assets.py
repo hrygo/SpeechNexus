@@ -18,7 +18,6 @@ from minio import Minio
 from minio.commonconfig import ENABLED
 from minio.versioningconfig import VersioningConfig
 from psycopg.conninfo import make_conninfo
-from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 from sqlalchemy.exc import ProgrammingError
 from tests.integration.test_coordination_foundation import (
@@ -33,6 +32,7 @@ from tests.integration.test_production_jobs import (
     database,  # noqa: F401 -- shared real PG migration/role fixture
 )
 from tests.support.migrations import HEAD
+from tests.support.portable_pg import connect_kwargs as portable_connect_kwargs
 
 from speechnexus_backend.speech.application.assets import AssetService, TextAssetInspector
 from speechnexus_backend.speech.domain.assets import (
@@ -385,7 +385,7 @@ def test_pg_lost_commit_reply_never_reexecutes_write(
     with ConnectionPool[FaultConnection](
         make_conninfo(assets.db.url, user=assets.db.role, password="synthetic_job_test"),
         connection_class=FaultConnection,
-        kwargs={"row_factory": dict_row},
+        kwargs=portable_connect_kwargs(),
         configure=configure,
         min_size=1,
         max_size=1,

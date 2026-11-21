@@ -83,6 +83,7 @@ from speechnexus_backend.workbench.infrastructure.public_voice_catalogue import 
 from speechnexus_backend.workbench.infrastructure.runtime_schema import SCHEMA_REVISION, TABLES
 from speechnexus_backend.workbench.interfaces.runtime_ingress import RuntimeIngress
 from speechnexus_backend.workbench.runtime_settings import WorkbenchSettings
+from speechnexus_portable_sql.psycopg_driver import connect_async as portable_connect_async
 
 _READ_ONLY = frozenset({"erased_mutation_receipts", "deletion_ledger", "runtime_schema_revision"})
 _INSERT = TABLES - _READ_ONLY
@@ -189,7 +190,7 @@ async def _refuse_table_privilege(
     tables: tuple[str, ...] | None = None,
 ) -> None:
     """Name the first relation that still confers a whole-table authority."""
-    scope = "" if tables is None else " AND c.relname = ANY(%s) "
+    scope = "" if tables is None else " AND c.relname = ANY(?) "
     parameters: tuple[Any, ...] = (
         (schema, privilege)
         if tables is None
@@ -203,8 +204,8 @@ async def _refuse_table_privilege(
         await connection.execute(
             "SELECT c.relname AS name FROM pg_catalog.pg_class c "
             "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
-            "WHERE n.nspname=%s AND c.relkind IN ('r','p','v','m','f') "
-            f"AND pg_catalog.has_table_privilege(c.oid,%s){scope}"
+            "WHERE n.nspname=? AND c.relkind IN ('r','p','v','m','f') "
+            f"AND pg_catalog.has_table_privilege(c.oid,?){scope}"
             "ORDER BY c.relname LIMIT 1",
             parameters,
         )
@@ -222,7 +223,7 @@ async def _refuse_column_privilege(
     tables: tuple[str, ...] | None = None,
 ) -> None:
     """A column grant leaves the table predicate false; compare it directly."""
-    scope = "" if tables is None else " AND c.relname = ANY(%s) "
+    scope = "" if tables is None else " AND c.relname = ANY(?) "
     parameters: tuple[Any, ...] = (
         (schema, privilege)
         if tables is None
@@ -236,8 +237,8 @@ async def _refuse_column_privilege(
         await connection.execute(
             "SELECT c.relname AS name FROM pg_catalog.pg_class c "
             "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
-            "WHERE n.nspname=%s AND c.relkind IN ('r','p','v','m','f') "
-            f"AND pg_catalog.has_any_column_privilege(c.oid,%s){scope}"
+            "WHERE n.nspname=? AND c.relkind IN ('r','p','v','m','f') "
+            f"AND pg_catalog.has_any_column_privilege(c.oid,?){scope}"
             "ORDER BY c.relname LIMIT 1",
             parameters,
         )
@@ -309,7 +310,7 @@ async def _refuse_foreign_relation_privileges(
             FROM pg_catalog.pg_class c
             JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
             WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'
-                AND n.nspname <> %s
+                AND n.nspname <> ?
                 AND c.relkind IN ('r','p','v','m','f','S')
                 AND EXISTS (
                     SELECT 1 FROM reachable rt
@@ -345,7 +346,7 @@ async def check_database(settings: WorkbenchSettings) -> None:
     connection: psycopg.AsyncConnection[dict[str, Any]] | None = None
     try:
         async with asyncio.timeout(5):
-            connection = await psycopg.AsyncConnection.connect(
+            connection = await portable_connect_async(
                 settings.database_url.get_secret_value(),
                 autocommit=True,
                 connect_timeout=3,
@@ -370,7 +371,7 @@ async def check_database(settings: WorkbenchSettings) -> None:
                         OR has_schema_privilege(n.oid,'CREATE') AS unsafe,
                         has_schema_privilege(n.oid,'USAGE') AS usable
                     FROM pg_roles r, pg_namespace n, pg_database d
-                    WHERE r.rolname=session_user AND n.nspname=%s
+                    WHERE r.rolname=session_user AND n.nspname=?
                         AND d.datname=current_database()
                     """,
                     (settings.database_schema,),
@@ -393,7 +394,7 @@ async def check_database(settings: WorkbenchSettings) -> None:
                         has_any_column_privilege(c.oid,'INSERT') AS any_insert,
                         has_table_privilege(c.oid,'DELETE,TRUNCATE') AS destructive
                     FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-                    WHERE n.nspname=%s AND c.relkind IN ('r','p','v','m','f')
+                    WHERE n.nspname=? AND c.relkind IN ('r','p','v','m','f')
                     """,
                     (settings.database_schema,),
                 )
@@ -431,7 +432,7 @@ async def check_database(settings: WorkbenchSettings) -> None:
                     SELECT c.relname AS name,a.attname AS column
                     FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
                         JOIN pg_attribute a ON a.attrelid=c.oid
-                    WHERE n.nspname=%s AND a.attnum>0 AND NOT a.attisdropped
+                    WHERE n.nspname=? AND a.attnum>0 AND NOT a.attisdropped
                         AND c.relkind='r' AND has_column_privilege(c.oid,a.attnum,'UPDATE')
                     """,
                     (settings.database_schema,),
@@ -476,7 +477,7 @@ async def check_cleanup_identity(settings: WorkbenchSettings) -> None:
     connection: psycopg.AsyncConnection[dict[str, Any]] | None = None
     try:
         async with asyncio.timeout(5):
-            connection = await psycopg.AsyncConnection.connect(
+            connection = await portable_connect_async(
                 settings.cleanup_database_url.get_secret_value(),
                 autocommit=True,
                 connect_timeout=3,
@@ -496,7 +497,7 @@ async def check_cleanup_identity(settings: WorkbenchSettings) -> None:
                         OR pg_has_role(r.oid,'pg_write_all_data','MEMBER') AS unsafe,
                         has_schema_privilege(n.oid,'USAGE') AS usable
                     FROM pg_roles r, pg_namespace n, pg_database d
-                    WHERE r.rolname=session_user AND n.nspname=%s
+                    WHERE r.rolname=session_user AND n.nspname=?
                         AND d.datname=current_database()
                     """,
                     (settings.database_schema,),

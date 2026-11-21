@@ -57,7 +57,7 @@ _BASE = (
     "LEFT JOIN speech_publication_retirements AS retired "
     "ON retired.kind = 'binding' AND retired.object_id = family.binding_id "
     "AND retired.revision = family.latest_revision "
-    "WHERE family.binding_id > %s"
+    "WHERE family.binding_id > ?"
 )
 
 # The predicate must select exactly the rows ``publication_status`` derives;
@@ -68,7 +68,7 @@ _STATUS_PREDICATES = {
     "retired": " AND retired.mode = 'retire'",
     "disabled": " AND retired.mode = 'disable'",
 }
-_ORDER = " ORDER BY family.binding_id LIMIT %s"
+_ORDER = " ORDER BY family.binding_id LIMIT ?"
 
 
 def statement(query: BindingSummaryQuery) -> tuple[str, tuple[str, int]]:
@@ -101,7 +101,7 @@ class PostgresBindingSummaryReads:
                     raise BindingSummaryUnavailableError
                 connection.execute("SET TRANSACTION READ ONLY")
                 connection.execute(
-                    "SELECT set_config('statement_timeout', %s, true)",
+                    "SELECT set_config('statement_timeout', ?, true)",
                     (str(max(1, int(remaining * 1000))),),
                 )
                 records = connection.execute(text, parameters).fetchall()

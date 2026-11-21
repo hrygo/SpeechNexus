@@ -113,11 +113,11 @@ class Pool:
             return Rows([{"revision": str(BINDING.revision)}])
         if "AS is_current" in query:
             return Rows(self.binding_rows)
-        if "j.idempotency_key_digest = %s" in query:
+        if "j.idempotency_key_digest = ?" in query:
             return Rows(
                 [_public_row(self.request)] if self.replay_after_lock and self.locked else []
             )
-        if "WHERE j.job_id = %s" in query:
+        if "WHERE j.job_id = ?" in query:
             return Rows([_public_row(self.request)])
         return Rows([])
 

@@ -50,8 +50,10 @@ def test_placeholders_after_operators_are_still_found() -> None:
     ]
 
 
-def test_mixed_markers_are_rejected_instead_of_half_translated() -> None:
-    """同一语句里既有 `?` 又有 `%s` 只能说明有一处没改干净:半翻译的语句比红更危险。"""
+def test_mixed_statement_keeps_parameter_order() -> None:
+    """整句已迁成 `?`、拼接片段仍是 `%s` 时,顺序必须原样保留."""
 
-    with pytest.raises(AmbiguousMarkerError, match="mixes"):
-        qmark_to_pyformat("SELECT ?, %s FROM t", (1, 2))
+    sql = "SELECT a FROM t WHERE b = ? AND c = ? ORDER BY a LIMIT %s"
+    assert qmark_to_pyformat(sql, (1, 2, 3)) == (
+        "SELECT a FROM t WHERE b = %s AND c = %s ORDER BY a LIMIT %s"
+    )

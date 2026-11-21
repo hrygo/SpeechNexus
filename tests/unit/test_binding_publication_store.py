@@ -101,7 +101,7 @@ class Cursor:
             )
         elif "SELECT revision, revision_id FROM speech_publication_heads" in query:
             self.rows = [] if self.head is None else [{"revision": self.head, "revision_id": "r"}]
-        elif "FROM speech_publication_heads WHERE kind = %s" in query:
+        elif "FROM speech_publication_heads WHERE kind = ?" in query:
             self.rows = [] if self.head is None else [{"revision": self.head}]
         elif "SELECT CAST(EXTRACT" in query:
             self.rows = [{"t": NOW}]

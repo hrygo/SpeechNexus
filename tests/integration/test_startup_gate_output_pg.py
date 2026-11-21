@@ -24,9 +24,9 @@ import sys
 import uuid
 from pathlib import Path
 
-import psycopg
 import pytest
 import rfc8785
+from tests.support.portable_pg import connect as portable_pg_connect
 
 ROOT = Path(__file__).resolve().parents[2]
 RECIPE_EXAMPLE = ROOT / "deploy/private/speech-recipe.example.json"
@@ -75,7 +75,7 @@ def test_api_settlement_gate_prints_one_fail_line_and_no_traceback(tmp_path: Pat
     url = database_url()
     schema = "sn_gate_output_" + uuid.uuid4().hex[:12]
     recipe = write_recipe(tmp_path)
-    with psycopg.connect(url, autocommit=True) as administrator:
+    with portable_pg_connect(url, autocommit=True) as administrator:
         administrator.execute(f'CREATE SCHEMA "{schema}"')
     try:
         result = run_api(
@@ -101,7 +101,7 @@ def test_api_settlement_gate_prints_one_fail_line_and_no_traceback(tmp_path: Pat
             }
         )
     finally:
-        with psycopg.connect(url, autocommit=True) as administrator:
+        with portable_pg_connect(url, autocommit=True) as administrator:
             administrator.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
 
     text = result.stdout + result.stderr
@@ -191,7 +191,7 @@ def test_api_job_schema_gate_fails_in_the_lifespan_with_exit_three(tmp_path: Pat
     """
     url = database_url()
     schema = "sn_gate_lifespan_" + uuid.uuid4().hex[:12]
-    with psycopg.connect(url, autocommit=True) as administrator:
+    with portable_pg_connect(url, autocommit=True) as administrator:
         administrator.execute(f'CREATE SCHEMA "{schema}"')
     try:
         result = run_api(
@@ -213,7 +213,7 @@ def test_api_job_schema_gate_fails_in_the_lifespan_with_exit_three(tmp_path: Pat
             }
         )
     finally:
-        with psycopg.connect(url, autocommit=True) as administrator:
+        with portable_pg_connect(url, autocommit=True) as administrator:
             administrator.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
 
     text = result.stdout + result.stderr

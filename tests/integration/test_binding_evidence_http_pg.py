@@ -31,6 +31,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 from tests.fake.readiness import StaticProbe
 from tests.support.binding_examples import binding_request
+from tests.support.portable_pg import connect as portable_pg_connect
 from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app
@@ -92,7 +93,7 @@ def sandbox() -> Iterator[Sandbox]:
     suffix = uuid.uuid4().hex[:10]
     schema = "sn_bindevidence_" + suffix
     names = {role: f"sn_bindevidence_{role}_{suffix}" for role in ROLES}
-    admin: psycopg.Connection[dict[str, Any]] = psycopg.connect(
+    admin: psycopg.Connection[dict[str, Any]] = portable_pg_connect(
         base, row_factory=dict_row, autocommit=True
     )
     pools: dict[str, SpeechPool] = {}

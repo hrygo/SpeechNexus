@@ -18,6 +18,7 @@ from speechnexus_backend.speech.infrastructure import (
     job_cancellation_fence_schema,
     public_job_schema,
 )
+from speechnexus_portable_sql.psycopg_driver import connect_async as portable_connect_async
 
 
 class PostgresReadinessProbe:
@@ -32,7 +33,7 @@ class PostgresReadinessProbe:
         return "postgresql"
 
     async def check(self) -> None:
-        connection = await psycopg.AsyncConnection.connect(
+        connection = await portable_connect_async(
             self._dsn,
             connect_timeout=max(1, round(self._timeout_seconds)),
         )
@@ -423,7 +424,7 @@ class CancellationDebtProbe:
         connection = self._connection
         if connection is None or connection.closed or connection.broken:
             assert self._dsn is not None  # guarded by ``check``
-            connection = await psycopg.AsyncConnection.connect(
+            connection = await portable_connect_async(
                 self._dsn,
                 connect_timeout=self._connect_timeout_seconds,
                 options=f"-c search_path={self._schema},pg_catalog,pg_temp",
@@ -1044,7 +1045,7 @@ class StopEvidenceDebtProbe:
         connection = self._connection
         if connection is None or connection.closed or connection.broken:
             assert self._dsn is not None  # guarded by ``check``
-            connection = await psycopg.AsyncConnection.connect(
+            connection = await portable_connect_async(
                 self._dsn,
                 connect_timeout=self._connect_timeout_seconds,
                 options=f"-c search_path={self._schema},pg_catalog,pg_temp",

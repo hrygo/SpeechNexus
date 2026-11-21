@@ -12,6 +12,7 @@ from alembic import command as migration
 from alembic.config import Config
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
+from tests.support.portable_pg import connect as portable_pg_connect
 
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
@@ -44,7 +45,7 @@ def test_legacy_publication_count_is_seeded_and_retirement_history_blocks_downgr
     )
     config = Config(str(ROOT / "alembic.ini"))
     config.attributes["schema"] = schema
-    admin = psycopg.connect(url, autocommit=True)
+    admin = portable_pg_connect(url, autocommit=True)
     try:
         with engine.connect() as connection:
             config.attributes["connection"] = connection

@@ -6,12 +6,12 @@ import os
 import uuid
 from pathlib import Path
 
-import psycopg
 import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.builtin_voice_revocation import (
     BuiltinVoiceRevocationRejectedError,
@@ -49,7 +49,7 @@ def test_supported_revocation_recovers_committed_lost_reply(
         with engine.connect() as migration_connection:
             config.attributes["connection"] = migration_connection
             command.upgrade(config, "head")
-        with psycopg.connect(url, autocommit=True) as admin:
+        with portable_pg_connect(url, autocommit=True) as admin:
             admin.execute(f'CREATE ROLE "{role}"')
             for statement in qualification_writer_grants(schema, role):
                 admin.execute(statement)

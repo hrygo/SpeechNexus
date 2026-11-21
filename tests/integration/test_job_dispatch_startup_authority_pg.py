@@ -21,6 +21,7 @@ import pytest
 from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
 from pydantic import SecretStr
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.job_dispatch_runtime import (
     DispatchDependencies,
@@ -119,7 +120,7 @@ def dispatch_db() -> Iterator[DispatchSandbox]:
         pytest.fail("Configure an isolated PostgreSQL DSN; skip is not startup evidence")
     suffix = uuid.uuid4().hex[:12]
     schema, role = "sn_dispatch_" + suffix, "sn_dispatch_role_" + suffix
-    admin = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+    admin = portable_pg_connect(url, autocommit=True, row_factory=dict_row)
     try:
         admin.execute(f'CREATE SCHEMA "{schema}"')
         admin.execute(f'SET search_path TO "{schema}", pg_catalog')

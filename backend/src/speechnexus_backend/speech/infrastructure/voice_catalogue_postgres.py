@@ -67,8 +67,8 @@ class PostgresVoiceCatalogue:
                 raise PublicationUnavailableError
             db.execute(
                 f"SELECT * FROM {VOICE_READER_VIEW} WHERE selected AND retired_at_us IS NULL "
-                "AND (%s::text IS NULL OR document->'capabilities'->'languages' ? %s) "
-                "AND (%s::text IS NULL OR voice_id > %s) ORDER BY voice_id LIMIT %s",
+                "AND (?::text IS NULL OR document->'capabilities'->'languages' ? ?) "
+                "AND (?::text IS NULL OR voice_id > ?) ORDER BY voice_id LIMIT ?",
                 (language, language, cursor, cursor, limit + 1),
             )
             rows = db.fetchall()
@@ -99,7 +99,7 @@ class PostgresVoiceCatalogue:
         def read(db: PublicationCursor) -> dict[str, Any] | None:
             _require_publications(db)
             db.execute(
-                f"SELECT * FROM {VOICE_READER_VIEW} WHERE voice_id=%s AND revision=%s",
+                f"SELECT * FROM {VOICE_READER_VIEW} WHERE voice_id=? AND revision=?",
                 (voice_id, revision),
             )
             rows = db.fetchall()

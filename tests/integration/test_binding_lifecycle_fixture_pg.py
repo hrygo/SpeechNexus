@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-from types import SimpleNamespace
 from typing import Any
 
 import psycopg
@@ -57,7 +56,7 @@ def test_failed_setup_leaves_no_schema_or_role(monkeypatch: pytest.MonkeyPatch, 
     with connect(url, autocommit=True) as observer:
         # Intercept only the fixture's admin connection. Alembic/SQLAlchemy must
         # keep the real driver's connect function for actual migrations.
-        monkeypatch.setattr(lifecycle, "psycopg", SimpleNamespace(connect=lambda *a, **kw: Admin()))
+        monkeypatch.setattr(lifecycle, "portable_pg_connect", lambda *a, **kw: Admin())
         monkeypatch.setattr(migration, "upgrade", migrate)
         if stage == "pool":
             monkeypatch.setattr(lifecycle, "speech_pool", pool)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import psycopg
+from speechnexus_portable_sql.psycopg_driver import connect_async as portable_connect_async
 
 
 class PostgresReadinessProbe:
@@ -18,7 +18,7 @@ class PostgresReadinessProbe:
         return self._name
 
     async def check(self) -> None:
-        connection = await psycopg.AsyncConnection.connect(
+        connection = await portable_connect_async(
             self._dsn,
             connect_timeout=max(1, round(self._timeout_seconds)),
         )

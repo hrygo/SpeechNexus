@@ -208,7 +208,7 @@ class _Transaction:
         if remaining <= 0:
             raise _unavailable()
         self._connection.execute(
-            "SELECT set_config('statement_timeout', %s, true)",
+            "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(remaining * 1000))),),
         )
         cursor = self._connection.execute(statement, args)
@@ -234,9 +234,9 @@ class _Transaction:
         """CAS: exactly one executor owns the object purge of this row."""
         rows = self.rows(
             f"UPDATE {DELETION_LEDGER} SET purge_claimed_at = clock_timestamp(), "
-            "updated_at = clock_timestamp() WHERE id = %s AND status = 'queued' "
+            "updated_at = clock_timestamp() WHERE id = ? AND status = 'queued' "
             "AND (purge_claimed_at IS NULL OR purge_claimed_at <= "
-            "clock_timestamp() - make_interval(secs => %s)) RETURNING " + _LEDGER_ROW_COLUMNS,
+            "clock_timestamp() - make_interval(secs => ?)) RETURNING " + _LEDGER_ROW_COLUMNS,
             (ledger_id, PURGE_CLAIM_LEASE_SECONDS),
         )
         return rows[0] if rows else None
@@ -245,7 +245,7 @@ class _Transaction:
         """Give the claim back after this attempt ended without a completion."""
         rows = self.rows(
             f"UPDATE {DELETION_LEDGER} SET purge_claimed_at = NULL, "
-            "updated_at = clock_timestamp() WHERE id = %s AND status = 'queued' "
+            "updated_at = clock_timestamp() WHERE id = ? AND status = 'queued' "
             "RETURNING " + _LEDGER_ROW_COLUMNS,
             (ledger_id,),
         )
@@ -276,7 +276,7 @@ class _Transaction:
     def plan_row(self, plan_id: str) -> dict[str, Any] | None:
         rows = self.rows(
             f"SELECT {_PLAN_ROW_COLUMNS} FROM speech_deletion_plans "
-            "WHERE id = %s AND workspace_id = %s",
+            "WHERE id = ? AND workspace_id = ?",
             (plan_id, self._workspace_id),
         )
         return rows[0] if rows else None
@@ -284,7 +284,7 @@ class _Transaction:
     def ledger_by_key(self, key_digest: str, *, lock: bool = False) -> _LedgerRow | None:
         rows = self.rows(
             f"SELECT {_LEDGER_ROW_COLUMNS} FROM {DELETION_LEDGER} "
-            "WHERE workspace_id = %s AND idempotency_key_digest = %s"
+            "WHERE workspace_id = ? AND idempotency_key_digest = ?"
             + (" FOR UPDATE" if lock else ""),
             (self._workspace_id, key_digest),
         )
@@ -293,7 +293,7 @@ class _Transaction:
     def ledger_by_id(self, deletion_id: str) -> _LedgerRow | None:
         rows = self.rows(
             f"SELECT {_LEDGER_ROW_COLUMNS} FROM {DELETION_LEDGER} "
-            "WHERE workspace_id = %s AND id = %s FOR UPDATE",
+            "WHERE workspace_id = ? AND id = ? FOR UPDATE",
             (self._workspace_id, deletion_id),
         )
         return _LedgerRow(rows[0]) if rows else None
@@ -301,7 +301,7 @@ class _Transaction:
     def ledger_for_plan(self, plan_id: str) -> _LedgerRow | None:
         rows = self.rows(
             f"SELECT {_LEDGER_ROW_COLUMNS} FROM {DELETION_LEDGER} "
-            "WHERE workspace_id = %s AND plan_id = %s",
+            "WHERE workspace_id = ? AND plan_id = ?",
             (self._workspace_id, plan_id),
         )
         return _LedgerRow(rows[0]) if rows else None
@@ -351,7 +351,7 @@ class _DeletionExecution:
             # commits first and admission finds no revision. Without this lock the
             # intent has no foreign key to catch the race.
             self._tx.rows(
-                "SELECT 1 FROM speech_voice_drafts WHERE draft_id = %s FOR UPDATE",
+                "SELECT 1 FROM speech_voice_drafts WHERE draft_id = ? FOR UPDATE",
                 (plan.target.resource_id,),
             )
         snapshot = snapshot_target(self._tx, self._workspace_id, plan.target, exclusive=True)
@@ -491,7 +491,7 @@ class _DeletionExecution:
         """
         deleted = self._tx.rows(
             "DELETE FROM speech_voice_draft_revisions "
-            "WHERE draft_id = %s AND revision = %s RETURNING draft_id",
+            "WHERE draft_id = ? AND revision = ? RETURNING draft_id",
             (plan.target.resource_id, str(plan.target.revision)),
         )
         if not deleted:
@@ -574,11 +574,11 @@ class _DeletionExecution:
         # document and digest together, so retry cannot replay a body (#540).
         deleted = self._tx.rows(
             "DELETE FROM speech_job_intents "
-            "WHERE job_id = %s AND request_digest = %s RETURNING job_id",
+            "WHERE job_id = ? AND request_digest = ? RETURNING job_id",
             (job_id, target_digest),
         )
         if not deleted and self._tx.rows(
-            "SELECT request_digest FROM speech_job_intents WHERE job_id = %s", (job_id,)
+            "SELECT request_digest FROM speech_job_intents WHERE job_id = ?", (job_id,)
         ):
             # A row survived with another digest: the content is not the one this
             # plan pinned, so the plan no longer authorizes its removal.
@@ -588,10 +588,10 @@ class _DeletionExecution:
         # it keeps the operation identity while removing the body.
         self._tx.rows(
             "UPDATE admission_operations SET request_document = NULL, "
-            "command_redacted_at_us = GREATEST(recorded_at_us, %s), "
-            "command_deletion_job_id = %s, command_deletion_evidence_digest = %s, "
+            "command_redacted_at_us = GREATEST(recorded_at_us, ?), "
+            "command_deletion_job_id = ?, command_deletion_evidence_digest = ?, "
             "version = version + 1 "
-            "WHERE operation_id = %s AND request_document IS NOT NULL",
+            "WHERE operation_id = ? AND request_document IS NOT NULL",
             (self._tx.now_us(), deletion_id, plan_digest(plan), job_id),
         )
         return self._record(
@@ -618,7 +618,7 @@ class _DeletionExecution:
             raise _unavailable()
         content = self._tx.rows(
             "SELECT deletion_state, storage_version_id FROM speech_content_deletions "
-            "WHERE ledger_id = %s",
+            "WHERE ledger_id = ?",
             (content_ledger_id,),
         )
         if not content:
@@ -691,10 +691,10 @@ class _DeletionExecution:
             raise _unavailable()
         content = cast(dict[str, Any], plan_row["content_snapshot"])
         updated = self._tx.rows(
-            "UPDATE speech_artifacts SET artifact_state = 'deleted', deleted_at_us = %s "
-            "WHERE artifact_id = %s AND workspace_id = %s "
+            "UPDATE speech_artifacts SET artifact_state = 'deleted', deleted_at_us = ? "
+            "WHERE artifact_id = ? AND workspace_id = ? "
             "AND artifact_state IN ('ready','expired') "
-            "AND sha256 = %s AND object_key = %s AND storage_version_id = %s "
+            "AND sha256 = ? AND object_key = ? AND storage_version_id = ? "
             "RETURNING artifact_id",
             (
                 self._tx.now_us(),
@@ -712,8 +712,8 @@ class _DeletionExecution:
     def _finalize(self, existing: _LedgerRow, now: datetime) -> DeletionRecord:
         rows = self._tx.rows(
             f"UPDATE {DELETION_LEDGER} SET status = 'succeeded', cleanup_state = 'complete', "
-            "completed_at = %s, updated_at = %s "
-            "WHERE id = %s AND status <> 'succeeded' RETURNING " + _LEDGER_ROW_COLUMNS,
+            "completed_at = ?, updated_at = ? "
+            "WHERE id = ? AND status <> 'succeeded' RETURNING " + _LEDGER_ROW_COLUMNS,
             (now, now, existing.row["id"]),
         )
         if rows:
@@ -726,7 +726,7 @@ class _DeletionExecution:
     def _proof(self, asset_id: str) -> VerifiedObject | None:
         rows = self._tx.rows(
             "SELECT asset_id, object_key, storage_version_id, bytes, sha256, writer_id "
-            "FROM speech_asset_objects WHERE asset_id = %s",
+            "FROM speech_asset_objects WHERE asset_id = ?",
             (asset_id,),
         )
         if not rows:
@@ -842,7 +842,7 @@ class PostgresDeletionExecutions:
                 self._require_privileges(transaction, _READ_PRIVILEGES)
                 rows = transaction.rows(
                     f"SELECT {_LEDGER_ROW_COLUMNS} FROM {DELETION_LEDGER} "
-                    "WHERE workspace_id = %s AND id = %s",
+                    "WHERE workspace_id = ? AND id = ?",
                     (workspace_id, deletion_id),
                 )
                 if not rows:
@@ -973,8 +973,8 @@ class PostgresDeletionExecutions:
                     rows = transaction.rows(
                         "SELECT " + _LEDGER_ROW_COLUMNS + ", "
                         "(purge_claimed_at IS NOT NULL AND purge_claimed_at > "
-                        "clock_timestamp() - make_interval(secs => %s)) AS claim_live "
-                        f"FROM {DELETION_LEDGER} WHERE id = %s",
+                        "clock_timestamp() - make_interval(secs => ?)) AS claim_live "
+                        f"FROM {DELETION_LEDGER} WHERE id = ?",
                         (PURGE_CLAIM_LEASE_SECONDS, deletion_id),
                     )
                     if not rows or rows[0]["idempotency_key_digest"] != key_digest:

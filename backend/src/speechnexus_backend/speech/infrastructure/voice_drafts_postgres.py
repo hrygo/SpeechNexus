@@ -42,7 +42,7 @@ _SELECT_BASE = (
     "ON p.draft_id = d.draft_id AND p.revision = r.revision"
 )
 # The public GET and metadata paths only ever expose the draft head.
-_SELECT = _SELECT_BASE + " WHERE d.draft_id=%s AND r.revision = d.head_revision"
+_SELECT = _SELECT_BASE + " WHERE d.draft_id=? AND r.revision = d.head_revision"
 
 # A terminal Job without a stored error code (cancelled or expired) still owes the
 # public revision a named failure: the contract forbids status=failed without one.
@@ -162,7 +162,7 @@ def _artifact_fact(
     row = connection.execute(
         "SELECT artifact_id, artifact_kind, artifact_state, media_type, bytes, sha256, "
         "receipt_id, expires_at_us FROM speech_artifacts "
-        "WHERE workspace_id=%s AND artifact_id=%s",
+        "WHERE workspace_id=? AND artifact_id=?",
         (workspace_id, artifact_id),
     ).fetchone()
     if row is None or row["artifact_state"] != "ready" or row["receipt_id"] is None:
@@ -224,7 +224,7 @@ class PostgresVoiceDrafts:
     def draft_exists(self, draft_id: str) -> bool:
         with self._transaction() as connection:
             row = connection.execute(
-                "SELECT 1 AS present FROM speech_voice_drafts WHERE draft_id = %s",
+                "SELECT 1 AS present FROM speech_voice_drafts WHERE draft_id = ?",
                 (identifier(draft_id),),
             ).fetchone()
         return row is not None
@@ -241,7 +241,7 @@ class PostgresVoiceDrafts:
         """Read one immutable revision even when a newer head exists."""
         with self._transaction() as connection:
             row = connection.execute(
-                _SELECT_BASE + " WHERE d.draft_id=%s AND r.revision=%s",
+                _SELECT_BASE + " WHERE d.draft_id=? AND r.revision=?",
                 (draft_id, revision),
             ).fetchone()
         if row is None:
@@ -257,7 +257,7 @@ class PostgresVoiceDrafts:
                 "FROM speech_voice_drafts AS d "
                 "JOIN speech_voice_draft_revisions AS r ON r.draft_id = d.draft_id "
                 "JOIN speech_jobs AS j ON j.job_id = r.generation_job_id "
-                "WHERE d.draft_id=%s AND r.revision=%s",
+                "WHERE d.draft_id=? AND r.revision=?",
                 (draft_id, revision),
             ).fetchone()
         if row is None:
@@ -290,7 +290,7 @@ class PostgresVoiceDrafts:
             if key is not None:
                 original = connection.execute(
                     "SELECT request_digest, result_json FROM speech_voice_metadata_commands "
-                    "WHERE draft_id=%s AND key_digest=%s",
+                    "WHERE draft_id=? AND key_digest=?",
                     (draft_id, key),
                 ).fetchone()
                 if original is not None:
@@ -312,11 +312,11 @@ class PostgresVoiceDrafts:
             # open. A failure rolls back before the UPDATE or receipt insert.
             _require_candidate(connection, row)
             changed = connection.execute(
-                "UPDATE speech_voice_drafts SET display_name=%s, "
+                "UPDATE speech_voice_drafts SET display_name=?, "
                 "metadata_revision=metadata_revision+1, "
                 "updated_at_us=GREATEST(updated_at_us, "
                 "(EXTRACT(EPOCH FROM clock_timestamp())*1000000)::bigint) "
-                "WHERE draft_id=%s RETURNING *",
+                "WHERE draft_id=? RETURNING *",
                 (command["display_name"], draft_id),
             ).fetchone()
             if changed is None:
@@ -329,7 +329,7 @@ class PostgresVoiceDrafts:
             if key is not None:
                 connection.execute(
                     "INSERT INTO speech_voice_metadata_commands "
-                    "(draft_id, key_digest, request_digest, result_json) VALUES (%s,%s,%s,%s)",
+                    "(draft_id, key_digest, request_digest, result_json) VALUES (?,?,?,?)",
                     (draft_id, key, digest, json.dumps(draft, ensure_ascii=False)),
                 )
         return draft

@@ -63,7 +63,7 @@ class ReadPool(Pool):
             return result
         if "INSERT INTO speech_job_events" in query:
             return Rows([])
-        if "WHERE j.job_id = %s" in query:
+        if "WHERE j.job_id = ?" in query:
             return Rows([self.job_row])
         return Rows([])
 
@@ -75,7 +75,7 @@ def _driver(pool: ReadPool) -> PostgresPublicJobs:
 def test_list_jobs_reads_a_bounded_page_in_a_read_only_transaction() -> None:
     class ListingPool(ReadPool):
         def execute(self, query: str, parameters: tuple[object, ...] = ()) -> Rows:
-            if "WHERE j.workspace_id = %s" in query:
+            if "WHERE j.workspace_id = ?" in query:
                 self.calls.append((query, parameters))
                 return Rows([self.job_row])
             return super().execute(query, parameters)
@@ -90,8 +90,8 @@ def test_list_jobs_reads_a_bounded_page_in_a_read_only_transaction() -> None:
     )
     assert [job.job_id for job in rows] == [pool.request.job_id]
     assert any(query == "SET TRANSACTION READ ONLY" for query, _ in pool.calls)
-    query, parameters = next(call for call in pool.calls if "WHERE j.workspace_id = %s" in call[0])
-    assert "(j.created_at_us, j.job_id) > (%s, %s)" in query
+    query, parameters = next(call for call in pool.calls if "WHERE j.workspace_id = ?" in call[0])
+    assert "(j.created_at_us, j.job_id) > (?, ?)" in query
     assert "ORDER BY j.created_at_us ASC, j.job_id ASC LIMIT %s" in query
     assert parameters == ("workspace-default", "pending", "tts", NOW - 1, "job-0", 3)
     with pytest.raises(ValueError):
@@ -172,7 +172,7 @@ def test_events_reads_strictly_after_the_cursor_with_a_bounded_page() -> None:
     events = _driver(pool).events(request.job_id, after_seq=1, limit=100)
     assert [event.event_seq for event in events] == [2, 3]
     query, parameters = next(call for call in pool.calls if "FROM speech_job_events" in call[0])
-    assert "event_seq > %s" in query and "ORDER BY event_seq ASC LIMIT %s" in query
+    assert "event_seq > ?" in query and "ORDER BY event_seq ASC LIMIT %s" in query
     assert parameters == (request.job_id, 1, 100)
 
     pool.event_rows = [

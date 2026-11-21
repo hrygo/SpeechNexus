@@ -65,7 +65,7 @@ class _Cursor:
         if remaining <= 0:
             raise BindingLifecycleUnavailableError
         self.raw.execute(
-            "SELECT set_config('statement_timeout', %s, true)",
+            "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(remaining * 1000))),),
         )
         return self.raw.execute(query, parameters)
@@ -162,7 +162,7 @@ class PostgresBindingLifecycle:
         cursor.execute(
             f"INSERT INTO {RETIREMENT_TABLE} "
             "(kind, object_id, revision, revision_id, retired_at_us, mode, reason) "
-            "VALUES ('binding', %s, %s, %s, %s, %s, %s)",
+            "VALUES ('binding', ?, ?, ?, ?, ?, ?)",
             (
                 command.binding_id,
                 command.revision,
@@ -175,8 +175,8 @@ class PostgresBindingLifecycle:
         if cursor.rowcount != 1:
             raise BindingLifecycleUnavailableError
         cursor.execute(
-            f"DELETE FROM {HEAD_TABLE} WHERE kind='binding' AND object_id=%s "
-            "AND revision=%s AND revision_id=%s",
+            f"DELETE FROM {HEAD_TABLE} WHERE kind='binding' AND object_id=? "
+            "AND revision=? AND revision_id=?",
             (command.binding_id, command.revision, state["revision_id"]),
         )
         if cursor.rowcount != 1:
@@ -199,9 +199,7 @@ class PostgresBindingLifecycle:
             },
         )
         if command.mode == "disable":
-            cursor.execute(
-                f"INSERT INTO {DISABLE_INTENT_TABLE} (event_id) VALUES (%s)", (event_id,)
-            )
+            cursor.execute(f"INSERT INTO {DISABLE_INTENT_TABLE} (event_id) VALUES (?)", (event_id,))
             if cursor.rowcount != 1:
                 raise BindingLifecycleUnavailableError
         return self._receipt(
@@ -238,7 +236,7 @@ class PostgresBindingLifecycle:
             cursor.execute(
                 f"INSERT INTO {HEAD_TABLE} "
                 "(kind, object_id, revision, revision_id, updated_at_us) "
-                "VALUES ('binding', %s, %s, %s, %s) "
+                "VALUES ('binding', ?, ?, ?, ?) "
                 "ON CONFLICT (kind, object_id) DO UPDATE SET "
                 "revision=EXCLUDED.revision, revision_id=EXCLUDED.revision_id, "
                 "updated_at_us=EXCLUDED.updated_at_us",
@@ -282,7 +280,7 @@ class PostgresBindingLifecycle:
             raise BindingLifecycleConflictError("binding_not_draft")
         cursor.execute(
             "SELECT revision_id, definition_json, created_at_us FROM speech_binding_revisions "
-            "WHERE binding_id=%s AND revision=%s",
+            "WHERE binding_id=? AND revision=?",
             (command.binding_id, command.revision),
         )
         drafts = cursor.fetchall()
@@ -369,11 +367,11 @@ class PostgresBindingLifecycle:
             return None
         cursor.execute(
             "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:' || current_schema() || ':idempotency:' || %s, 0))",
+            "'speechnexus:catalog:' || current_schema() || ':idempotency:' || ?, 0))",
             (command.key_digest,),
         )
         cursor.execute(
-            "SELECT * FROM " + EVENT_TABLE + " WHERE idempotency_key_digest=%s",
+            "SELECT * FROM " + EVENT_TABLE + " WHERE idempotency_key_digest=?",
             (command.key_digest,),
         )
         rows = cursor.fetchall()
@@ -424,8 +422,8 @@ class PostgresBindingLifecycle:
             " retired_at_us, disabled_reason, request_id, actor_type, credential_label, "
             " occurred_at_us, policy_revision, intent_digest, idempotency_key_digest, "
             " change_summary_json) "
-            "VALUES (%s, 'binding', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
-            " %s::jsonb)",
+            "VALUES (?, 'binding', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+            " ?::jsonb)",
             (
                 event_id,
                 action,
@@ -466,7 +464,7 @@ class PostgresBindingLifecycle:
             f"LEFT JOIN {RETIREMENT_TABLE} AS ret "
             "  ON ret.kind=p.kind AND ret.object_id=p.object_id AND ret.revision=p.revision "
             " AND ret.revision_id=p.revision_id "
-            "WHERE p.kind='binding' AND p.object_id=%s AND p.revision=%s",
+            "WHERE p.kind='binding' AND p.object_id=? AND p.revision=?",
             (binding_id, revision),
         )
         rows = cursor.fetchall()
@@ -479,7 +477,7 @@ class PostgresBindingLifecycle:
     def _head(self, cursor: _Cursor, binding_id: str) -> dict[str, Any] | None:
         cursor.execute(
             "SELECT revision, revision_id FROM " + HEAD_TABLE + " "
-            "WHERE kind='binding' AND object_id=%s",
+            "WHERE kind='binding' AND object_id=?",
             (binding_id,),
         )
         rows = cursor.fetchall()
@@ -509,7 +507,7 @@ class PostgresBindingLifecycle:
     def _advance_catalog(self, cursor: _Cursor, changed_at_us: int) -> None:
         cursor.execute(
             "UPDATE speech_catalog_state SET revision=revision+1, "
-            "generated_at_us=GREATEST(generated_at_us, %s)",
+            "generated_at_us=GREATEST(generated_at_us, ?)",
             (changed_at_us,),
         )
         if cursor.rowcount != 1:
@@ -564,7 +562,7 @@ class PostgresAuditEvents:
                     "credential_label, occurred_at_us, policy_revision, change_summary_json, "
                     "result_status, retired_at_us, disabled_reason "
                     f"FROM {EVENT_TABLE}{clause} "
-                    "ORDER BY occurred_at_us DESC, event_id DESC LIMIT %s",
+                    "ORDER BY occurred_at_us DESC, event_id DESC LIMIT ?",
                     (*parameters, limit + 1),
                 ).fetchall()
                 if time.monotonic() >= deadline:

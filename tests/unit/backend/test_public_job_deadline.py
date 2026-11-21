@@ -37,7 +37,7 @@ class TimedPool(Pool):
             self.elapsed += 2.8
         elif "set_config" in query:
             self.elapsed += self.control_cost
-        elif "WHERE j.job_id = %s" in query:
+        elif "WHERE j.job_id = ?" in query:
             self.elapsed += self.final_read_cost
         else:
             self.elapsed += self.cost

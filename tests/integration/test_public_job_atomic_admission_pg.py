@@ -18,6 +18,7 @@ from tests.integration.test_production_admission import AdmissionDatabase
 from tests.integration.test_production_admission import admission_database as admission_database
 from tests.integration.test_production_jobs import database as database
 from tests.integration.test_production_runtime_intents import runtime_database as runtime_database
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.job_runtime import _verify_admission_privileges, _verify_privileges
 from speechnexus_backend.speech.domain.public_jobs import (
@@ -581,7 +582,7 @@ def test_writer_role_cannot_insert_admission_reservations(
             (writer, f"{schema}.admission_operations"),
         )[0]
         assert row["ok"] is True
-        connection = psycopg.connect(
+        connection = portable_pg_connect(
             make_conninfo(db.url, user=writer, password="synthetic_writer_test"),
             autocommit=True,
         )
@@ -612,7 +613,7 @@ def test_admission_role_startup_matrix_is_satisfied_without_delete(
     try:
         for grant in public_job_admission_grants(db.schema, role):
             db.query(grant)
-        connection = psycopg.connect(
+        connection = portable_pg_connect(
             make_conninfo(db.url, user=role, password="synthetic_admission_test"),
             row_factory=__import__("psycopg.rows", fromlist=["dict_row"]).dict_row,
         )
@@ -812,7 +813,7 @@ def test_voice_validation_admission_waits_for_a_deletion_draft_lock(
     _seed(admission_database)
     db = admission_database.runtime.foundation.database
     _seed_validation_candidate(db)
-    deleting = psycopg.connect(db.url, row_factory=dict_row)
+    deleting = portable_pg_connect(db.url, row_factory=dict_row)
     outcome: list[str] = []
     thread: threading.Thread | None = None
     try:
@@ -827,7 +828,7 @@ def test_voice_validation_admission_waits_for_a_deletion_draft_lock(
         )
 
         def admit() -> None:
-            with psycopg.connect(db.url, row_factory=dict_row) as connection:
+            with portable_pg_connect(db.url, row_factory=dict_row) as connection:
                 connection.execute(f'SET search_path TO "{db.schema}", pg_catalog')
                 cursor = connection.cursor()
                 try:

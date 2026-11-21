@@ -28,6 +28,7 @@ from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
+from tests.support.portable_pg import connect as portable_pg_connect
 from tests.unit.backend.test_binding_release_evidence import packet
 
 from speechnexus_backend.builtin_voice_publication import (
@@ -125,7 +126,7 @@ def pg() -> Iterator[tuple[psycopg.Connection[dict[str, Any]], str, str]]:
         config.attributes["connection"] = migration_connection
         command.upgrade(config, "head")
     engine.dispose()
-    connection = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+    connection = portable_pg_connect(url, autocommit=True, row_factory=dict_row)
     connection.execute(f'SET search_path TO "{schema}", pg_catalog')
     connection.execute(f'CREATE ROLE "{role}"')
     try:
@@ -454,7 +455,7 @@ class Ledger:
 
     def read_rows_as(self, identity: str, password: str = PASSWORD) -> list[dict[str, Any]]:
         """Run the shipped report SQL as that identity, not as the schema owner."""
-        with psycopg.connect(
+        with portable_pg_connect(
             make_conninfo(
                 os.environ["SPEECHNEXUS_TEST_DATABASE_URL"],
                 user=identity,
@@ -799,7 +800,7 @@ def test_the_writer_identity_cannot_repair_or_erase_its_own_record(
     finally:
         _close(ledger)
     identity = role + "_oa"
-    login = psycopg.connect(
+    login = portable_pg_connect(
         make_conninfo(
             os.environ["SPEECHNEXUS_TEST_DATABASE_URL"], user=identity, password=PASSWORD
         ),
@@ -856,7 +857,7 @@ def test_attestation_opens_no_compute_release_and_no_native_evidence(
     # identity cannot even read the evidence a native qualification needs, so a
     # defect in the writer still cannot manufacture runtime state. `resource_pools`
     # and `workspace_quotas` are the only runtime relations it may read at all.
-    with psycopg.connect(
+    with portable_pg_connect(
         make_conninfo(
             os.environ["SPEECHNEXUS_TEST_DATABASE_URL"], user=role + "_oa", password=PASSWORD
         ),
@@ -984,7 +985,7 @@ def test_a_hand_written_qualification_without_provenance_is_refused(
     finally:
         _close(ledger)
     ledger.publisher(role)  # provisions the publishing identity's own grants
-    publisher = psycopg.connect(
+    publisher = portable_pg_connect(
         make_conninfo(os.environ["SPEECHNEXUS_TEST_DATABASE_URL"], user=role, password=PASSWORD),
         autocommit=True,
         row_factory=dict_row,
@@ -1043,7 +1044,7 @@ def test_the_attested_identity_cannot_publish_a_controller_label(
     ledger = Ledger(db, schema)
     ledger.writer(role)  # provisions the minimal identity this test logs in as
     password = PASSWORD
-    forged = psycopg.connect(
+    forged = portable_pg_connect(
         make_conninfo(
             os.environ["SPEECHNEXUS_TEST_DATABASE_URL"],
             user=role + "_oa",
@@ -1549,7 +1550,7 @@ def test_the_read_surface_separates_both_sources_through_the_reader_identity(
     assert report[-1]["summary"]["unverified"] == 0
     # The same identity cannot write: the report surface is read-only by grant,
     # not by the report choosing to issue only SELECT.
-    with psycopg.connect(
+    with portable_pg_connect(
         make_conninfo(
             os.environ["SPEECHNEXUS_TEST_DATABASE_URL"], user=identity, password=PASSWORD
         ),

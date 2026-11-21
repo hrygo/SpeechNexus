@@ -14,6 +14,7 @@ import psycopg
 import pytest
 from psycopg import sql
 from psycopg.errors import CheckViolation, ExclusionViolation, ForeignKeyViolation, UniqueViolation
+from tests.support.portable_pg import connect as portable_pg_connect
 
 pytestmark = pytest.mark.integration
 
@@ -43,7 +44,7 @@ def coordination_schema() -> Iterator[CoordinationDatabase]:
     url = _database_url()
     schema = f"speechnexus_test_{uuid.uuid4().hex[:12]}"
 
-    with psycopg.connect(url, autocommit=True) as connection:
+    with portable_pg_connect(url, autocommit=True) as connection:
         connection.execute("CREATE EXTENSION IF NOT EXISTS btree_gist WITH SCHEMA public")
         connection.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
         connection.execute(sql.SQL("SET search_path TO {}, public").format(sql.Identifier(schema)))
@@ -52,13 +53,13 @@ def coordination_schema() -> Iterator[CoordinationDatabase]:
     try:
         yield CoordinationDatabase(url=url, schema=schema)
     finally:
-        with psycopg.connect(url, autocommit=True) as connection:
+        with portable_pg_connect(url, autocommit=True) as connection:
             connection.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema)))
 
 
 @pytest.fixture
 def db(coordination_schema: CoordinationDatabase) -> Iterator[psycopg.Connection[Any]]:
-    with psycopg.connect(coordination_schema.url) as connection:
+    with portable_pg_connect(coordination_schema.url) as connection:
         connection.execute(
             sql.SQL("SET search_path TO {}, public").format(
                 sql.Identifier(coordination_schema.schema)
@@ -2953,7 +2954,7 @@ def test_ordered_transaction_recipes_under_actual_lock_contention(
     )
 
     def connect() -> psycopg.Connection[Any]:
-        connection = psycopg.connect(coordination_schema.url)
+        connection = portable_pg_connect(coordination_schema.url)
         connection.execute(
             sql.SQL("SET search_path TO {}, public").format(
                 sql.Identifier(coordination_schema.schema)

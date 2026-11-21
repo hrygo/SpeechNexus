@@ -29,6 +29,7 @@ STATEMENTS = REPO_ROOT / "packages/portable-sql/statements"
 if str(PACKAGE_SOURCE) not in sys.path:
     sys.path.insert(0, str(PACKAGE_SOURCE))
 
+from speechnexus_portable_sql.budget import STATEMENTS as BUDGET_STATEMENTS  # noqa: E402
 from speechnexus_portable_sql.claims import STATEMENTS as CLAIM_STATEMENTS  # noqa: E402
 from speechnexus_portable_sql.manifest import (  # noqa: E402 - 需先补 sys.path
     Manifest,
@@ -71,7 +72,11 @@ def check_manifest(manifest: Manifest, profiles: dict[str, object]) -> list[str]
             problems.append(f"{statement.statement_id}: missing transaction boundary")
 
     # 运行时可执行 SQL 是唯一来源:manifest 与代码必须互为子集,任何一侧漂移都红。
-    executable = {"authority.probe": AUTHORITY_SQL, **CLAIM_STATEMENTS}
+    executable = {
+        "authority.probe": AUTHORITY_SQL,
+        **CLAIM_STATEMENTS,
+        **BUDGET_STATEMENTS,
+    }
     registered = {statement.statement_id: statement.sql for statement in manifest.statements}
     for statement_id, sql in sorted(executable.items()):
         if statement_id not in registered:

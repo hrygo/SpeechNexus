@@ -15,7 +15,7 @@ from psycopg import IsolationLevel
 from psycopg_pool import ConnectionPool, PoolClosed, PoolTimeout, TooManyRequests
 
 from .contract import ExecutableConnection, PoolUnavailableError
-from .psycopg_driver import PortableConnection, PortableCursor, portable_error
+from .psycopg_driver import ContractCursor, PortableConnection, portable_error
 
 __all__ = ["PsycopgPool", "create_pool"]
 
@@ -73,7 +73,7 @@ def create_pool(
         kwargs={
             "connect_timeout": 3,
             # 池交给业务的每条连接都按 `?` 契约翻译;业务代码不知道驱动参数标记。
-            "cursor_factory": PortableCursor,
+            "cursor_factory": ContractCursor,
         },
         configure=configure,
         name=name,

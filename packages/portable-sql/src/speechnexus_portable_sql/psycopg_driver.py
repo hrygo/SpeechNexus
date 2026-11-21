@@ -94,39 +94,24 @@ class PortableCursor:
         prepare: bool | None = None,
         binary: bool | None = None,
     ) -> PortableCursor:
-        try:
-            self._cursor.execute(_translated(query, params), params, prepare=prepare, binary=binary)
-        except psycopg.Error as error:
-            raise portable_error(error) from error
+        self._cursor.execute(_translated(query, params), params, prepare=prepare, binary=binary)
         return self
 
     def executemany(self, query: Any, params_seq: Any, *, returning: bool = False) -> None:
-        try:
-            self._cursor.executemany(_translated(query, ()), params_seq, returning=returning)
-        except psycopg.Error as error:
-            raise portable_error(error) from error
+        self._cursor.executemany(_translated(query, ()), params_seq, returning=returning)
 
     @property
     def rowcount(self) -> int:
         return int(self._cursor.rowcount)
 
-    def _row(self, row: Any) -> Any:
-        """元组行按契约包成 `Row`;驱动已给出映射行时原样返回,适配器不必改写."""
-
-        if not isinstance(row, tuple):
-            return row
-        columns = [column.name for column in (self._cursor.description or ())]
-        return Row(columns, row)
-
     def fetchone(self) -> Any:
-        row = self._cursor.fetchone()
-        return None if row is None else self._row(row)
+        return self._cursor.fetchone()
 
     def fetchmany(self, size: int) -> list[Any]:
-        return [self._row(row) for row in self._cursor.fetchmany(size)]
+        return list(self._cursor.fetchmany(size))
 
     def fetchall(self) -> list[Any]:
-        return [self._row(row) for row in self._cursor.fetchall()]
+        return list(self._cursor.fetchall())
 
     def close(self) -> None:
         self._cursor.close()
@@ -139,6 +124,44 @@ class PortableCursor:
 
     def __exit__(self, *exc_info: object) -> None:
         self._cursor.close()
+
+
+class ContractCursor(PortableCursor):
+    """仓库层游标:行是契约 `Row`,语句失败翻成契约类别.
+
+    与 `PortableCursor` 分开,是因为既有适配器仍按驱动原始行与厂商异常工作;
+    迁移一个模块就换一个游标工厂,两套语义不会在同一进程里混用。
+    """
+
+    def execute(
+        self,
+        query: Any,
+        params: Any = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> ContractCursor:
+        try:
+            super().execute(query, params, prepare=prepare, binary=binary)
+        except psycopg.Error as error:
+            raise portable_error(error) from error
+        return self
+
+    def _row(self, row: Any) -> Any:
+        if not isinstance(row, tuple):
+            return row
+        columns = [column.name for column in (self._cursor.description or ())]
+        return Row(columns, row)
+
+    def fetchone(self) -> Any:
+        row = super().fetchone()
+        return None if row is None else self._row(row)
+
+    def fetchmany(self, size: int) -> list[Any]:
+        return [self._row(row) for row in super().fetchmany(size)]
+
+    def fetchall(self) -> list[Any]:
+        return [self._row(row) for row in super().fetchall()]
 
 
 class PortableConnection:
@@ -161,16 +184,10 @@ class PortableConnection:
         )
 
     def commit(self) -> None:
-        try:
-            self._connection.commit()
-        except psycopg.Error as error:
-            raise portable_error(error) from error
+        self._connection.commit()
 
     def rollback(self) -> None:
-        try:
-            self._connection.rollback()
-        except psycopg.Error as error:
-            raise portable_error(error) from error
+        self._connection.rollback()
 
     def close(self) -> None:
         self._connection.close()

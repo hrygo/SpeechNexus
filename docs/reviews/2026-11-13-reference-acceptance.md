@@ -255,7 +255,7 @@ issue #572（OPEN）的验收线索与缺口：
 | N5 | apply 模式 PASS 行不带 `pending` | `:1202-1207` 只有 dry-run 拼 `pending=`；闸门的 2 个 `pending`（真引擎、API 侧 DSN）不进最终机器行 | 最终行改为 `PASS steps=7 pending=2`（dry-run 与 apply 一致），或文档明确「PASS 不代表 pending 项已验证」 |
 | N6 | 桶规则与探针面是第二份权威 | `bucket_names:663-671`、`BUCKET_VERIFY_PROGRAM:116-145` 与 `deploy/init-object-storage.py:25-32` 三处同形；`job_role_probes:502-516` 与 221 条授权声明不同源 | 桶名从 init 脚本的规则里提取成共享函数；探针从 grant 函数派生（至少 dispatch 的写面复用闸门的 `DISPATCH_WRITE_SURFACE`） |
 | N7 | schema 未传给 provision | `provision_argv()` 不传 `--schema`（`:519-528`），`SPEECHNEXUS_DATABASE_SCHEMA` 只影响探针/psql；非默认 schema 时授权落在 `speech`、探针查 env schema → 误红/误导。compose `migrate` 也写死 `--schema speech` | `provision_argv()` 追加 `--schema`, `ctx.schema()`；或文档明确「本入口只支持 `speech`」并在 `step_tools` 校验 |
-| N8 | `--project-name` 并行声明不成立 | `compose.yaml:574-576` 固定 `172.28.0.0/24`；实测第二项目 `sn658par` 建网失败 `Pool overlaps`（[R11](#r11第二个同名栈项目网络重叠)） | 文档去掉「可与同机其它 Compose 项目并行」，或让 compose 网络不固定 subnet |
+| N8 | `--project-name` 并行声明不成立 | `deploy/compose.yaml:574-576` 固定 `172.28.0.0/24`；实测第二项目 `sn658par` 建网失败 `Pool overlaps`（[R11](#r11第二个同名栈项目网络重叠)） | 文档去掉「可与同机其它 Compose 项目并行」，或让 compose 网络不固定 subnet |
 | N9 | `SN_ADMIN_DSN 是迁移 owner` 前置未校验 | `tools` 只查非空；首跑靠 provision 自行失败，幂等分支根本不使用 | 首跑前用 `SN_ADMIN_DSN` 做一次 `SELECT current_user`/owner 校验；或把该前置从文档/步骤表降级 |
 | N10 | roles 首跑预期输出与实际不符 | 文档步骤表写 `job roles ready: ... grants: N statements`；入口打印 `已创建；grants: N`（provision 的原始行被解析后丢弃） | 文档改成入口实际输出，或入口透传 provision 的行 |
 | N11 | `migrate`/`gate` 复用旧镜像，不 `--build` | 实测 `compose run` 复用已存在镜像（[R12](#r12compose-run-复用旧镜像)）；本机镜像内包 head `0052`、检出 `0053`，此时 `migrate` 会先按旧镜像迁移、再被入口的 head 检查判「迁移落后」→ 修法是「再跑 migrate」，循环 | 在 `migrate`/`gate` 前 `compose build` 对应服务，或在 `tools` 步记录/校验镜像与检出的迁移 head 一致 |

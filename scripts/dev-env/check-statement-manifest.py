@@ -45,6 +45,7 @@ from speechnexus_portable_sql.subset import (  # noqa: E402
     placeholder_count,
     validate,
 )
+from speechnexus_portable_sql.usage import STATEMENTS as USAGE_STATEMENTS  # noqa: E402
 
 MANIFEST = STATEMENTS / "manifest.json"
 PROFILES = STATEMENTS / "profiles.json"
@@ -76,6 +77,7 @@ def check_manifest(manifest: Manifest, profiles: dict[str, object]) -> list[str]
         "authority.probe": AUTHORITY_SQL,
         **CLAIM_STATEMENTS,
         **BUDGET_STATEMENTS,
+        **USAGE_STATEMENTS,
     }
     registered = {statement.statement_id: statement.sql for statement in manifest.statements}
     for statement_id, sql in sorted(executable.items()):

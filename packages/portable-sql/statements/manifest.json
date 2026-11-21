@@ -1,5 +1,5 @@
 {
-  "revision": "0004",
+  "revision": "0005",
   "statements": [
     {
       "id": "authority.probe",
@@ -357,6 +357,41 @@
       "sql": "INSERT INTO admission_budget_grants (grant_id, session_id, lease_id, meter_kind, authority_epoch, renew_seq, granted_units, consumed_units, returned_units, version, grant_state, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     },
     {
+      "id": "grant.quarantine",
+      "version": 1,
+      "params": [
+        {
+          "name": "next_state",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "grant_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "expected_version",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "expected_state",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "result": [],
+      "transaction": "cas",
+      "lock_order": [
+        "workspace_quotas",
+        "host_capacity_budgets"
+      ],
+      "idempotency": "retry_on_zero_rows",
+      "error_semantics": "rollback_and_keep_the_hold",
+      "sql": "UPDATE admission_budget_grants SET grant_state = ?, version = version + 1 WHERE grant_id = ? AND version = ? AND grant_state = ?"
+    },
+    {
       "id": "grant.read",
       "version": 1,
       "params": [
@@ -528,6 +563,223 @@
       "idempotency": "retry_on_zero_rows",
       "error_semantics": "rollback_and_read_original_grant",
       "sql": "UPDATE admission_budget_grants SET granted_units = granted_units + ?, renew_seq = ?, version = version + 1, expires_at = ? WHERE grant_id = ? AND version = ? AND authority_epoch = ? AND grant_state = ?"
+    },
+    {
+      "id": "interval.insert",
+      "version": 1,
+      "params": [
+        {
+          "name": "interval_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "stream_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "meter_kind",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "interval_start",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "interval_end",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "fact_hash",
+          "kind": "char",
+          "nullable": false
+        },
+        {
+          "name": "units",
+          "kind": "decimal",
+          "nullable": false
+        }
+      ],
+      "result": [],
+      "transaction": "write",
+      "lock_order": [
+        "output_stream_heads"
+      ],
+      "idempotency": "unique_interval_identity",
+      "error_semantics": "rollback_and_query_identity",
+      "sql": "INSERT INTO usage_intervals (interval_id, stream_id, meter_kind, interval_start, interval_end, fact_hash, units) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    },
+    {
+      "id": "interval.overlap",
+      "version": 1,
+      "params": [
+        {
+          "name": "stream_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "meter_kind",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "interval_end",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "interval_start",
+          "kind": "decimal",
+          "nullable": false
+        }
+      ],
+      "result": [
+        {
+          "name": "interval_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "interval_start",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "interval_end",
+          "kind": "decimal",
+          "nullable": false
+        }
+      ],
+      "transaction": "read_only",
+      "lock_order": [
+        "output_stream_heads"
+      ],
+      "idempotency": "read_only_replay",
+      "error_semantics": "rollback_and_rescan",
+      "sql": "SELECT interval_id, interval_start, interval_end FROM usage_intervals WHERE stream_id = ? AND meter_kind = ? AND interval_start < ? AND interval_end > ? ORDER BY interval_start"
+    },
+    {
+      "id": "interval.read",
+      "version": 1,
+      "params": [
+        {
+          "name": "stream_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "meter_kind",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "after_start",
+          "kind": "decimal",
+          "nullable": false
+        }
+      ],
+      "result": [
+        {
+          "name": "interval_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "interval_start",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "interval_end",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "fact_hash",
+          "kind": "char",
+          "nullable": false
+        },
+        {
+          "name": "units",
+          "kind": "decimal",
+          "nullable": false
+        }
+      ],
+      "transaction": "read_only",
+      "lock_order": [],
+      "idempotency": "read_only_replay",
+      "error_semantics": "rollback_and_resume",
+      "sql": "SELECT interval_id, interval_start, interval_end, fact_hash, units FROM usage_intervals WHERE stream_id = ? AND meter_kind = ? AND interval_start > ? ORDER BY interval_start"
+    },
+    {
+      "id": "interval.replay",
+      "version": 1,
+      "params": [
+        {
+          "name": "stream_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "meter_kind",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "interval_start",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "interval_end",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "fact_hash",
+          "kind": "char",
+          "nullable": false
+        }
+      ],
+      "result": [
+        {
+          "name": "interval_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "interval_start",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "interval_end",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "fact_hash",
+          "kind": "char",
+          "nullable": false
+        },
+        {
+          "name": "units",
+          "kind": "decimal",
+          "nullable": false
+        }
+      ],
+      "transaction": "read_only",
+      "lock_order": [
+        "output_stream_heads"
+      ],
+      "idempotency": "read_only_replay",
+      "error_semantics": "rollback_and_rescan",
+      "sql": "SELECT interval_id, interval_start, interval_end, fact_hash, units FROM usage_intervals WHERE stream_id = ? AND meter_kind = ? AND interval_start = ? AND interval_end = ? AND fact_hash = ?"
     },
     {
       "id": "job.candidates",
@@ -983,6 +1235,75 @@
       "idempotency": "retry_on_zero_rows",
       "error_semantics": "rollback_and_rescan",
       "sql": "UPDATE workspace_quotas SET held_units = held_units - ?, version = version + 1 WHERE workspace_id = ? AND meter_kind = ? AND version = ? AND held_units >= ?"
+    },
+    {
+      "id": "stream.advance",
+      "version": 1,
+      "params": [
+        {
+          "name": "last_end",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "stream_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "meter_kind",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "expected_version",
+          "kind": "decimal",
+          "nullable": false
+        }
+      ],
+      "result": [],
+      "transaction": "cas",
+      "lock_order": [
+        "output_stream_heads"
+      ],
+      "idempotency": "retry_on_zero_rows",
+      "error_semantics": "rollback_and_rescan",
+      "sql": "UPDATE output_stream_heads SET last_end = ?, version = version + 1 WHERE stream_id = ? AND meter_kind = ? AND version = ?"
+    },
+    {
+      "id": "stream.lock",
+      "version": 1,
+      "params": [
+        {
+          "name": "stream_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "meter_kind",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "result": [
+        {
+          "name": "last_end",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "kind": "decimal",
+          "nullable": false
+        }
+      ],
+      "transaction": "write",
+      "lock_order": [
+        "output_stream_heads"
+      ],
+      "idempotency": "read_again",
+      "error_semantics": "rollback_and_rescan",
+      "sql": "SELECT last_end, version FROM output_stream_heads WHERE stream_id = ? AND meter_kind = ? FOR UPDATE"
     }
   ],
   "profiles": []

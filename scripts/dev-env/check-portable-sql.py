@@ -242,6 +242,9 @@ def scan_python(path: str, source: str) -> list[Finding]:
     return findings
 
 
+STRING_LITERAL = re.compile(r"'(?:[^']|'')*'")
+
+
 def _strip_sql_comments(source: str) -> str:
     return re.sub(r"--[^\n]*", "", source)
 
@@ -251,6 +254,8 @@ def scan_ddl(path: str, source: str) -> list[Finding]:
 
     findings: list[Finding] = []
     text = _strip_sql_comments(source)
+    # 字符串字面量是数据,不是标识符:种子里的逻辑指纹不能被当成超长标识符。
+    identifiers = STRING_LITERAL.sub("''", text)
 
     for rule, pattern in DDL_FORBIDDEN_TYPES:
         if pattern.search(text):
@@ -263,7 +268,7 @@ def scan_ddl(path: str, source: str) -> list[Finding]:
         if not name.isascii():
             findings.append(Finding("ddl-identifier-charset", path))
 
-    for match in IDENTIFIER.finditer(text):
+    for match in IDENTIFIER.finditer(identifiers):
         name = match.group(1)
         if len(name) > 30:
             findings.append(Finding("ddl-identifier-length", path))
@@ -390,6 +395,8 @@ def selftest() -> list[str]:
     clean_ddl = (
         "CREATE TABLE schema_meta (meta_id VARCHAR(32) NOT NULL, schema_rev VARCHAR(64) NOT NULL,\n"
         "    PRIMARY KEY (meta_id));\n"
+        "INSERT INTO schema_meta (meta_id, schema_rev, schema_fingerprint)\n"
+        "    VALUES ('portable', '0005', 'd99bfdf39af69477376fbe5ef2f96ac752a82f2b03a3fe4c745e2e961fda4ed6');\n"
     )
     if scan_ddl("migrations/0002_clean.sql", clean_ddl):
         problems.append("clean DDL was rejected")

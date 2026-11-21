@@ -13,13 +13,15 @@ PostgreSQL；本包不含任何数据库品牌分支，也不按品牌加载业�
 | `schema.py` / `transaction.py` / `types.py` / `paging.py` | 权威时间探针与专用探针池、显式提交 / 回滚与 `commit_unknown`、文本与十进制边界、keyset 分页。 |
 | `manifest.py` / `logical_schema.py` | statement manifest 与逻辑 schema 的定义、摘要和指纹；部署作业与 CI guard 共用同一实现。 |
 | `budget.py` | 持久 grant、按 `quota → budget → grant` 锁序的准入预留、`version`/`epoch` CAS 续租、终态一次回收,以及「先取探针连接、锁后读权威值、再复核」的 `guarded_reserve`。 |
+| `credit.py` | 网关本地 credit 账本:grant 上限不变量、先续租后加额度、低水位、显式背压与有限 drain、双工/批量各自保留。 |
+| `usage.py` | 半开 usage 区间:先精确重放,再锁定重叠检查,最后追加;唯一键不替代重叠检查。 |
 | `odbc.py` | `pyodbc` 驱动的实现（延迟导入）。没有装驱动时导入不失败，`connect()` 给出明确错误。 |
 
 声明式制品：
 
 | 路径 | 含义 |
 | --- | --- |
-| `schema/logical.json` | canonical 逻辑 schema（当前 revision `0004`）；指纹输入，物理 DDL 必须与它等价。 |
+| `schema/logical.json` | canonical 逻辑 schema（当前 revision `0005`）；指纹输入，物理 DDL 必须与它等价。 |
 | `statements/manifest.json` | canonical statement manifest；`statements/manifest.digest` 固定其摘要。 |
 | `statements/profiles.json` | 已登记 profile 的唯一来源；未登记的 profile 不得出现在 manifest 或部署配置中。 |
 

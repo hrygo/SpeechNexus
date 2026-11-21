@@ -40,7 +40,7 @@ def payload(**overrides: object) -> dict[str, object]:
 
 def test_the_committed_logical_schema_is_canonical() -> None:
     schema = load_logical_schema(LOGICAL)
-    assert schema.revision == "0004"
+    assert schema.revision == "0005"
     column = schema.table("schema_meta")
     assert column is not None
     assert [item.name for item in column.columns] == [

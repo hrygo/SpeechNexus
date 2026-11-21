@@ -12,7 +12,15 @@ dependencies = []
 package = false
 
 [tool.uv.workspace]
-members = ["asset-inspector", "backend", "execution-gateway", "node-controller", "packages/contracts", "packages/media"]
+members = [
+  "asset-inspector",
+  "backend",
+  "execution-gateway",
+  "node-controller",
+  "packages/contracts",
+  "packages/media",
+  "packages/portable-sql",
+]
 
 [dependency-groups]
 dev = [
@@ -76,7 +84,15 @@ skip_covered = true
 [tool.ruff]
 line-length = 100
 target-version = "py314"
-src = ["asset-inspector/src", "backend/src", "execution-gateway/src", "node-controller/src", "packages/media/src", "tests"]
+src = [
+  "asset-inspector/src",
+  "backend/src",
+  "execution-gateway/src",
+  "node-controller/src",
+  "packages/media/src",
+  "packages/portable-sql/src",
+  "tests",
+]
 
 [tool.ruff.per-file-target-version]
 # These lightweight entry points use the runner's system Python, without uv.
@@ -114,6 +130,7 @@ files = [
   "scripts/dev-env",
   "packages/contracts/src",
   "packages/media/src",
+  "packages/portable-sql/src",
   "deploy/engines/vllm-asr-lifecycle/src",
 ]
 exclude = ["(?x)(^|/)(\\.venv|node_modules)/"]
@@ -131,6 +148,7 @@ root_packages = [
   "speechnexus_contracts",
   "speechnexus_node_controller",
   "speechnexus_media",
+  "speechnexus_portable_sql",
 ]
 
 [[tool.importlinter.contracts]]

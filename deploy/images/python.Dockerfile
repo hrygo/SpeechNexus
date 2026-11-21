@@ -14,12 +14,16 @@ COPY execution-gateway/README.md execution-gateway/pyproject.toml execution-gate
 COPY node-controller/README.md node-controller/pyproject.toml node-controller/
 COPY packages/contracts/pyproject.toml packages/contracts/
 COPY packages/media/README.md packages/media/pyproject.toml packages/media/source-inventory.json packages/media/
+COPY packages/portable-sql/README.md packages/portable-sql/pyproject.toml packages/portable-sql/
 COPY asset-inspector/README.md asset-inspector/pyproject.toml asset-inspector/
 COPY backend/src backend/src
 COPY execution-gateway/src execution-gateway/src
 COPY node-controller/src node-controller/src
 COPY packages/contracts/src packages/contracts/src
 COPY packages/media/src packages/media/src
+COPY packages/portable-sql/src packages/portable-sql/src
+COPY packages/portable-sql/schema packages/portable-sql/schema
+COPY packages/portable-sql/statements packages/portable-sql/statements
 COPY asset-inspector/src asset-inspector/src
 COPY deploy/engines/cpu-vad/requirements.txt /tmp/cpu-vad-requirements.txt
 RUN --mount=type=cache,target=/root/.cache/uv \

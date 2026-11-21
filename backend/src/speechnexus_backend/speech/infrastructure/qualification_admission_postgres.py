@@ -76,11 +76,11 @@ class PostgresQualificationAdmission(PostgresAdmissionTransactions):
             "AND a.intent->>'binding_revision_id'=? AND a.intent->>'manifest_id'=? "
             "AND a.intent->>'policy_revision_id'=? AND a.intent->>'host_node_id'=? "
             "AND a.intent->>'gateway_id'=? AND a.intent->>'instance_id'=? "
-            "CAST(AND (a.intent->>'instance_generation') AS bigint)=? "
+            "AND CAST((a.intent->>'instance_generation') AS bigint)=? "
             "AND a.intent->>'operation_id'=p.operation_id AND a.intent->>'attempt_id'=p.attempt_id "
             "AND a.intent->>'admission_request_digest'=p.request_digest "
             "AND s.expires_at>clock_timestamp() "
-            "CAST(AND (a.intent->>'expires_at_us') AS bigint) > "
+            "AND CAST((a.intent->>'expires_at_us') AS bigint) > "
             "CAST(floor(extract(epoch FROM clock_timestamp())*1000000) AS bigint) "
             "AND NOT EXISTS (SELECT 1 FROM speech_builtin_voice_source_revocations r "
             "WHERE r.source_approval_id=s.source_approval_id)",

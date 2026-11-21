@@ -77,8 +77,7 @@ class PostgresResourcePoolReads:
             ValueError,
             TypeError,
             KeyError,
-        ) as error:
-            import traceback; traceback.print_exception(error)
+        ):
             raise ResourcePoolsUnavailableError from None
 
 

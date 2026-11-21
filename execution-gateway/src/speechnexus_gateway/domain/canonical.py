@@ -98,7 +98,7 @@ def _encode_string(value: str) -> str:
 
 
 def _encode_number(value: float) -> str:
-    """Serialize a finite float the way ECMAScript ``CAST(Number AS toString)`` does."""
+    """Serialize a finite float the way ECMAScript ``Number::toString`` does."""
     if not math.isfinite(value):
         raise UnsupportedCanonicalJsonError("NaN and infinity have no canonical JSON form")
     if value == 0:

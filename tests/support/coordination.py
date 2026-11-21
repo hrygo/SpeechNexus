@@ -18,12 +18,13 @@ from typing import Any, Literal, cast
 from urllib.parse import unquote, urlparse
 
 import psycopg
-import pymysql
 import rfc8785
 from jsonschema.exceptions import ValidationError
 from psycopg.rows import dict_row
 from pymysql.cursors import DictCursor
 
+from speechnexus_portable_sql.pymysql_driver import PortableConnection as PortableMysqlConnection
+from speechnexus_portable_sql.pymysql_driver import connect as portable_mysql_connect
 from tests.support.contracts import validator
 
 MAX_COUNTER = 2**63 - 1
@@ -121,7 +122,7 @@ class Database:
     url: str
     namespace: str
 
-    def connect(self) -> psycopg.Connection[Row] | pymysql.Connection[DictCursor]:
+    def connect(self) -> psycopg.Connection[Row] | PortableMysqlConnection:
         if not re.fullmatch(r"sn_coord_[a-f0-9]{12}", self.namespace):
             raise ValueError("only isolated test namespaces are permitted")
         if self.dialect == "postgresql":
@@ -132,7 +133,7 @@ class Database:
             connection.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
             return connection
         parsed = urlparse(self.url)
-        mysql = pymysql.connect(
+        mysql = portable_mysql_connect(
             host=parsed.hostname or "127.0.0.1",
             port=parsed.port or 3306,
             user=unquote(parsed.username or ""),
@@ -166,7 +167,7 @@ class Transaction:
     def __init__(
         self,
         dialect: Literal["postgresql", "mysql"],
-        connection: psycopg.Connection[Row] | pymysql.Connection[DictCursor],
+        connection: psycopg.Connection[Row] | PortableMysqlConnection,
     ) -> None:
         self.dialect = dialect
         self.connection = connection

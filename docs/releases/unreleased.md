@@ -238,6 +238,11 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 | `deletion_plan_grants` | `job_schema.py` | **新增**，见第 3 条 |
 | `deletion_execution_grants` | `job_schema.py` | **新增**，见第 3 条 |
 | `job_runtime_grants` | `job_schema.py` | 未变 |
+| `binding_disable_admission_grants` | `admission_postgres.py` | 未变（SQL 参数标记迁到 `?`，授权列未动） |
+| `tts_voice_admission_grants` | `admission_postgres.py` | 未变（同文件，参数标记迁移） |
+| `speech_synthesis_reader_grants` | `qualified_speech_facts_postgres.py` | 未变（参数标记迁移） |
+| `runtime_delivery_grants` | `runtime_delivery_schema.py` | 未变（参数标记迁移） |
+| `settlement_worker_grants` | `settlement_worker_verifier.py` | 未变（参数标记迁移） |
 | `job_dispatch_grants` | `job_schema.py` | 未变 |
 
 ## 边界澄清（行为未变）

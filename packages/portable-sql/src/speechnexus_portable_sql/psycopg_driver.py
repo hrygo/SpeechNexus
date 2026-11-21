@@ -8,31 +8,20 @@ ADR 0016 允许的唯一品牌代码是「部署期 driver / DSN / profile 选�
 1. 只翻译参数标记,不改 SQL 结构、不加品牌函数、不分类 SQLSTATE。
 2. 迁移期兼容:整条语句仍是 `%s` 或 `%(name)s` 时原样交给驱动,让 ratchet 继续盯着剩下的语句。
 
-`PortableCursor` 是 psycopg 游标的真子类,因此可以直接作为 `cursor_factory` 交给连接池:
+`PortableCursor` 是 psycopg 游标的包装,因此可以直接作为 `cursor_factory` 交给连接池:
 池里每条连接、每条语句都经过同一处翻译,业务代码无法绕过。
 """
 
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
 from typing import Any, cast
 
 import psycopg
 
+from .markers import PYFORMAT, qmark_to_pyformat
+
 __all__ = ["PYFORMAT", "PortableConnection", "PortableCursor", "connect", "qmark_to_pyformat"]
-
-PYFORMAT = re.compile(r"%\([a-z_][a-z0-9_]*\)s", re.IGNORECASE)
-
-
-def qmark_to_pyformat(sql: str, params: Sequence[Any] | None) -> str:
-    """把 qmark 语句翻成 psycopg 的 `%s`;已有 `%` 一律按字面量转义。"""
-
-    if params is None or "?" not in sql:
-        return sql
-    if "%s" in sql or PYFORMAT.search(sql):
-        return sql
-    return sql.replace("%", "%%").replace("?", "%s")
 
 
 def _translated(query: Any, params: Any) -> Any:

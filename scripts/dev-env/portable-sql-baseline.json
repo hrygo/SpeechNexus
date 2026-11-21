@@ -59,7 +59,6 @@
     "paging-limit::backend/src/speechnexus_backend/speech/infrastructure/admission_sql.py": 2,
     "paging-limit::backend/src/speechnexus_backend/speech/infrastructure/asr_settlement_debt.py": 1,
     "paging-limit::backend/src/speechnexus_backend/speech/infrastructure/asr_settlement_preflight.py": 1,
-    "paging-limit::backend/src/speechnexus_backend/speech/infrastructure/assets_postgres.py": 2,
     "paging-limit::backend/src/speechnexus_backend/speech/infrastructure/public_job_admission.py": 1,
     "paging-limit::backend/src/speechnexus_backend/speech/infrastructure/public_jobs_postgres.py": 1,
     "paging-limit::backend/src/speechnexus_backend/speech/infrastructure/publications_postgres.py": 1,

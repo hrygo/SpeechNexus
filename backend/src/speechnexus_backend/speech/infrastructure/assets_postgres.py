@@ -112,6 +112,17 @@ class AssetCursor:
         )
 
 
+def _has_unreleased_references(cursor: AssetCursor, asset_id: str) -> bool:
+    """还有未释放的引用吗——存在性判定用标准 `EXISTS`,方言没有 `LIMIT`。"""
+
+    rows = cursor.rows(
+        "SELECT EXISTS (SELECT 1 FROM speech_asset_references "
+        "WHERE asset_id = ? AND released_at_us IS NULL) AS present",
+        (asset_id,),
+    )
+    return bool(rows) and bool(rows[0]["present"])
+
+
 def _any_asset(cursor: AssetCursor) -> bool:
     """资产表非空吗——用标准 `EXISTS`,方言没有 `LIMIT`,这里也不是分页。"""
 
@@ -176,12 +187,9 @@ def prepare_content_deletion(
     if asset.status != "expired":
         asset = replace(asset, status="expired", version=asset.version + 1)
         cursor.save(asset, "expired", now)
-    refs = cursor.rows(
-        "SELECT reference_id FROM speech_asset_references "
-        "WHERE asset_id = ? AND released_at_us IS NULL LIMIT 1",
-        (asset.asset_id,),
+    blocked = expiry_blocker(
+        asset, has_references=_has_unreleased_references(cursor, asset.asset_id)
     )
-    blocked = expiry_blocker(asset, has_references=bool(refs))
     proof = cursor.proof(asset.asset_id)
     if proof is None and asset.phase == "settled" and asset.writer_id is not None:
         blocked = "asset_object_binding_missing"
@@ -237,14 +245,7 @@ def complete_content_deletion(cursor: AssetCursor, asset: AssetRecord, ledger_id
         return True
     if asset.status != "expired" or rows[0]["deletion_state"] != "queued":
         return False
-    if (
-        cursor.rows(
-            "SELECT reference_id FROM speech_asset_references "
-            "WHERE asset_id = ? AND released_at_us IS NULL LIMIT 1",
-            (asset.asset_id,),
-        )
-        or asset.phase == "writing"
-    ):
+    if _has_unreleased_references(cursor, asset.asset_id) or asset.phase == "writing":
         return False
     # The accepted deletion pinned one storage version. Never mark the row
     # complete against a newer one: the purge evidence would name an object this

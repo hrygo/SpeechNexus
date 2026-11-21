@@ -239,7 +239,7 @@ class ModelCatalogRuntime:
             raise ValueError("Model catalogue reader must not use any sequence")
 
         definer = connection.execute(
-            "SELECT CAST(p.oid AS regprocedure)CAST(regprocedure AS text) AS signature FROM "
+            "SELECT CAST(CAST(p.oid AS regprocedure) AS text) AS signature FROM "
             "pg_catalog.pg_proc AS p "
             "JOIN pg_catalog.pg_namespace AS n ON n.oid=p.pronamespace "
             "WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema' AND p.prosecdef "

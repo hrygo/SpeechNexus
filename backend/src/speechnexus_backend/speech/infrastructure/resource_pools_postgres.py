@@ -23,7 +23,7 @@ from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 
 _QUERY = """
 SELECT pool.pool_id, pool.pool_state, pool.service_class,
-       COALESCE(CAST(aggregate.node_ids AS text)text[]) AS node_ids,
+       COALESCE(CAST(aggregate.node_ids AS text[]), CAST(ARRAY[] AS text[])) AS node_ids,
        COALESCE(aggregate.ready_instances, 0) AS ready_instances,
        CAST(COALESCE(aggregate.max_active_slots, 0) AS bigint) AS max_active_slots,
        CAST(COALESCE(aggregate.realtime_reserved_slots, 0) AS bigint) AS realtime_reserved_slots,
@@ -77,7 +77,8 @@ class PostgresResourcePoolReads:
             ValueError,
             TypeError,
             KeyError,
-        ):
+        ) as error:
+            import traceback; traceback.print_exception(error)
             raise ResourcePoolsUnavailableError from None
 
 

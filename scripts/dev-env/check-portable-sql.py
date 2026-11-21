@@ -392,11 +392,12 @@ def selftest() -> list[str]:
         if rule not in found:
             problems.append(f"{rule} did not fire for its DDL injection")
 
+    sample_fingerprint = "d99bfdf39af69477376fbe5ef2f96ac752a82f2b03a3fe4c745e2e961fda4ed6"
     clean_ddl = (
         "CREATE TABLE schema_meta (meta_id VARCHAR(32) NOT NULL, schema_rev VARCHAR(64) NOT NULL,\n"
         "    PRIMARY KEY (meta_id));\n"
         "INSERT INTO schema_meta (meta_id, schema_rev, schema_fingerprint)\n"
-        "    VALUES ('portable', '0005', 'd99bfdf39af69477376fbe5ef2f96ac752a82f2b03a3fe4c745e2e961fda4ed6');\n"
+        f"    VALUES ('portable', '0005', '{sample_fingerprint}');\n"
     )
     if scan_ddl("migrations/0002_clean.sql", clean_ddl):
         problems.append("clean DDL was rejected")

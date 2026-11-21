@@ -819,9 +819,7 @@ class DockerNodeRuntime:
         """Template-declared environment first, then the per-generation credential."""
         declared = tuple(f"{name}={value}" for name, value in template.environment)
         return (
-            declared
-            + self._engine_environment(request, template)
-            + self._gpu_environment(template)
+            declared + self._engine_environment(request, template) + self._gpu_environment(template)
         )
 
     def _managed_environment(

@@ -716,9 +716,9 @@ def test_gpu_quota_comes_from_deployment_config_not_the_template() -> None:
     assert created.command[-2:] == ("--gpu-memory-utilization", "0.9")
     assert "CUDA_DEVICE_MEMORY_LIMIT=6144m" in created.environment
     assert "LD_PRELOAD=/opt/speechnexus/libvgpu.so" in created.environment
-    assert "/opt/speechnexus/libvgpu.so:/opt/speechnexus/libvgpu.so:ro" in created.host_config[
-        "Binds"
-    ]
+    assert (
+        "/opt/speechnexus/libvgpu.so:/opt/speechnexus/libvgpu.so:ro" in created.host_config["Binds"]
+    )
 
 
 def test_gpu_quota_leaves_a_template_that_already_states_it_alone() -> None:

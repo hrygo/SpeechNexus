@@ -35,9 +35,9 @@ class PostgresTtsSettlementStore:
                 "CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) "
                 "AND CAST(target_document AS jsonb)->>'gateway_id'=? "
                 "AND CAST(target_document AS jsonb)->>'host_node_id'=? "
-                "ORDER BY next_check_at_us, lease_id LIMIT %s",
-                (gateway_id, node_id, limit),
-            ).fetchall()
+                "ORDER BY next_check_at_us, lease_id",
+                (gateway_id, node_id),
+            ).fetchmany(limit)
         result: list[SettlementRoot] = []
         for row in rows:
             target = TtsSettlementTarget(**json.loads(row["target_document"]))

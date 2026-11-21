@@ -41,8 +41,6 @@
     "ddl-type::migrations/0001_cluster_coordination_draft.sql": 2,
     "distinct-on::backend/src/speechnexus_backend/speech/infrastructure/public_job_admission.py": 1,
     "format::backend/src/speechnexus_backend/speech/infrastructure/job_dispatch_postgres.py": 1,
-    "format::backend/src/speechnexus_backend/speech/infrastructure/tts_settlement_postgres.py": 1,
-    "format::backend/src/speechnexus_backend/speech/infrastructure/voice_capability_evidence_postgres.py": 1,
     "format::backend/src/speechnexus_backend/workbench/infrastructure/postgres_books.py": 2,
     "format::backend/src/speechnexus_backend/workbench/infrastructure/postgres_deletion_cleanup.py": 1,
     "format::backend/src/speechnexus_backend/workbench/infrastructure/postgres_minutes_tasks.py": 1,

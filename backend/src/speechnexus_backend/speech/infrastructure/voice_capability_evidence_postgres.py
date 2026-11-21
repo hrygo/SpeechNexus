@@ -49,6 +49,9 @@ class _Cursor:
     def fetchall(self) -> list[dict[str, Any]]:
         return self.raw.fetchall()
 
+    def fetchmany(self, size: int) -> list[dict[str, Any]]:
+        return self.raw.fetchmany(size)
+
 
 def _json_object(raw: str | None) -> dict[str, Any] | None:
     if raw is None:
@@ -206,10 +209,10 @@ class PostgresVoiceEvidenceRecorder:
             "WHERE e.validation_job_id = j.job_id) "
             "AND (CAST(? AS bigint) IS NULL OR (j.updated_at_us, j.job_id) > (CAST(? AS bigint), "
             "CAST(? AS varchar))) "
-            "ORDER BY j.updated_at_us, j.job_id LIMIT %s",
-            (after_us, after_us, after_id, limit),
+            "ORDER BY j.updated_at_us, j.job_id",
+            (after_us, after_us, after_id),
         )
-        return [(int(row["updated_at_us"]), str(row["job_id"])) for row in cursor.fetchall()]
+        return [(int(row["updated_at_us"]), str(row["job_id"])) for row in cursor.fetchmany(limit)]
 
     def _report(self, cursor: _Cursor, validation_job_id: str) -> ArtifactRecord:
         job, artifact = self._job_and_artifact(cursor, validation_job_id)

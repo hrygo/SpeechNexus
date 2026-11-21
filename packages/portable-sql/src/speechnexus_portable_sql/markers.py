@@ -24,8 +24,66 @@ class AmbiguousMarkerError(ValueError):
     """语句里的 `?` 是运算符而不是占位符:拒绝翻译,不猜测。"""
 
 
-def placeholder_positions(sql: str) -> list[int]:
-    """返回占位符 `?` 的下标;运算符形态抛 `AmbiguousMarkerError`."""
+_VALUE_END = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_'\")]")
+_VALUE_START = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_'\"$")
+#: 这些词之后出现的 `?` 是占位符,不是 JSONB 运算符。
+_KEYWORDS = frozenset(
+    {
+        "SELECT",
+        "WHERE",
+        "AND",
+        "OR",
+        "NOT",
+        "VALUES",
+        "SET",
+        "BY",
+        "ON",
+        "USING",
+        "CASE",
+        "WHEN",
+        "THEN",
+        "ELSE",
+        "IS",
+        "IN",
+        "LIKE",
+        "RETURN",
+        "LIMIT",
+        "OFFSET",
+        "BETWEEN",
+        "COALESCE",
+        "AS",
+    }
+)
+
+
+def _is_operator(sql: str, index: int) -> bool:
+    """`?` 处在运算符位置:左边是一个值结束,右边是一个值开始(JSONB 存在运算)."""
+
+    left = index - 1
+    while left >= 0 and sql[left] in " \t\r\n":
+        left -= 1
+    right = index + 1
+    while right < len(sql) and sql[right] in " \t\r\n":
+        right += 1
+    if left < 0 or right >= len(sql):
+        return False
+    if sql[left] not in _VALUE_END:
+        return False
+    word_end = left + 1
+    word_start = left
+    while word_start >= 0 and (sql[word_start].isalnum() or sql[word_start] == "_"):
+        word_start -= 1
+    if sql[word_start + 1 : word_end].upper() in _KEYWORDS:
+        return False
+    return sql[right] in _VALUE_START or sql.startswith("%s", right)
+
+
+def placeholder_positions(sql: str, *, legacy: bool = False) -> list[int]:
+    """返回占位符 `?` 的下标.
+
+    运算符形态在 qmark 语句里直接拒绝(受限方言不允许);在旧 `%s` 语句里则跳过,因为那是
+    已有的 JSONB 用法,由静态 guard 的基线负责收敛,不能靠运行时改写。
+    """
 
     positions: list[int] = []
     index = 0
@@ -60,11 +118,17 @@ def placeholder_positions(sql: str) -> list[int]:
         if char == "?":
             following = sql[index + 1 : index + 2]
             if following in ("|", "&"):
+                if legacy:
+                    index += 1
+                    continue
                 raise AmbiguousMarkerError("jsonb `?|` / `?&` operator is not a placeholder")
             probe = index + 1
             while probe < size and sql[probe] in " \t\r\n":
                 probe += 1
-            if probe < size and sql[probe] == "'":
+            if _is_operator(sql, index):
+                if legacy:
+                    index += 1
+                    continue
                 raise AmbiguousMarkerError("jsonb `?` operator is not a placeholder")
             positions.append(index)
         index += 1
@@ -76,13 +140,15 @@ def qmark_to_pyformat(sql: str, params: Sequence[Any] | None) -> str:
 
     if params is None or "?" not in sql:
         return sql
-    if "%s" in sql:
-        raise AmbiguousMarkerError("statement mixes `?` and `%s` placeholders")
-    if PYFORMAT.search(sql):
+    legacy = "%s" in sql or bool(PYFORMAT.search(sql))
+    positions = placeholder_positions(sql, legacy=legacy)
+    if legacy:
+        if positions:
+            raise AmbiguousMarkerError("statement mixes `?` and `%s` placeholders")
         return sql
     pieces: list[str] = []
     cursor = 0
-    for position in placeholder_positions(sql):
+    for position in positions:
         pieces.append(sql[cursor:position].replace("%", "%%"))
         pieces.append("%s")
         cursor = position + 1

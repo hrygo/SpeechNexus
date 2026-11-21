@@ -1,0 +1,98 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: bridge
+  namespace: speechnexus
+spec:
+  selector:
+    app: bridge
+  ports:
+    - name: gateway
+      port: 18010
+      targetPort: 18010
+    - name: controller
+      port: 18020
+      targetPort: 18020
+    - name: engine
+      port: 18190
+      targetPort: 18190
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bridge
+  namespace: speechnexus
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: bridge
+  template:
+    metadata:
+      labels:
+        app: bridge
+    spec:
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+      containers:
+        - name: bridge
+          image: speechnexus-bridge:bookworm-4
+          env:
+            - name: SSH_HOST
+              value: "47.103.22.160"
+            - name: SSH_PORT
+              value: "6000"
+            - name: SSH_USER
+              value: "huangzhonghui"
+            - name: HOME
+              value: /tmp
+          ports:
+            - name: gateway
+              containerPort: 18010
+            - name: controller
+              containerPort: 18020
+          readinessProbe:
+            exec:
+              command: ["nc", "-z", "127.0.0.1", "18010"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["nc", "-z", "127.0.0.1", "18010"]
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 4
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: ssh
+              mountPath: /etc/speechnexus-ssh
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: ssh
+          secret:
+            secretName: bridge-ssh
+            defaultMode: 0444
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi

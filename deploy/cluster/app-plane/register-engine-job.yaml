@@ -1,0 +1,55 @@
+# One-shot registration of the file-ASR engine instance that runs on MegaCube.
+#
+# The engine itself is reached over the bridge (127.0.0.1:18190 on MegaCube is
+# forwarded to bridge.speechnexus.svc:18190), so registration runs in the
+# application plane where the coordination database is local. The private recipe
+# is copied to /tmp with the mode the loader requires: a Secret mount cannot
+# satisfy "owned by the running uid and 0600".
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: engine-register
+  namespace: speechnexus
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: register
+          image: speechnexus-python:203d412b
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - install -m 600 /private/transcription-recipe.json /tmp/transcription-recipe.json &&
+              exec speechnexus-register-engine
+              --generation 1
+              --node node-megacube-1
+              --gateway gateway-megacube-1
+              --instance instance-asr-3
+              --workspace workspace-default
+              --max-attempts 8
+              --host-capacity 25769803776,0,0,2400,0,0
+          env:
+            - name: SPEECHNEXUS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: registration-credentials
+                  key: SPEECHNEXUS_REGISTRATION_DATABASE_URL
+            - name: SPEECHNEXUS_DATABASE_SCHEMA
+              value: speech
+            - name: SPEECHNEXUS_TRANSCRIPTION_RECIPE_FILE
+              value: /tmp/transcription-recipe.json
+            - name: SPEECHNEXUS_ENGINE_HEALTH_URL
+              value: http://bridge.speechnexus.svc:18190/health
+          volumeMounts:
+            - name: private-config
+              mountPath: /private
+              readOnly: true
+      volumes:
+        - name: private-config
+          secret:
+            secretName: private-config
+            defaultMode: 0444

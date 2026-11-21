@@ -58,6 +58,7 @@ _IMAGE_COPY_PROSE = frozenset(
         "node-controller/README.md",
         "packages/contracts/README.md",
         "packages/media/README.md",
+        "packages/portable-sql/README.md",
     }
 )
 _TEST_READ_PROSE = frozenset(

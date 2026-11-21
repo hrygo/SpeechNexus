@@ -11,6 +11,7 @@ members = [
     "speechnexus-execution-gateway",
     "speechnexus-media",
     "speechnexus-node-controller",
+    "speechnexus-portable-sql",
 ]
 
 [[package]]
@@ -1720,6 +1721,7 @@ dependencies = [
     { name = "python-multipart" },
     { name = "rfc8785" },
     { name = "speechnexus-contracts" },
+    { name = "speechnexus-portable-sql" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -1742,6 +1744,7 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.20,<0.1" },
     { name = "rfc8785", specifier = ">=0.1.4,<0.2" },
     { name = "speechnexus-contracts", editable = "packages/contracts" },
+    { name = "speechnexus-portable-sql", editable = "packages/portable-sql" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.54,<0.55" },
 ]
 provides-extras = ["migrations"]
@@ -1771,6 +1774,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "speechnexus-contracts" },
     { name = "speechnexus-media", extra = ["audio"] },
+    { name = "speechnexus-portable-sql" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -1785,6 +1789,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.16.1,<3" },
     { name = "speechnexus-contracts", editable = "packages/contracts" },
     { name = "speechnexus-media", extras = ["audio"], editable = "packages/media" },
+    { name = "speechnexus-portable-sql", editable = "packages/portable-sql" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.54,<0.55" },
 ]
 
@@ -1826,6 +1831,11 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.16.1,<3" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.54,<0.55" },
 ]
+
+[[package]]
+name = "speechnexus-portable-sql"
+version = "0.1.0.dev0"
+source = { editable = "packages/portable-sql" }
 
 [[package]]
 name = "sqlalchemy"

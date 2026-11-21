@@ -14,6 +14,7 @@ dependencies = [
   "pydantic-settings>=2.16.1,<3",
   "speechnexus-contracts",
   "speechnexus-media[audio]",
+  "speechnexus-portable-sql",
   "uvicorn[standard]>=0.54,<0.55",
   "minio>=7.2.20,<8",
 ]
@@ -31,3 +32,4 @@ packages = ["src/speechnexus_gateway"]
 [tool.uv.sources]
 speechnexus-contracts = { workspace = true }
 speechnexus-media = { workspace = true }
+speechnexus-portable-sql = { workspace = true }

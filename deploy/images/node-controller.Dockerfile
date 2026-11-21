@@ -14,6 +14,7 @@ COPY backend/README.md backend/pyproject.toml backend/
 COPY execution-gateway/README.md execution-gateway/pyproject.toml execution-gateway/
 COPY packages/contracts/pyproject.toml packages/contracts/
 COPY packages/media/README.md packages/media/pyproject.toml packages/media/
+COPY packages/portable-sql/README.md packages/portable-sql/pyproject.toml packages/portable-sql/
 COPY node-controller/README.md node-controller/pyproject.toml node-controller/
 COPY node-controller/src node-controller/src
 COPY deploy/images/node-controller-build-constraints.txt /tmp/node-controller-build-constraints.txt

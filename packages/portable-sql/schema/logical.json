@@ -1,0 +1,19 @@
+{
+  "revision": "0002",
+  "tables": [
+    {
+      "name": "schema_meta",
+      "columns": [
+        { "name": "meta_id", "type": "varchar(32)", "nullable": false },
+        { "name": "schema_rev", "type": "varchar(64)", "nullable": false },
+        { "name": "schema_fingerprint", "type": "char(64)", "nullable": false },
+        { "name": "authority_epoch", "type": "decimal(38,0)", "nullable": false }
+      ],
+      "primary_key": ["meta_id"],
+      "uniques": [],
+      "foreign_keys": [],
+      "checks": [],
+      "indexes": []
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "revision": "0002",
+  "statements": [
+    {
+      "id": "authority.probe",
+      "version": 1,
+      "params": [{ "name": "meta_id", "kind": "text", "nullable": false }],
+      "result": [
+        { "name": "at", "kind": "timestamp", "nullable": false },
+        { "name": "schema_rev", "kind": "text", "nullable": false },
+        { "name": "schema_fingerprint", "kind": "char", "nullable": false },
+        { "name": "authority_epoch", "kind": "decimal", "nullable": false }
+      ],
+      "transaction": "read_only",
+      "lock_order": [],
+      "idempotency": "read_only_replay",
+      "error_semantics": "validate_or_rollback",
+      "sql": "SELECT CURRENT_TIMESTAMP, schema_rev, schema_fingerprint, authority_epoch FROM schema_meta WHERE meta_id = ?"
+    }
+  ],
+  "profiles": []
+}

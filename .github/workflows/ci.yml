@@ -113,6 +113,27 @@ jobs:
       - name: Verify routing boundaries without installing project dependencies
         run: python -m unittest discover -s tests/ci -v
 
+      # ADR 0016: the portable SQL subset is the one rule that must hold for every
+      # change, including docs-only ones, so it runs here with no project install.
+      # The scan reads its rule list from packages/portable-sql/src; `--selftest`
+      # proves each rule still fires before the real tree is judged.
+      - name: Verify the portable SQL subset without installing project dependencies
+        run: |
+          python scripts/dev-env/check-portable-sql.py --selftest
+          python scripts/dev-env/check-portable-sql.py --baseline scripts/dev-env/portable-sql-baseline.json
+
+      # The manifest and logical schema guards are exact checks, not ratchets: no
+      # baseline, every drift is red.
+      - name: Verify the statement manifest and profile registry
+        run: |
+          python scripts/dev-env/check-statement-manifest.py --selftest
+          python scripts/dev-env/check-statement-manifest.py
+
+      - name: Verify the canonical logical schema against the physical DDL profile
+        run: |
+          python scripts/dev-env/check-logical-schema.py --selftest
+          python scripts/dev-env/check-logical-schema.py
+
       - name: Set up Node.js for dependency-free design checks
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:

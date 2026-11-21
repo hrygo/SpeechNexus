@@ -1,0 +1,12 @@
+{
+  "note": "已登记数据库 profile 的唯一来源。新增 profile 必须写明 family、mode、目标版本和证据；未登记的 profile 不得出现在 statement manifest 或部署配置中。PostgreSQL 是首发 profile；其余目标只在明确激活并通过同一行为 oracle 后才声明支持。",
+  "profiles": {
+    "postgresql-16": {
+      "family": "postgresql",
+      "mode": "native",
+      "targets": ["postgresql>=16,<17"],
+      "first_release": true,
+      "evidence": "docs/architecture/database-portability.md"
+    }
+  }
+}

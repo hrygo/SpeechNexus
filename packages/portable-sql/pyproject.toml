@@ -1,0 +1,20 @@
+[project]
+name = "speechnexus-portable-sql"
+version = "0.1.0.dev0"
+license = "MIT"
+description = "Single portable SQL path: shared ODBC DB-API contract, SQL subset and schema anchors"
+readme = "README.md"
+requires-python = ">=3.14,<3.15"
+dependencies = []
+
+[build-system]
+requires = ["hatchling>=1.28,<2"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/speechnexus_portable_sql"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"schema/logical.json" = "speechnexus_portable_sql/data/logical.json"
+"statements/manifest.json" = "speechnexus_portable_sql/data/manifest.json"
+"statements/profiles.json" = "speechnexus_portable_sql/data/profiles.json"

@@ -609,6 +609,26 @@ PostgreSQL 单元和合成集成通过，不等于：
 迁移期间，旧 PostgreSQL 路径和新共同路径不能同时独占写入同一权威表；切换必须有 schema
 revision、租约 / fencing 与回退证据。
 
+### 13.1 实施状态
+
+第 1、2、5 步的可执行部分已经落地，且由 CI 判据守着：
+
+- `packages/portable-sql/` 是唯一的公共 DB-API 契约包：共同子集校验、参数与结果值转换、
+  显式事务、权威时间探针、keyset 分页、逻辑 schema 指纹与 statement manifest 解析。
+- `packages/portable-sql/schema/logical.json` 是 canonical 逻辑 schema；指纹函数同时被部署作业与
+  guard 调用，没有第二份实现。
+- `packages/portable-sql/statements/manifest.json` 是 canonical statement manifest，
+  `manifest.digest` 固定其摘要；`profiles.json` 是已登记 profile 的唯一来源。
+- `migrations/0002_portable_contract.sql` 是 PostgreSQL 首发的物理 DDL profile，建立 `schema_meta`
+  并写入本 revision 的逻辑指纹。
+- 三类 guard 在 `ci.yml` 的 guards job 中先 `--selftest` 再判真实树：共同子集棘轮
+  （`scripts/dev-env/check-portable-sql.py`）、statement manifest 摘要
+  （`scripts/dev-env/check-statement-manifest.py`）、逻辑 schema 指纹
+  （`scripts/dev-env/check-logical-schema.py`）。
+
+尚未完成：`FOR UPDATE`、`SKIP LOCKED`、upsert、`RETURNING`、advisory lock、数据库通知、品牌时间与
+SQLSTATE 分类仍在产品路径中（第 3、4 步），由 #1100 收敛；非 PG 目标与数据搬迁见 #1101、#1102。
+
 ## 14. 依据与核验
 
 以下资料于 2026-11-21 核验；具体版本和实施资格仍需在目标环境锁定：

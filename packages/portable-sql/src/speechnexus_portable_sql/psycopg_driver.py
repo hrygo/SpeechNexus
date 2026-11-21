@@ -33,11 +33,27 @@ __all__ = [
 
 
 def _translated(query: Any, params: Any) -> Any:
-    """只有纯文本语句能翻译;`SQL` / `Composed` 保持原样(它们自带参数风格)。"""
+    """翻译纯文本与 `psycopg.sql` 组合语句.
+
+    `sql.SQL(...).format(s=schema)` 会把语句拼成 `Composed`,占位符仍留在各个 `SQL` 片段里。
+    只翻文本片段、其余节点原样保留,顺序与数量都不变。
+    """
 
     if isinstance(query, str):
         return qmark_to_pyformat(query, params)
-    return query
+    return _translate_composed(query, params)
+
+
+def _translate_composed(node: Any, params: Any) -> Any:
+    if isinstance(node, str):
+        return psycopg.sql.SQL(qmark_to_pyformat(node, params))
+    if isinstance(node, psycopg.sql.Composed):
+        parts = cast(Sequence[Any], node._obj)
+        return psycopg.sql.Composed([_translate_composed(part, params) for part in parts])
+    if isinstance(node, psycopg.sql.SQL):
+        template = cast(str, node._obj)
+        return psycopg.sql.SQL(qmark_to_pyformat(template, params))
+    return node
 
 
 class PortableCursor:

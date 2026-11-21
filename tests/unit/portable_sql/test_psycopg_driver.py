@@ -27,3 +27,18 @@ def test_legacy_pyformat_statements_are_left_alone() -> None:
 def test_statements_without_parameters_are_not_rewritten() -> None:
     sql = "SELECT 1 FROM t WHERE name LIKE 'op%'"
     assert qmark_to_pyformat(sql, None) == sql
+
+
+def test_composed_statement_is_translated_in_every_sql_piece() -> None:
+    """`sql.SQL(...).format(s=...)` 的片段也必须翻译,否则工作台异步路径会把 `?` 原样发给 PG."""
+
+    from psycopg import sql
+
+    from speechnexus_portable_sql.psycopg_driver import _translated
+
+    statement = sql.SQL("SELECT a FROM {s}.t WHERE a = ? AND b = ? LIMIT %s").format(
+        s=sql.Identifier("sn_workbench")
+    )
+    rendered = _translated(statement, (1, 2, 3)).as_string(None)
+    assert "a = %s AND b = %s LIMIT %s" in rendered
+    assert "?" not in rendered

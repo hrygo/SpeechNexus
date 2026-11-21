@@ -61,7 +61,7 @@ def namespace(database_url: str) -> Iterator[tuple[str, str]]:
         admin.execute(BOUNDS_DDL)
         yield database_url, name
     finally:
-        admin.execute(f'DROP SCHEMA "{name}" CASCADE')
+        admin.execute(f'DROP SCHEMA IF EXISTS "{name}" CASCADE')
         admin.close()
 
 

@@ -112,6 +112,13 @@ class AssetCursor:
         )
 
 
+def _any_asset(cursor: AssetCursor) -> bool:
+    """资产表非空吗——用标准 `EXISTS`,方言没有 `LIMIT`,这里也不是分页。"""
+
+    rows = cursor.rows("SELECT EXISTS (SELECT 1 FROM speech_assets) AS present")
+    return bool(rows) and bool(rows[0]["present"])
+
+
 def _asset(row: dict[str, Any]) -> AssetRecord:
     return AssetRecord(
         row["asset_id"],
@@ -300,7 +307,7 @@ class PostgresAssetMetadata:
         found = declared()
         if found is None:
             if readonly:
-                if cursor.rows("SELECT asset_id FROM speech_assets LIMIT 1"):
+                if _any_asset(cursor):
                     raise AssetError("asset_storage_adoption_required")
                 raise AssetError("asset_storage_namespace_unbound")
             # All new writers enter this declaration check before other asset
@@ -311,7 +318,7 @@ class PostgresAssetMetadata:
             )
             found = declared()
             if found is None:
-                if cursor.rows("SELECT asset_id FROM speech_assets LIMIT 1"):
+                if _any_asset(cursor):
                     raise AssetError("asset_storage_adoption_required")
                 cursor.rows(
                     "INSERT INTO speech_asset_storage_authority "

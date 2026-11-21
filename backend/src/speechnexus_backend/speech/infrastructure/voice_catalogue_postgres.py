@@ -41,8 +41,11 @@ def _document(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def _require_publications(cursor: PublicationCursor) -> None:
-    cursor.execute(f"SELECT 1 FROM {VOICE_READER_VIEW} LIMIT 1")
-    if not cursor.fetchall():
+    # 「视图里有没有任何一行」用标准 `EXISTS` 表达:方言没有 `LIMIT`,
+    # 而这里也不是取一页,只是存在性判定。
+    cursor.execute(f"SELECT EXISTS (SELECT 1 FROM {VOICE_READER_VIEW}) AS present")
+    rows = cursor.fetchall()
+    if len(rows) != 1 or not rows[0]["present"]:
         raise PublicationUnavailableError
 
 

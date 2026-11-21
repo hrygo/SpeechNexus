@@ -341,20 +341,25 @@ DISPATCH_ROLE_GUARD_SQL = (
     "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
     "WHERE r.rolname=%(role)s AND d.datname=CURRENT_DATABASE()"
 )
+# 零行探针:只验证语句可解析、这些列对该角色可读(列级授权),不取任何行。
+# 受限方言没有 `LIMIT`,而这里也没有分页语义(keyset + fetchmany 规则因此不适用),
+# 所以用一个恒假谓词;规划器在计划阶段就剪掉扫描。
+_ZERO_ROWS = " WHERE 1=0"
 DISPATCH_STARTUP_PROBES: tuple[str, ...] = (
-    "SELECT job_id FROM speech_jobs LIMIT 0",
+    "SELECT job_id FROM speech_jobs" + _ZERO_ROWS,
     "SELECT job_id, event_seq, state, occurred_at_us, kind, progress_unit, "
-    "progress_completed, progress_total FROM speech_job_events LIMIT 0",
-    "SELECT job_id FROM coordination_jobs LIMIT 0",
-    "SELECT operation_id, request_document FROM admission_operations LIMIT 0",
-    "SELECT attempt_id FROM admission_attempts LIMIT 0",
-    "SELECT request_document FROM admission_requests LIMIT 0",
-    "SELECT lease_id, lease_state, cleanup_state, deadline_at_us FROM admission_leases LIMIT 0",
-    "SELECT artifact_id FROM speech_artifacts LIMIT 0",
+    "progress_completed, progress_total FROM speech_job_events" + _ZERO_ROWS,
+    "SELECT job_id FROM coordination_jobs" + _ZERO_ROWS,
+    "SELECT operation_id, request_document FROM admission_operations" + _ZERO_ROWS,
+    "SELECT attempt_id FROM admission_attempts" + _ZERO_ROWS,
+    "SELECT request_document FROM admission_requests" + _ZERO_ROWS,
+    "SELECT lease_id, lease_state, cleanup_state, deadline_at_us FROM admission_leases"
+    + _ZERO_ROWS,
+    "SELECT artifact_id FROM speech_artifacts" + _ZERO_ROWS,
 )
 DISPATCH_VOICE_VALIDATION_PROBES: tuple[str, ...] = (
-    "SELECT draft_id, revision FROM speech_voice_draft_revisions LIMIT 0",
-    "SELECT workspace_id, asset_id FROM speech_assets LIMIT 0",
+    "SELECT draft_id, revision FROM speech_voice_draft_revisions" + _ZERO_ROWS,
+    "SELECT workspace_id, asset_id FROM speech_assets" + _ZERO_ROWS,
 )
 
 

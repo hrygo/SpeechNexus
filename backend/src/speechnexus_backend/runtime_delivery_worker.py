@@ -139,7 +139,8 @@ class RuntimeDeliveryRuntime:
                 ).fetchone()
                 if row is None or row["forbidden"]:
                     raise ValueError("Delivery runtime requires a non-owner role without DDL")
-            connection.execute("SELECT event_id FROM runtime_intent_deliveries LIMIT 0")
+            # 零行探针:验证列可读即可,方言没有 `LIMIT`,这里也没有分页语义。
+            connection.execute("SELECT event_id FROM runtime_intent_deliveries WHERE 1=0")
 
     async def __aenter__(self) -> Self:
         self._pool.open()

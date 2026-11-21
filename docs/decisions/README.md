@@ -22,4 +22,6 @@ ADR 记录架构决定及其理由；每项状态以该文 frontmatter 为准，
 - [0014：开发环境同构与允许的差异边界](0014-development-environment-isomorphism.md)（accepted，2026-11-21；开发环境以生产单元集合为基线，只允许数据面实现与 GPU 有无两类差异；同构缺口须显式标注）。
 - [0015：GPU 显存额度由部署配置声明](0015-gpu-memory-quota-by-configuration.md)（accepted，2026-11-21；额度来自配置而非硬件上报，经 libvgpu 注入执行，不按 NVML 记账调度）。（proposed，2026-10-29；补录已合入路由的契约选择及冲突提示，待非作者审查，不结算 #273 或投产 Gate）。
 
+- [0016：可移植数据契约、受限数据库方言与实时预算](0016-database-portability-core.md)（proposed，2026-11-21；首发 PostgreSQL；同一应用产物、statement contract 和逻辑 schema，允许少量登记物理 DDL / 静态 SQL profile；无业务 adapter；实时使用持久 grant / 本地 credit）。
+
 [文档索引](../README.md)

@@ -436,6 +436,7 @@
       "epic": 338,
       "prd": "docs/prd.md#x-admit",
       "designs": [
+        "docs/architecture/database-portability.md",
         "docs/architecture/runtime-governance.md",
         "docs/architecture/technical-blueprint.md"
       ],
@@ -465,13 +466,17 @@
           "note": "显式启用 binding 停用屏障"
         }
       ],
-      "issues": []
+      "issues": [
+        1094,
+        1100
+      ]
     },
     {
       "id": "X-RECOVER",
       "epic": 338,
       "prd": "docs/prd.md#x-recover",
       "designs": [
+        "docs/architecture/database-portability.md",
         "docs/architecture/runtime-governance.md",
         "docs/architecture/technical-blueprint.md"
       ],
@@ -513,7 +518,8 @@
       ],
       "issues": [
         409,
-        455
+        455,
+        1095
       ]
     },
     {
@@ -1193,7 +1199,8 @@
       "prd": "docs/prd.md#o-backup",
       "designs": [
         "docs/architecture/deployment-units.md",
-        "docs/architecture/data-deletion.md"
+        "docs/architecture/data-deletion.md",
+        "docs/architecture/database-portability.md"
       ],
       "implementation": "资产 namespace 检查与迁移已有实现，到期清理使用版本固定的保留账本；工作台有条件重放已接受的删除，后台角色尚无统一启动屏障。",
       "integration": "旧 writer 隔离、历史记录采用、生产备份回退和目标拓扑联验待完成。",
@@ -1216,7 +1223,9 @@
           "note": "配置清理身份后重放；部分后台任务在重放前启动"
         }
       ],
-      "issues": []
+      "issues": [
+        1102
+      ]
     },
     {
       "id": "O-ROLE",
@@ -1346,6 +1355,29 @@
         }
       ],
       "issues": []
+    },
+    {
+      "id": "O-DB-PORTABLE",
+      "epic": 342,
+      "prd": "docs/prd.md#o-db-portable",
+      "designs": [
+        "docs/architecture/database-portability.md",
+        "docs/decisions/0016-database-portability-core.md"
+      ],
+      "implementation": "拟议设计已收敛为 canonical statement contract、逻辑 schema、受限 DDL / SQL profile，并明确首发 PostgreSQL；产品仍走 PostgreSQL 专用路径，尚未完成首发契约迁移。",
+      "integration": "尚无 PostgreSQL 首发 qualification 报告、真实业务消费者完整联验或显式 schema / SQL profile 资格。",
+      "verification": "未执行 PostgreSQL 首发的并发、提交未知、SSE 续读、usage 区间、credit 崩溃恢复、实时 SLO 与故障 oracle。",
+      "gap": "PostgreSQL 首发实现与资格、驱动一致性、物理 DDL / SQL profile 等价性和目标负载未验证；MySQL、Oracle、OceanBase 未激活，设计不证明其运行支持。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/main/docs/architecture/database-portability.md",
+          "label": "可移植数据契约设计",
+          "note": "canonical 契约、受限数据库方言与 PostgreSQL 首发边界；不证明实现或运行资格"
+        }
+      ],
+      "issues": [
+        1101
+      ]
     },
     {
       "id": "O-PHYSICAL",
@@ -1889,6 +1921,7 @@
       "epic": 338,
       "prd": "docs/prd.md#x-realtime-reserve",
       "designs": [
+        "docs/architecture/database-portability.md",
         "docs/architecture/runtime-governance.md",
         "docs/architecture/technical-blueprint.md"
       ],
@@ -1908,13 +1941,16 @@
           "note": "需求基线；不证明现行实现或运行资格。"
         }
       ],
-      "issues": []
+      "issues": [
+        1096
+      ]
     },
     {
       "id": "R-PCM",
       "epic": 339,
       "prd": "docs/prd.md#r-pcm",
       "designs": [
+        "docs/architecture/database-portability.md",
         "docs/architecture/speech-api.md",
         "docs/components/cpu-vad.md"
       ],
@@ -1939,7 +1975,9 @@
           "note": "需求基线；不证明现行实现或运行资格。"
         }
       ],
-      "issues": []
+      "issues": [
+        1097
+      ]
     },
     {
       "id": "V-REFERENCE",

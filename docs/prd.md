@@ -10,7 +10,7 @@
 
 ## 全局约束
 
-- PostgreSQL 是正式产品数据与协调权威，对象存储保存明确提交的输入与制品；Redis 仅可作可丢失缓存或唤醒，恢复依赖持久记录和轮询。
+- 每个部署使用一套正式产品数据与协调权威关系数据库。首发采用 PostgreSQL；应用保持同一 canonical statement contract、逻辑 schema、事务和恢复语义，业务层不得按品牌分支或维护数据库 adapter。允许少量登记过的等价物理 DDL 与静态 SQL profile；后续数据库完成独立资格前不得声明支持。对象存储保存明确提交的输入与制品；Redis 仅可作可丢失缓存或唤醒，恢复依赖持久记录和轮询。
 - 跨进程持久输入和制品经对象存储传递，实时内容使用约定的网络流协议；本地临时缓冲有界且私有，不通过跨容器共享目录传递内容。业务 API、worker 和工作台不直接持有任意容器管理权限或引擎凭据。
 - 完整配方的准入、预算、租约和 Job/outbox 保持原子边界；提交固定命令与资源版本，结果未知按原身份恢复。取消或终态不等于停止；有外发或外发未知时按契约取得可信停止与释放证据后结算，确认未外发的分支另按原事务核验。
 - 内容删除须固定版本和摘要预检、明确确认并持久记账；恢复先重放删除账本，再开放内容，独立副本按所属边界处理。
@@ -204,10 +204,10 @@
 
 - 完整 required 配方的 attempt quota、父 host/instance 预算、全部阶段 lease、Job 与 outbox 在同一数据库事务全部提交或回滚。
 - 跨池争夺最后预算、多 Worker/两 Scheduler 与实时保留共享父预算且有界公平；覆盖全部业务 quota/结算。
-- 重复 claim/outbox 不重复执行；写入和发布事务重核 worker、claim_version、owner、期限；旧 owner 在入口屏障及在途协调完成前不能激活。
-- 18 个协调端口及完整事实快照由生产消费者联合核对；PostgreSQL 是正式产品权威，InnoDB 仅作关键协调路径对照；双工、跨池、业务 quota 与结算的相关共享行为无跳过。
+- 重复 claim/outbox 不重复执行；每次实际认领在同一事务复核 bucket fencing、worker、claim_version、owner 和期限；旧 owner 在入口屏障及在途协调完成前不能激活。
+- 18 个协调端口及完整事实快照由生产消费者联合核对；每个部署仅一个权威关系数据库。首发 PostgreSQL 使用同一应用产物、canonical statement manifest 和逻辑 schema fingerprint；允许登记过的等价物理 DDL / 静态 SQL profile，但业务层无数据库 adapter、业务方言分支或品牌异常码。双工、跨池、业务 quota、claim / outbox 与结算使用同一测试 oracle 且无跳过。
 
-设计依据：[runtime-governance.md](architecture/runtime-governance.md)、[technical-blueprint.md](architecture/technical-blueprint.md)。
+设计依据：[database-portability.md](architecture/database-portability.md)、[runtime-governance.md](architecture/runtime-governance.md)、[technical-blueprint.md](architecture/technical-blueprint.md)。
 
 <a id="x-recover"></a>
 ### X-RECOVER · 投递、租约与计量恢复
@@ -220,13 +220,13 @@
 - 提交结果未知仅查原身份，不新建身份、重复外发或提前退预算；原结果查询失败保持 unknown，真实停止与释放证据齐全后只释放一次。
 - 结算消费生成区间而不复制 PCM 账本；观察、投递与恢复均能区分真实证据和合成 fixture。
 - 18 端口及事实查询的完整 value、所有权和实际消费者有证据；内部 JobFact 不伪装公开业务 Job。
-- 锁序、锁后数据库时间与版本前提有效，运行角色非 owner 且不能越权；确认回滚与提交未知分开，读取失败保持 unknown/query_original。
-- PG/InnoDB 相关共享协调行为相同且无跳过，真实业务消费者与 fake/原型分列；音频资产与完整业务任务保持同库事务边界。
+- 锁序有效；写事务先预取得专用探针连接，完成最后潜在阻塞写入后读取主库时间与 schema / authority 身份，再做最终资格复核。运行角色非 owner 且不能越权；确认回滚与提交未知分开，读取失败保持 unknown/query_original。
+- PostgreSQL 首发运行全部竞争、故障、提交未知、事件续读、区间、credit 崩溃恢复和实时 SLO 测试；后续激活的目标数据库运行同一 statement manifest、逻辑 schema fingerprint、ODBC `?` 参数和 behavior oracle 且无跳过。真实业务消费者与 fake/原型分列。音频资产与完整业务任务保持同库原子边界，不因数据库替换拆成跨库双写。存量搬迁与 schema bootstrap 作为独立部署作业验证。
 - 有外发或外发未知时，按原事务核验匹配实例 generation 的可信停止及资源释放证据；确认未外发的分支按独立条件裁决。不能直接归还预算或凭对象存在写成功。
 - 失败保留隔离；审计不含私有正文。
 - 提供受支持的产品内 unknown / reconciliation_required 定位与恢复入口，核对运行权限、固定版本和代次并保留审计；只读 runbook 或人工 SQL 不代替产品入口。
 
-设计依据：[runtime-governance.md](architecture/runtime-governance.md)、[technical-blueprint.md](architecture/technical-blueprint.md)。
+设计依据：[database-portability.md](architecture/database-portability.md)、[runtime-governance.md](architecture/runtime-governance.md)、[technical-blueprint.md](architecture/technical-blueprint.md)。
 
 <a id="x-gateway"></a>
 ### X-GATEWAY · 受控网关提交、取消和停止证据
@@ -320,7 +320,7 @@
 - 配方启用 1.7B 全段复核时，该阶段与 required 辅助在准入前可服务并计入全部阶段预算；未启用全段复核的配方仍须计入其 required 辅助。双工必须整体准入或整体回滚。 当前准入事务具备多阶段预算与实时保留规则；公开实时双工链和公平调度尚须接通并联验，事务组件不能单独证明实时资格。
 - VoiceDesign 加载/热身/执行峰值事先预留；不足排队，不借用实时保留；只在停止与释放事实成立后归还。
 
-设计依据：[runtime-governance.md](architecture/runtime-governance.md)、[technical-blueprint.md](architecture/technical-blueprint.md)。
+设计依据：[database-portability.md](architecture/database-portability.md)、[runtime-governance.md](architecture/runtime-governance.md)、[technical-blueprint.md](architecture/technical-blueprint.md)。
 
 <a id="epic-339"></a>
 ## Epic 339 · 实时语音会话与双工流
@@ -387,7 +387,7 @@
 - 按原样本时钟去重、拒绝旧 epoch；有界队列和输出硬上限不允许静默丢帧。
 - 预览可修订且不冒充终稿；关闭、失败或取消产生唯一逻辑终态，不把客户端播放事实冒充引擎停止。
 
-设计依据：[speech-api.md](architecture/speech-api.md)、[cpu-vad.md](components/cpu-vad.md)。
+设计依据：[database-portability.md](architecture/database-portability.md)、[speech-api.md](architecture/speech-api.md)、[cpu-vad.md](components/cpu-vad.md)。
 
 <a id="epic-340"></a>
 ## Epic 340 · 声音与发音资源
@@ -678,6 +678,31 @@
 - 独立 API 上游、同版服务清单、裁剪依赖及 macOS/Linux 原生运行作为部署前置，适用放行点由用户明确决定。
 
 设计依据：[deployment-units.md](architecture/deployment-units.md)、[data-deletion.md](architecture/data-deletion.md)。
+
+<a id="o-db-portable"></a>
+### O-DB-PORTABLE · 可移植数据契约与 PostgreSQL 首发资格
+
+**需求：** 首发以 PostgreSQL 运行同一应用产物、canonical statement contract 与逻辑 schema；允许少量
+等价物理 DDL 和已登记静态 SQL profile，业务层不维护数据库 adapter。MySQL、Oracle、OceanBase
+保持后续可激活，但完成各自行为、故障、迁移和性能资格前不声明支持。
+
+**验收：**
+
+- 首发 PostgreSQL 使用固定版本、真实 ODBC driver、同一 application artifact 摘要、statement manifest
+  摘要和逻辑 schema fingerprint，跑完同一测试 oracle 且无跳过。
+- 参数只使用 ODBC `?`；关闭 autocommit 并显式事务；CAS 以 `rowcount` 为准；业务不读 SQLSTATE
+  或 vendor error code。注入业务品牌分支、未登记 profile、逻辑 schema 差异或错误码分支时 guard 变红。
+- 共同类型、UTF-8 字节长度、UTC 时间、`Decimal(38,0)`、`FOR UPDATE`、keyset 分页、提交未知、
+  `(job_id,event_seq)` SSE 续读、usage 区间和 credit 崩溃证据均以真实 PG 结果验收。
+- 物理 DDL / 运行时 SQL profile 差异必须显式登记并有语义等价 oracle；差异不得改变列、键、约束、
+  索引覆盖、参数 / 结果形状、事务边界、锁序、CAS 或恢复语义。
+- schema bootstrap 与存量数据搬迁作为独立部署作业；通过驱动资格不等于数据已搬迁，也不等于
+  真实引擎、物理多机、HA 或目标负载资格完成。
+- 后续目标数据库必须重跑同一 contract / oracle、切换 / 回退、备份恢复和目标负载后才可声明支持；
+  驱动不合格时明确标记不支持或先修驱动，不新增按品牌分叉的业务 adapter 或仓库。
+
+设计依据：[database-portability.md](architecture/database-portability.md)、
+[ADR 0016](decisions/0016-database-portability-core.md)。
 
 <a id="o-physical"></a>
 ### O-PHYSICAL · 目标物理拓扑与故障演练

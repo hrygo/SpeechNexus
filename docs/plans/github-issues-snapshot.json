@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-20T23:51:54+08:00",
+  "fetched_at": "2026-11-21T11:37:01Z",
   "issues": [
     {
       "number": 336,
@@ -1284,16 +1284,6 @@
       "parent_issue_url": null
     },
     {
-      "number": 1080,
-      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1080",
-      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "voice_design / voice_clone 的 Job 不可派发：command_kind 为 None，创建走 legacy 分支不写租约，claim 永不匹配",
-      "state": "open",
-      "state_reason": null,
-      "labels": [],
-      "parent_issue_url": null
-    },
-    {
       "number": 1084,
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/1084",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
@@ -1308,14 +1298,14 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/1085",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "应用面 k8s 装配：PG、对象存储、迁移与 Speech API 可独立启动",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [
         {
           "name": "type:work-package"
         },
         {
-          "name": "status:ready"
+          "name": "status:done"
         }
       ],
       "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/342"
@@ -1325,14 +1315,14 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/1086",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "跨主机桥接：k8s 与 MegaCube 之间建立可重建的双向通道",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [
         {
           "name": "type:work-package"
         },
         {
-          "name": "status:ready"
+          "name": "status:done"
         }
       ],
       "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/342"
@@ -1349,7 +1339,7 @@
           "name": "type:work-package"
         },
         {
-          "name": "status:planned"
+          "name": "status:in-progress"
         }
       ],
       "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/342"
@@ -1359,6 +1349,142 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/1088",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "公开文件 ASR 跨主机端到端与五类故障演练",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:work-package"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/342"
+    },
+    {
+      "number": 1092,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1092",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "双机开发环境下一迭代：同构收口与显存额度取证",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:work-package"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": null
+    },
+    {
+      "number": 1094,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1094",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "冻结首发 PostgreSQL 可移植数据契约、受限数据库方言与 ODBC 边界",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:work-package"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/338"
+    },
+    {
+      "number": 1095,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1095",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "实现 claim bucket、bucket fencing 与 Job SSE event_seq",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:work-package"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/338"
+    },
+    {
+      "number": 1096,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1096",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "实现 PostgreSQL 首发持久 budget grant、锁后时间探针与幂等回收",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:work-package"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/338"
+    },
+    {
+      "number": 1097,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1097",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "实现实时本地 credit、崩溃恢复证据、精确 usage 与实时 SLO 资格",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:work-package"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/339"
+    },
+    {
+      "number": 1100,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1100",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "将现有 PostgreSQL 专用数据访问收敛到 canonical 数据契约",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:work-package"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/338"
+    },
+    {
+      "number": 1101,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1101",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "验证后续数据库激活资格：MySQL、Oracle、OceanBase 使用同一数据契约",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:work-package"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/342"
+    },
+    {
+      "number": 1102,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1102",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "后续数据库激活时交付 schema bootstrap、存量搬迁、切换对账与回退",
       "state": "open",
       "state_reason": null,
       "labels": [

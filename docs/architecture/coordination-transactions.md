@@ -1,7 +1,7 @@
 ---
 title: 受控协调事务：程序实现方案与契约
 status: active
-version: "1.0.1"
+version: "1.0.2"
 date: 2026-10-24
 ---
 
@@ -9,8 +9,11 @@ date: 2026-10-24
 
 依据 [ADR 0006](../decisions/0006-cluster-coordination-and-storage-portability.md)，
 业务裁决从 PostgreSQL 函数迁入应用事务。集群是必须支持的部署形态，Node=1 使用
-同一协议；不引入 etcd，Redis 只能缓存或唤醒。PostgreSQL 是唯一正式产品数据库，
-MySQL/InnoDB 是协调路径迁移验证目标。
+同一协议；不引入 etcd，Redis 只能缓存或唤醒。[ADR 0016](../decisions/0016-database-portability-core.md)
+要求目标实现收敛为同一应用产物、statement contract 和 canonical 逻辑 schema；允许少量已登记的
+物理 DDL / 静态 SQL profile，但业务层不维护数据库 adapter。部署可切换 DSN、ODBC driver、物理 DDL
+制品和显式 profile。下文 PostgreSQL / InnoDB 专用机制与双库原型是待迁移的当前证据，
+目标约束见[可移植数据契约](database-portability.md)。
 
 本次已交付精简 DDL、事务机器契约、权限生成工具，以及两个真实数据库共用的
 测试原型。[首个生产 Job/outbox 事务](../components/production-jobs.md)另行实现创建、完整身份重放、
@@ -23,8 +26,8 @@ MySQL/InnoDB 是协调路径迁移验证目标。
 | 配方完整性、预算计算、状态转换、证据裁决 | `speech/domain`；执行事实规则在 gateway domain | 框架无关的值对象和纯函数；不导入 SQL、Pydantic、生成 DTO 或 vendor SDK |
 | owner、准入、释放、任务恢复 | `speech/application` | 按用例定义窄事务端口；一次完整准入只能用一个事务会话 |
 | 外发提交、abort、停止事实 | gateway application | 先持久化 intent，提交后再外发；与 Scheduler 释放分属不同所有者事务 |
-| PG 事务、锁、条件写入、时间、异常分类 | 各模块 `infrastructure` | 实现端口，不复制预算或证据策略；组合根装配 |
-| MySQL 行为验证 | `tests/support` 与 `tests/integration` | 使用同一行为 oracle；不进入产品支持矩阵 |
+| 统一 ODBC 事务、锁、条件写入与时间读取 | 各模块 `infrastructure` | 实现端口，不复制预算或证据策略；业务 statement 与逻辑 schema 不按品牌分叉，受限 profile 显式登记 |
+| 四库驱动与行为验证 | `tests/integration` | 同一测试程序和 behavior oracle 只切换 DSN / ODBC driver / schema 与 SQL profile；不进入产品业务代码 |
 
 不新建协调微服务、通用数据库插件系统、分布式事务管理器或另一套消息队列。
 端口使用数据库无关的领域输入/结果，具体类型由机器契约生成或在边界校验。
@@ -45,8 +48,8 @@ MySQL/InnoDB 是协调路径迁移验证目标。
   字符串 revision 解析后也须检查该范围。token/version 耗尽时停止写入，不能回绕。
 - 预算单位沿用 manifest；`*_us` 是 UTC Unix 微秒，`ttl_ms` 是毫秒，
   `sample_*` 是 PCM 样本位置。时长由 samples/sample rate 派生。
-- Identifier 先按共享小写 ASCII 域校验；数据库使用能保持该域精确比较的排序规则。
-  本次 MySQL namespace 使用 `utf8mb4_0900_bin`、InnoDB、UTC、Read Committed。
+- Identifier 先按共享小写 ASCII 域校验；不使用依赖数据库排序规则的业务比较。
+- 不依赖数据库默认隔离级别；跨行决定由显式行锁、唯一约束、version / owner / epoch CAS 保证。
 - 所有正常运行写入都经具体事务方法；不能提供 `update_any_state` 一类入口。
   不接受客户端预算作为权威预算，不接受数据库 rowcount=0 作为成功。
 - `committed/replayed` 返回持久身份的类型化快照；`conflict/rejected` 携带稳定错误码。
@@ -55,13 +58,11 @@ MySQL/InnoDB 是协调路径迁移验证目标。
 
 schema 根入口同时接受命令与结果；`result.operation` 约束对应结果类型，所有定义均可
 从根引用到达。九种既有执行命令均保留；ASR、对齐、说话人分离和 VAD 等非 PCM 阶段
-使用 null 的 sample rate/output stream，不创建虚构音频流。完整规范提交请求及摘要
-在 intent 同事务持久化，以便重启后恢复真实原请求，不能只留下无法重建命令的摘要。
-文档列在 PG 使用 TEXT，在 MySQL 验证 adapter 中仅作 TEXT→LONGTEXT 的物理类型映射，
-避免合法百万字符命令被较小的列容量截断；业务规则和 DML 不分叉。命令含私有业务内容，
-只能留在部署内，不写日志或公开投影。`redact_execution_command` 在清理完成后清除正文，
-同时保存删除任务/证据 tombstone，保留原摘要和最小协调事实；不能用永久保留执行历史
-为由永久保存业务正文。
+使用 null 的 sample rate/output stream，不创建虚构音频流。完整规范提交请求先写入私有对象
+staging，事务行在 intent 同事务持久化其规范摘要、固定对象引用和最小恢复身份，以便重启后核验
+真实原请求，不能只留下无法重建命令的摘要。命令含私有业务内容，只能留在部署内，不写日志或
+公开投影。`redact_execution_command` 在清理完成后清除正文对象引用，同时保存删除任务/证据
+tombstone，保留原摘要和最小协调事实；不能用永久保留执行历史为由永久保存业务正文。
 
 该正文清理已由 gateway 原生窄事务实现，要求显式可信删除许可，并在 pool → lease → submit
 行锁下确认执行清理和 A 的 lease release，原子清正文/留 tombstone，不写预算。
@@ -86,9 +87,9 @@ schema 验证形状；跨记录身份、时间关系、阶段集合、预算与�
 | `create_job` | 任务应用用例 → Job/outbox transaction | 同时落 Job 与 outbox，返回原身份 | Job 业务键和摘要；同键异请求为冲突 |
 | `claim_job` | Worker → job repository | owner、claim_version、claim deadline | 当前 claim_version 是执行权限；重认领不等于可以再外发引擎 |
 | `create_submit` | gateway 应用 → submit transaction | 校验完整执行请求，提交唯一 intent | 唯一 stage/lease + submit ID +完整请求摘要；重放只读原 intent，不能再次外发 |
-| `mark_execution_unknown` | gateway adapter/reconciler → execution transaction | 活动执行转 unknown/quarantined，保留全部身份 | 原 submit ID；终态不得降为 unknown |
+| `mark_execution_unknown` | gateway reconciler → execution transaction | 活动执行转 unknown/quarantined，保留全部身份 | 原 submit ID；终态不得降为 unknown |
 | `record_stop` | 经核验的 engine/controller/operator 观察 → gateway transaction | 只追加停止事实，并关闭对应执行 | 原 submit/evidence ID 与完整事实；同 ID 不同事实拒绝 |
-| `record_execution_observation` | gateway adapter → execution transaction | 沿用既有 ExecutionStatus 的完整身份/状态矩阵，记录外发事实或从未外发的失败 | 期望 version 和原 submit；已观察的外发关联不可变，不能反转终态 |
+| `record_execution_observation` | gateway 引擎接口 → execution transaction | 沿用既有 ExecutionStatus 的完整身份/状态矩阵，记录外发事实或从未外发的失败 | 期望 version 和原 submit；已观察的外发关联不可变，不能反转终态 |
 | `redact_execution_command` | 服务端删除协调器 → gateway cleanup transaction | 关闭执行且 lease 已释放后，清除规范请求正文并同事务留下删除 tombstone | `deletion_job_id` 与证据摘要；相同返回原事实，清理不授予重新执行权限 |
 | `quarantine_lease` | Scheduler reconciler → admission transaction | 已提交 unknown 执行的 held → quarantine 投影 | lease ID，首次观察与原因不改写；总占用不减少 |
 | `release_lease` | Scheduler reconciler → admission transaction | 核验证据，关闭 lease，扣减所属账目；最后 stage 再释放 quota | lease ID/期望 version；已释放返回原事实，不能再扣一次 |
@@ -109,9 +110,9 @@ schema 验证形状；跨记录身份、时间关系、阶段集合、预算与�
 pool/claim 的读取返回当前权威，后续任期已覆盖当前投影时不能据此证明旧事务未提交。
 不能按新请求重新解释已存在的执行结果。
 
-## 4. 锁序、隔离与数据库适配
+## 4. 锁序、隔离与共同 SQL
 
-基线采用短 Read Committed 事务和普通主键行锁，顺序如下：
+基线采用短事务和普通主键行锁，不依赖数据库默认隔离级别；顺序如下：
 
 ```text
 resource_pools
@@ -152,20 +153,21 @@ binding、voice 顺序串行化禁用与退役，详见[同步语音合成](../c
 结果沿用 FactSnapshot，不编造区间版本；详细身份/重放/恢复规则见
 [执行网关](../components/execution-gateway.md#11-append_interval-与原区间查询)。
 
-等待锁以后，再从数据库取时间判断当前租期。新行的全局唯一键/FK 也可能在 INSERT 时
-等待；竞争事务回滚后 INSERT 会成功，不能仅靠唯一冲突异常识别。创建路径必须在
-最后一次可能等待的写入后重新核验 owner/请求及资格窗口，过期则整笔回滚。
-PG 用 adapter 内的数据库时钟语句，
-MySQL 用其数据库时钟；不把客户端时钟或事务开始前的旧时间当作续租依据。
-Job 认领基线锁定候选行并执行带 claim_version/expiry 的条件更新；
-`SKIP LOCKED` 仅是后续可测量的优化。没有 Redis 或通知时扫描持久 outbox/待办行。
+需要时间判断的写路径先取得专用探针连接，再开启写事务并按锁序完成全部权威锁和潜在阻塞写入。
+唯一键 / FK 的 INSERT 也可能等待，因此必须在最后一次可能等待的写入后，通过同一权威主库的预取得
+连接读取一次当前时间，再回到写事务复核 owner/请求、version/epoch 和资格窗口；过期则整笔回滚。
+探针查询为
+`SELECT CURRENT_TIMESTAMP, schema_rev, schema_fingerprint, authority_epoch FROM schema_meta WHERE meta_id = ?`；
+必须比对期望 schema 与部署代次，不把客户端时钟、锁前旧时间、持锁事务开始时间或副本时间当作续租依据。
+探针池容量至少覆盖允许并发的写事务，探针和写事务共享硬 deadline；禁止持有写锁等待共享池中的第二连接。
+Job/outbox 使用 claim bucket，bucket 与 Job/outbox 分别以 version / owner / expiry CAS 认领；
+每次实际认领都要在同一事务复核 bucket fence，旧 dispatcher 不能使用过期候选。不使用 `SKIP LOCKED`。
+没有 Redis 或通知时扫描持久 outbox/待办行。
 
-只允许对**数据库已确认回滚**的 deadlock/serialization 冲突，回滚整个事务后有界
-重试，最多 3 次，带短抖动且总耗时不越请求 deadline。当前 Job、租约、owner、runtime、
-准入和网关提交的 PG adapter 最多执行 3 次事务尝试（含首次），因此最多重试 2 次。
-业务容量不足、版本冲突、
-摘要冲突不是驱动透明重试。连接断开、提交确认丢失或驱动不能证明回滚时，一律
-按未知结果查询。错误分类由 adapter 根据实际 SQLSTATE/错误号实现并测试。
+业务不读取 SQLSTATE 或 vendor error code。未执行 `commit()` 前出现异常时，回滚整笔事务并在
+新连接按原业务身份查询；只有确认原身份不存在、仍满足 deadline 且使用完全相同业务键时才允许
+重新执行，不做透明品牌错误重试。`commit()` 抛错或断连一律视为 `commit_unknown`，只按原身份的
+新连接读取状态，不新建执行、不提前释放预算。
 
 事务内禁止推理、HTTP、容器控制、对象上传、长编码和 sleep。私有 staging 写入
 与数据库发布引用遵循既有对象发布协议。未提交事务被进程中断时由数据库回滚；
@@ -232,7 +234,7 @@ gateway 的私有 staging namespace 由既有协议派生，不能接受客户�
 成功要求 terminal response；失败须稳定错误码；unknown 只能凭停止证据关闭为 aborted。
 从未外发的失败可按既有执行契约进入 `not_required`，但必须同时证明无 request ID、
 无 dispatch、无 staging、无生成样本；这条路径已通过 gateway 的
-`record_execution_observation` 窄事务实现，PG/InnoDB 共用规则。该端口仅允许 submitting
+`record_execution_observation` 窄事务实现，当前 PG/InnoDB 合成测试共用规则。该端口仅允许 submitting
 确认未外发的失败，不能解除 unknown；成功和有清理的终态仍必须经确切停止事实关闭，
 不能伪造 stop 代替 pre-dispatch 失败。版本、时间与原外发关联的规则见
 [执行网关](../components/execution-gateway.md#9-record_execution_observation)。
@@ -241,10 +243,12 @@ A 的 release 消费者还在原 submit 锁后通过 `0028_execution_release_gua
 presence 投影复核该失败分支：接受/派发、staging、样本及任意输出区间都必须为空。
 投影缺失、权限不足或不一致则保留账目；不读取 B 私有正文，不新增停止种类。
 只授予投影两列 SELECT；正式停用 worker 校验同一列集合并拒绝表级 SELECT/额外写权。
-scanner/settlement 专用身份的启动检查要求 PostgreSQL >= 16，并以原生递归 SET 权限判定
+当前 PostgreSQL 过渡实现的 scanner/settlement 专用身份启动检查要求 PostgreSQL >= 16，并以原生递归 SET 权限判定
 拒绝切换到任一其他角色及角色管理/高权限身份；允许普通 ACL 分组 SET FALSE 的精确继承授权。
 两类身份都拒绝有效继承任何 PostgreSQL 预定义角色能力（保留前缀 `pg_`），以 login/effective
 两者的原生 USAGE 判定覆盖传递继承；服务器文件读写/程序、监控、全局数据、信号等均无例外。
+这些原生角色检查是当前实现证据，不作为目标可移植契约；切换数据库前须由目标部署的等价最小
+权限探针替换，产品代码仍不得读取厂商错误码或按品牌分支。
 查询或版本无法确认时默认拒绝，在 gateway 构造和 worker 循环前终止；该快照不代替部署身份
 完整性和后续授权变更的停用/重启核验，详见上述固定边界文档的 DEL-370 P2 返修。
 升级前必须停用、排空并以独立数据库身份栅栏全部旧释放消费者，再迁移/授权和恢复新消费者；
@@ -329,7 +333,7 @@ create/query/observe 已具备[独立生产事务端口](../components/productio
 以下 [`coordination-grants.py`](../../scripts/dev-env/coordination-grants.py) 只生成草案和测试用 SQL，
 不连接数据库，不能作为生产授权入口。生产由迁移角色针对**非 owner、无全局/继承提权**的
 speech/gateway 角色，审阅并安装[包内生产授权函数](../operations/production-coordination-storage.md#安装与角色)
-及各已启用端口所需的授权；PG schema 不授 CREATE。运行角色没有
+及各已启用端口所需的授权；每个目标 schema 都不向运行角色授予 CREATE。运行角色没有
 DELETE/TRUNCATE；evidence/interval 只有对应所有者的 SELECT/INSERT。
 正文清理列作为受控单向擦除的显式 UPDATE 例外，身份、请求摘要和停止事实不改写；
 读取未清理的正文进行执行恢复前，必须重新核验其规范摘要；已清理正文不可恢复。跨所有权
@@ -375,8 +379,9 @@ uv run python scripts/dev-env/coordination-grants.py \
 1. 从契约生成/校验边界类型，完成纯预算/状态/证据规则及 fake 用例；
    纳入加载 peak/steady、runtime 指针、pre-dispatch failure、quota 全部维度、
    日志脱敏与对象 staging 规则。
-2. 完成 PG adapter、驱动异常分类与有界重试；沿用共享 oracle，补齐实际生产端口的
-   全矩阵，安装并验证运行角色。不得把测试工具直接注入产品组合根。
+2. 完成统一 ODBC 数据访问、无品牌错误分支的事务恢复和 claim bucket；首发先补齐 PostgreSQL
+   生产端口的完整 oracle、最小权限和真实业务消费者，其他目标激活时再加入同 harness。不得把测试工具直接注入
+   产品组合根，也不得新增 PostgreSQL / MySQL 业务 adapter。
 3. 接入多个 Scheduler/Worker/gateway/controller 与持久轮询，补 Job claim fencing、
    重复 outbox 送达、真实外发未知恢复、旧 gateway 暂停恢复与入口隔离。
 4. 在同机多进程后进行物理多主机、网络故障、数据库恢复资格和真实模型负载验证。

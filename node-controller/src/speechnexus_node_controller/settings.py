@@ -56,6 +56,12 @@ class Settings(BaseSettings):
     stop_timeout_seconds: float = Field(default=20.0, gt=0, le=300)
     exit_wait_seconds: float = Field(default=30.0, gt=0, le=600)
     readiness_timeout_seconds: float = Field(default=3.0, gt=0, le=30)
+    # The GPU memory budget is deployment configuration, not a template constant:
+    # the same approved template runs on a 48 GB production card and on this
+    # unified-memory box. Absent values mean the controller does not cap VRAM.
+    engine_gpu_memory_mib: int | None = Field(default=None, gt=0, le=1_000_000)
+    engine_gpu_memory_utilization: float | None = Field(default=None, gt=0, le=1.0)
+    engine_libvgpu_path: Path | None = None
     local_observer_enabled: bool = True
     observation_interval_seconds: float = Field(default=2.0, gt=0, le=3600)
     observation_batch_size: int = Field(default=50, ge=1, le=500)

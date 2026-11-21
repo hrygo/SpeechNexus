@@ -90,6 +90,13 @@ def _build_dependencies(
             settings=DockerRuntimeSettings(
                 stop_timeout_seconds=settings.stop_timeout_seconds,
                 exit_wait_seconds=settings.exit_wait_seconds,
+                gpu_memory_mib=settings.engine_gpu_memory_mib,
+                gpu_memory_utilization=settings.engine_gpu_memory_utilization,
+                libvgpu_path=(
+                    str(settings.engine_libvgpu_path)
+                    if settings.engine_libvgpu_path is not None
+                    else None
+                ),
             ),
         ),
     )

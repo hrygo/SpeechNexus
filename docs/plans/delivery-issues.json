@@ -2,7 +2,7 @@
   "schema_version": 4,
   "repository": "hrygo/SpeechNexus",
   "program": 336,
-  "facts_as_of": "2026-11-03",
+  "facts_as_of": "2026-11-20",
   "epics": [
     {
       "number": 337,
@@ -1353,9 +1353,10 @@
       "prd": "docs/prd.md#o-physical",
       "designs": [
         "docs/architecture/deployment-units.md",
-        "docs/architecture/data-deletion.md"
+        "docs/architecture/data-deletion.md",
+        "docs/plans/2026-11-20-minimal-isomorphic-cluster.md"
       ],
-      "implementation": "节点控制器工厂装配受限模板、Docker runtime 与本地意图存储；网关包含执行恢复组件，具体接线受配置约束。",
+      "implementation": "节点控制器工厂装配受限模板、Docker runtime 与本地意图存储；网关包含执行恢复组件，具体接线受配置约束。最小同构集群按 S0–S8 切片推进：应用面在本机 k8s，算力面在 MegaCube，经桥接 Pod 双向连通；2026-11-20 已建四张实施卡，尚无运行证据。",
       "integration": "最小 Compose 明确是同步单机引导服务，未包含控制器和异步 worker，不能作为物理集群装配证明。",
       "verification": "单 GPU 的逻辑节点不能替代物理多机资格。",
       "gap": "最小 Compose 明确是同步单机引导服务，未包含控制器和异步 worker，不能作为物理集群装配证明。 单 GPU 的逻辑节点不能替代物理多机资格。",
@@ -1382,7 +1383,11 @@
         }
       ],
       "issues": [
-        439
+        439,
+        1085,
+        1086,
+        1087,
+        1088
       ]
     },
     {

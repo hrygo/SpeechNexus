@@ -1,0 +1,35 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate
+  namespace: speechnexus
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: migrate
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+      containers:
+        - name: migrate
+          image: speechnexus-python:203d412b
+          command: ["speechnexus-job-migrate", "--schema", "speech"]
+          env:
+            - name: SPEECHNEXUS_MIGRATION_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: migrate-credentials
+                  key: SPEECHNEXUS_MIGRATION_DATABASE_URL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi

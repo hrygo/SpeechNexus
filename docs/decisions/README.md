@@ -18,6 +18,8 @@ ADR 记录架构决定及其理由；每项状态以该文 frontmatter 为准，
 
 - [0012：公开 Job 面与执行装配的所有权](0012-public-job-surface.md)（accepted，2026-10-27；公开读模型独立于协调事实，状态只前进、终态不回头；公开路由与部分派发组件已实现，生产 planner 和完整异步链仍待接入、验收）。
 
-- [0013：binding 生命周期管理 HTTP 与激活冲突提示](0013-binding-lifecycle-admin-http.md)（proposed，2026-10-29；补录已合入路由的契约选择及冲突提示，待非作者审查，不结算 #273 或投产 Gate）。
+- [0013：binding 生命周期管理 HTTP 与激活冲突提示](0013-binding-lifecycle-admin-http.md)
+- [0014：开发环境同构与允许的差异边界](0014-development-environment-isomorphism.md)（accepted，2026-11-21；开发环境以生产单元集合为基线，只允许数据面实现与 GPU 有无两类差异；同构缺口须显式标注）。
+- [0015：GPU 显存额度由部署配置声明](0015-gpu-memory-quota-by-configuration.md)（accepted，2026-11-21；额度来自配置而非硬件上报，经 libvgpu 注入执行，不按 NVML 记账调度）。（proposed，2026-10-29；补录已合入路由的契约选择及冲突提示，待非作者审查，不结算 #273 或投产 Gate）。
 
 [文档索引](../README.md)

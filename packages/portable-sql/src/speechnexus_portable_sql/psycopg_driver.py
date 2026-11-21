@@ -1,0 +1,130 @@
+"""PostgreSQL 首发期的驱动适配:把 `?` 参数契约接到 psycopg.
+
+ADR 0016 允许的唯一品牌代码是「部署期 driver / DSN / profile 选择」。这个模块是那个选择点:业务
+代码只写 `?` 与 DB-API 语义,由这里翻译给 psycopg;ODBC 驱动接上后业务代码不变,只换这一处。
+
+两条纪律:
+
+1. 只翻译参数标记,不改 SQL 结构、不加品牌函数、不分类 SQLSTATE。
+2. 迁移期兼容:整条语句仍是 `%s` 或 `%(name)s` 时原样交给驱动,让 ratchet 继续盯着剩下的语句。
+
+`PortableCursor` 是 psycopg 游标的真子类,因此可以直接作为 `cursor_factory` 交给连接池:
+池里每条连接、每条语句都经过同一处翻译,业务代码无法绕过。
+"""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Sequence
+from typing import Any, cast
+
+import psycopg
+
+__all__ = ["PYFORMAT", "PortableConnection", "PortableCursor", "connect", "qmark_to_pyformat"]
+
+PYFORMAT = re.compile(r"%\([a-z_][a-z0-9_]*\)s", re.IGNORECASE)
+
+
+def qmark_to_pyformat(sql: str, params: Sequence[Any] | None) -> str:
+    """把 qmark 语句翻成 psycopg 的 `%s`;已有 `%` 一律按字面量转义。"""
+
+    if params is None or "?" not in sql:
+        return sql
+    if "%s" in sql or PYFORMAT.search(sql):
+        return sql
+    return sql.replace("%", "%%").replace("?", "%s")
+
+
+def _translated(query: Any, params: Any) -> Any:
+    """只有纯文本语句能翻译;`SQL` / `Composed` 保持原样(它们自带参数风格)。"""
+
+    if isinstance(query, str):
+        return qmark_to_pyformat(query, params)
+    return query
+
+
+class PortableCursor:
+    """游标包装:只拦 `execute` / `executemany`,其余行为透传给驱动游标。
+
+    包装而不是子类,是为了让 `cursor_factory` 能拿到 psycopg 交给工厂的全部参数
+    (`row_factory` 等),同时不在本模块重复驱动的构造逻辑。
+    """
+
+    __slots__ = ("_cursor",)
+
+    def __init__(self, connection: Any, *args: Any, **kwargs: Any) -> None:
+        self._cursor = psycopg.Cursor(connection, *args, **kwargs)
+
+    def execute(
+        self,
+        query: Any,
+        params: Any = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> PortableCursor:
+        self._cursor.execute(_translated(query, params), params, prepare=prepare, binary=binary)
+        return self
+
+    def executemany(self, query: Any, params_seq: Any, *, returning: bool = False) -> None:
+        self._cursor.executemany(_translated(query, ()), params_seq, returning=returning)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._cursor, name)
+
+    def __enter__(self) -> PortableCursor:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self._cursor.close()
+
+
+class PortableConnection:
+    """连接级同样的翻译;事务、只读标记与关闭行为交给真实驱动。"""
+
+    __slots__ = ("_connection",)
+
+    def __init__(self, connection: psycopg.Connection[Any]) -> None:
+        self._connection = connection
+
+    def cursor(self, *args: Any, **kwargs: Any) -> PortableCursor:
+        return cast(PortableCursor, self._connection.cursor(*args, **kwargs))
+
+    def execute(self, sql: str, params: Sequence[Any] | None = None) -> PortableCursor:
+        return cast(
+            PortableCursor,
+            self._connection.execute(qmark_to_pyformat(sql, params), params),
+        )
+
+    def commit(self) -> None:
+        self._connection.commit()
+
+    def rollback(self) -> None:
+        self._connection.rollback()
+
+    def close(self) -> None:
+        self._connection.close()
+
+    @property
+    def read_only(self) -> bool:
+        return bool(self._connection.read_only)
+
+    @read_only.setter
+    def read_only(self, value: bool) -> None:
+        self._connection.read_only = value
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._connection, name)
+
+    def __enter__(self) -> PortableConnection:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self._connection.close()
+
+
+def connect(*args: Any, **kwargs: Any) -> PortableConnection:
+    """与 `psycopg.connect` 同签名;返回按 `?` 契约翻译的连接。"""
+
+    kwargs.setdefault("cursor_factory", PortableCursor)
+    return PortableConnection(psycopg.connect(*args, **kwargs))

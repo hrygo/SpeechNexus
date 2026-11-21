@@ -10,6 +10,8 @@ from psycopg import IsolationLevel
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
+from speechnexus_portable_sql.psycopg_driver import PortableCursor
+
 type SpeechConnection = psycopg.Connection[dict[str, Any]]
 type SpeechPool = ConnectionPool[SpeechConnection]
 
@@ -40,7 +42,12 @@ def speech_pool(
 
     return ConnectionPool[SpeechConnection](
         database_url,
-        kwargs={"row_factory": dict_row, "connect_timeout": 3},
+        kwargs={
+            "row_factory": dict_row,
+            "connect_timeout": 3,
+            # 池交给业务的每条连接都按 `?` 契约翻译;业务代码不需要知道驱动参数标记。
+            "cursor_factory": PortableCursor,
+        },
         configure=configure,
         name=name,
         min_size=0,

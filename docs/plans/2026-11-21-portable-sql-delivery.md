@@ -75,3 +75,27 @@
   不添加品牌适配分支，也不宣称资格通过。
 - 双机开发环境（#1087、#1088、#1092）是独立程序，验收依赖 MegaCube 上的运行集群与
   Docker daemon，与本文件的切片不共享证据。
+
+## 6. #1100 收敛路径
+
+基线按「规则 × 文件」计数（`scripts/dev-env/portable-sql-baseline.json`），当前 1072 条命中落在
+481 个对里。收敛按可验证的切片推进，每片自带「注入即红」与真实 PG/InnoDB 证据：
+
+1. **标记与转写**（已做）：整句与片段的参数标记迁到 `?`，`::` 换成 `CAST`。
+2. **分页与存在性**（已做）：读路径去掉 `LIMIT`，页大小交给 `fetchmany`；「有没有行」用 `EXISTS`；
+   零行探针用恒假谓词，收敛到 `_ZERO_ROWS`、`_any_asset`、`_has_unreleased_references`。
+3. **连接池与异常**（已做）：`Pool` / `ExecutableConnection` 契约、`portable_error` 单一翻译点、
+   `create_pool` 把池失败翻成 `PoolUnavailableError`、`PortableCursor` 把元组行包成 `Row`。
+4. **适配器迁移**（进行中）：一次一个模块，把 `psycopg` / `psycopg_pool` 的导入与 dict 行访问换成
+   契约类型。每迁移一个模块必须同时更新它的测试替身，并保留该模块原有的失败语义
+   （尤其「提交未知」与「冲突后重读」不得因为异常类别变粗而退化）。
+5. **语句与建表**：`sql-string-building`、`runtime-ddl`、`vendor-type` 三族需要把 SQL 文本收进
+   受审查的 statement 模块、把建表移回迁移，属结构改造，排在适配器迁移之后。
+
+单模块迁移的检查表：
+
+- 导入只剩 `speechnexus_portable_sql` 的契约类型；不再出现 `psycopg`、`psycopg_pool`。
+- 行访问改成 `Row` 的按名 / 按位读取，列名大小写不再被依赖。
+- 异常按 `StorageError` / `ConflictError` / `ConnectionLostError` / `PoolUnavailableError` 分类；
+  任何「按厂商错误码分支」的地方改成重读状态。
+- 该模块的单测替身与集成用例同时更新，基线 `new=0` 且该文件从基线消失。

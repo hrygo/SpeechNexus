@@ -26,7 +26,7 @@
 | [语音接口](architecture/speech-api.md)                                                              | OpenAI 兼容子集、增强 REST / Job、音色版本、实时事件和调用示例                  |
 | [OpenAI 兼容与增强边界](architecture/openai-compatibility.md)                                       | SDK 调用、精确兼容子集、`nexus` 扩展规则与契约门禁                              |
 | [资源治理与持久化](architecture/runtime-governance.md)                                              | 池预算、准入 / 调度、取消与 fencing、计量、任务发布、保留与删除                 |
-| [数据库可移植协调核心](architecture/database-portability.md) | 最小关系数据库能力契约、适配器快路径、无品牌 CAS claim、outbox 与实时 grant / local credit |
+| [单一可移植 SQL 数据路径](architecture/database-portability.md) | 四库共同 SQL / schema、ODBC 驱动契约、claim bucket、outbox 与实时 grant / local credit |
 | [规范执行命令与内部文本流](architecture/execution-command.md)                                       | 完整有效命令、摘要、受控资源引用与 TTS 文本提交                                 |
 | [原命令与核验文件输入](components/frozen-execution-inputs.md) | 原持久请求只读核验、一次提交命令桥、每次读取时固定对象版本及真实执行剩余边界；原命令不携带 S3 version ID |
 | [文件 ASR 私有结果](components/file-asr-results.md) | 完整正文有界汇总、固定版本对象写入与读回核验；持久登记与公开发布边界 |
@@ -79,7 +79,7 @@
 | [集群就绪架构与单机 MVP 同构部署](decisions/0004-cluster-ready-architecture-and-single-node-mvp.md) | 架构层集群原生、三级资源拓扑、分池租约、节点控制器与单机 MVP 演进边界           |
 | [集群协调与存储可移植性](decisions/0006-cluster-coordination-and-storage-portability.md)            | 已接受的应用事务保护边界、不采用 etcd、PG 正式交付及 MySQL 关键协调验证         |
 | [遗留协调原型的退出与删除](decisions/0007-legacy-coordination-retirement.md)                        | 旧 PG 必跑门禁、SQL/测试/设计的退出条件与 Git 追溯；有效业务不变量迁入新路径    |
-| [数据库可移植协调核心与实时预算](decisions/0016-database-portability-core.md) | 拟议中：能力契约、适配器快路径、CAS claim 与持久 grant / 本地 credit；不宣称第二适配器或实时资格已交付 |
+| [单一可移植 SQL 数据路径与实时预算](decisions/0016-database-portability-core.md) | 拟议中：同一应用、SQL、schema 只换 DSN / ODBC driver；不宣称四库、存量迁移或实时资格已交付 |
 
 领域设计使用稳定文件名持续维护；实施计划与审查保留日期；ADR 以四位编号记录决定。协议 / 数据规则分别在其负责文档集中维护，主文档给出职责与入口。冲突需修订设计，不能以工作记录或历史材料静默覆盖公共语义。
 

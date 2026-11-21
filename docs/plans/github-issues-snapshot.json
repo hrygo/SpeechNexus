@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-21T18:06:05+0800",
+  "fetched_at": "2026-11-21T18:51:25+0800",
   "issues": [
     {
       "number": 336,
@@ -1348,7 +1348,7 @@
       "number": 1094,
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/1094",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "把数据库品牌机制收进适配器，并冻结可移植协调能力契约",
+      "title": "冻结四库共同 SQL / schema / ODBC 驱动契约，禁止业务数据库 adapter",
       "state": "open",
       "state_reason": null,
       "labels": [
@@ -1365,7 +1365,7 @@
       "number": 1095,
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/1095",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "实现不依赖 SKIP LOCKED 的 CAS 认领与 outbox 推进基础路径",
+      "title": "实现 claim bucket 与 outbox 推进，不依赖 SKIP LOCKED 或数据库通知",
       "state": "open",
       "state_reason": null,
       "labels": [
@@ -1411,6 +1411,57 @@
         }
       ],
       "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/339"
+    },
+    {
+      "number": 1100,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1100",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "将现有 PostgreSQL 专用数据访问收敛到单一可移植 SQL 路径",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:work-package"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/338"
+    },
+    {
+      "number": 1101,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1101",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "验证同一应用 SQL / schema 只替换 DSN 与 ODBC driver 运行于 PG、MySQL、Oracle、OceanBase",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:work-package"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/342"
+    },
+    {
+      "number": 1102,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1102",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "交付 schema bootstrap、存量数据搬迁、切换对账与回退演练",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:work-package"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/342"
     }
   ]
 }

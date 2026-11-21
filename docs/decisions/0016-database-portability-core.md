@@ -1,117 +1,193 @@
 ---
-title: 数据库可移植协调核心与实时预算
+title: 单一可移植 SQL 数据路径与实时预算
 status: proposed
 date: 2026-11-21
 ---
 
-# ADR 0016 数据库可移植协调核心与实时预算
+# ADR 0016 单一可移植 SQL 数据路径与实时预算
 
 ## 背景
 
-[ADR 0006](0006-cluster-coordination-and-storage-portability.md)已把跨表裁决迁入应用事务，
-并把 `SKIP LOCKED` 与数据库通知降为优化。但现行设计和实现仍把 PostgreSQL 写成唯一正式
-产品适配器，且部分正确性路径依赖行锁、品牌 SQL、SQLSTATE、数据库时钟和 PostgreSQL
-专有通知。继续扩大这些依赖，会把数据库品牌变成隐含产品协议。
+产品要求数据库只使用 PostgreSQL、MySQL、Oracle、OceanBase 等共同具备的能力。应用层不得
+维护多套数据库适配器，也不得在业务代码中按品牌选择 SQL；迁移数据库时，运行时只替换
+ODBC 数据源和底层数据库驱动。
 
-产品要求是部署可以更换数据库品牌，且不牺牲单一权威、提交未知恢复、预算不超发与
-一次结算。实时语音要求数据库不进入 PCM / 文本帧热路径；PostgreSQL 的短暂延迟可以触发
-背压，但不能直接造成每个音频块一次事务或共享连接池争用。
+上一版设计仍允许“中立端口 + 多 adapter + 品牌快路径”。它可以在当前 PostgreSQL 上保持高性能，
+但无法证明业务代码只换驱动即可迁移，也无法阻止 PostgreSQL 语法、异常码、upsert、
+`SKIP LOCKED` 和数据库通知继续扩散。本决定改为单一 SQL 路径。
 
-当前事实是：PostgreSQL 仍是第一个生产适配器；MySQL/InnoDB 只有协调测试路径；公开实时
-链路尚未完成生产装配与真实联验。本决定冻结目标边界，不宣称第二个完整产品适配器或
-实时资格已经交付。
+本决定区分三件事：
+
+1. **运行时可移植性。** 同一应用代码、同一 SQL、同一 schema 只通过 DSN 与底层 ODBC 驱动切换数据库。
+2. **数据库初始化。** 新数据库按同一份可移植 DDL 建立 schema。
+3. **存量数据迁移。** 跨库复制、校验、切换与回退仍是一次性部署作业，不能被“换驱动”掩盖。
+
+当前实现仍是 PostgreSQL 专用路径，未达到本决定。公开实时链路也尚未完成生产装配与真实联验。
 
 ## 决定
 
-1. **业务语义不绑定数据库品牌。** 配额、预算、租约、claim、fencing、outbox、错误分类、
-   时间、实时 credit 与结算规则由领域和应用端口定义；领域层不导入 SQL、SQLSTATE、
-   PostgreSQL/MySQL 类型或驱动异常。
-2. **一个部署只有一个协调权威。** 每次准入涉及的配额、预算、租约、Job、outbox 与幂等
-   身份仍在一个关系数据库事务中提交或回滚。不能为可移植性拆成跨库双写，也不能让
-   Redis、etcd 或本地内存成为第二租约权威。
-3. **最小能力契约优先。** 适配器必须提供多行 ACID 事务、唯一约束、无丢失更新的条件写入
-   或互斥能力、稳定事务时间、可分类错误、版本化迁移和按原身份查询提交结果。数据库只需
-   满足这些外部可观察能力，不要求实现相同 SQL 方言。
-4. **品牌特性只作快路径。** `SKIP LOCKED`、upsert、`RETURNING`、advisory lock、
-   `LISTEN/NOTIFY`、JSONB、触发器与范围约束可以改善吞吐或简化 SQL，但基础正确性必须在
-   缺少这些能力时成立。缺少快路径时由 CAS、父行互斥、应用层重叠检查和持久轮询完成。
-5. **适配器以共享一致性测试取得资格。** 适配器只有在通过相同竞争、故障、恢复和区间测试
-   后，才能声明支持目标产品路径；单个 ORM、SQL 方言测试或健康检查不能替代资格。
-6. **时间、错误与提交未知使用显式端口。** deadline 与租约比较使用同一事务权威时钟；
-   重试只依据端口分类，不依据品牌错误码字面量；提交结果未知只查询原身份，不新建执行。
-7. **实时预算使用持久 grant 与本地 credit。** 会话准入先持久预留预算，网关只在已提交
-   grant 内发放本地 credit；低水位异步续租。数据库短暂不可用时可用现有 credit 继续，
-   超出可证明 grant 后必须背压或明确结束，不得先消费后补记账。
-8. **运行时可保守，最终用量必须精确。** 实时 credit、水位和显示值可以按块、段或 utterance
-   聚合；最终 usage interval 必须覆盖真实计量单位、精确重放、避免重叠重复，并在停止或
-   会话终态后只结算和回收一次。delivered、received 与 played 只作诊断，不替代生成或接受量。
-9. **当前适配器继续保留。** PostgreSQL 适配器继续作为现有生产路径并通过共享测试升级；
-   是否实现第二个品牌、选择哪个品牌及何时投产，由独立实施卡和部署资格决定。
+1. **只有一条 SQL 数据路径。** 产品代码不包含 `if database == ...`、数据库方言分支、
+   品牌 SQL 模板或按品牌加载的 repository/adapter。应用依赖统一 ODBC DB-API，运行时只切换
+   DSN、ODBC driver manager 配置和厂商 ODBC driver。
+2. **冻结最小 SQL 子集。** 只允许 `SELECT`、`INSERT`、`UPDATE`、`DELETE`、基础 `JOIN`、
+   `GROUP BY`、`ORDER BY`、`CASE`、`COALESCE`、`COUNT`、`SUM` 及静态谓词。
+   禁止 upsert、`RETURNING`、`MERGE`、`SKIP LOCKED`、数据库通知、advisory lock、CTE、窗口函数、
+   存储过程、触发器、数据库函数、动态 SQL、`LIMIT/OFFSET` 和品牌类型。
+3. **使用 ODBC 统一参数与事务接口。** 应用 SQL 只使用 ODBC `?` 参数标记；连接关闭 autocommit，
+   每条用例显式提交或回滚。厂商驱动必须满足同一结果类型、Unicode、时间、`rowcount` 和事务契约。
+   **不得使用 ORM 或 SQLAlchemy 作为运行时方言适配层。**
+4. **schema 只有一份。** 表、列、主键、唯一键、外键、普通索引和迁移版本使用共同 DDL 子集。
+   标识符保持 ASCII 小写、无引号、长度不超过 30；运行时不执行 DDL。
+5. **应用生成身份。** 新 Job、Operation、lease、grant、event 和区间 ID 由应用生成 ULID；
+   `VARCHAR(128)` 保留现有 ASCII 身份容量。禁止自增列、sequence、数据库 UUID 函数、
+   `RETURNING` 或 `LAST_INSERT_ID`。
+6. **数据类型收敛。** 使用 `VARCHAR(n)`、`CHAR(n)`、`DECIMAL(38,0)`、`TIMESTAMP(6)`；
+   布尔用 `CHAR(1)` 的 `Y/N`，金额 / 配额 / 样本坐标使用十进制整数。禁止 `BOOLEAN`、`TEXT`、
+   `CLOB`、`BLOB`、`JSON`、`JSONB`、数组、枚举、区间类型和品牌 UUID。音频正文与大数据留在对象存储。
+   所有变长文本在应用层按 UTF-8 字节数限制为不超过声明长度，使 Oracle 的字节语义与 MySQL 的
+   字符语义收敛到同一更严格上限；标识与摘要使用 ASCII 规范形式。
+7. **时间和锁显式化。** 数据库实例与会话统一 UTC。需要等待行锁的决定在取得锁后，通过独立、
+   只读的短事务执行 `SELECT CURRENT_TIMESTAMP FROM schema_meta WHERE meta_id = ?`，把新鲜 UTC
+   `datetime` 绑定到当前写事务并只用于本次决定；不依赖各库 `CURRENT_TIMESTAMP` 的事务快照语义。
+   `schema_meta` 行只提供共同 `FROM` 锚点与 schema revision，不持久化数据库时间。需要串行化预算或
+   区间时按固定顺序逐行执行 `SELECT ... FOR UPDATE`；高竞争 Job/outbox 使用 claim bucket 租约，
+   不依赖 `SKIP LOCKED` 或数据库通知。
+8. **失败语义不读品牌错误码。** CAS 以影响行数为准；插入冲突统一回滚后按业务唯一键查询原身份；
+   提交调用抛错或结果不可确认一律视为 `commit_unknown`，只按原身份查询，不重试新身份。事务明确
+   不依赖数据库默认隔离级别；只是在未提交异常后、确认原身份不存在且 deadline 尚存时，才允许用
+   完全相同业务键重放，不依据 SQLSTATE 做透明重试。
+9. **实时语音使用持久 grant 与本地 credit。** 会话准入先持久预留预算；网关只在已提交 grant 内
+   发放本地 credit，低水位异步续租。数据库短抖时消费现有 credit，grant 耗尽后显式背压或结束。
+10. **最终用量精确。** ASR 按 accepted canonical samples，TTS 输入按首次冻结 codepoint，
+    TTS 输出按实际 generated PCM samples；边界区间半开、可重放且只结算一次。运行水位与交付展示
+    可以近似，持久授权不能超发。
+11. **四类数据库是同一资格的多个实例。** PostgreSQL、MySQL、Oracle、OceanBase 的固定目标版本
+    运行同一 SQL、同一 DDL 和同一 conformance suite；任一目标跳过即未取得可移植资格。
 
-## 最小能力契约
+## 运行时替换边界
 
-| 能力 | 必须满足的语义 | 不要求的品牌机制 |
+```text
+业务用例 / SQL
+      |
+      v
+ODBC DB-API（唯一接口，? 参数）
+      |
+ODBC driver manager（不变）
+      |
+厂商 ODBC driver（替换对象）
+      |
+目标数据库（同一 schema）
+```
+
+允许替换：ODBC driver、DSN、连接参数、数据库连接串和部署实例。
+
+不允许替换：业务代码、SQL 文本、schema、字段语义、事务结构、错误处理分支、
+测试 oracle 或公开协议。
+
+## 共同 SQL 子集
+
+| 类别 | 允许 | 禁止 |
 | --- | --- | --- |
-| 原子性 | 一次准入、状态推进或结算的全部相关写入共同提交或回滚 | 数据库函数、触发器或特定 DDL |
-| 无丢失更新 | 并发修改同一权威事实时只有合法版本成功；其余冲突可判定并安全重试 | 必须是 `FOR UPDATE` 或固定隔离级别名称 |
-| 唯一身份 | 幂等键与业务唯一键能阻止重复 Job、grant、claim 或 outbox 事实 | 必须是某品牌 upsert / `ON CONFLICT` |
-| 事务时间 | 同一事务使用稳定、单调到业务所需精度的 UTC 时间比较期限 | 必须调用某个时钟函数 |
-| 错误分类 | 能区分可重试冲突、重复身份、不可用、deadline 与提交未知 | 必须暴露某品牌 SQLSTATE 给应用 |
-| 迁移 | schema revision 可验证、可审计并有明确扩展 / 收缩顺序 | 必须使用单一 ORM 或迁移工具品牌 |
-| 原身份查询 | 提交结果未知后可按 operation、request、claim 或 grant 原身份查询 | 必须依赖某个 returning 子句 |
+| DML | 单行 `INSERT`、按 PK / 唯一键 `SELECT`、条件 `UPDATE`、条件 `DELETE` | upsert、`MERGE`、`RETURNING`、多行 `VALUES (...), (...)` |
+| 查询 | 基础 `JOIN`、`WHERE`、`GROUP BY`、`ORDER BY`、`COUNT`、`SUM`、`CASE`、`COALESCE` | `LIMIT/OFFSET`、`NULLS FIRST/LAST`、递归 CTE、窗口函数、`FILTER`、品牌 JSON 操作符 |
+| 并发 | 单行 `SELECT ... FOR UPDATE`、version/owner/epoch CAS、claim bucket 租约 | `SKIP LOCKED`、`NOWAIT`、advisory lock、品牌隔离级别语法、锁表 |
+| 时间 | 锁后独立短事务执行一次 `SELECT CURRENT_TIMESTAMP FROM schema_meta WHERE meta_id=?`、`TIMESTAMP(6)`、应用传参的 UTC `datetime` | 依赖写事务内 `CURRENT_TIMESTAMP` 快照、锁前旧时间、`clock_timestamp()`、`NOW()`、`SYSDATE`、`SYSTIMESTAMP` |
+| 类型 | `VARCHAR`、`CHAR`、`DECIMAL(38,0)`、`TIMESTAMP(6)` | `BOOLEAN`、`TEXT`、`CLOB`、`BLOB`、`JSON*`、数组、枚举、区间类型、UUID 类型 |
+| 身份 | 应用 ULID、SHA-256 十六进制、业务唯一键 | sequence、identity、自增、数据库生成 UUID |
+| 迁移 | 单一 SQL DDL、显式 schema revision、离线数据迁移 | ORM 自动建表、运行期 DDL、品牌迁移 DSL |
 
-行级互斥、乐观 CAS 或可判定串行化冲突均可实现“无丢失更新”，但适配器必须对上层呈现
-统一语义。多行不变量不能采用“先读余量，再无条件写”的乐观展示值。
+## 数据模型原则
 
-## 实时与非实时边界
+- **协调记录与内容分离。** 数据库只保存身份、状态、版本、租约、预算、计数、摘要和对象引用；
+  音频、转写正文、完整命令和大 JSON 放对象存储。
+- **一表一权威。** 每个状态、配额和区间只有一个写入路径；后台对账不修改权威事实。
+- **单行计数器。** workspace 配额与 host / instance 预算在各自权威行维护上限、held、consumed /
+  quarantine 与 `version`，在同一事务中按固定顺序锁定并更新；不通过 `SUM` 推导实时可用量。
+- **半开区间。** PCM / codepoint / sample 区间使用 `start_units < end_units`，存储为
+  `DECIMAL(38,0)`；锁 stream head 后做重叠查询并追加不可变事实。
+- **空字符串。** Oracle 将空字符串视为 NULL，所有文本字段统一规定“缺失用 NULL，禁止写入空串”；
+  应用在写库前拒绝空串，四库测试验证同一语义。
+- **排序。** 不使用可空排序列；分页采用 `(sort_key, id)` keyset 条件和 `fetchmany(page_size + 1)`。
 
-| 场景 | 关系数据库的职责 | 明确不承担 |
-| --- | --- | --- |
-| 实时语音 | 会话准入、预算 grant、续租 CAS、owner/epoch 屏障、边界 usage 与终态结算 | 每个 PCM / text 帧的同步事务、音频转发、播放确认 |
-| 非实时语音 | 持久 Job、输入身份、配额 / 预算、outbox、重试与恢复事实 | 大对象内容传输、长时间占事务等待推理 |
-| Job 调度 | Job / outbox 原子创建、claim/version、lease、fencing、原身份恢复 | 把数据库当消息总线或把通知当唯一唤醒 |
+## Job 与 outbox
 
-PostgreSQL 仍在实时系统的控制面起作用，但不在稳态传输热路径。正常健康时，会话建立和
-低频续租增加的是控制面延迟；数据库不可用时，本地 credit 决定可继续多久，grant 耗尽后
-系统以显式背压或终态收敛，而不是无限等待或超发。
+不使用 `SKIP LOCKED`，以 `coordination_claim_buckets` 提供有限的逻辑并发：
 
-## 替代方案
+1. worker 读取一个 bucket 的 `version`、owner 和 lease。
+2. 用条件 `UPDATE` 竞争 bucket：`WHERE bucket_no=? AND version=? AND (owner IS NULL OR lease_until<=?)`。
+3. `rowcount=1` 的 worker 在 bucket 内按 `due_at, job_id` 选择 Job，再以 Job version CAS 认领。
+4. bucket 与 Job 分离 lease；bucket 过期不会撤回仍在有效 Job lease 内的执行，结果写入仍校验
+   Job owner/version/epoch。
+5. outbox 使用相同 bucket 模式；通知、Redis 或本地事件循环只作可选唤醒，持久轮询负责完成。
 
-| 方案 | 结论 | 理由 |
-| --- | --- | --- |
-| 使用“覆盖率 90%”的全能 ORM 抽象 | 拒绝 | ORM 隐藏不了事务竞争、部分索引、提交未知与错误分类；会把差异变成难诊断的运行时行为 |
-| 所有查询手写最低公分母 SQL | 拒绝 | 虽然可移植，但会放弃快路径，并把方言差异继续泄漏到应用 |
-| Redis / etcd 作为实时或租约权威 | 拒绝 | 增加第二事实源；缓存丢失、通知丢失或心跳失效不能证明预算和引擎状态 |
-| 为实时语音单独建数据库 | 拒绝 | 双写破坏原子准入和一次结算；实时问题应通过批量边界与本地 credit 解决 |
-| 每个音频帧同步查询或扣减数据库 | 拒绝 | 20 ms 帧约对应每秒 50 次控制操作，放大了数据库、连接池和网络抖动，且没有业务收益 |
-| 运行时 credit 完全精确、每块都落库 | 拒绝 | 成本高且仍不能在提交未知时证明事务成功；应保证不超发并用边界区间精确结算 |
+这样无需数据库跳跃锁、通知或存储过程，且每个 bucket 的候选扫描和锁范围有界。
 
-## 影响
+## 提交未知与错误
 
-- 需要为事务、时间、错误、Job claim、outbox、grant 和 usage 建立稳定端口，并维护共享
-  conformance suite；短期内比继续堆 PostgreSQL SQL 成本更高。
-- PostgreSQL 可以使用 `SKIP LOCKED`、upsert 和通知保留性能，但测试必须证明移除快路径后
-  基础语义仍成立，避免“只在某个品牌上正确”。
-- 实时链路必须维护内存 credit 与持久 grant 的不变量、续租状态机和背压路径；换来的是
-  数据库短抖不直接穿透到每个音频帧，以及数据库不可用时不会无限超发。
-- 数据库迁移不再被视为零成本。新适配器只有在共享测试、迁移、备份恢复、权限和目标拓扑
-  全部通过后才能获得产品支持声明。
+应用不读取数据库错误码或 SQLSTATE。统一规则：
+
+- 单行 CAS 以 `rowcount` 判定成功或冲突。
+- `INSERT` 未提交即失败：回滚后按业务唯一键查询；命中且摘要相同返回原身份，命中但摘要不同报冲突，
+  未命中才允许同一幂等键重试。
+- `commit()` 调用期间连接断开、超时或异常：事务状态记为 `commit_unknown`；只查询原身份，
+  不新建执行、不提前释放预算、不自动换副本。
+- 任何品牌异常只进入日志和驱动诊断，不进入业务分支。
 
 ## 与既有决定的关系
 
-- 本 ADR 扩展 [ADR 0006](0006-cluster-coordination-and-storage-portability.md)：保留单一事务
-  权威、应用事务、不采用 etcd 和 fencing 要求；细化其“PostgreSQL 唯一正式适配器”表述为
-  “PostgreSQL 是当前生产适配器，产品正确性由能力契约与共享测试定义”。
-- 保留 [ADR 0005](0005-complete-execution-and-data-lifecycle-contracts.md) 的提交未知、停止
-  证据、区间账本和一次结算要求。
-- 本决定不推翻现有 PostgreSQL 实现，也不授权在没有适配器资格的情况下切换数据库。
+- 扩展 [ADR 0006](0006-cluster-coordination-and-storage-portability.md)：保留单一事务权威、
+  受控应用事务、不采用 etcd 和 fencing；把“PostgreSQL 唯一正式适配器”改为过渡事实。
+- 保留 [ADR 0005](0005-complete-execution-and-data-lifecycle-contracts.md) 的提交未知、
+  停止证据、区间账本和一次结算要求。
+- 现有 PostgreSQL 专用 SQL、Alembic/ORM 方言路径和双库测试原型是迁移输入，不是目标架构。
+
+## 替代方案
+
+| 方案 | 结论 | 原因 |
+| --- | --- | --- |
+| 中立端口 + 每品牌 adapter | 拒绝 | 应用层无品牌分支，但维护多份语义实现，无法证明只换驱动 |
+| ORM 自动生成 SQL | 拒绝 | ORM 会根据方言生成不同 SQL，仍存在隐式适配层 |
+| 手写最低公分母 SQL | 采用 | 限制语义换来确定性、可审计性和真正的单路径 |
+| 统一 ODBC driver | 采用 | 统一参数、事务、结果和异常边界；运行时只替换 driver 与 DSN |
+| 继续使用 PostgreSQL 专有特性 | 拒绝 | 违反迁移只换驱动的目标 |
+
+## 影响
+
+- 失去 `SKIP LOCKED`、upsert、`RETURNING`、数据库通知、JSONB 和范围约束等便利；需要通过
+  claim bucket、应用生成 ID、回滚后原身份查询和应用层区间检查补偿。
+- 数据库写入模式更保守，候选扫描需要 bucket 调度和轮询；换来的是应用单 SQL 路径和可证明的
+  驱动替换。
+- 迁移工作集中到 schema、ODBC 驱动资格和数据搬迁，不再分散到业务层方言分支。
+- 目标数据库必须提供固定版本的 ODBC driver；如果目标环境没有合格 ODBC driver，该数据库不能
+  声明支持，而不是退回品牌专属适配层。
 
 ## 验收与未验证项
 
-接受本决定前，设计文档必须冻结能力契约、端口边界、实时 grant / credit 流程、共享测试
-矩阵与高 ROI 实施顺序。实施验收由独立 issue 完成，至少覆盖并发最后预算、相同幂等键只建
-一个 Job、提交未知原身份查询、旧 claim / epoch 失败、通知丢失仍推进、区间重复与重叠、
-数据库短抖下已有 grant 内继续，以及 grant 耗尽后有限背压。
+接受本决定前，设计必须冻结 SQL 子集、DDL、驱动契约、claim bucket、实时 grant / credit、
+提交未知规则和四库测试矩阵。至少验证：
 
-当前未验证：第二个完整产品适配器、真实实时 ASR/TTS 链、真实数据库故障窗口、主备切换、
-备份恢复、跨品牌迁移与目标负载下的延迟分布。设计完成不改变这些事实。
+- 同一 schema 在 PostgreSQL、MySQL、Oracle、OceanBase MySQL/Oracle 模式建立成功。
+- 同一 SQL 绑定 `?` 参数并在目标 ODBC driver 下返回可转换的统一类型。
+- 并发最后预算不超发、同幂等键只产生一个 Job、旧 version / epoch 更新 0 行。
+- 通知丢失仍推进；commit unknown 只查原身份。
+- 实时 grant 内短抖继续；grant 耗尽后显式背压；重复区间不重复结算。
+
+当前未验证：四库实际运行、ODBC 驱动一致性、存量数据迁移、目标负载、主备切换、备份恢复和
+真实实时 ASR/TTS 链路。设计通过不等于迁移或生产资格完成。
+
+## 依据
+
+以下资料在 2026-11-21 核验，用于确认共同接口与锁定/时间能力；具体版本在实现资格时锁定。
+
+- [PEP 249 DB-API 2.0](https://peps.python.org/pep-0249/)：参数风格由数据库接口声明，统一驱动需要
+  明确选择 `qmark` 并验证。
+- [Microsoft ODBC 参数标记](https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqlprepare-function?view=sql-server-ver17)：
+  ODBC 使用 `?` 参数标记。
+- [MySQL Locking Reads](https://dev.mysql.com/doc/refman/8.4/en/innodb-locking-reads.html) 与
+  [Oracle `SELECT FOR UPDATE`](https://docs.oracle.com/en/database/oracle/oracle-database/26/zzpre/defining-controlling-transactions.html)：
+  行锁必须在显式事务中使用并在提交/回滚时释放。
+- [OceanBase `SELECT FOR UPDATE`](https://www.oceanbase.com/docs/enterprise-oceanbase-database-cn-10000000000377026)：
+  MySQL/Oracle 模式均支持行锁查询。
+- [PostgreSQL `CURRENT_TIMESTAMP`](https://www.postgresql.org/docs/current/functions-datetime.html)：
+  该函数在 PostgreSQL 取事务开始时间，证明锁等待后不能把写事务内结果当作新鲜时刻；设计改用
+  锁后的独立短探针。

@@ -11,8 +11,8 @@ date: 2026-10-24
 
 [ADR 0006](../decisions/0006-cluster-coordination-and-storage-portability.md)已将跨表
 规则的主要执行边界调整为受控应用事务；[ADR 0016](../decisions/0016-database-portability-core.md)
-进一步把产品正确性定义在最小关系数据库能力契约上。PostgreSQL 是当前生产适配器，
-MySQL/InnoDB 仅用于关键协调路径验证；不采用 etcd，Redis 不承担协调权威。
+进一步要求只有一条可移植 SQL / schema 路径，运行时只通过 DSN 和 ODBC driver 替换数据库。
+当前 PostgreSQL 专用实现是待迁移状态；不采用 etcd，Redis 不承担协调权威。
 活动 DDL 已精简，规则的程序实现见[受控事务方案与契约](coordination-transactions.md)；
 测试/工具原型在真实 PostgreSQL 与 MySQL 上验证关键路径。生产调度、运行时接入与完整
 集群故障资格的当前范围和证据见[交付跟踪矩阵](../plans/delivery-tracking.md)；
@@ -82,7 +82,7 @@ MySQL/InnoDB 仅用于关键协调路径验证；不采用 etcd，Redis 不承�
 
 ### 1.4 多进程一致性与 fencing
 
-每个 pool 的调度 owner 使用关系数据库持久租约与递增 fencing token，当前生产适配器为 PostgreSQL，正确性由[可移植协调能力契约](database-portability.md)约束。容量预留在事务中原子完成，lease 绑定 operation、engine 与 token；所有回写都验证 attempt 与 fencing。API 副本不能使用各自内存中的 semaphore 充当全局准入。
+每个 pool 的调度 owner 使用关系数据库持久租约与递增 fencing token，数据库访问遵循[单一可移植 SQL 路径](database-portability.md)。容量预留在事务中原子完成，lease 绑定 operation、engine 与 token；所有回写都验证 attempt 与 fencing。API 副本不能使用各自内存中的 semaphore 充当全局准入。
 
 管理面 `ResourcePool` 是跨节点聚合投影：`realtime_reserved_slots <= max_active_slots`，`active_slots + quarantine_slots <= max_active_slots`；任何计数都不能把隔离容量当成空闲容量。`status=ready` 必须至少有一个贡献节点和正容量，否则只能是 `degraded` / `unavailable`。聚合计数变化与节点租约账目保持同一事务口径，不能先展示可接单再补扣隔离槽位。受控应用事务必须使 host 与 instance 的 reserved / incremental / quarantine 投影等于实例基础预算与 admission lease 状态推导值；通过同一事务维护租约和预算、核对参与资源的当前状态/版本保证一致性，检查失败整体回滚。历史保护和最小写入权限继续保留，后台对账不能替代同步防超卖；不再强制由 PostgreSQL 延迟约束触发器完成跨表校验。
 
@@ -90,7 +90,7 @@ MySQL/InnoDB 仅用于关键协调路径验证；不采用 etcd，Redis 不承�
 
 数据库 token 不能撤回已经发到不支持 fencing 的引擎请求，也不能单独阻止旧进程在检查后暂停、恢复后迟到发送。因此 owner 接管前，必须封住旧 token 的提交入口，并协调全部在途与 submitting 请求；旧入口进程退出或被隔离本身也不证明引擎计算已停止。未知执行须隔离并保留其预算；在入口屏障和隔离账目均已确认后，新 owner 可使用已证明安全的其他余量，不能回收未知执行占用的容量。取得相应停止及资源释放证据后才能归还该容量；无法逐请求确认时，可通过 drain / 重建受控实例并使旧连接失效取得所需证据，受影响请求显式失败。具体接管条件见[协调事务](coordination-transactions.md#6-owner提交取消与释放时序)。
 
-网关或 worker 心跳失效后，调度器不能仅凭 TTL 到期回收算力：先由 execution gateway 通过 adapter 查询 / abort 对应执行，并拒绝过期 token 的新提交与结果发布。abort 按原身份幂等重放：网关为每次外发持有有界租约，进程在接收、尝试、引擎接受或结果记录之间崩溃后，恢复按持久尝试事实重发原身份而不新建执行；未裁决的尝试按指数退避重试并有次数上限，用尽后记录 exhausted 并停止重发。回执记录的身份或实例代次与权威执行不一致时按冲突失败且不外发（这些列只在准入写入一次，不存在可持久化的拒发状态），无法裁决的执行保持隔离并继续占用容量。若无法证明旧提交入口已经封锁，或引擎不支持细粒度确认，隔离该 engine / stage 的容量，直到完成上述屏障与在途协调；该池暂不可用也不能重复分配仍被旧计算占用的资源。只在 worker 的库函数里提交前查询 PG 不满足此要求。
+网关或 worker 心跳失效后，调度器不能仅凭 TTL 到期回收算力：先由 execution gateway 通过引擎接口查询 / abort 对应执行，并拒绝过期 token 的新提交与结果发布。abort 按原身份幂等重放：网关为每次外发持有有界租约，进程在接收、尝试、引擎接受或结果记录之间崩溃后，恢复按持久尝试事实重发原身份而不新建执行；未裁决的尝试按指数退避重试并有次数上限，用尽后记录 exhausted 并停止重发。回执记录的身份或实例代次与权威执行不一致时按冲突失败且不外发（这些列只在准入写入一次，不存在可持久化的拒发状态），无法裁决的执行保持隔离并继续占用容量。若无法证明旧提交入口已经封锁，或引擎不支持细粒度确认，隔离该 engine / stage 的容量，直到完成上述屏障与在途协调；该池暂不可用也不能重复分配仍被旧计算占用的资源。只在 worker 的库函数里提交前查询数据库不满足此要求。
 
 资源租约状态为 `reserved → executing → stopping → released`，不确定时进入 `quarantined`。Operation 结果状态与资源清理分开：cleanup_state 为 `not_required / pending / complete / quarantined`。只有确认停止才允许 cancelled；取消确认或 drain 期限到期但执行仍未知时，操作以 failed / cancellation_unconfirmed 终结，cleanup_state=quarantined，预算继续被占用且禁止自动重试。后台协调只更新清理事实，不反转唯一结果终态。`quarantined` 不是可重新调度的空闲状态。DB / 调度协调不可用时停止新准入，当前工作只在已有有限策略租期内运行，失效后停止外发并转入停止 / 协调；不能切到未协调的本地计数器继续接单。
 
@@ -118,7 +118,7 @@ VoiceDesign 无预算时创建任务有界排队，不能挤出实时实例或�
 
 请求增量预算与实例常驻预算分别记账：请求完成仅释放已确认可释放的增量，实例预算在确认进程 / 容器停止且资源释放后才归还。加载失败也须完成清理证据；结果失败不等于资源已回收。实例卸载不删除模型绑定、音色候选、已发布 revision、来源或校验证据，再次启动重新核对 readiness 与资格匹配。
 
-回收的判定与停止证据由 execution gateway 承担，停止动作与容量归还仍属调度器。gateway 的实例回收服务一次只读一个实例代次已记录的事实：就绪时刻、最近一次执行活动时刻（`terminated_at_us`、`dispatched_at_us`、`updated_at_us` 的最大值）、仍然 reserved 的租约、以及既有 drain 报告的 submitting / 在途 / 隔离三类在途集合；观察时刻取数据库 `clock_timestamp()`，不取进程时钟。空闲锚点取就绪时刻与最近活动时刻的较大值，两者皆无时代次不按空闲处理。判定对每种状态给出唯一结论：
+回收的判定与停止证据由 execution gateway 承担，停止动作与容量归还仍属调度器。gateway 的实例回收服务一次只读一个实例代次已记录的事实：就绪时刻、最近一次执行活动时刻（`terminated_at_us`、`dispatched_at_us`、`updated_at_us` 的最大值）、仍然 reserved 的租约、以及既有 drain 报告的 submitting / 在途 / 隔离三类在途集合；观察时刻由同一权威主库上的独立短事务通过 `SELECT CURRENT_TIMESTAMP FROM schema_meta WHERE meta_id = ?` 读取一次，不取进程时钟，不在持锁写事务内依赖不同品牌的事务时间语义，也不在后续判断中重复取时。空闲锚点取就绪时刻与最近活动时刻的较大值，两者皆无时代次不按空闲处理。判定对每种状态给出唯一结论：
 
 | 代次状态（按判定顺序） | 回收结论 |
 | --- | --- |
@@ -227,7 +227,7 @@ artifact_expired`，即使清理进程尚未运行；`410 artifact_deleted` 表�
 拒绝任何更宽的写权限，包括 API 运行身份持有的 schema 级权限。
 
 期限由两个时钟共同决定，差值要计入运维预期：`created_at_us` 在发布时取应用时钟
-（`time.time_ns() // 1000`），而到期判定使用数据库时钟（`clock_timestamp()`）。设
+（`time.time_ns() // 1000`），而到期判定使用锁后独立短探针读取的数据库 `CURRENT_TIMESTAMP`。设
 δ = 应用钟 − 数据库钟，则实际保留时长 = 配置窗口 − δ：应用钟偏快会让内容比配置提前 δ
 到期，偏慢则推迟 δ；已写入的 `expires_at_us` 本身不会因此改变，判定始终只对一个数据库时刻
 比较。δ 应保持在节点时间同步误差量级（秒级以内），差异较大时先修时间同步，不要靠调大窗口

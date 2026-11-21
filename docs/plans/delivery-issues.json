@@ -467,7 +467,8 @@
         }
       ],
       "issues": [
-        1094
+        1094,
+        1100
       ]
     },
     {
@@ -1198,7 +1199,8 @@
       "prd": "docs/prd.md#o-backup",
       "designs": [
         "docs/architecture/deployment-units.md",
-        "docs/architecture/data-deletion.md"
+        "docs/architecture/data-deletion.md",
+        "docs/architecture/database-portability.md"
       ],
       "implementation": "资产 namespace 检查与迁移已有实现，到期清理使用版本固定的保留账本；工作台有条件重放已接受的删除，后台角色尚无统一启动屏障。",
       "integration": "旧 writer 隔离、历史记录采用、生产备份回退和目标拓扑联验待完成。",
@@ -1221,7 +1223,9 @@
           "note": "配置清理身份后重放；部分后台任务在重放前启动"
         }
       ],
-      "issues": []
+      "issues": [
+        1102
+      ]
     },
     {
       "id": "O-ROLE",
@@ -1351,6 +1355,29 @@
         }
       ],
       "issues": []
+    },
+    {
+      "id": "O-DB-PORTABLE",
+      "epic": 342,
+      "prd": "docs/prd.md#o-db-portable",
+      "designs": [
+        "docs/architecture/database-portability.md",
+        "docs/decisions/0016-database-portability-core.md"
+      ],
+      "implementation": "拟议设计已落盘；产品仍走 PostgreSQL 专用路径，尚无同一 SQL / DDL / ODBC driver 的四库实现。",
+      "integration": "尚无目标数据库驱动环境、同一 application artifact 资格报告或真实业务消费者四库联验。",
+      "verification": "未执行 PostgreSQL、MySQL、Oracle、OceanBase MySQL/Oracle 模式的同 SQL 竞赛、故障和类型 oracle。",
+      "gap": "四库资格、驱动一致性、Oracle / OceanBase 实跑和目标负载均未验证；设计不证明运行时只换驱动已成立。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/main/docs/architecture/database-portability.md",
+          "label": "单一可移植 SQL 设计",
+          "note": "共同 SQL、schema、ODBC 契约与资格边界；不证明目标库已运行"
+        }
+      ],
+      "issues": [
+        1101
+      ]
     },
     {
       "id": "O-PHYSICAL",

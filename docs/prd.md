@@ -10,7 +10,7 @@
 
 ## 全局约束
 
-- 每个部署使用一套正式产品数据与协调权威关系数据库；数据库正确性由最小能力契约和共享一致性测试定义，不绑定指定品牌。PostgreSQL 是当前生产适配器；对象存储保存明确提交的输入与制品；Redis 仅可作可丢失缓存或唤醒，恢复依赖持久记录和轮询。
+- 每个部署使用一套正式产品数据与协调权威关系数据库。应用只有一条 SQL 与 schema 路径，只使用 PostgreSQL、MySQL、Oracle、OceanBase 共同具备的能力；业务层不得按品牌分支或维护数据库 adapter，迁移数据库的运行时只替换 DSN 与底层 ODBC driver。对象存储保存明确提交的输入与制品；Redis 仅可作可丢失缓存或唤醒，恢复依赖持久记录和轮询。
 - 跨进程持久输入和制品经对象存储传递，实时内容使用约定的网络流协议；本地临时缓冲有界且私有，不通过跨容器共享目录传递内容。业务 API、worker 和工作台不直接持有任意容器管理权限或引擎凭据。
 - 完整配方的准入、预算、租约和 Job/outbox 保持原子边界；提交固定命令与资源版本，结果未知按原身份恢复。取消或终态不等于停止；有外发或外发未知时按契约取得可信停止与释放证据后结算，确认未外发的分支另按原事务核验。
 - 内容删除须固定版本和摘要预检、明确确认并持久记账；恢复先重放删除账本，再开放内容，独立副本按所属边界处理。
@@ -205,7 +205,7 @@
 - 完整 required 配方的 attempt quota、父 host/instance 预算、全部阶段 lease、Job 与 outbox 在同一数据库事务全部提交或回滚。
 - 跨池争夺最后预算、多 Worker/两 Scheduler 与实时保留共享父预算且有界公平；覆盖全部业务 quota/结算。
 - 重复 claim/outbox 不重复执行；写入和发布事务重核 worker、claim_version、owner、期限；旧 owner 在入口屏障及在途协调完成前不能激活。
-- 18 个协调端口及完整事实快照由生产消费者联合核对；每个部署仅一个权威关系数据库，所有声明支持的适配器通过同一能力契约与共享一致性测试。PostgreSQL 是当前生产适配器，InnoDB 仅作关键协调路径对照；双工、跨池、业务 quota、claim / outbox 与结算的相关共享行为无跳过。
+- 18 个协调端口及完整事实快照由生产消费者联合核对；每个部署仅一个权威关系数据库。同一应用产物、同一 SQL 与同一 DDL 只通过 DSN / ODBC driver 切换 PostgreSQL、MySQL、Oracle、OceanBase 的固定目标版本；业务层无数据库 adapter、方言分支或品牌异常码。PostgreSQL 是当前迁移起点，不构成产品硬编码；双工、跨池、业务 quota、claim / outbox 与结算使用同一测试 oracle 且无跳过。
 
 设计依据：[database-portability.md](architecture/database-portability.md)、[runtime-governance.md](architecture/runtime-governance.md)、[technical-blueprint.md](architecture/technical-blueprint.md)。
 
@@ -221,7 +221,7 @@
 - 结算消费生成区间而不复制 PCM 账本；观察、投递与恢复均能区分真实证据和合成 fixture。
 - 18 端口及事实查询的完整 value、所有权和实际消费者有证据；内部 JobFact 不伪装公开业务 Job。
 - 锁序、锁后数据库时间与版本前提有效，运行角色非 owner 且不能越权；确认回滚与提交未知分开，读取失败保持 unknown/query_original。
-- 所有声明支持的关系数据库适配器通过相同竞争、故障、提交未知与区间共享测试且无跳过；当前 PostgreSQL 生产适配器与 InnoDB 协调对照分列真实业务消费者和 fake/原型。音频资产与完整业务任务保持同库原子边界，不因适配器变化拆成跨库双写。
+- 所有目标数据库运行相同 SQL 文本、相同 schema、相同 ODBC `?` 参数与相同竞争、故障、提交未知、区间测试且无跳过；真实业务消费者与 fake/原型分列。音频资产与完整业务任务保持同库原子边界，不因数据库替换拆成跨库双写。存量搬迁与 schema bootstrap 作为独立部署作业验证。
 - 有外发或外发未知时，按原事务核验匹配实例 generation 的可信停止及资源释放证据；确认未外发的分支按独立条件裁决。不能直接归还预算或凭对象存在写成功。
 - 失败保留隔离；审计不含私有正文。
 - 提供受支持的产品内 unknown / reconciliation_required 定位与恢复入口，核对运行权限、固定版本和代次并保留审计；只读 runbook 或人工 SQL 不代替产品入口。
@@ -678,6 +678,27 @@
 - 独立 API 上游、同版服务清单、裁剪依赖及 macOS/Linux 原生运行作为部署前置，适用放行点由用户明确决定。
 
 设计依据：[deployment-units.md](architecture/deployment-units.md)、[data-deletion.md](architecture/data-deletion.md)。
+
+<a id="o-db-portable"></a>
+### O-DB-PORTABLE · 单一 SQL 数据路径与四库驱动资格
+
+**需求：** 同一应用产物、SQL 与 schema 只替换 DSN / ODBC driver，即可运行于固定版本的
+PostgreSQL、MySQL、Oracle 与 OceanBase MySQL/Oracle 模式；业务层不维护数据库 adapter。
+
+**验收：**
+
+- PostgreSQL、MySQL、Oracle、OceanBase MySQL mode、OceanBase Oracle mode 使用同一 application
+  artifact 摘要、同一 SQL 文本、同一 DDL 与同一测试 oracle，且无跳过；任一目标失败即未取得资格。
+- 参数只使用 ODBC `?`；关闭 autocommit 并显式事务；CAS 以 `rowcount` 为准；业务不读 SQLSTATE
+  或 vendor error code。注入品牌导入、方言 SQL 或错误码分支时静态 guard 变红。
+- 共同类型、UTF-8 字节长度、Oracle 空字符串、UTC 时间、`Decimal(38,0)`、`FOR UPDATE`、keyset
+  分页、提交未知与 usage 区间均以真实驱动结果验收，不以单库或测试期映射代替。
+- schema bootstrap 与存量数据搬迁作为独立部署作业；通过驱动资格不等于数据已搬迁，也不等于
+  真实引擎、物理多机、HA 或目标负载资格完成。
+- 驱动不合格时明确标记该目标不支持或先修驱动，不新增按品牌分叉的业务 adapter 或仓库。
+
+设计依据：[database-portability.md](architecture/database-portability.md)、
+[ADR 0016](decisions/0016-database-portability-core.md)。
 
 <a id="o-physical"></a>
 ### O-PHYSICAL · 目标物理拓扑与故障演练

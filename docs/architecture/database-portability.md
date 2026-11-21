@@ -1,371 +1,491 @@
 ---
-title: 数据库可移植协调核心与实时预算设计
+title: 单一可移植 SQL 数据路径与实时预算设计
 status: active
-version: "0.1.0"
+version: "0.2.0"
 date: 2026-11-21
 ---
 
-# 数据库可移植协调核心与实时预算设计
+# 单一可移植 SQL 数据路径与实时预算设计
 
-本文冻结数据库可移植协调核心、适配器边界与实时预算 grant / credit 方案，作为
-[ADR 0016](../decisions/0016-database-portability-core.md)的实施设计。目标不是立即替换
-PostgreSQL，而是在保留现有生产适配器的前提下，让业务正确性不再依赖特定数据库品牌。
+本文冻结 PostgreSQL、MySQL、Oracle、OceanBase 共同支持的最小 SQL、数据模型、事务模式与驱动契约，
+作为 [ADR 0016](../decisions/0016-database-portability-core.md)的实施设计。目标不是维护多套按品牌
+分叉的数据访问实现，而是让同一应用产物、同一 SQL、同一 schema 只通过 DSN 和底层 ODBC 驱动完成
+数据库替换。
 
-本文规定目标语义。当前实现、适配器资格和实时链路证据仍以
-[交付跟踪矩阵](../plans/delivery-tracking.md)为准；设计冻结不等于第二个适配器或实时链已交付。
+本文规定目标架构。当前 PostgreSQL 专用实现仍含 `FOR UPDATE`、`SKIP LOCKED`、upsert、
+`RETURNING`、advisory lock、数据库通知、品牌时间和 SQLSTATE 分类；迁移完成前不得宣称目标已经达到。
 
-## 1. 目标与边界
+## 1. 可移植性定义
 
-冻结以下约束：
+### 1.1 必须成立的运行时条件
 
-1. 每个部署只使用一套权威关系数据库；配额、预算、租约、Job、outbox 和结算不跨权威库双写。
-2. 领域与应用只依赖中立端口；品牌 SQL、驱动异常、SQLSTATE、数据库类型和专有通知留在适配器。
-3. 基础正确性只依赖最小关系数据库能力；`SKIP LOCKED`、upsert、`RETURNING`、advisory lock、
-   通知、JSONB、触发器和范围约束只作快路径或防御性优化。
-4. 运行时 credit 可以保守聚合；持久 grant 不得超发；最终 usage interval 必须精确、可重放、
-   只结算一次。
-5. 实时语音不逐帧访问数据库；非实时内容不通过数据库传递；Job 表是协调事实，不是消息负载存储。
+1. 应用代码不导入厂商数据库 SDK，不按数据库品牌分支，不加载品牌 repository。
+2. 同一份 SQL 文本在四类数据库上执行；只使用 ODBC `?` 参数标记。
+3. 数据库连接统一关闭 autocommit，由用例显式 `commit()` / `rollback()`。
+4. 同一份 schema / DDL 在所有目标数据库建立；运行时 schema revision 相同。
+5. 结果类型在公共 DB-API 边界统一为 `str`、`Decimal`、`datetime`、`None` 等稳定值。
+6. 迁移数据库只替换 ODBC driver、DSN、连接配置和数据库实例。应用文件、SQL 与 schema 不变。
 
-以下不在本文范围内：选择第二个数据库品牌、修改现有机器契约、实现公开实时路由、迁移生产数据、
-取得主备切换或目标负载资格。
+### 1.2 不等于运行时替换的部分
 
-## 2. 当前事实与问题位置
+- 新数据库仍须执行一次 schema bootstrap。
+- 存量数据仍需一次性复制、校验、切换与回退；这一过程可能使用独立运维工具。
+- 数据库实例必须按共同前提配置：UTC、Unicode 编码、字符长度语义、足够的 ODBC driver 版本与最小权限。
 
-PostgreSQL 是当前生产适配器；MySQL/InnoDB 只覆盖协调测试路径。现有代码中仍可看到 `FOR UPDATE`、
-`SKIP LOCKED`、`ON CONFLICT`、`RETURNING`、advisory lock、`clock_timestamp()`、
-`statement_timeout` 与 PostgreSQL SQLSTATE 分类。部分机制已经集中在基础设施，部分仍影响领域和
-应用边界。
+把数据搬迁也声称成“只换驱动”是不真实的。可验收的承诺是：**应用运行时和 SQL 不因数据库品牌变化。**
 
-问题不在“是否使用 PostgreSQL”，而在“基础正确性是否只能由 PostgreSQL 证明”。如果 claim 只有
-`SKIP LOCKED` 一种路径、预算续租依赖 advisory lock、通知丢失等同任务停滞，数据库品牌就事实上
-进入了产品协议。
-
-数据库在系统中的作用按负载区分：
-
-| 负载 | 数据库职责 | 不应承担 |
-| --- | --- | --- |
-| 实时语音 | 会话准入、预算 grant、续租 CAS、epoch / owner 屏障、边界 usage、终态结算 | 每个音频帧、每个 TTS delta 的同步事务；音频内容传输 |
-| 非实时语音 | 持久 Job、配方、配额 / 预算、outbox、重试、恢复与结果发布协调 | 音频正文、长推理、长 HTTP / 对象写入期间持有事务 |
-| Job 调度 | 唯一身份、claim/version、lease、fencing、恢复和事件进度 | 消息总线式无限 payload、仅靠通知唤醒 |
-
-## 3. 总体结构
+## 2. 总体结构
 
 ```mermaid
 flowchart LR
-    Client[实时客户端] --> RWG[实时网关]
-    RWG --> Credit[本地 credit 账本]
-    Credit -->|低水位续租 / 边界结算| Grant[BudgetGrantPort]
-    Credit -->|段 / utterance 区间| Usage[UsageIntervalPort]
+    App[业务用例 / 静态 SQL]
+    DBAPI[统一 ODBC DB-API]
+    Manager[ODBC driver manager]
+    Driver[厂商 ODBC driver]
+    DB[(目标关系数据库)]
 
-    API[业务 API] --> Admission[准入应用服务]
-    Scheduler[调度 / worker] --> Claim[JobClaimPort / OutboxPort]
+    App --> DBAPI
+    DBAPI --> Manager
+    Manager --> Driver
+    Driver --> DB
 
-    Admission --> UoW[CoordinationUnitOfWork]
-    Grant --> UoW
-    Usage --> UoW
-    Claim --> UoW
-    UoW --> Adapter[关系数据库适配器]
-    Adapter --> DB[(单一权威关系数据库)]
-
-    Gateway[执行网关] --> UoW
-    Objects[(对象存储)]
-    API -.输入 / 制品引用.- Objects
-    Scheduler -.提交后读取固定对象.- Objects
+    Obj[(对象存储)]
+    App -. 身份 / 摘要 / 对象引用 .-> Obj
 ```
 
-实时音频数据只在客户端、实时网关与执行边界之间流动。数据库位于控制面；对象存储只承载
-明确提交的输入和制品，不参与运行时音频帧转发。
+应用不定义“PostgreSQL adapter / MySQL adapter”。唯一的数据访问入口是共同 ODBC DB-API。
+`pyodbc` / `aioodbc` 一类统一 ODBC 接口可以保留；它们不属于业务 adapter，也不得生成不同方言 SQL。
 
-## 4. 最小数据库能力契约
+## 3. 驱动契约
 
-适配器必须对上层提供下列语义。机制可以不同，行为必须一致。
+厂商 ODBC driver 由统一 DB-API 使用，必须满足以下契约：
 
-| 能力 | 契约 | 验证重点 |
+| 维度 | 契约 | 验证 |
 | --- | --- | --- |
-| 原子事务 | 多行、多表协调事实共同提交或回滚 | 中途失败无部分预算、lease 或 Job |
-| 唯一约束 | 幂等键、业务唯一键和父子身份阻止重复事实 | 相同键并发只生成一个权威对象 |
-| 无丢失更新 | 条件写入按 version / state / owner / epoch 成功或冲突 | 两写者竞争同一行只有一个赢家 |
-| 稳定读取 | 事务内能读取本事务写入及已提交权威事实 | 不把旧 owner / 旧版本当作当前 |
-| 事务时间 | 同一事务获得稳定 UTC 时间用于期限和锁后复核 | 应用时钟漂移不能提前释放或激活 |
-| 错误分类 | 可区分冲突、重复、不可用、deadline、连接结果未知 | 应用不解析品牌 SQLSTATE |
-| 迁移版本 | schema revision 可检查、可审计、只能由部署角色推进 | 应用启动不自动建表或猜迁移 |
-| 原身份查询 | 可按 request / operation / claim / grant 身份读取原结果 | 提交未知不新建执行 |
+| 参数 | SQL 使用 ODBC `?` 参数；绑定 Python `str`、`Decimal`、`datetime`、`None` | 同一 SQL 四库执行；`%s` / `:1` / `$1` 被 guard 拒绝 |
+| 事务 | autocommit 关闭；`commit()` 成功才表示提交，异常/断连视为 unknown | 提交未知探针 |
+| 行数 | DML 后 `rowcount` 表示实际影响行数；0 为 CAS 失败 | 并发 CAS 测试 |
+| 十进制 | `DECIMAL` 不经过 float；应用统一转 `Decimal` | 精确计数、预算与样本区间 |
+| 时间 | 独立短时间探针执行 `SELECT CURRENT_TIMESTAMP`，统一转换为 UTC `datetime` 后作为参数传入事务；不依赖各库函数的事务时间语义 | 跨库时间 round-trip、锁等待后新鲜度 |
+| 文本 | UTF-8 字符串原样往返；所有 `VARCHAR(n)` 在应用层按 UTF-8 字节数限制为不超过 `n`；Oracle 空串问题由应用禁止空串规避 | 多语言文本、边界长度、NULL、空串反例 |
+| 异常 | 业务不读取 SQLSTATE / vendor error code | 注入品牌错误字符串仍不改变行为 |
+| 结果 | 列名、顺序和 NULL 形状由静态 SQL 固定 | 四库结果 oracle 逐行一致 |
 
-“无丢失更新”可以由行级互斥、乐观 CAS 或可判定串行化冲突实现。适配器必须把底层冲突映射为
-稳定错误类别；上层不得假定某个隔离级别名称天然等价。
+任何 driver 不满足契约，只能标记“不支持”，不能添加业务适配分支绕开。
 
-### 4.1 明确不要求的品牌能力
+## 4. 共同 SQL 子集
 
-- `SKIP LOCKED`、`FOR UPDATE`、`ON CONFLICT`、`RETURNING` 的具体语法。
-- advisory lock、`LISTEN/NOTIFY` 或其他数据库内事件机制。
-- JSONB、部分索引、表达式索引、触发器、GiST 范围约束。
-- 单一 ORM、单一迁移工具或单一连接池实现。
+### 4.1 允许的语句
 
-这些能力可以获得性能或约束收益，但不能成为“缺少时无法保证正确性”的理由。
+- 单行 `INSERT INTO ... VALUES (...)`。
+- 按主键 / 唯一键读取，带固定列清单的 `SELECT`。
+- 基础 `JOIN`、静态 `WHERE`、`GROUP BY`、确定性 `ORDER BY`。
+- 条件 `UPDATE` / `DELETE`，以 `rowcount` 判定 CAS。
+- `CASE`、`COALESCE`、`COUNT`、`SUM` 等四库共有标量或聚合表达式。
+- 单行、显式事务内的 `SELECT ... FOR UPDATE`。
 
-## 5. 端口与适配器边界
+### 4.2 禁止的语句与能力
 
-| 端口 | 上层语义 | 适配器负责 |
-| --- | --- | --- |
-| `CoordinationUnitOfWork` | 开启一个受限事务会话，提交或回滚全部协调事实 | 事务隔离、连接、语句边界、死锁 / 冲突转换 |
-| `TransactionClockPort` | 在事务内取得 UTC 时间和 deadline 比较结果 | 品牌时钟函数或事务快照时间 |
-| `DatabaseErrorPort` | 返回稳定错误分类与可重试提示 | 驱动异常、SQLSTATE、连接中断与提交未知映射 |
-| `AdmissionPort` | 在一个事务内核对配额、预算、lease、Job/outbox | 条件写入、互斥、唯一冲突与影响行数 |
-| `JobClaimPort` | 选出候选并取得唯一 claim/version | 候选查询、CAS 更新、可选跳过锁优化 |
-| `OutboxPort` | 持久投递意图、待办位置和原身份重放 | 轮询、claim/version、可选通知唤醒 |
-| `BudgetGrantPort` | 创建、续租、查询与回收持久预算 grant | epoch / version CAS、期限与幂等键 |
-| `UsageIntervalPort` | 追加输入 / 输出区间并返回原事实 | 流级互斥、不可变追加、应用层重叠检查 |
-| `IdentityQueryPort` | 按原身份查 Job、submit、grant 或 usage 结果 | 品牌查询与读取形状转换 |
-
-领域对象只携带规范身份、版本、单位、区间与稳定错误枚举。适配器可以拥有 SQL、驱动类型、
-连接池与方言分支；应用和领域不能导入它们。组合根选择适配器并注入。
-
-## 6. Job / outbox 基础路径
-
-### 6.1 无品牌特性的 CAS claim
-
-基础路径不依赖 `SKIP LOCKED`：
-
-1. 在一个短事务内按稳定排序读取候选 Job 身份、version、state 和 deadline。
-2. 对每个候选执行条件更新：`WHERE id=? AND version=? AND state IN (...) AND deadline<=now`。
-3. 影响行数为 1 者获得新 version / owner / deadline；0 表示竞争失败，重新读取候选。
-4. 提交 claim 后才开始推理、HTTP、对象写入或长编码。
-5. 结果发布再次验证 claim owner、version、lease、epoch 和策略；旧 claim 只能失败或隔离。
-
-```mermaid
-sequenceDiagram
-    participant W1 as Worker A
-    participant W2 as Worker B
-    participant DB as 权威数据库
-    W1->>DB: 读取候选 (version=7)
-    W2->>DB: 读取候选 (version=7)
-    W1->>DB: CAS version=7 -> 8
-    DB-->>W1: rowcount=1
-    W2->>DB: CAS version=7 -> 8
-    DB-->>W2: rowcount=0
-    W1->>DB: 提交 claim
-    W2->>DB: 重新选候选
-```
-
-支持 `SKIP LOCKED` 的适配器可以在候选选择时跳过已锁行，减少空转；它不改变“唯一赢家、
-提交后才执行、旧版本不可发布”的语义。候选扫描必须有界退避，不能因通知丢失无限空转。
-
-### 6.2 outbox 与通知
-
-- outbox 事实与 Job / 状态变更在同一事务写入，保存稳定事件身份、待投递状态和最小引用。
-- worker 使用持久 claim/version 和轮询推进；数据库通知或 Redis 只缩短唤醒延迟。
-- 通知丢失、发送者重启或消费者离线时，持久轮询仍能推进；通知重复不能产生重复业务事件。
-- 投递结果未知时按 outbox 事件身份查询或重放，不创建新事件。
-
-## 7. 时间、错误与提交未知
-
-### 7.1 时间
-
-租约、claim、grant、outbox 和 usage 的期限比较使用 `TransactionClockPort`。应用进程时钟只用于
-本地 credit 的低水位估算、超时上限和日志，不用于判断数据库事实已经过期。数据库时间结果在同
-一事务中稳定，防止“锁等待后使用旧 now”导致旧 owner 被错误接受。
-
-### 7.2 稳定错误分类
-
-上层至少需要以下分类：
-
-| 类别 | 上层行为 |
+| 禁止项 | 替代方案 |
 | --- | --- |
-| `conflict_retryable` | 重新读取权威事实并有界重试 |
-| `duplicate_identity` | 查询原身份并返回原结果，不新建执行 |
-| `unavailable` | 停止新准入或使用已有实时 grant；保留未知占用 |
-| `deadline_exceeded` | 按事务语义回滚或进入有界背压 / 终态 |
-| `commit_unknown` | 保持 unknown，按原身份查询；不退预算、不重复外发 |
-| `invalid_request` | 确定性拒绝，不进入重试 |
+| `ON CONFLICT` / `ON DUPLICATE KEY` / `MERGE` | 先 `INSERT`；失败回滚后按唯一键查询原身份 |
+| `RETURNING` / `LAST_INSERT_ID` / sequence / identity | 应用生成 ULID；提交后按 ID 查询 |
+| `SKIP LOCKED` / `NOWAIT` / advisory lock / `LOCK TABLE` | claim bucket + 单行 CAS；预算 / stream head 使用 `FOR UPDATE` |
+| 数据库通知 / job 调度函数 / 触发器 | 持久 outbox + 轮询 + bucket |
+| `LIMIT` / `OFFSET` | keyset 条件 + `cursor.fetchmany(page_size + 1)` |
+| 动态 `IN (?, ?, ...)` 扩展 | 固定小集合，或逐身份读取；列表查询走分页与 join |
+| CTE / 窗口函数 / `FILTER` / 递归查询 | 预计算列、单行 head 与普通索引查询 |
+| JSON / JSONB / 数组 / 区间类型 / 枚举 / `BOOLEAN` | 列式短字符串、`CHAR(1)`、`DECIMAL`；大对象放对象存储 |
+| `TEXT` / `CLOB` / `BLOB` | 对象存储 + `VARCHAR` 引用 / 摘要 |
+| 存储过程、函数、触发器、运行期 DDL | 应用事务 + 部署期 SQL migration |
 
-适配器可以记录品牌错误码用于诊断，但业务分支只消费稳定类别。禁止在应用层散落 SQLSTATE 或驱动
-异常判断。
+### 4.3 参数与 SQL 文本规则
 
-### 7.3 提交未知
+- 只允许 ODBC qmark 参数 `?`；禁止字符串插值和手工 SQL 转义。
+- 表、列、索引名使用 ASCII 小写、无引号、长度不超过 30；避免保留字。
+- SQL 文本来自常量模块或经审查的查询构造器；品牌分支在静态检查中直接失败。
+- `SELECT` 不只做 `SELECT 1`：Oracle 需要 `FROM`，健康检查统一读取 `schema_meta` 的单行。
+- 动态排序字段不得来自用户输入；分页、过滤和投影集合固定。
+- 权威数据库时间通过独立短探针读取：
+  `SELECT CURRENT_TIMESTAMP FROM schema_meta WHERE meta_id = ?`。该行只提供共同 `FROM` 锚点和 schema
+  revision，不持久化时间。需要等待行锁的路径在取得全部锁后运行探针，再把返回的 UTC `datetime`
+  绑定到当前事务；同一业务决定只使用该值。不得依赖 `CURRENT_TIMESTAMP` 在写事务内的事务开始语义。
 
-连接中断、超时或 deadline 后无法确认是否提交时，调用方不得自行推断“失败”。恢复流程使用原
-request / operation / claim / grant 身份查询；查询失败继续保持 unknown。只有可信事实能证明未外发
-或已停止时，才允许释放预算。
+## 5. 数据类型
+
+| 语义 | 唯一类型 | 约定 |
+| --- | --- | --- |
+| ID | `VARCHAR(128)` | 新身份由应用生成 ULID；保留现有短 ASCII 身份，禁止为空 |
+| 短标识 / 枚举 | `VARCHAR(64)` | ASCII 小写，禁止空串 |
+| 摘要 | `CHAR(64)` | SHA-256 小写十六进制 |
+| 状态 / 布尔 | `CHAR(1)` | 固定单字符；布尔 `Y/N` |
+| 数量 / 预算 / 样本坐标 | `DECIMAL(38,0)` | 不用 float；Python `Decimal` |
+| 时间 | `TIMESTAMP(6)` | 统一 UTC，NULL 表示未设置 |
+| 对象引用 | `VARCHAR(1024)` | ASCII 规范引用；不进入唯一索引 |
+| 用户可见短文本 | `VARCHAR(255)` / `VARCHAR(2000)` | 数据库 UTF-8；应用按 UTF-8 字节数限长；缺失用 NULL，空串在入口拒绝 |
+
+禁止依赖数据库默认值、数据库时区、数据库 UUID、数据库序列和自动更新时间。所有值由应用显式写入。
+
+## 6. canonical schema
+
+### 6.1 命名与约束
+
+- schema 只有一份，按 revision 一次性建立；运行角色无 DDL 权限。
+- 表名与现有 owner 表保持一致，使用 ASCII 小写且无品牌前缀；主键列名稳定，外键仅使用普通
+  `FOREIGN KEY`，不使用级联删除。
+- 唯一键承担幂等身份；业务多列不变量由应用事务维护，不依赖部分索引或数据库函数。
+- 索引只使用普通 B-tree、固定列顺序，不使用表达式索引、部分索引、GiST 或覆盖索引语法。
+
+### 6.2 核心表
+
+| 表 | 职责 | 关键唯一键 / 索引 |
+| --- | --- | --- |
+| `schema_meta` | schema revision、独立数据库时间探针所需的单行 `FROM` 锚点 | `meta_id` PK |
+| `coordination_jobs` | Job 身份、状态、version、bucket、claim owner/lease | `job_id` PK；`(operation_id,attempt_id)` 唯一 |
+| `coordination_outbox` | SSE / outbox 事件、待投递状态 | `event_id` PK；`(job_id,event_digest)` 唯一 |
+| `coordination_claim_buckets` | 有限逻辑并发、bucket owner/lease/version | `bucket_no` PK |
+| `admission_leases` | 执行 / 引擎 / 资源租约与 fencing | `lease_id` PK；`(operation_id,attempt_id,stage_id)` 唯一 |
+| `workspace_quotas` | workspace 并发上限、held / quarantine / version | `workspace_id` PK |
+| `admission_budget_grants` | 实时会话持久 grant、epoch、续租序号 | `grant_id` PK；`(session_id,epoch,renew_seq,meter_kind)` 唯一 |
+| `usage_intervals` | 输入 / 输出不可变计量区间 | `interval_id` PK；`(stream_id,meter_kind,start_units,end_units)` 唯一 |
+| `output_stream_heads` | 每个逻辑输出流的串行化 head / version | `(operation_id,attempt_id,output_stream_id)` PK |
+
+### 6.3 设计 DDL 片段
+
+以下 DDL 只使用共同类型与基础约束，作为 schema 冻结输入；实际迁移需在四库资格中执行，
+当前文件不代表已经验证。
+
+```sql
+CREATE TABLE schema_meta (
+    meta_id VARCHAR(32) NOT NULL,
+    schema_rev VARCHAR(64) NOT NULL,
+    PRIMARY KEY (meta_id)
+);
+
+CREATE TABLE coordination_jobs (
+    job_id VARCHAR(128) NOT NULL,
+    operation_id VARCHAR(128) NOT NULL,
+    attempt_id VARCHAR(128) NOT NULL,
+    request_digest CHAR(64) NOT NULL,
+    bucket_no DECIMAL(10,0) NOT NULL,
+    job_state CHAR(1) NOT NULL,
+    version DECIMAL(38,0) NOT NULL,
+    claim_owner_id VARCHAR(128),
+    claim_until TIMESTAMP(6),
+    due_at TIMESTAMP(6) NOT NULL,
+    created_at TIMESTAMP(6) NOT NULL,
+    updated_at TIMESTAMP(6) NOT NULL,
+    PRIMARY KEY (job_id),
+    UNIQUE (operation_id, attempt_id)
+);
+
+CREATE INDEX coordination_jobs_ready_idx
+    ON coordination_jobs (bucket_no, job_state, due_at, job_id);
+
+CREATE TABLE coordination_claim_buckets (
+    bucket_no DECIMAL(10,0) NOT NULL,
+    version DECIMAL(38,0) NOT NULL,
+    claim_owner_id VARCHAR(128),
+    lease_until TIMESTAMP(6),
+    PRIMARY KEY (bucket_no)
+);
+
+CREATE TABLE workspace_quotas (
+    workspace_id VARCHAR(128) NOT NULL,
+    max_attempts DECIMAL(38,0) NOT NULL,
+    held_attempts DECIMAL(38,0) NOT NULL,
+    quarantined_attempts DECIMAL(38,0) NOT NULL,
+    version DECIMAL(38,0) NOT NULL,
+    updated_at TIMESTAMP(6) NOT NULL,
+    PRIMARY KEY (workspace_id)
+);
+
+CREATE TABLE admission_budget_grants (
+    grant_id VARCHAR(128) NOT NULL,
+    session_id VARCHAR(128) NOT NULL,
+    lease_id VARCHAR(128) NOT NULL,
+    owner_id VARCHAR(128) NOT NULL,
+    epoch DECIMAL(38,0) NOT NULL,
+    renew_seq DECIMAL(38,0) NOT NULL,
+    meter_kind VARCHAR(32) NOT NULL,
+    granted_amount DECIMAL(38,0) NOT NULL,
+    consumed_amount DECIMAL(38,0) NOT NULL,
+    returned_amount DECIMAL(38,0) NOT NULL,
+    version DECIMAL(38,0) NOT NULL,
+    expires_at TIMESTAMP(6) NOT NULL,
+    created_at TIMESTAMP(6) NOT NULL,
+    PRIMARY KEY (grant_id),
+    UNIQUE (session_id, epoch, renew_seq, meter_kind)
+);
+
+CREATE TABLE output_stream_heads (
+    operation_id VARCHAR(128) NOT NULL,
+    attempt_id VARCHAR(128) NOT NULL,
+    output_stream_id VARCHAR(128) NOT NULL,
+    version DECIMAL(38,0) NOT NULL,
+    max_end_units DECIMAL(38,0) NOT NULL,
+    updated_at TIMESTAMP(6) NOT NULL,
+    PRIMARY KEY (operation_id, attempt_id, output_stream_id)
+);
+
+CREATE TABLE usage_intervals (
+    interval_id VARCHAR(128) NOT NULL,
+    session_id VARCHAR(128) NOT NULL,
+    attempt_id VARCHAR(128) NOT NULL,
+    stream_id VARCHAR(128) NOT NULL,
+    meter_kind VARCHAR(32) NOT NULL,
+    start_units DECIMAL(38,0) NOT NULL,
+    end_units DECIMAL(38,0) NOT NULL,
+    fact_hash CHAR(64) NOT NULL,
+    PRIMARY KEY (interval_id),
+    UNIQUE (stream_id, meter_kind, start_units, end_units)
+);
+
+CREATE INDEX usage_intervals_stream_idx
+    ON usage_intervals (stream_id, start_units, end_units);
+```
+
+真实 schema 还包含 Operation、asset、artifact、binding、policy 等表，但只允许复用以上类型、
+命名和约束规则。完整命令、正文、音频和大 JSON 只保存对象引用与摘要。
+
+## 7. 事务模式
+
+### 7.1 幂等插入
+
+不在 SQL 中做“存在则更新”。业务使用确定性唯一键：
+
+1. 应用先生成 ULID 和 `request_digest`。
+2. `SELECT` 唯一键；已存在且摘要一致，返回原结果；摘要不同，冲突。
+3. 不存在则执行单行 `INSERT`。
+4. 任一未提交异常：尝试 `rollback` 后在新连接上按唯一键查询；不读取品牌错误码。
+5. `commit()` 异常：返回 `commit_unknown`，后续只按原身份查询。
+
+事务不依赖数据库默认隔离级别或品牌隔离语法。权威判断只来自条件写入的 `rowcount`、唯一约束和
+显式行锁。未执行 `commit()` 前出现异常时，整笔事务按回滚处理；只有确认原身份不存在、仍满足
+deadline 且使用完全相同业务键时才允许重新执行，不做基于品牌 error code 的透明重试。
+
+取得可能需要等待的权威行锁后，数据访问层通过一条独立、只读的短事务读取当前数据库时间，
+再回到仍持有锁的写事务完成资格复核。探针必须连接同一权威主库并立即用于当前决定；不能在不同
+数据库品牌间假定 `CURRENT_TIMESTAMP` 的事务快照语义相同。探针失败、超时或可能落到副本时，
+当前写事务回滚，不授予资源、不释放预算，也不回退到应用时钟。
+
+### 7.2 配额与预算准入
+
+完整配方在同一事务中按固定锁序锁定需要变更的配额与资源权威行。workspace 并发额度示例：
+
+```text
+  SELECT max_attempts, held_attempts, quarantined_attempts, version
+    FROM workspace_quotas
+   WHERE workspace_id = ?
+     FOR UPDATE
+  校验剩余额度并计算新值
+  UPDATE workspace_quotas
+     SET held_attempts = ?, version = ?, updated_at = ?
+   WHERE workspace_id = ? AND version = ?
+```
+
+随后按同一固定顺序锁 host/instance 预算行，并在同一事务插入 Job/outbox、lease 和 grant。
+任何一步影响行数不符或约束失败，整个事务回滚。不在事务内执行推理、HTTP、对象上传或长编码。
+
+### 7.3 Job / outbox claim bucket
+
+不使用 `SKIP LOCKED`。固定数量 bucket 将竞争范围从全表缩小到单个 bucket：
+
+```text
+1. SELECT version, claim_owner_id, lease_until FROM coordination_claim_buckets WHERE bucket_no = ?
+2. UPDATE coordination_claim_buckets SET version = ?, claim_owner_id = ?, lease_until = ?
+    WHERE bucket_no = ? AND version = ?
+      AND (claim_owner_id IS NULL OR lease_until <= ?)
+3. rowcount = 0 时放弃并按退避重试
+4. bucket 持有者读取该 bucket 的 ready Job，按 due_at, job_id 取第一个
+5. CAS 更新 Job version、state、claim_owner、claim_until；rowcount = 1 才执行
+6. 结果发布再次校验 Job owner/version/epoch；旧 owner 只能失败或隔离
+```
+
+bucket lease 只限制 dispatcher 进入；Job lease 单独控制执行归属。这样无需数据库跳跃锁、
+通知或全表长期锁，也能保持多 worker 唯一胜者。
+
+### 7.4 outbox 与事件流
+
+- outbox 行与 Job 状态变更同事务写入，保存最小事件字段和对象引用。
+- outbox 不依赖全局事件序号；应用生成 ULID `event_id`，并按 `(created_at,event_id)` 做稳定分页。
+- 投递 worker 通过 bucket 获取待办；通知缺失时持久轮询继续推进。
+- 重复投递按 `event_id` 与 `(job_id,event_digest)` 唯一键去重。
+
+### 7.5 分页与批量读取
+
+- 不使用 `LIMIT/OFFSET`。按 `(created_at, id)` 加 keyset 谓词，`ORDER BY` 使用相同方向和列。
+- 多取一条判断 `has_more`；返回的整页对象按固定顺序读取。
+- 禁止运行时拼接可变 `IN` 列表；需要批量关联时使用规范 join 或按身份逐项读取，并限制 fan-out。
+
+### 7.6 区间追加
+
+1. `SELECT version FROM output_stream_heads
+   WHERE operation_id=? AND attempt_id=? AND output_stream_id=? FOR UPDATE`。
+2. 在应用层或同事务查询 `start_units < ? AND end_units > ?`；发现同 meter 重叠则拒绝。
+3. 先执行同一区间幂等查询；精确重放返回原区间。
+4. 插入 `usage_intervals`，更新 output stream head version 和 `max_end_units`，提交。
+
+不使用 GiST、范围约束、触发器或数据库函数。
 
 ## 8. 实时预算 grant 与本地 credit
 
-### 8.1 计量单位
-
-| 流 | 权威消费单位 | 冻结 / 结算边界 |
-| --- | --- | --- |
-| ASR 输入 | 验证后 accepted canonical samples | `[sample_start,sample_end)`，按输入样本时钟去重 |
-| TTS 输入 | 首次冻结正文的 Unicode scalar values / codepoints | append / commit / finish 冻结后只计一次 |
-| TTS 输出 | 实际 generated canonical PCM samples | 每个 attempt 的真实生成区间分别计费 |
-
-音频毫秒、文本字节数、网络 received、delivered 和 played 都不替代权威单位。半开区间避免相邻段
-重复；相同身份和区间的重放返回原事实。
-
-### 8.2 持久 grant
-
-会话准入在业务数据库事务中写入：
-
-- `grant_id`、`session_id`、`owner`、`epoch`、`meter_kind`；
-- 已预留量与单位、version、创建时间和到期时间；
-- 已结算 usage、未用回收和终态引用；
-- 幂等键与续租序号。
-
-grant 是预算额度，不是财务余额。一个 grant 可以在同一会话多个短窗口内由本地 credit 消费，
-但每次新增额度必须先成功提交新的 grant 或续租版本。旧 epoch 的续租、usage 或回收必须拒绝。
-
-### 8.3 本地 credit
+### 8.1 数据路径
 
 ```mermaid
 sequenceDiagram
     participant C as 客户端
     participant G as 实时网关
     participant L as 本地 credit
-    participant DB as 权威数据库
-    participant I as 执行边界
+    participant DB as 统一 SQL 数据路径
 
-    G->>DB: 准入并持久 grant G0
-    DB-->>G: grant=G0 / epoch=7
-    G->>L: 发放不超过 G0 的本地额度
-    C->>G: 音频 / 文本输入
-    G->>L: 按接受边界扣减
-    L-->>G: 低水位，异步续租
-    G->>DB: CAS epoch=7 / version=v -> v+1
-    DB-->>G: 新额度已提交
-    G->>L: 只凭已提交额度增加 credit
-    G->>I: 转发受控输入 / 生成输出
-    G->>DB: segment / utterance 边界写 usage
-    C-->>G: 关闭 / 取消 / 断线
-    G->>DB: 按可信终态结算与回收未用 grant
+    G->>DB: 锁配额 / 租约权威行
+    G->>DB: 独立短事务执行 CURRENT_TIMESTAMP 探针
+    DB-->>G: 已验证 grant / version / expiry
+    G->>L: 只发放已提交额度
+    C->>G: PCM / 文本
+    G->>L: 本地扣减，不逐帧查库
+    L-->>G: 低水位
+    G->>DB: CAS renew_seq / epoch / version
+    DB-->>G: 新持久额度
+    G->>L: 提交成功后才增加 credit
+    G->>DB: segment / utterance 边界 usage
+    C-->>G: close / cancel / disconnect
+    G->>DB: 原身份结算与一次回收
 ```
 
-本地状态至少维护：persisted granted、locally issued、locally consumed、in-flight 和 returned。
-必须保持：
+### 8.2 不变量
 
-- `locally_issued <= persisted_granted - returned`；
-- `locally_consumed <= locally_issued`；
-- 任何新本地额度只在持久 grant / 续租提交成功后发放；
-- 续租失败、epoch 变更或到期时停止新增输入；已有数据只能进入有界 drain。
+- 对每个 grant，`persisted_consumed + locally_unsettled_consumed + returned + outstanding_credit
+  <= granted_amount`。
+- `outstanding_credit >= 0`，`locally_unsettled_consumed >= 0`；结算只把本地已消费量迁移到持久量，
+  不重复增加总消费。
+- 每次新增本地 credit 之前，对应 grant / 续租已成功提交。
+- 旧 epoch / version / owner 的续租或 usage 更新 `rowcount=0`。
+- 数据库不可用短于 credit 余量时继续；超过余量时背压或有限 drain。
+- 提交未知时保留本地和持久预算，不按应用估算退款。
 
-低水位续租使用 `(session_id, epoch, renewal_seq)` 幂等；并发的两个续租只能有一个版本成功，
-另一个查询原结果。数据库短抖发生在低水位之前时，现有 credit 维持流；抖到 credit 耗尽后，行为
-必须是明确 `quota_exceeded`、backpressure 或有限 drain，不能继续转发或静默丢帧。
+### 8.3 计量
 
-### 8.4 结算与回收
+| 流 | 单位 | 边界 |
+| --- | --- | --- |
+| ASR 输入 | accepted canonical samples | `[start,end)`，按 segment / utterance 聚合 |
+| TTS 输入 | 首次冻结正文 Unicode scalar values | commit / finish 后写一次 |
+| TTS 输出 | generated canonical PCM samples | 每个 attempt 的真实生成区间 |
 
-- ASR 在 segment close 或 utterance 边界聚合 accepted canonical sample 区间；相邻片段可合并，
-  但合并前后总长度和身份必须可重建。
-- TTS 在文本首次冻结时写一次输入 codepoint 区间；输出按 attempt 的真实生成 PCM 区间追加。
-- 已交付或已播放不减少生成消耗，也不证明停止；它们只用于诊断与恢复判断。
-- 终态到达后，用已持久 usage 计算实际消费；未用 grant 只有在没有在途外发、未知执行或未结算
-  区间时才幂等回收。
-- 数据库不可用或 unknown 未清除时保留预算，不按本地估算抢先退款。
+credit 不需要每帧绝对精确，但持久授权不能超发，最终 usage interval 必须精确、可重放且只结算一次。
+delivered / received / played 只作诊断，不替代生成或接受量。
 
-### 8.5 精度是否需要绝对到每一帧
+## 9. 四库边界条件
 
-不需要。需要满足的是不同层级的精度：
+| 边界 | 统一规则 |
+| --- | --- |
+| Oracle 空字符串等于 NULL | 入口禁止 `""`；缺失统一 NULL；四库反例测试 |
+| 时间类型 / 时区 | 实例和会话 UTC、`TIMESTAMP(6)`；锁后从同一主库的独立短事务读取 `CURRENT_TIMESTAMP`，driver 输出统一 UTC |
+| MySQL 默认隔离级别 | 不依赖普通一致性读做权威判断；多行决策使用 `FOR UPDATE` 或 bucket CAS |
+| OceanBase 双模式 | MySQL 与 Oracle 模式都作为独立目标运行同一 schema / SQL / oracle |
+| ODBC 参数 | 只允许 `?`；不使用 Python driver 的 `%s` / `:name` / `$1` 风格 |
+| 分页 | keyset + cursor fetch；不用 `LIMIT/OFFSET` |
+| 数值 | `Decimal`，禁止 float；所有预算与样本坐标用 `DECIMAL(38,0)` |
+| 大对象 | 不进入数据库；对象存储保存正文、音频、完整命令和事件大 payload |
+| Unicode | 数据库按 UTF-8 / Unicode 配置；所有 `VARCHAR(n)` 按 UTF-8 字节数限长，避免 Oracle 字节与 MySQL 字符长度口径分叉 |
 
-1. **授权粒度保守：** 本地发放不能大于已提交 grant，宁可短暂背压也不能超发。
-2. **用量结果精确：** 最终 usage 区间使用 canonical sample / codepoint，可重放、可审计且只结算一次。
-3. **运行展示允许近似：** 水位、已交付、已播放和当前缓冲可以按块更新，不作为财务或预算权威。
+## 10. schema 与数据迁移
 
-这套分层比“每个 PCM 块同步扣数据库”成本更低，也更能处理提交未知和数据库短抖。
+### 10.1 schema 迁移
 
-## 9. PostgreSQL 对实时性的影响
+- schema 变更由单一版本化 SQL 目录管理，部署角色执行，应用账号只有 DML 权限。
+- expand / migrate / switch / contract 分开执行；运行时不检查后自动建表。
+- 任何 DDL 必须在四个目标数据库执行；不能通过 PostgreSQL 专用 DDL 后再声称可移植。
+- 迁移脚本可以重复检查 schema revision，但不得依赖品牌 upsert、database function 或 DDL 事务。
 
-### 9.1 正常路径
+### 10.2 数据搬迁
 
-数据库只出现在会话准入、grant 续租、段 / utterance usage 和终态结算。音频传输、VAD、TTS PCM 转发
-不访问数据库。因此 PostgreSQL 延迟会影响控制面响应、续租余量和断线恢复，而不会在架构上天然
-成为逐帧延迟源。
+数据搬迁不属于运行时驱动替换，具体要求：
 
-### 9.2 错误路径
+- 从源库按业务身份导出，写目标库时使用同一 canonical schema 与同一应用写入路径。
+- 切换前完成行数、摘要、预算、租约、outbox、区间和终态的逐项对账。
+- 双写不作为默认方案；若临时使用，必须有单一胜出权威或明确的 fencing，不能产生双账本。
+- 回退保留源库、源快照、导出摘要与切换窗口；数据搬迁成功不等于实时 / 物理集群资格完成。
 
-- 数据库延迟低于本地 grant 余量：实时流可继续，续租在后台重试。
-- 数据库延迟超过 grant 余量：停止新增输入或进入有限 drain，暴露明确 gap / quota / unavailable 终态。
-- 数据库提交未知：保留 grant 和 unknown 事实，按原身份查询；不能提前回收预算。
-- 数据库连接池争用：先通过 grant 降低事务频率；再按目标链路测量连接池大小、续租周期与事务耗时，
-  不能照搬咨询连接池参数到其他主机。
+## 11. 测试与资格
 
-若实现退化为每个 20 ms 音频帧一次同步查询，理论上每秒约 50 次控制操作，尚未计文本、TTS 输出和
-多会话；这会放大 RTT、连接池和排队尾延迟，属于明确反例，而不是合理优化。
+### 11.1 同一测试程序与数据
 
-## 10. 高 ROI 实施顺序
+每个目标运行同一组 SQL 与行为 oracle：
 
-| 优先级 | 方案 | 成本 | 收益 | 前置 |
-| --- | --- | --- | --- | --- |
-| P0 | 最小能力契约、稳定错误 / 时间端口、品牌类型 lint | 中 | 防止新品牌依赖继续扩散；为所有适配器建立同一验收面 | ADR 与本文合并 |
-| P0 | 无 `SKIP LOCKED` 的 CAS claim + 持久 outbox 轮询 | 低到中 | 直接消除 Job 正确性的品牌硬依赖 | P0 能力契约 |
-| P0 | 实时持久 grant + 本地 credit + 边界 usage | 中 | 数据库短抖不穿透帧循环，预算不超发，结算可恢复 | 准入与 usage 端口 |
-| P1 | `SKIP LOCKED`、upsert、通知等适配器快路径 | 低 | 在不改变语义的前提下降低竞争和唤醒延迟 | P0 基础路径有测试 |
-| P2 | 第二个完整产品适配器 | 高 | 只有真实部署需要时才兑现品牌替换 | 共享 conformance suite 稳定 |
-| P2 | 跨品牌在线迁移 / 主备切换 | 高 | 属于部署作业，不是单纯代码适配 | 两适配器与恢复资格通过 |
+- PostgreSQL 固定版本。
+- MySQL 固定 8.4 LTS 或项目实施时冻结的兼容版本。
+- Oracle 固定版本（如 19c 或项目目标版本）。
+- OceanBase MySQL 模式。
+- OceanBase Oracle 模式。
 
-优先做前三项。它们同时改善实时性、恢复性和品牌独立性；直接实现第二个适配器或全量迁移工具，
-在这些基础边界尚未稳定时 ROI 较低。
+数据库版本、ODBC driver 版本、Unicode / UTC / 字符长度配置和 DDL revision 均写入资格报告。
 
-## 11. 共享一致性测试
+### 11.2 必测反例
 
-每个声明支持的适配器运行同一组行为 oracle；实现细节可以不同，外部结果必须相同。
+- 通过 application artifact 注入 PostgreSQL 导入、SQLSTATE、品牌 SQL 或 `%s` 参数，static guard 变红。
+- 把 `?` 改成另一个 driver 的参数风格，DB-API conformance 变红。
+- 在 SQL 中加入 `SKIP LOCKED`、`RETURNING`、`JSONB` 或 `LIMIT`，SQL subset guard 变红。
+- 移除 Job version / epoch 条件，两个 worker 的“唯一赢家”测试变红。
+- 在加本地 credit 前跳过 grant 提交，grant 上限测试变红。
+- 允许空字符串写入，Oracle 语义测试变红。
+- 锁等待后用写事务内 `CURRENT_TIMESTAMP` 或应用时钟替代独立新鲜探针，时钟偏移 / 锁等待探针变红。
+- 同一测试程序只替换 DSN / ODBC driver，应用文件摘要保持不变。
 
-### 11.1 竞争与身份
+### 11.3 资格边界
 
-- 两个 worker 竞争最后一个预算或 Job，只有一个成功，总量不超限。
-- 相同幂等键并发创建两次，只产生一个 Job、grant 或 outbox 事件；第二个返回原身份。
-- 旧 version / owner / epoch 更新影响 0 行，不能发布结果或增加 credit。
-- 过期 claim 只被一个新版本接管；旧执行之后不能通过完成或停止写回新状态。
+四库单元和合成集成通过，不等于：
 
-### 11.2 恢复
+- 真实引擎、真实音频、真实 GPU 或浏览器联验；
+- 主备切换、备份恢复、网络分区、数据库故障窗口；
+- 大规模数据搬迁或在线切换；
+- 性能、容量、GC、锁等待和 P95/P99 达标。
 
-- 连接在提交边界断开时保持 `commit_unknown`，查询原身份；查询失败不新建执行。
-- 通知 / 唤醒完全丢失时，持久 outbox 和 Job 仍通过轮询推进。
-- 未知执行、停止证据未齐全或 usage 未结算时，预算保持占用。
-- 停止证据匹配原执行后只结算和回收一次。
+## 12. 性能与高 ROI
 
-### 11.3 实时
+| 优先级 | 方案 | 成本 | 收益 |
+| --- | --- | --- | --- |
+| P0 | SQL 子集、canonical schema、ODBC 契约与静态 guard | 中 | 一次性消除业务层方言分叉 |
+| P0 | 应用 ULID、插入原身份查询、commit unknown | 低到中 | 兼容四库并保留可靠恢复 |
+| P0 | claim bucket + 单行 CAS + outbox 轮询 | 中 | 替代 `SKIP LOCKED` 和通知，正确性可移植 |
+| P0 | 实时 grant、本地 credit 与边界 usage | 中 | 数据库短抖不穿透音频热路径，预算不超发 |
+| P1 | 四库同 SQL conformance harness | 中到高 | 把口头可移植变成可验收能力 |
+| P1 | 普通索引与 keyset 分页优化 | 低 | 弥补最低公分母查询的不足 |
+| P2 | 数据搬迁工具与切换演练 | 高 | 解决实际迁移，但不改变运行时 SQL |
 
-- 本地发放总额永不超过持久 grant；续租旧 epoch 被拒绝。
-- 数据库不可用短于 grant 余量时，流不出现非预期输入 gap。
-- 数据库不可用长于 grant 余量时，明确背压或有限 drain，不超发、不静默丢帧。
-- 区间重复、相邻、乱序和部分重叠按同一业务规则处理；精确重放不重复计量。
-- ASR accepted samples、TTS 冻结 codepoints 与 TTS generated PCM samples 分别使用正确单位。
-- 未用 grant 只回收一次；unknown 或停止证据不全时不回收。
+先做前三项。新增品牌专用数据路径不再符合目标；接入其他数据库的方式是安装对应 ODBC driver、
+执行相同 schema，并运行同一测试 oracle。
 
-### 11.4 断言必须能红
+## 13. 当前到目标的迁移
 
-共享门禁至少完成这些单点变异验证：
+现有 PostgreSQL 路径必须分步收敛：
 
-1. 在领域 / 应用测试夹具注入 PostgreSQL 类型、SQLSTATE 或品牌 SQL，类型 / 边界检查变红。
-2. 移除 CAS version 条件，并发 claim 唯一赢家测试变红。
-3. 移除 epoch 检查，旧续租 / 旧 owner 测试变红。
-4. 移除 usage 区间去重，重放结算测试变红。
-5. 让续租在持久提交前增加本地 credit，grant 上限测试变红。
+1. 清点并冻结所有 SQL 语句，建立允许 / 禁止清单和静态扫描。
+2. 将应用生成 ULID、单行插入、rowcount CAS、回滚后原身份查询写入公共数据访问模块。
+3. 把 Pool/Job/lease/outbox/usage 的 PG 专用 SQL 替换为共同 SQL；用 claim bucket 替代
+   `SKIP LOCKED`，用应用区间检查替代 GiST / 触发器。
+4. 将品牌异常、SQLSTATE、数据库时间、连接池和迁移工具移出业务层。
+5. 建立同一 schema 和 ODBC driver 的四库测试环境。
+6. 完成真实业务消费者的同 SQL 验证后才允许切换或补充目标数据库。
 
-每个变异只施加一处并记录失败用例；复合变异不能替代单点证据。
+迁移期间，旧 PostgreSQL 路径和新共同路径不能同时独占写入同一权威表；切换必须有 schema
+revision、租约 / fencing 与回退证据。
 
-## 12. 适配器资格与迁移
+## 14. 依据与核验
 
-一个适配器获得“支持”声明至少需要：
+以下资料于 2026-11-21 核验；具体版本和实施资格仍需在目标环境锁定：
 
-- 通过全部共享竞争、故障、unknown 和区间 oracle；
-- 有明确 schema revision、升级 / 回滚边界和运行角色最小权限；
-- 证明备份恢复、连接中断、数据库不可用、重连后原身份查询；
-- 在目标部署测量准入、续租、claim 和边界 usage 的延迟分布；
-- 记录快路径缺失时的行为，以及快路径存在时的等价外部结果；
-- 明确未覆盖的拓扑、版本、规模和故障，不以 CI 通过代替生产资格。
-
-迁移以能力契约和共享测试为门槛，不以“SQL 跑通”或 ORM 支持矩阵为门槛。当前 PostgreSQL 适配器
-继续作为基线；第二个适配器的品牌和交付范围由独立实施卡决定。
-
-## 13. 禁止事项
-
-- 在领域或应用层导入驱动异常、SQLSTATE、数据库类型或品牌 SQL。
-- 用通知、Redis 缓存或本地内存心跳证明租约、预算或引擎停止。
-- 在数据库事务内执行模型推理、长 HTTP、对象上传或音频转发。
-- 每个 PCM / 文本帧同步访问数据库。
-- 数据库不可用时继续超发，或在 unknown 时提前回收预算。
-- 用一个成功路径测试证明适配器支持；缺少竞争、故障和恢复反例不算通过。
-
-## 14. 当前状态
-
-本文冻结的是目标架构。当前 PostgreSQL 生产路径仍使用若干品牌能力；无品牌 CAS claim、完整
-实时 grant / credit 链、第二适配器和目标部署故障资格尚未完成。对应实施由交付跟踪矩阵中的
-独立 issue 管理，完成前不宣称数据库品牌无关或实时预算资格已取得。
+- [PEP 249](https://peps.python.org/pep-0249/)：DB-API 的 `paramstyle` 由实现定义，因此产品层需要
+  固定统一接口，而不是假定厂商 Python driver 原生相同。
+- [Microsoft ODBC 参数标记](https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqlprepare-function?view=sql-server-ver17)：
+  ODBC SQL 参数使用 `?`，适合作为统一 SQL 边界。
+- [MySQL locking reads](https://dev.mysql.com/doc/refman/8.4/en/innodb-locking-reads.html)：显式事务中的
+  `FOR UPDATE` 行锁可作为预算与 stream head 的单行串行化机制。
+- [Oracle 事务控制](https://docs.oracle.com/en/database/oracle/oracle-database/26/zzpre/defining-controlling-transactions.html)：
+  `SELECT FOR UPDATE OF` 锁定活动行，锁在事务结束时释放。
+- [OceanBase SELECT FOR UPDATE](https://www.oceanbase.com/docs/enterprise-oceanbase-database-cn-10000000000377026)：
+  MySQL / Oracle 模式均提供行锁查询。
+- [PostgreSQL 日期时间函数](https://www.postgresql.org/docs/current/functions-datetime.html)：
+  `CURRENT_TIMESTAMP` 在 PostgreSQL 取事务开始时间，说明锁等待后不能直接复用写事务内的该值；
+  因此统一时间探针必须使用锁后的独立短事务。

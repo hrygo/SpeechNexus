@@ -1,11 +1,12 @@
 -- SpeechNexus ADR 0006 controlled-transaction coordination DDL DRAFT.
--- PostgreSQL 16+ product target; MySQL 8.4/InnoDB coordination qualification only.
+-- Transitional migration input, superseded for data portability by ADR 0016.
+-- The target is one common SQL/schema path; this file is not target portable DDL.
 -- Apply to a NEW isolated namespace with UTC and binary identifier comparison.
 -- Not an upgrade migration. See docs/architecture/coordination-transactions.md.
 -- No business procedures, triggers, extension, partial index or exclusion lock.
--- All *_us values are UTC Unix microseconds, obtained from the database adapter.
+-- All *_us values are UTC Unix microseconds.
 -- Runtime grants are installed separately; runtime roles never own these tables.
--- Document TEXT columns map to LONGTEXT in the MySQL qualification adapter.
+-- Test-only TEXT to LONGTEXT mapping remains transitional and is not target architecture.
 
 CREATE TABLE resource_pools (
     pool_id VARCHAR(128) PRIMARY KEY,

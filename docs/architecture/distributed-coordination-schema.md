@@ -1,14 +1,17 @@
 ---
 title: 分布式协调 Schema：受控应用事务草案
 status: active
-version: "1.0.0"
-date: 2026-10-23
+version: "1.1.0"
+date: 2026-11-21
 ---
 
 # 分布式协调 Schema：受控应用事务草案
 
-[ADR 0006](../decisions/0006-cluster-coordination-and-storage-portability.md) 的目标 DDL
-位于 [`0001_cluster_coordination_draft.sql`](../../migrations/0001_cluster_coordination_draft.sql)。
+本文记录当前 15 个协调表的过渡实现清单，供生产接线、迁移和证据映射使用。数据库可移植目标由
+[ADR 0016](../decisions/0016-database-portability-core.md) 与
+[单一可移植 SQL 数据路径](database-portability.md) 冻结；本文指向的
+[`0001_cluster_coordination_draft.sql`](../../migrations/0001_cluster_coordination_draft.sql)
+是迁移输入，不是四库共同目标 DDL，不得继续扩展 PostgreSQL 专用类型或测试期驱动映射。
 它使用普通表、主键/唯一键、外键、行内 CHECK 和普通索引；没有业务函数、触发器、
 扩展、容量验证队列、部分唯一索引或 GiST 区间约束。跨表业务裁决由受控应用事务承担。
 
@@ -48,8 +51,9 @@ SQL 是**新建 namespace 的设计草案和测试输入**，不是已部署业�
 新增表使配方、停止事实、当前指针和 Job/outbox 的职责显式，目标不是最少表数。
 核心 FK 继续约束 instance/host/pool/gateway、attempt/lease、lease/submit、submit/evidence
 与 Job/outbox 关系；binding/policy/qualification 的完整身份仍需与既有不可变资源存储
-在同一应用事务中核对。`TEXT` 用于规范请求、停止证据、阶段集合及引擎请求身份；
-文档字段不依赖数据库 JSON 查询，语义校验由应用负责。
+在同一应用事务中核对。当前过渡草案使用 `TEXT` 保存规范请求、停止证据、阶段集合及引擎请求身份；
+该类型及对应测试期 `LONGTEXT` 映射不进入目标 schema。目标只保存摘要和对象引用，正文、完整命令、
+音频和大 JSON 经对象存储提交，文档字段不依赖数据库 JSON 查询，语义校验由应用负责。
 
 ## 预算与历史保护
 
@@ -75,11 +79,12 @@ tombstone，不能清除协调身份、原摘要、fencing 或停止证据，也
 
 ## 验证与历史证据
 
-[共享行为测试](../../tests/integration/test_coordination_transactions.py) 在 PostgreSQL 和
-隔离 MySQL/InnoDB 上应用同一逻辑 DDL、运行同一期望，以验证受控事务行为。
-MySQL 测试适配器将草案中的 `TEXT` 列映射为 `LONGTEXT`，避免合法长命令截断；没有业务规则分叉。
+[共享行为测试](../../tests/integration/test_coordination_transactions.py) 目前在 PostgreSQL 和
+隔离 MySQL/InnoDB 上应用逻辑等价 DDL、运行同一期望，以验证受控事务行为。MySQL 测试适配器把
+草案中的 `TEXT` 映射为 `LONGTEXT`，这是过渡期测试证据，不是目标兼容路径。
 两库均未配置时相关测试会跳过，仅配置其中一库则配置检查失败；收集或跳过不代表双库验证通过。
-它是测试/工具原型，不代表生产 Scheduler 或数据库完整替代适配器已交付。
+目标资格要求同一应用产物、同一 SQL 与同一 DDL 只换 DSN / ODBC driver 运行于 PostgreSQL、
+MySQL、Oracle、OceanBase MySQL/Oracle 模式；当前单库、双库和测试映射都不能证明该资格。
 真实多主机、引擎、主备切换和备份恢复保持强制验收要求。
 
 修复后的旧 SQL 完整保存在

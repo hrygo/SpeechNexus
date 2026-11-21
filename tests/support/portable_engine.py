@@ -12,6 +12,7 @@ import psycopg
 from sqlalchemy import Engine, create_engine
 
 from speechnexus_portable_sql.psycopg_driver import PortableCursor
+from tests.support.portable_pg import connect as portable_pg_connect
 
 
 def portable_engine(url: str, **kwargs: Any) -> Engine:
@@ -24,6 +25,6 @@ def portable_engine(url: str, **kwargs: Any) -> Engine:
 
     def creator() -> psycopg.Connection[Any]:
         # 连接本身保持真实 psycopg 连接(方言初始化会直接读它),只换游标工厂。
-        return psycopg.connect(url, **connect_kwargs)
+        return portable_pg_connect(url, **connect_kwargs)
 
     return create_engine(url, creator=creator, **kwargs)

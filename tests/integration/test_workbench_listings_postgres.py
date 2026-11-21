@@ -244,6 +244,7 @@ async def test_parent_and_children_share_one_statement_when_cleanup_commits_duri
     parent = await project(store, 1)
     text = await transcript(store, parent, 1)
     original = _Session._many
+    original_page = _Session._page
     statements = 0
 
     async def delete_after_read[T](
@@ -259,8 +260,23 @@ async def test_parent_and_children_share_one_statement_when_cleanup_commits_duri
             assert await cleanup.worker.run(record.id) is not None
         return rows
 
+    async def delete_after_page[T](
+        session: _Session, factory: type[T], query: str, params: Sequence[object], size: int
+    ) -> tuple[T, ...]:
+        nonlocal statements
+        rows = await original_page(session, factory, query, params, size)
+        statements += 1
+        if statements == 1:
+            record = await delete(
+                store, parent, DeletionTarget("workbench", "project", parent.id, 1)
+            )
+            assert await cleanup.worker.run(record.id) is not None
+        return rows
+
     with monkeypatch.context() as patch:
+        # 列表读现在走分页助手;两条缝都要接,否则计数永远为零。
         patch.setattr(_Session, "_many", delete_after_read)
+        patch.setattr(_Session, "_page", delete_after_page)
         before_delete = await store.app.list_transcripts(project_id=parent.id)
     # A read linearizes at its SQL snapshot. A subsequent cleanup does not combine a
     # post-delete parent check with a pre-delete child result, or re-read content.

@@ -26,6 +26,7 @@ from pymysql.cursors import DictCursor
 from speechnexus_portable_sql.pymysql_driver import PortableConnection as PortableMysqlConnection
 from speechnexus_portable_sql.pymysql_driver import connect as portable_mysql_connect
 from tests.support.contracts import validator
+from tests.support.portable_pg import connect as portable_pg_connect
 
 MAX_COUNTER = 2**63 - 1
 DIMENSIONS: tuple[str, ...] = tuple(
@@ -126,7 +127,7 @@ class Database:
         if not re.fullmatch(r"sn_coord_[a-f0-9]{12}", self.namespace):
             raise ValueError("only isolated test namespaces are permitted")
         if self.dialect == "postgresql":
-            connection = psycopg.connect(self.url, row_factory=dict_row)
+            connection = portable_pg_connect(self.url, row_factory=dict_row)
             connection.execute(f'SET search_path TO "{self.namespace}", pg_catalog')
             connection.execute("SET TIME ZONE 'UTC'")
             connection.commit()

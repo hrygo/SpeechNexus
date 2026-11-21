@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
-import psycopg
 import pytest
 from alembic import command as migrations
 from alembic.config import Config
@@ -37,6 +36,7 @@ from tests.integration.test_coordination_foundation import Foundation
 from tests.integration.test_coordination_foundation import foundation as foundation_fixture
 from tests.integration.test_production_jobs import JobDatabase
 from tests.integration.test_production_jobs import database as shared_database_fixture
+from tests.support.portable_pg import connect as portable_pg_connect
 
 _ROOT = Path(__file__).resolve().parents[2]
 _PASSWORD = "synthetic_reader_foundation_test"
@@ -59,11 +59,11 @@ _LO_FUNCTIONS = (
 def isolated_reader_database(root_url: str) -> Iterator[str]:
     """Modify ACLs only in a freshly created, uniquely named temporary database."""
     name = "sn_reader_test_" + uuid.uuid4().hex[:12]
-    with psycopg.connect(root_url, autocommit=True) as root:
+    with portable_pg_connect(root_url, autocommit=True) as root:
         root.execute(sql.SQL("CREATE DATABASE {} TEMPLATE template0").format(sql.Identifier(name)))
         url = make_conninfo(root_url, dbname=name)
         try:
-            with psycopg.connect(url, autocommit=True, row_factory=dict_row) as admin:
+            with portable_pg_connect(url, autocommit=True, row_factory=dict_row) as admin:
                 admin.execute(
                     sql.SQL("REVOKE TEMPORARY ON DATABASE {} FROM PUBLIC").format(
                         sql.Identifier(name)
@@ -111,12 +111,12 @@ def reader_foundation() -> Iterator[ReaderFoundation]:
         with ExitStack() as cleanup:
             engine = create_engine(
                 "postgresql+psycopg://",
-                creator=lambda: psycopg.connect(url),
+                creator=lambda: portable_pg_connect(url),
                 poolclass=NullPool,
                 hide_parameters=True,
             )
             cleanup.callback(engine.dispose)
-            admin = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+            admin = portable_pg_connect(url, autocommit=True, row_factory=dict_row)
             cleanup.callback(admin.close)
             config = Config(str(_ROOT / "alembic.ini"))
             config.attributes["schema"] = schema
@@ -159,7 +159,7 @@ def _transactional_job_database(url: str) -> Iterator[JobDatabase]:
     with ExitStack() as cleanup:
         engine = create_engine(
             "postgresql+psycopg://",
-            creator=lambda: psycopg.connect(url),
+            creator=lambda: portable_pg_connect(url),
             poolclass=NullPool,
             hide_parameters=True,
         )
@@ -169,7 +169,7 @@ def _transactional_job_database(url: str) -> Iterator[JobDatabase]:
         with engine.connect() as connection:
             config.attributes["connection"] = connection
             migrations.upgrade(config, "head")
-        admin = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+        admin = portable_pg_connect(url, autocommit=True, row_factory=dict_row)
         cleanup.callback(admin.close)
         admin.execute(sql.SQL("SET search_path TO {}, pg_catalog").format(sql.Identifier(schema)))
         admin.execute(

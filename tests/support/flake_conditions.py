@@ -44,6 +44,7 @@ from urllib.parse import quote, urlsplit, urlunsplit
 import psycopg
 
 from speechnexus_portable_sql.pymysql_driver import connect as portable_mysql_connect
+from tests.support.portable_pg import connect as portable_pg_connect
 
 # 10 ms per chunk is the value that reproduced the adjacent lease-window red:
 # enough to blow a 1 s observation window while keeping a whole test file
@@ -270,7 +271,7 @@ def measure_roundtrip_ms(dsn: str, samples: int = 5) -> list[float]:
     samples = max(3, samples)
     latencies: list[float] = []
     if parsed.scheme.startswith("postgres"):
-        connection = psycopg.connect(dsn, autocommit=True)
+        connection = portable_pg_connect(dsn, autocommit=True)
         try:
             for _ in range(samples):
                 started = time.perf_counter()
@@ -338,7 +339,7 @@ def measure_commit_latency_ms(dsn: str, samples: int = 5) -> list[float]:
         # the commit takes the no-flush fast path and commit_delay never
         # applies to it. Only a logged write reaches the delayed commit.
         schema = "sn_commit_probe_" + uuid.uuid4().hex[:12]
-        connection = psycopg.connect(dsn, autocommit=False)
+        connection = portable_pg_connect(dsn, autocommit=False)
         try:
             connection.execute(f"CREATE SCHEMA {schema}")
             connection.execute(f"CREATE TABLE {schema}.probe (i int primary key)")
@@ -412,7 +413,7 @@ def _fresh_postgres_setting(dsn: str, name: str) -> int:
     probe waits, and a probe that compares against the pre-run value passes on
     the stale read.
     """
-    with psycopg.connect(dsn, autocommit=True) as connection:
+    with portable_pg_connect(dsn, autocommit=True) as connection:
         rows = connection.execute(f"SHOW {name}").fetchall()
     return int(str(rows[0][0]))
 
@@ -456,7 +457,7 @@ class PostgresSlowCommits:
         self._threads: list[threading.Thread] = []
 
     def __enter__(self) -> PostgresSlowCommits:
-        admin = psycopg.connect(self.dsn, autocommit=True)
+        admin = portable_pg_connect(self.dsn, autocommit=True)
         self._admin = admin
         try:
             self._original = {
@@ -581,7 +582,7 @@ class PostgresSlowCommits:
             )
 
     def _keep_committing(self) -> None:
-        connection = psycopg.connect(self.dsn, autocommit=False)
+        connection = portable_pg_connect(self.dsn, autocommit=False)
         try:
             while not self._stop.is_set():
                 try:

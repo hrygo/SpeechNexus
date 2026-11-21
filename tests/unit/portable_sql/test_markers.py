@@ -48,3 +48,10 @@ def test_placeholders_after_operators_are_still_found() -> None:
         len("SELECT "),
         len("SELECT ? AS a, '?' AS b, "),
     ]
+
+
+def test_mixed_markers_are_rejected_instead_of_half_translated() -> None:
+    """同一语句里既有 `?` 又有 `%s` 只能说明有一处没改干净:半翻译的语句比红更危险。"""
+
+    with pytest.raises(AmbiguousMarkerError, match="mixes"):
+        qmark_to_pyformat("SELECT ?, %s FROM t", (1, 2))

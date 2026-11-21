@@ -36,7 +36,6 @@ import time
 from collections.abc import Mapping
 from typing import Any, cast
 
-import psycopg
 from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
 
@@ -60,6 +59,7 @@ from speechnexus_backend.speech.infrastructure.job_cancellation_reconciliation_p
 from speechnexus_backend.speech.infrastructure.job_dispatch_postgres import PostgresLeaseSettler
 from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
 from speechnexus_backend.speech.infrastructure.public_jobs_postgres import PostgresPublicJobs
+from tests.support.portable_pg import connect as portable_pg_connect
 
 CRASH_AT = "before-release"
 KILLED_EXIT = 9
@@ -119,7 +119,7 @@ class _DiesBeforeRelease(CancellationCapacity):
     def release(self, job_id: str) -> bool:
         if job_id != self._job_id:
             raise AssertionError("the probe released an unexpected Job")
-        connection = psycopg.connect(self._dsn, autocommit=True, row_factory=dict_row)
+        connection = portable_pg_connect(self._dsn, autocommit=True, row_factory=dict_row)
         try:
             connection.execute("SELECT set_config('search_path', %s, false)", (self._schema,))
             job = connection.execute(

@@ -76,7 +76,9 @@ def qmark_to_pyformat(sql: str, params: Sequence[Any] | None) -> str:
 
     if params is None or "?" not in sql:
         return sql
-    if "%s" in sql or PYFORMAT.search(sql):
+    if "%s" in sql:
+        raise AmbiguousMarkerError("statement mixes `?` and `%s` placeholders")
+    if PYFORMAT.search(sql):
         return sql
     pieces: list[str] = []
     cursor = 0

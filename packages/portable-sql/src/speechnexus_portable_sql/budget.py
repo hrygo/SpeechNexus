@@ -49,6 +49,7 @@ __all__ = [
     "insert_grant",
     "lock_budget",
     "lock_quota",
+    "quarantine_grant",
     "read_grant",
     "reclaim_grant",
     "release_budget",
@@ -102,6 +103,10 @@ STATEMENTS: dict[str, str] = {
         "UPDATE admission_budget_grants SET granted_units = granted_units + ?, renew_seq = ?, "
         "version = version + 1, expires_at = ? WHERE grant_id = ? AND version = ? "
         "AND authority_epoch = ? AND grant_state = ?"
+    ),
+    "grant.quarantine": (
+        "UPDATE admission_budget_grants SET grant_state = ?, version = version + 1 "
+        "WHERE grant_id = ? AND version = ? AND grant_state = ?"
     ),
     "grant.reclaim": (
         "UPDATE admission_budget_grants SET consumed_units = ?, returned_units = ?, "
@@ -430,6 +435,20 @@ def renew_grant(
                 expected_epoch,
                 GRANT_ACTIVE,
             ),
+        )
+        return cursor.rowcount == 1
+    finally:
+        cursor.close()
+
+
+def quarantine_grant(connection: Connection, *, grant_id: str, expected_version: Decimal) -> bool:
+    """缺少恢复证据时保留占用:状态转为 `unknown`,额度和 quota 都不动,绝不伪造零消费。"""
+
+    cursor = connection.cursor()
+    try:
+        cursor.execute(
+            STATEMENTS["grant.quarantine"],
+            (GRANT_UNKNOWN, grant_id, expected_version, GRANT_ACTIVE),
         )
         return cursor.rowcount == 1
     finally:

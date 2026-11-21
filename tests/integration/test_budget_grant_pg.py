@@ -28,6 +28,7 @@ from speechnexus_portable_sql import (
     AuthorityProbe,
     ContractError,
     ReservationRequest,
+    quarantine_grant,
     read_grant,
     reclaim_grant,
     renew_grant,
@@ -384,3 +385,31 @@ def test_an_authority_epoch_move_between_reads_blocks_the_grant(
         probe_connection.close()
         writer.close()
         mover.close()
+
+
+def test_missing_recovery_evidence_quarantines_without_refunding(
+    namespace: tuple[str, str, str],
+) -> None:
+    """进程在 ASR accepted 之后崩溃、没有恢复证据时:保留占用,不伪造零消费、不提前退款。"""
+
+    url, name, _ = namespace
+    connection = _connect(url, name)
+    try:
+        _seed(connection, limit=10)
+        reserve(connection, request("g-1", units=3), epoch=Decimal(1))
+        connection.commit()
+
+        assert quarantine_grant(connection, grant_id="g-1", expected_version=Decimal(0))
+        assert not quarantine_grant(connection, grant_id="g-1", expected_version=Decimal(1))
+        connection.commit()
+
+        grant = read_grant(connection, grant_id="g-1")
+        assert grant is not None
+        assert (grant.grant_state, grant.consumed_units, grant.returned_units) == (
+            "unknown",
+            Decimal(0),
+            Decimal(0),
+        )
+        assert held_units(connection) == Decimal(3)
+    finally:
+        connection.close()

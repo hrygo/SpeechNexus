@@ -18,7 +18,7 @@ PostgreSQL；本包不含任何数据库品牌分支，也不按品牌加载业�
 
 | 路径 | 含义 |
 | --- | --- |
-| `schema/logical.json` | canonical 逻辑 schema；指纹输入，物理 DDL 必须与它等价。 |
+| `schema/logical.json` | canonical 逻辑 schema（当前 revision `0003`）；指纹输入，物理 DDL 必须与它等价。 |
 | `statements/manifest.json` | canonical statement manifest；`statements/manifest.digest` 固定其摘要。 |
 | `statements/profiles.json` | 已登记 profile 的唯一来源；未登记的 profile 不得出现在 manifest 或部署配置中。 |
 

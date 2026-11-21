@@ -96,6 +96,11 @@ class FakeConnection:
         self.cursors.append(cursor)
         return cursor
 
+    def execute(self, sql: str, params: Params = ()) -> Cursor:
+        cursor = self.cursor()
+        cursor.execute(sql, params)
+        return cursor
+
     def commit(self) -> None:
         if self._database._fail_commit:
             raise ConnectionError("simulated commit failure")

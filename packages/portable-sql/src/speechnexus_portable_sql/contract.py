@@ -22,14 +22,19 @@ from speechnexus_portable_sql.subset import placeholder_count, validate
 
 __all__ = [
     "CommitUnknownError",
+    "ConflictError",
     "Connection",
     "ConnectionFactory",
+    "ConnectionLostError",
     "ContractError",
     "Cursor",
+    "ExecutableConnection",
     "Param",
     "Params",
+    "PoolUnavailableError",
     "PortableSqlError",
     "Row",
+    "StorageError",
     "TransactionError",
     "check_parameters",
     "check_statement",
@@ -54,6 +59,22 @@ class TransactionError(PortableSqlError):
 
 class CommitUnknownError(PortableSqlError):
     """`commit()` 抛错或结果不可确认:只允许按原业务身份查询,不得新建执行或释放预算。"""
+
+
+class StorageError(PortableSqlError):
+    """语句在存储端失败,事务已回滚。业务只按类别处理,不读 SQLSTATE 或厂商错误码。"""
+
+
+class ConflictError(StorageError):
+    """唯一键或外键冲突。业务据此重读原身份,而不是按厂商错误码分支。"""
+
+
+class ConnectionLostError(StorageError):
+    """连接在执行期间不可用。结果未确认,按 `commit_unknown` 同级处理。"""
+
+
+class PoolUnavailableError(PortableSqlError):
+    """拿不到连接:池已关闭、等待超时或排队已满。与语句失败不同,此时没有发出任何语句。"""
 
 
 class Row:
@@ -147,6 +168,13 @@ class Connection(Protocol):
     def rollback(self) -> None: ...
 
     def close(self) -> None: ...
+
+
+@runtime_checkable
+class ExecutableConnection(Connection, Protocol):
+    """带 `execute` 便利方法的连接:适配器在一条语句上不需要自己开游标."""
+
+    def execute(self, sql: str, params: Sequence[object] = ()) -> Cursor: ...
 
 
 #: 新建连接的工厂。时间探针必须用独立连接,不能复用持锁的写事务。

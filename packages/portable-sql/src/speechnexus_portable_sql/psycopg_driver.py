@@ -19,6 +19,7 @@ from typing import Any, cast
 
 import psycopg
 
+from .contract import ConflictError, ConnectionLostError, Row, StorageError
 from .markers import PYFORMAT, qmark_to_pyformat
 
 __all__ = [
@@ -28,6 +29,7 @@ __all__ = [
     "PortableCursor",
     "connect",
     "connect_async",
+    "portable_error",
     "qmark_to_pyformat",
 ]
 
@@ -56,6 +58,22 @@ def _translate_composed(node: Any, params: Any) -> Any:
     return node
 
 
+def portable_error(error: BaseException) -> BaseException:
+    """把厂商异常翻成契约里的类别.
+
+    业务层只按类别处理,不读 SQLSTATE 或厂商错误码;唯一的翻译点在这里。
+    未识别的异常原样返回,免得把编程错误伪装成存储失败。
+    """
+
+    if isinstance(error, psycopg.errors.UniqueViolation | psycopg.errors.ForeignKeyViolation):
+        return ConflictError("constraint conflict")
+    if isinstance(error, psycopg.OperationalError | psycopg.InterfaceError):
+        return ConnectionLostError("connection unavailable")
+    if isinstance(error, psycopg.Error):
+        return StorageError("statement failed")
+    return error
+
+
 class PortableCursor:
     """游标包装:只拦 `execute` / `executemany`,其余行为透传给驱动游标。
 
@@ -76,11 +94,42 @@ class PortableCursor:
         prepare: bool | None = None,
         binary: bool | None = None,
     ) -> PortableCursor:
-        self._cursor.execute(_translated(query, params), params, prepare=prepare, binary=binary)
+        try:
+            self._cursor.execute(_translated(query, params), params, prepare=prepare, binary=binary)
+        except psycopg.Error as error:
+            raise portable_error(error) from error
         return self
 
     def executemany(self, query: Any, params_seq: Any, *, returning: bool = False) -> None:
-        self._cursor.executemany(_translated(query, ()), params_seq, returning=returning)
+        try:
+            self._cursor.executemany(_translated(query, ()), params_seq, returning=returning)
+        except psycopg.Error as error:
+            raise portable_error(error) from error
+
+    @property
+    def rowcount(self) -> int:
+        return int(self._cursor.rowcount)
+
+    def _row(self, row: Any) -> Any:
+        """元组行按契约包成 `Row`;驱动已给出映射行时原样返回,适配器不必改写."""
+
+        if not isinstance(row, tuple):
+            return row
+        columns = [column.name for column in (self._cursor.description or ())]
+        return Row(columns, row)
+
+    def fetchone(self) -> Any:
+        row = self._cursor.fetchone()
+        return None if row is None else self._row(row)
+
+    def fetchmany(self, size: int) -> list[Any]:
+        return [self._row(row) for row in self._cursor.fetchmany(size)]
+
+    def fetchall(self) -> list[Any]:
+        return [self._row(row) for row in self._cursor.fetchall()]
+
+    def close(self) -> None:
+        self._cursor.close()
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._cursor, name)
@@ -103,6 +152,8 @@ class PortableConnection:
     def cursor(self, *args: Any, **kwargs: Any) -> PortableCursor:
         return cast(PortableCursor, self._connection.cursor(*args, **kwargs))
 
+    # 契约里的 `Connection` 只要求这三个动作;驱动其余能力不外泄。
+
     def execute(self, sql: str, params: Sequence[Any] | None = None) -> PortableCursor:
         return cast(
             PortableCursor,
@@ -110,10 +161,16 @@ class PortableConnection:
         )
 
     def commit(self) -> None:
-        self._connection.commit()
+        try:
+            self._connection.commit()
+        except psycopg.Error as error:
+            raise portable_error(error) from error
 
     def rollback(self) -> None:
-        self._connection.rollback()
+        try:
+            self._connection.rollback()
+        except psycopg.Error as error:
+            raise portable_error(error) from error
 
     def close(self) -> None:
         self._connection.close()
@@ -166,6 +223,22 @@ class AsyncPortableCursor:
 
     async def executemany(self, query: Any, params_seq: Any, *, returning: bool = False) -> None:
         await self._cursor.executemany(_translated(query, ()), params_seq, returning=returning)
+
+    @property
+    def rowcount(self) -> int:
+        return int(self._cursor.rowcount)
+
+    async def fetchone(self) -> Any:
+        return await self._cursor.fetchone()
+
+    async def fetchmany(self, size: int) -> list[Any]:
+        return list(await self._cursor.fetchmany(size))
+
+    async def fetchall(self) -> list[Any]:
+        return list(await self._cursor.fetchall())
+
+    async def close(self) -> None:
+        await self._cursor.close()
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._cursor, name)

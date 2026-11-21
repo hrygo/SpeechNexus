@@ -1,17 +1,238 @@
 {
-  "revision": "0002",
+  "revision": "0003",
   "tables": [
     {
       "name": "schema_meta",
       "columns": [
-        { "name": "meta_id", "type": "varchar(32)", "nullable": false },
-        { "name": "schema_rev", "type": "varchar(64)", "nullable": false },
-        { "name": "schema_fingerprint", "type": "char(64)", "nullable": false },
-        { "name": "authority_epoch", "type": "decimal(38,0)", "nullable": false }
+        {
+          "name": "meta_id",
+          "type": "varchar(32)",
+          "nullable": false
+        },
+        {
+          "name": "schema_rev",
+          "type": "varchar(64)",
+          "nullable": false
+        },
+        {
+          "name": "schema_fingerprint",
+          "type": "char(64)",
+          "nullable": false
+        },
+        {
+          "name": "authority_epoch",
+          "type": "decimal(38,0)",
+          "nullable": false
+        }
       ],
-      "primary_key": ["meta_id"],
+      "primary_key": [
+        "meta_id"
+      ],
       "uniques": [],
       "foreign_keys": [],
+      "checks": [],
+      "indexes": []
+    },
+    {
+      "name": "coordination_jobs",
+      "columns": [
+        {
+          "name": "job_id",
+          "type": "varchar(128)",
+          "nullable": false
+        },
+        {
+          "name": "operation_id",
+          "type": "varchar(128)",
+          "nullable": false
+        },
+        {
+          "name": "attempt_id",
+          "type": "varchar(128)",
+          "nullable": false
+        },
+        {
+          "name": "request_digest",
+          "type": "varchar(71)",
+          "nullable": false
+        },
+        {
+          "name": "due_at",
+          "type": "timestamp(6)",
+          "nullable": false
+        },
+        {
+          "name": "bucket_no",
+          "type": "decimal(38,0)",
+          "nullable": false
+        },
+        {
+          "name": "job_state",
+          "type": "varchar(24)",
+          "nullable": false
+        },
+        {
+          "name": "claim_owner_id",
+          "type": "varchar(128)",
+          "nullable": true
+        },
+        {
+          "name": "claim_expires_at",
+          "type": "timestamp(6)",
+          "nullable": true
+        },
+        {
+          "name": "claim_version",
+          "type": "decimal(38,0)",
+          "nullable": false
+        },
+        {
+          "name": "last_event_seq",
+          "type": "decimal(38,0)",
+          "nullable": false
+        }
+      ],
+      "primary_key": [
+        "job_id"
+      ],
+      "uniques": [
+        [
+          "operation_id",
+          "attempt_id"
+        ]
+      ],
+      "foreign_keys": [],
+      "checks": [],
+      "indexes": [
+        {
+          "name": "coordination_jobs_bucket_due",
+          "columns": [
+            "bucket_no",
+            "job_state",
+            "due_at",
+            "job_id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "coordination_claim_buckets",
+      "columns": [
+        {
+          "name": "bucket_no",
+          "type": "decimal(38,0)",
+          "nullable": false
+        },
+        {
+          "name": "claim_owner_id",
+          "type": "varchar(128)",
+          "nullable": true
+        },
+        {
+          "name": "lease_until",
+          "type": "timestamp(6)",
+          "nullable": true
+        },
+        {
+          "name": "version",
+          "type": "decimal(38,0)",
+          "nullable": false
+        }
+      ],
+      "primary_key": [
+        "bucket_no"
+      ],
+      "uniques": [],
+      "foreign_keys": [],
+      "checks": [],
+      "indexes": []
+    },
+    {
+      "name": "job_events",
+      "columns": [
+        {
+          "name": "job_id",
+          "type": "varchar(128)",
+          "nullable": false
+        },
+        {
+          "name": "event_seq",
+          "type": "decimal(38,0)",
+          "nullable": false
+        },
+        {
+          "name": "event_digest",
+          "type": "varchar(71)",
+          "nullable": false
+        },
+        {
+          "name": "payload_ref",
+          "type": "varchar(512)",
+          "nullable": true
+        }
+      ],
+      "primary_key": [
+        "job_id",
+        "event_seq"
+      ],
+      "uniques": [],
+      "foreign_keys": [
+        {
+          "columns": [
+            "job_id"
+          ],
+          "references": {
+            "table": "coordination_jobs",
+            "columns": [
+              "job_id"
+            ]
+          }
+        }
+      ],
+      "checks": [],
+      "indexes": []
+    },
+    {
+      "name": "coordination_outbox",
+      "columns": [
+        {
+          "name": "event_id",
+          "type": "varchar(128)",
+          "nullable": false
+        },
+        {
+          "name": "job_id",
+          "type": "varchar(128)",
+          "nullable": false
+        },
+        {
+          "name": "event_digest",
+          "type": "varchar(71)",
+          "nullable": false
+        },
+        {
+          "name": "delivered_at",
+          "type": "timestamp(6)",
+          "nullable": true
+        }
+      ],
+      "primary_key": [
+        "event_id"
+      ],
+      "uniques": [],
+      "foreign_keys": [
+        {
+          "columns": [
+            "job_id"
+          ],
+          "references": {
+            "table": "coordination_jobs",
+            "columns": [
+              "job_id"
+            ]
+          }
+        }
+      ],
       "checks": [],
       "indexes": []
     }

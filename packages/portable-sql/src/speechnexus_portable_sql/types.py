@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import secrets
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
@@ -18,6 +19,7 @@ __all__ = [
     "new_identity",
     "optional_text",
     "require_decimal",
+    "require_digest",
     "require_text",
     "require_utc",
     "utf8_length",
@@ -86,6 +88,17 @@ def new_identity() -> str:
         characters[index] = _CROCKFORD[value & 0x1F]
         value >>= 5
     return "".join(characters)
+
+
+DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
+
+
+def require_digest(value: object, *, field: str = "digest") -> str:
+    """canonical 摘要:必须已是 `sha256:` 加 64 位小写十六进制,不做隐式重算。"""
+
+    if not isinstance(value, str) or DIGEST.match(value) is None:
+        raise ContractError(f"{field} must be sha256:<64 lowercase hex>")
+    return value
 
 
 def digest_hex(payload: bytes) -> str:

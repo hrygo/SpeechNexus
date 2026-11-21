@@ -1,21 +1,496 @@
 {
-  "revision": "0002",
+  "revision": "0003",
   "statements": [
     {
       "id": "authority.probe",
       "version": 1,
-      "params": [{ "name": "meta_id", "kind": "text", "nullable": false }],
+      "params": [
+        {
+          "name": "meta_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
       "result": [
-        { "name": "at", "kind": "timestamp", "nullable": false },
-        { "name": "schema_rev", "kind": "text", "nullable": false },
-        { "name": "schema_fingerprint", "kind": "char", "nullable": false },
-        { "name": "authority_epoch", "kind": "decimal", "nullable": false }
+        {
+          "name": "at",
+          "kind": "timestamp",
+          "nullable": false
+        },
+        {
+          "name": "schema_rev",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "schema_fingerprint",
+          "kind": "char",
+          "nullable": false
+        },
+        {
+          "name": "authority_epoch",
+          "kind": "decimal",
+          "nullable": false
+        }
       ],
       "transaction": "read_only",
       "lock_order": [],
       "idempotency": "read_only_replay",
       "error_semantics": "validate_or_rollback",
       "sql": "SELECT CURRENT_TIMESTAMP, schema_rev, schema_fingerprint, authority_epoch FROM schema_meta WHERE meta_id = ?"
+    },
+    {
+      "id": "bucket.acquire",
+      "version": 1,
+      "params": [
+        {
+          "name": "owner_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "lease_until",
+          "kind": "timestamp",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "bucket_no",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "expected_version",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "now",
+          "kind": "timestamp",
+          "nullable": false
+        }
+      ],
+      "result": [],
+      "transaction": "cas",
+      "lock_order": [],
+      "idempotency": "retry_on_zero_rows",
+      "error_semantics": "rollback_and_backoff",
+      "sql": "UPDATE coordination_claim_buckets SET claim_owner_id = ?, lease_until = ?, version = ? WHERE bucket_no = ? AND version = ? AND (claim_owner_id IS NULL OR lease_until <= ?)"
+    },
+    {
+      "id": "bucket.fence",
+      "version": 1,
+      "params": [
+        {
+          "name": "bucket_no",
+          "kind": "decimal",
+          "nullable": false
+        }
+      ],
+      "result": [
+        {
+          "name": "version",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "claim_owner_id",
+          "kind": "text",
+          "nullable": true
+        },
+        {
+          "name": "lease_until",
+          "kind": "timestamp",
+          "nullable": true
+        }
+      ],
+      "transaction": "write",
+      "lock_order": [
+        "coordination_claim_buckets"
+      ],
+      "idempotency": "read_again",
+      "error_semantics": "rollback_and_rescan",
+      "sql": "SELECT version, claim_owner_id, lease_until FROM coordination_claim_buckets WHERE bucket_no = ? FOR UPDATE"
+    },
+    {
+      "id": "bucket.release",
+      "version": 1,
+      "params": [
+        {
+          "name": "owner_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "lease_until",
+          "kind": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "version",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "bucket_no",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "expected_version",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "expected_owner",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "result": [],
+      "transaction": "cas",
+      "lock_order": [
+        "coordination_claim_buckets"
+      ],
+      "idempotency": "retry_on_zero_rows",
+      "error_semantics": "rollback_and_backoff",
+      "sql": "UPDATE coordination_claim_buckets SET claim_owner_id = ?, lease_until = ?, version = ? WHERE bucket_no = ? AND version = ? AND claim_owner_id = ?"
+    },
+    {
+      "id": "job.candidates",
+      "version": 1,
+      "params": [
+        {
+          "name": "bucket_no",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "job_state",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "now",
+          "kind": "timestamp",
+          "nullable": false
+        },
+        {
+          "name": "cursor_due",
+          "kind": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "cursor_due_equal",
+          "kind": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "cursor_job",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "result": [
+        {
+          "name": "job_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "claim_version",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "due_at",
+          "kind": "timestamp",
+          "nullable": false
+        }
+      ],
+      "transaction": "read_only",
+      "lock_order": [],
+      "idempotency": "read_only_replay",
+      "error_semantics": "rollback_and_rescan",
+      "sql": "SELECT job_id, claim_version, due_at FROM coordination_jobs WHERE bucket_no = ? AND job_state = ? AND due_at <= ? AND (due_at > ? OR (due_at = ? AND job_id > ?)) ORDER BY due_at, job_id"
+    },
+    {
+      "id": "job.claim",
+      "version": 1,
+      "params": [
+        {
+          "name": "job_state",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "owner_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "claim_expires_at",
+          "kind": "timestamp",
+          "nullable": false
+        },
+        {
+          "name": "claim_version",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "job_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "expected_version",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "expected_state",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "result": [],
+      "transaction": "cas",
+      "lock_order": [
+        "coordination_claim_buckets",
+        "coordination_jobs"
+      ],
+      "idempotency": "retry_on_zero_rows",
+      "error_semantics": "rollback_and_rescan",
+      "sql": "UPDATE coordination_jobs SET job_state = ?, claim_owner_id = ?, claim_expires_at = ?, claim_version = ? WHERE job_id = ? AND claim_version = ? AND job_state = ?"
+    },
+    {
+      "id": "job.event_head",
+      "version": 1,
+      "params": [
+        {
+          "name": "job_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "result": [
+        {
+          "name": "last_event_seq",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "claim_version",
+          "kind": "decimal",
+          "nullable": false
+        }
+      ],
+      "transaction": "write",
+      "lock_order": [
+        "coordination_claim_buckets",
+        "coordination_jobs"
+      ],
+      "idempotency": "read_again",
+      "error_semantics": "rollback_and_rescan",
+      "sql": "SELECT last_event_seq, claim_version FROM coordination_jobs WHERE job_id = ? FOR UPDATE"
+    },
+    {
+      "id": "job.event_head_update",
+      "version": 1,
+      "params": [
+        {
+          "name": "last_event_seq",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "claim_version",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "job_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "expected_version",
+          "kind": "decimal",
+          "nullable": false
+        }
+      ],
+      "result": [],
+      "transaction": "cas",
+      "lock_order": [
+        "coordination_claim_buckets",
+        "coordination_jobs"
+      ],
+      "idempotency": "retry_on_zero_rows",
+      "error_semantics": "rollback_and_rescan",
+      "sql": "UPDATE coordination_jobs SET last_event_seq = ?, claim_version = ? WHERE job_id = ? AND claim_version = ?"
+    },
+    {
+      "id": "job_event.insert",
+      "version": 1,
+      "params": [
+        {
+          "name": "job_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "event_seq",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "event_digest",
+          "kind": "char",
+          "nullable": false
+        },
+        {
+          "name": "payload_ref",
+          "kind": "text",
+          "nullable": true
+        }
+      ],
+      "result": [],
+      "transaction": "write",
+      "lock_order": [
+        "coordination_claim_buckets",
+        "coordination_jobs"
+      ],
+      "idempotency": "unique_per_job_seq",
+      "error_semantics": "rollback_and_query_identity",
+      "sql": "INSERT INTO job_events (job_id, event_seq, event_digest, payload_ref) VALUES (?, ?, ?, ?)"
+    },
+    {
+      "id": "job_event.read",
+      "version": 1,
+      "params": [
+        {
+          "name": "job_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "after_seq",
+          "kind": "decimal",
+          "nullable": false
+        }
+      ],
+      "result": [
+        {
+          "name": "event_seq",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "event_digest",
+          "kind": "char",
+          "nullable": false
+        },
+        {
+          "name": "payload_ref",
+          "kind": "text",
+          "nullable": true
+        }
+      ],
+      "transaction": "read_only",
+      "lock_order": [],
+      "idempotency": "read_only_replay",
+      "error_semantics": "rollback_and_resume",
+      "sql": "SELECT event_seq, event_digest, payload_ref FROM job_events WHERE job_id = ? AND event_seq > ? ORDER BY event_seq"
+    },
+    {
+      "id": "outbox.insert",
+      "version": 1,
+      "params": [
+        {
+          "name": "event_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "job_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "event_digest",
+          "kind": "char",
+          "nullable": false
+        },
+        {
+          "name": "delivered_at",
+          "kind": "timestamp",
+          "nullable": true
+        }
+      ],
+      "result": [],
+      "transaction": "write",
+      "lock_order": [
+        "coordination_claim_buckets",
+        "coordination_jobs"
+      ],
+      "idempotency": "unique_event_id",
+      "error_semantics": "rollback_and_query_identity",
+      "sql": "INSERT INTO coordination_outbox (event_id, job_id, event_digest, delivered_at) VALUES (?, ?, ?, ?)"
+    },
+    {
+      "id": "outbox.mark_delivered",
+      "version": 1,
+      "params": [
+        {
+          "name": "delivered_at",
+          "kind": "timestamp",
+          "nullable": false
+        },
+        {
+          "name": "event_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "result": [],
+      "transaction": "cas",
+      "lock_order": [],
+      "idempotency": "retry_on_zero_rows",
+      "error_semantics": "rollback_and_rescan",
+      "sql": "UPDATE coordination_outbox SET delivered_at = ? WHERE event_id = ? AND delivered_at IS NULL"
+    },
+    {
+      "id": "outbox.undelivered",
+      "version": 1,
+      "params": [
+        {
+          "name": "after_event_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "result": [
+        {
+          "name": "event_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "job_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "transaction": "read_only",
+      "lock_order": [],
+      "idempotency": "read_only_replay",
+      "error_semantics": "rollback_and_rescan",
+      "sql": "SELECT event_id, job_id FROM coordination_outbox WHERE delivered_at IS NULL AND event_id > ? ORDER BY event_id"
     }
   ],
   "profiles": []

@@ -1,0 +1,56 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-init
+  namespace: speechnexus
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: minio-init
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+      containers:
+        - name: minio-init
+          image: speechnexus-python:203d412b
+          command: ["python", "/opt/speechnexus/init-object-storage.py"]
+          env:
+            - name: MINIO_ENDPOINT
+              value: http://minio:9000
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: MINIO_ROOT_USER
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: MINIO_ROOT_PASSWORD
+            - name: SPEECHNEXUS_OBJECT_STORAGE_BUCKET
+              value: speechnexus-results
+            - name: SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET
+              value: speechnexus-results
+            - name: SPEECHNEXUS_EXECUTION_RESULT_BUCKET
+              value: speechnexus-results
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: script
+              mountPath: /opt/speechnexus/init-object-storage.py
+              subPath: init-object-storage.py
+      volumes:
+        - name: script
+          configMap:
+            name: minio-init-script

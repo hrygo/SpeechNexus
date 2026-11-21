@@ -1,0 +1,90 @@
+# Private HTTP audio inspector for the application plane.
+#
+# The API sends one bounded audio document per request and never shares a volume
+# with this process; the shared bearer token is the only credential here. The
+# container is reachable only through the Service, never from outside the cluster.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: asset-inspector
+  namespace: speechnexus
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: asset-inspector
+  template:
+    metadata:
+      labels:
+        app: asset-inspector
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: asset-inspector
+          image: speechnexus-asset-inspector:203d412b
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: SPEECHNEXUS_INSPECTION_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: asset-inspector-token
+                  key: SPEECHNEXUS_ASSET_INSPECTION_TOKEN
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            periodSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: run-inspection
+              mountPath: /run/inspection
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: run-inspection
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: asset-inspector
+  namespace: speechnexus
+spec:
+  selector:
+    app: asset-inspector
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

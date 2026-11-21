@@ -38,6 +38,10 @@ What is checked, and where each half gets its evidence from:
   coverage gate accepts exactly those five nodeids, declared in
   `scripts/dev-env/python-coverage.py:EXPECTED_SKIPS`; an undeclared skip is still a
   failure, and a declared one that stops being collected is a failure too.
+* collecting this module imports no external command. Both plan classes decide in
+  `setUpClass`, so the suite's eight coverage workers and every `--collect-only`
+  child pay nothing for a probe they do not use; `CollectionCostTest` keeps a
+  `docker` call out of import with a positive control that proves it can see one.
 
 Dated records are excluded on purpose and listed in `HISTORICAL_RECORDS`: they keep
 the command that was run and its output as measured; rewriting a record to satisfy a
@@ -54,6 +58,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
@@ -908,11 +913,22 @@ def up_build_plan() -> tuple[str, ...] | None:
 
 
 @unittest.skipUnless(
-    up_build_plan(),
-    "this host planned no build for `up --build`, so the negative control cannot run",
+    not running_in_github_actions(),
+    "the plan tier measures `docker compose --dry-run`, which a runner cannot plan; "
+    "the graph, registry and AST checks stay authoritative there",
 )
 class ComposeNegativeControlTest(unittest.TestCase):
     """The criterion still sees the defect: `up --build` must plan `minio`."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        # The plan probe belongs to the tier that runs, never to import: collection
+        # happens in eight coverage workers plus every `--collect-only` child, and a
+        # runner's `docker compose --dry-run` waits out its whole 180 s timeout.
+        if up_build_plan() is None:
+            raise unittest.SkipTest(
+                "this host planned no build for `up --build`, so the negative control cannot run"
+            )
 
     def test_the_removed_up_build_form_still_plans_minio(self) -> None:
         planned = up_build_plan()
@@ -926,12 +942,22 @@ class ComposeNegativeControlTest(unittest.TestCase):
 
 
 @unittest.skipUnless(
-    not running_in_github_actions() and plan_tier_available(),
-    "this host cannot plan a build with `docker compose --dry-run`, so the plan tier "
-    "does not run here",
+    not running_in_github_actions(),
+    "the plan tier measures `docker compose --dry-run`; a runner reports no build plan, "
+    "so the tier does not run there",
 )
 class ComposePlanTest(unittest.TestCase):
     """The graph model and the real plugin agree, and minio stays out of the plan."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        # Same rule as the negative control: the probe runs when the tier runs, not
+        # while the suite is being collected.
+        if not plan_tier_available():
+            raise unittest.SkipTest(
+                "this host cannot plan a build with `docker compose --dry-run`, so the "
+                "plan tier does not run here"
+            )
 
     def setUp(self) -> None:
         self.graph = compose_graph(COMPOSE_FILE.read_text(encoding="utf-8"))
@@ -1004,6 +1030,75 @@ class ComposePlanTest(unittest.TestCase):
                         tuple(sorted(named_services(compose_parts(argv)[2]))),
                         f"{label} builds more than it names",
                     )
+
+
+#: Import the target the way collection does first, without a third-party package:
+#: the `guards` job runs `tests/ci` on the runner's system Python, where pytest is
+#: not installed, and a `--collect-only` child failed there with `No module named
+#: pytest` while the probe it was guarding had already run in every coverage worker.
+_IMPORT_TARGET = """
+import importlib.util
+import sys
+
+spec = importlib.util.spec_from_file_location("collection_cost_target", sys.argv[1])
+if spec is None or spec.loader is None:
+    raise SystemExit("cannot import the target module")
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+"""
+
+
+class CollectionCostTest(unittest.TestCase):
+    """Importing this module must not run an external command.
+
+    The plan tier's skip conditions used to call `docker compose --dry-run` while the
+    module was imported. Collection happens in eight coverage workers and in every
+    `--collect-only` child, so a runner paid that command's 180 s timeout nine times
+    per run: `Python: tests, coverage and build (part a)` took 419 s and `(part b)`
+    700 s on 2026-11-21, of which 180 s was dead wait in every partition and another
+    180 s inside `test_every_declared_skip_is_a_real_nodeid_in_this_suite`
+    (measured 180.58 s, exactly the probe's timeout). The probe belongs to the tier
+    that runs; import stays free of docker.
+    """
+
+    def test_importing_this_module_runs_no_docker(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory) / "invoked"
+            shim = Path(directory) / "docker"
+            shim.write_text('#!/bin/sh\n: > "$DOCKER_COLLECTION_MARKER"\nexit 127\n')
+            shim.chmod(0o755)
+            environment = {
+                **os.environ,
+                "PATH": os.pathsep.join([directory, os.environ["PATH"]]),
+                "DOCKER_COLLECTION_MARKER": str(marker),
+            }
+            # Positive control: the shim is what a probe at import would reach, so the
+            # assertion below cannot pass because the shim was never on PATH.
+            probe = subprocess.run(
+                ["docker", "compose", "version"],
+                capture_output=True,
+                text=True,
+                env=environment,
+                check=False,
+            )
+            self.assertEqual(probe.returncode, 127, probe.stdout + probe.stderr)
+            self.assertTrue(marker.exists(), "the shim must record the call it receives")
+            marker.unlink()
+            result = subprocess.run(
+                [sys.executable, "-c", _IMPORT_TARGET, str(Path(__file__))],
+                capture_output=True,
+                text=True,
+                cwd=ROOT,
+                env=environment,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertFalse(
+                marker.exists(),
+                "importing this module ran docker; the plan probe must stay inside the "
+                "tier that runs",
+            )
 
 
 if __name__ == "__main__":

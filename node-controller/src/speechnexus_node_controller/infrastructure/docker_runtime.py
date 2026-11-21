@@ -104,6 +104,8 @@ BINDING_REVISION_LABEL: Final = "nexus.binding-revision-id"
 MANIFEST_ID_LABEL: Final = "nexus.manifest-id"
 FENCING_TOKEN_LABEL: Final = "nexus.fencing-token"
 
+LIBVGPU_CONTAINER_PATH: Final = "/opt/speechnexus/libvgpu.so"
+
 
 @dataclass(frozen=True, slots=True)
 class DockerRuntimeSettings:
@@ -113,6 +115,12 @@ class DockerRuntimeSettings:
     exit_wait_seconds: float = 30.0
     readiness_timeout_seconds: float = 2.0
     name_prefix: str = "speechnexus-instance"
+    # Deployment-supplied VRAM budget. The quota never comes from the hardware:
+    # unified-memory GPUs report no device memory at all, so the only reliable
+    # source is the operator's number.
+    gpu_memory_mib: int | None = None
+    gpu_memory_utilization: float | None = None
+    libvgpu_path: str | None = None
 
 
 @dataclass(slots=True)
@@ -161,7 +169,7 @@ class DockerNodeRuntime:
         container_id = self._api.create_container(
             name=self._container_name(request),
             image_reference=template.image_reference,
-            command=template.command,
+            command=self._engine_command(template),
             labels=self._labels(request),
             host_config=self._host_config(template),
             environment=environment,
@@ -389,6 +397,54 @@ class DockerNodeRuntime:
             FENCING_TOKEN_LABEL: str(request.fencing_token),
         }
 
+    def _gpu_quota_applies(self, template: ApprovedRuntimeTemplate) -> bool:
+        """A GPU template on a deployment that declared a VRAM budget."""
+        return bool(template.gpu_device_count) and self._settings.gpu_memory_mib is not None
+
+    def _engine_command(self, template: ApprovedRuntimeTemplate) -> tuple[str, ...] | None:
+        """Template command plus the utilization implied by the deployment's cap.
+
+        The approved template must not carry a GPU memory number: the same file is
+        approved for a production card and for a development box, and a constant
+        there is correct for exactly one of them.
+
+        ``None`` stays ``None``: a template without a command means "use the image
+        entrypoint", and inventing an empty list there would change that.
+        """
+        if template.command is None:
+            return None
+        command = tuple(template.command)
+        utilization = self._settings.gpu_memory_utilization
+        if not self._gpu_quota_applies(template) or utilization is None:
+            return command
+        if "--gpu-memory-utilization" in command:
+            return command
+        return (*command, "--gpu-memory-utilization", f"{utilization:g}")
+
+    def _libvgpu_bind(self, template: ApprovedRuntimeTemplate) -> str | None:
+        """The read-only bind that makes the VRAM cap enforceable inside the container."""
+        if not self._gpu_quota_applies(template):
+            return None
+        path = self._settings.libvgpu_path
+        if path is None:
+            return None
+        return f"{path}:{LIBVGPU_CONTAINER_PATH}:ro"
+
+    def _gpu_environment(self, template: ApprovedRuntimeTemplate) -> tuple[str, ...]:
+        """The two variables that make libvgpu cap this container's VRAM.
+
+        ``CUDA_DEVICE_MEMORY_LIMIT`` is the budget libvgpu enforces; ``LD_PRELOAD``
+        is what gets libvgpu loaded before the CUDA driver is touched.
+        """
+        if not self._gpu_quota_applies(template):
+            return ()
+        if self._settings.libvgpu_path is None:
+            return ()
+        return (
+            f"CUDA_DEVICE_MEMORY_LIMIT={self._settings.gpu_memory_mib}m",
+            f"LD_PRELOAD={LIBVGPU_CONTAINER_PATH}",
+        )
+
     def _host_config(self, template: ApprovedRuntimeTemplate) -> dict[str, Any]:
         host_config: dict[str, Any] = {
             "Binds": [f"{bind.source}:{bind.target}:ro" for bind in template.read_only_binds],
@@ -404,6 +460,9 @@ class DockerNodeRuntime:
             # Docker interprets equal Memory/MemorySwap as no additional swap.
             "MemorySwap": template.container_memory_limit_bytes,
         }
+        shim = self._libvgpu_bind(template)
+        if shim is not None:
+            host_config["Binds"].append(shim)
         if template.gpu_device_count:
             host_config["DeviceRequests"] = [
                 {
@@ -759,7 +818,9 @@ class DockerNodeRuntime:
     ) -> tuple[str, ...]:
         """Template-declared environment first, then the per-generation credential."""
         declared = tuple(f"{name}={value}" for name, value in template.environment)
-        return declared + self._engine_environment(request, template)
+        return (
+            declared + self._engine_environment(request, template) + self._gpu_environment(template)
+        )
 
     def _managed_environment(
         self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
@@ -771,7 +832,7 @@ class DockerNodeRuntime:
         boolean check whether credentials exist first.
         """
         managed = {name: f"{name}={value}" for name, value in template.environment}
-        for item in self._engine_environment(request, template):
+        for item in self._engine_environment(request, template) + self._gpu_environment(template):
             name, _, _ = item.partition("=")
             managed[name] = item
         return managed

@@ -5,6 +5,8 @@
 一个实施 issue 只登记一个需求；跨切面工作必须拆卡或只登记在唯一需求下。需求和事实变化先更新 PRD 或关联源。具体实施 issue 由[按需规划技能](../../.agents/skills/speechnexus-next-delivery/SKILL.md)在需要时创建，每张直属唯一 Epic，不提前铺 backlog。
 远端刷新失败时保留旧输出，离线快照不替代实时状态。
 
+当前战略规划：[最小同构集群实施规划](2026-11-20-minimal-isomorphic-cluster.md)（MegaCube 算力面 + 本机 k8s 应用面；2026-11-20 三项决定已裁决，按 S0–S8 切片执行）。
+
 以下带日期材料保留各自时点，仅在查证相关决定或证据时读取，不承担当前排期或派工。
 
 - [2026-11-04 Delegra 交付工作流设计](../archive/plans/2026-11-04-delegra-delivery-workflow-design.md)：历史平台化交付方案、试跑与阻塞记录；平台队列依赖已退役，现行规则见[交付 SOP](../operations/agent-delivery-sop.md)与[多 Agent 协作](../operations/agent-collaboration.md)。

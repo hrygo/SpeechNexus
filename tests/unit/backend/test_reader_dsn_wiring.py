@@ -344,16 +344,19 @@ def test_the_example_env_names_the_optional_role_passwords(variable: str) -> Non
     assert any(line.startswith(f"{variable}=") for line in lines)
 
 
-@pytest.mark.skipif(
-    not _compose_available(), reason="docker compose is required to interpolate the file"
-)
 def test_compose_renders_each_reader_blank_then_configured(tmp_path: Path) -> None:
     """The empty default renders, and a configured DSN reaches the api service.
 
     This is the render-level counterpart of the static assertions above: a ``:?``
     reference would make the first render exit non-zero, and a dropped line would
     remove the key from the api environment in both renders.
+
+    The ``docker compose`` probe sits in the body, not in a module-level
+    ``skipif``: a decorator evaluates at import, so every collecting worker ran
+    the CLI (up to its 60 s timeout) for a check it had not reached yet.
     """
+    if not _compose_available():
+        pytest.skip("docker compose is required to interpolate the file")
     unconfigured = _render({}, tmp_path)
     for variable, *_ in READERS:
         assert unconfigured[variable] == ""

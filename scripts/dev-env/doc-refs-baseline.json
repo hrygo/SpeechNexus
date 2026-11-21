@@ -14,6 +14,8 @@
     "docs/reviews/2026-11-13-admission-http-tests.md::settings.py:174::AMBIGUOUS",
     "docs/reviews/2026-11-13-admission-http-tests.md::settings.py:174::AMBIGUOUS",
     "docs/reviews/2026-11-13-admission-http-tests.md::test_production_jobs.py:110::AMBIGUOUS",
+    "docs/reviews/2026-11-13-reference-acceptance.md::compose.yaml:574::AMBIGUOUS",
+    "docs/reviews/2026-11-13-reference-deploy-gate.md::compose.yaml:438::AMBIGUOUS",
     "docs/reviews/2026-11-13-settle-whitelist-additions.md::jobs.py:645::AMBIGUOUS",
     "docs/reviews/2026-11-13-settle-whitelist-additions.md::profile_publications.py:128::AMBIGUOUS",
     "docs/reviews/2026-11-13-settle-whitelist-additions.md::profile_publications.py:128::AMBIGUOUS",

@@ -1,0 +1,268 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1480" height="1000" viewBox="0 0 1480 1000" font-family="ui-sans-serif, -apple-system, 'Helvetica Neue', Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#556070"/>
+    </marker>
+    <marker id="arrowTunnel" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#b45309"/>
+    </marker>
+    <style>
+      .host { fill: #f8fafc; stroke: #94a3b8; stroke-width: 2; }
+      .hostlabel { font-size: 15px; font-weight: 700; fill: #1e293b; }
+      .hostmeta { font-size: 12px; fill: #64748b; }
+      .lane { font-size: 11px; font-weight: 700; letter-spacing: .08em; fill: #94a3b8; }
+      .box { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.5; }
+      .boxdata { fill: #eff6ff; stroke: #93c5fd; }
+      .boxsvc { fill: #f0fdf4; stroke: #86efac; }
+      .boxworker { fill: #fefce8; stroke: #fde047; }
+      .boxweb { fill: #faf5ff; stroke: #d8b4fe; }
+      .boxeng { fill: #fff7ed; stroke: #fdba74; }
+      .name { font-size: 13px; font-weight: 600; fill: #0f172a; }
+      .detail { font-size: 10.5px; fill: #64748b; }
+      .flow { stroke: #556070; stroke-width: 1.6; fill: none; marker-end: url(#arrow); }
+      .flowdash { stroke: #94a3b8; stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; marker-end: url(#arrow); }
+      .tunnel { stroke: #b45309; stroke-width: 2; fill: none; marker-end: url(#arrowTunnel); }
+      .flabel { font-size: 10.5px; fill: #475569; }
+      .badge { fill: #b45309; }
+      .badgetext { font-size: 10px; font-weight: 700; fill: #ffffff; }
+      .title { font-size: 21px; font-weight: 700; fill: #0f172a; }
+      .subtitle { font-size: 12.5px; fill: #64748b; }
+      .key { font-size: 10.5px; fill: #7c2d12; }
+    </style>
+  </defs>
+
+  <text class="title" x="40" y="42">SpeechNexus 双机开发测试环境 — 当前部署</text>
+  <text class="subtitle" x="40" y="64">两个平面、一个 PostgreSQL 事务域；橙色编号是隧道承载的五条 TCP 通路，隧道只替代内网 TLS</text>
+
+  <!-- ============ Host A ============ -->
+  <rect class="host" x="30" y="86" width="700" height="880" rx="14"/>
+  <text class="hostlabel" x="52" y="114">应用面 · Mac / Docker Desktop k8s</text>
+  <text class="hostmeta" x="52" y="133">namespace speechnexus · 单节点 desktop-control-plane</text>
+
+  <text class="lane" x="52" y="163">数据</text>
+  <rect class="box boxdata" x="52" y="173" width="150" height="58" rx="8"/>
+  <text class="name" x="66" y="195">postgres</text>
+  <text class="detail" x="66" y="212">StatefulSet · 5432</text>
+  <text class="detail" x="66" y="226">唯一事务域</text>
+
+  <rect class="box boxdata" x="216" y="173" width="150" height="58" rx="8"/>
+  <text class="name" x="230" y="195">minio</text>
+  <text class="detail" x="230" y="212">StatefulSet · 9000</text>
+  <text class="detail" x="230" y="226">制品与输入</text>
+
+  <rect class="box" x="380" y="173" width="150" height="58" rx="8"/>
+  <text class="name" x="394" y="195">migrate</text>
+  <text class="detail" x="394" y="212">Job</text>
+  <text class="detail" x="394" y="226">已完成</text>
+
+  <rect class="box" x="544" y="173" width="150" height="58" rx="8"/>
+  <text class="name" x="558" y="195">minio-init</text>
+  <text class="detail" x="558" y="212">Job</text>
+  <text class="detail" x="558" y="226">已完成</text>
+
+  <text class="lane" x="52" y="266">服务</text>
+  <rect class="box boxsvc" x="52" y="276" width="150" height="62" rx="8"/>
+  <text class="name" x="66" y="298">api</text>
+  <text class="detail" x="66" y="315">Deployment · 8000</text>
+  <text class="detail" x="66" y="329">准入 / 派发入队</text>
+
+  <rect class="box boxsvc" x="216" y="276" width="150" height="62" rx="8"/>
+  <text class="name" x="230" y="298">asset-inspector</text>
+  <text class="detail" x="230" y="315">Deployment · 8080</text>
+  <text class="detail" x="230" y="329">音频沙箱检查</text>
+
+  <rect class="box boxsvc" x="380" y="276" width="150" height="62" rx="8"/>
+  <text class="name" x="394" y="298">workbench-migrate</text>
+  <text class="detail" x="394" y="315">Job · revision 11</text>
+  <text class="detail" x="394" y="329">已完成</text>
+
+  <rect class="box boxsvc" x="544" y="276" width="150" height="62" rx="8"/>
+  <text class="name" x="558" y="298">workbench-api</text>
+  <text class="detail" x="558" y="315">Deployment · 8000</text>
+  <text class="detail" x="558" y="329">/v1/workbench/*</text>
+
+  <text class="lane" x="52" y="370">入口</text>
+  <rect class="box boxweb" x="52" y="380" width="242" height="66" rx="8"/>
+  <text class="name" x="66" y="402">workbench（前端 + 入口）</text>
+  <text class="detail" x="66" y="419">Deployment · 8080 · nginx</text>
+  <text class="detail" x="66" y="433">静态页 + /v1 反代</text>
+
+  <rect class="box boxweb" x="308" y="380" width="234" height="66" rx="8"/>
+  <text class="name" x="322" y="402">admin（控制台）</text>
+  <text class="detail" x="322" y="419">Deployment · 8080 · nginx</text>
+  <text class="detail" x="322" y="433">独立源，未做同域 /admin</text>
+
+  <rect class="box" x="556" y="380" width="186" height="66" rx="8"/>
+  <text class="name" x="570" y="402">web-upstreams</text>
+  <text class="detail" x="570" y="419">ConfigMap（脚本生成）</text>
+  <text class="detail" x="570" y="433">ClusterIP · DNS</text>
+
+  <text class="lane" x="52" y="480">后台 worker</text>
+  <rect class="box boxworker" x="52" y="490" width="150" height="58" rx="8"/>
+  <text class="name" x="66" y="512">admission-watch</text>
+  <text class="detail" x="66" y="529">Deployment</text>
+  <text class="detail" x="66" y="543">准入超时回收</text>
+
+  <rect class="box boxworker" x="216" y="490" width="150" height="58" rx="8"/>
+  <text class="name" x="230" y="512">artifact-retention</text>
+  <text class="detail" x="230" y="529">Deployment</text>
+  <text class="detail" x="230" y="543">制品过期清理</text>
+
+  <rect class="box boxworker" x="380" y="490" width="150" height="58" rx="8"/>
+  <text class="name" x="394" y="512">engine-readiness</text>
+  <text class="detail" x="394" y="529">Job（只报告）</text>
+  <text class="detail" x="394" y="543">--warn-within 6h</text>
+
+  <rect class="box boxworker" x="544" y="490" width="150" height="58" rx="8"/>
+  <text class="name" x="558" y="512">readiness-renew</text>
+  <text class="detail" x="558" y="529">Job · 续期实例</text>
+  <text class="detail" x="558" y="543">已完成</text>
+
+  <text class="lane" x="52" y="588">跨机</text>
+  <rect class="box" x="52" y="598" width="642" height="146" rx="8" fill="#fffbeb" stroke="#fcd34d"/>
+  <text class="name" x="66" y="620">bridge（SSH 隧道 Pod）</text>
+  <text class="key" x="66" y="642">① -L 18010 网关　　② -L 18190 引擎（经 engine-shim）</text>
+  <text class="key" x="66" y="661">③ -L 18020 控制器　④ -R 15440 / 19100 数据面回连</text>
+  <text class="detail" x="66" y="686">双向同一跳：应用面出站访问算力面，算力面回连数据面</text>
+  <text class="detail" x="66" y="703">固定主机键 + 受限 authorized_keys（no-pty、无端口转发白名单之外）</text>
+  <text class="detail" x="66" y="720">只转发 TCP，不承载业务内容；内网 TLS 的替身，不是持久状态边界</text>
+  <text class="detail" x="66" y="737">⑤ 引擎容器地址每次 prepare 后变化，由 render 脚本与 shim 对齐</text>
+
+  <text class="lane" x="52" y="790">口径</text>
+  <text class="detail" x="52" y="812">只画本轮实机验证通过的单元。灰底数据、绿底服务、黄底 worker、紫底入口、橙底算力面。</text>
+  <text class="detail" x="52" y="830">单节点、单实例、单槽位：不具备 HA，不宣称实时链路或生产 TLS 资格。</text>
+  <text class="detail" x="52" y="848">应用面 10 个 Running 单元；算力面 6 个容器；控制器持有 1 个已就绪实例（本轮已 stop）。</text>
+
+  <!-- ============ Host B ============ -->
+  <rect class="host" x="770" y="86" width="680" height="880" rx="14"/>
+  <text class="hostlabel" x="792" y="114">算力面 · MegaCube / Docker Compose</text>
+  <text class="hostmeta" x="792" y="133">host 网络 · 回环监听 · 只有 GPU 所在主机能提供</text>
+
+  <text class="lane" x="792" y="163">网关与派发</text>
+  <rect class="box boxeng" x="792" y="173" width="200" height="66" rx="8"/>
+  <text class="name" x="806" y="195">gateway</text>
+  <text class="detail" x="806" y="212">127.0.0.1:8010</text>
+  <text class="detail" x="806" y="226">提交屏障 / fencing / abort</text>
+
+  <rect class="box boxeng" x="1006" y="173" width="200" height="66" rx="8"/>
+  <text class="name" x="1020" y="195">dispatch</text>
+  <text class="detail" x="1020" y="212">与网关同网络命名空间</text>
+  <text class="detail" x="1020" y="226">租约 / 存储超时 10s</text>
+
+  <rect class="box boxeng" x="1220" y="173" width="200" height="66" rx="8"/>
+  <text class="name" x="1234" y="195">binding-disable-worker</text>
+  <text class="detail" x="1234" y="212">回环网关才允许明文</text>
+  <text class="detail" x="1234" y="226">扫描 / 结算两个身份</text>
+
+  <text class="lane" x="792" y="280">控制器</text>
+  <rect class="box boxeng" x="792" y="290" width="200" height="80" rx="8"/>
+  <text class="name" x="806" y="312">controller</text>
+  <text class="detail" x="806" y="329">127.0.0.1:8022</text>
+  <text class="detail" x="806" y="343">只管理获准模板</text>
+  <text class="detail" x="806" y="357">持有 docker socket</text>
+
+  <rect class="box" x="1006" y="290" width="200" height="80" rx="8"/>
+  <text class="name" x="1020" y="312">approved-templates</text>
+  <text class="detail" x="1020" y="329">绑定挂载 0644</text>
+  <text class="detail" x="1020" y="343">镜像 + 命令 + 就绪探针</text>
+  <text class="detail" x="1020" y="357">模板 schema 无端口字段</text>
+
+  <rect class="box" x="1220" y="290" width="200" height="80" rx="8"/>
+  <text class="name" x="1234" y="312">config-init</text>
+  <text class="detail" x="1234" y="329">一次性容器</text>
+  <text class="detail" x="1234" y="343">配置文件以 0600</text>
+  <text class="detail" x="1234" y="357">落进命名卷</text>
+
+  <text class="lane" x="792" y="410">引擎</text>
+  <rect class="box boxeng" x="792" y="420" width="198" height="96" rx="8"/>
+  <text class="name" x="806" y="442">engine-shim</text>
+  <text class="detail" x="806" y="459">127.0.0.1:18190 →</text>
+  <text class="detail" x="806" y="476">容器地址:18190</text>
+  <text class="detail" x="806" y="493">开发适配（具名差异）</text>
+  <text class="detail" x="806" y="509">目标地址每次 prepare 后变</text>
+
+  <rect class="box boxeng" x="1006" y="420" width="414" height="96" rx="8"/>
+  <text class="name" x="1020" y="442">speechnexus-instance-instance-asr-1-g1</text>
+  <text class="detail" x="1020" y="459">控制器 prepare 创建 · vLLM / Qwen3-ASR-1.7B</text>
+  <text class="detail" x="1020" y="476">容器网络 172.17.0.x:18190 · 不发布端口</text>
+  <text class="detail" x="1020" y="493">stop 需取证：容器退出 + 资源释放 + exit_code</text>
+  <text class="detail" x="1020" y="509">本轮作业由它执行，已按 stop 意图停止</text>
+
+  <text class="lane" x="792" y="556">数据面回连</text>
+  <rect class="box" x="792" y="566" width="628" height="86" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text class="detail" x="806" y="590">需要数据库或对象存储的算力面单元，全部经 ④ 回到应用面：</text>
+  <text class="detail" x="806" y="609">PostgreSQL 127.0.0.1:15440　·　MinIO 127.0.0.1:19100．各自独立低权限角色</text>
+  <text class="detail" x="806" y="628">同一 PostgreSQL 事务域，不引入第二个权威数据库</text>
+  <text class="detail" x="806" y="646">租约、预算、fencing 与任务状态仍在应用面的那一个库</text>
+
+  <text class="lane" x="792" y="686">说明</text>
+  <rect class="box" x="792" y="696" width="628" height="240" rx="8" fill="#ffffff" stroke="#e2e8f0"/>
+  <text class="detail" x="806" y="720">· 派发器与网关同网络命名空间：参考装配如此摆放，派发器运行时只允许经回环明文访问网关。</text>
+  <text class="detail" x="806" y="742">· 控制器创建的容器不发布端口，这是模板 schema 的真实缺口；engine-shim 补上这一跳，</text>
+  <text class="detail" x="806" y="760">　属开发适配，不是产品组件。</text>
+  <text class="detail" x="806" y="784">· 前端上游用 ClusterIP 而非 Service DNS：此集群把 *.svc 解析成 Docker Desktop 的合成地址，</text>
+  <text class="detail" x="806" y="802">　nginx 连不上；地址由 render-web-upstreams.py 渲染成 ConfigMap，不进仓库。</text>
+  <text class="detail" x="806" y="826">· 重建 Service 后必须重跑该脚本，否则前端 502。</text>
+  <text class="detail" x="806" y="850">· 所有凭据在 .runtime 下的 env 文件里，仓库中只有 ${VAR}。</text>
+  <text class="detail" x="806" y="874">· check-parity.py：18 个参考服务全部有对应单元；缺失单元、缺变量、未映射服务、</text>
+  <text class="detail" x="806" y="892">　计划项缺理由、提交树出现集群地址段，都会判红。</text>
+
+  <!-- ============ app plane internal flows ============ -->
+  <path class="flow" d="M127 380 L127 338"/>
+  <path class="flow" d="M127 276 L127 231"/>
+  <text class="flabel" x="133" y="258">事务</text>
+  <path class="flow" d="M291 276 L291 231"/>
+  <text class="flabel" x="297" y="258">对象</text>
+
+  <text class="flabel" x="410" y="364">/v1</text>
+  <path class="flow" d="M423 446 L423 490"/>
+  <text class="flabel" x="429" y="475">健康检查</text>
+
+  <path class="flow" d="M127 490 L127 452"/>
+  <text class="flabel" x="133" y="475">租约回收</text>
+  <path class="flow" d="M291 490 L291 452"/>
+  <text class="flabel" x="297" y="475">过期清理</text>
+
+  <path class="flowdash" d="M556 413 L542 413"/>
+  <text class="flabel" x="500" y="405">envFrom</text>
+  <path class="flowdash" d="M455 380 L455 338"/>
+
+  <!-- ============ app plane → bridge ============ -->
+  <path class="flow" d="M600 548 C600 575, 588 585, 570 598"/>
+  <path class="flow" d="M640 548 C640 572, 645 582, 655 598"/>
+  <text class="flabel" x="596" y="574">准入 / 续期</text>
+
+  <!-- ============ tunnel bus in the gap ============ -->
+  <!-- outward lane x=742, return lane x=756 -->
+  <path class="tunnel" d="M694 636 L742 636 L742 206 L792 206"/>
+  <path class="tunnel" d="M694 660 L742 660 L742 468 L792 468"/>
+  <path class="tunnel" d="M694 684 L742 684 L742 330 L792 330"/>
+
+  <path class="tunnel" d="M792 600 L756 600 L756 700 L694 700"/>
+
+  <!-- badges -->
+  <circle class="badge" cx="742" cy="240" r="9"/>
+  <text class="badgetext" x="738.5" y="244">1</text>
+  <circle class="badge" cx="742" cy="442" r="9"/>
+  <text class="badgetext" x="738.5" y="446">2</text>
+  <circle class="badge" cx="742" cy="386" r="9"/>
+  <text class="badgetext" x="738.5" y="390">3</text>
+  <circle class="badge" cx="756" cy="672" r="9"/>
+  <text class="badgetext" x="752.5" y="676">4</text>
+
+  <!-- ============ compute plane internal flows ============ -->
+  <path class="flow" d="M992 206 L1006 206"/>
+  <text class="flabel" x="948" y="196">回环</text>
+  <path class="flowdash" d="M1220 222 C1150 260, 1080 250, 1006 232"/>
+  <text class="flabel" x="1080" y="268">回环</text>
+
+  <path class="flow" d="M892 370 L892 420"/>
+  <text class="flabel" x="898" y="400">docker socket</text>
+
+  <path class="flow" d="M990 468 L1006 468"/>
+  <text class="flabel" x="962" y="458"></text>
+
+  <path class="flowdash" d="M1327 370 L1327 420"/>
+  <text class="flabel" x="1333" y="398">只读配置</text>
+
+</svg>

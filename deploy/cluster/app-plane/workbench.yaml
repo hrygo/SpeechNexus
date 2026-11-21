@@ -1,0 +1,138 @@
+# Workbench control plane: schema migration, then the API the web front end talks to.
+#
+# The web front end, /admin and the single-origin ingress are not here yet; they need
+# deploy/images/web.Dockerfile built with APP_NAME=workbench / admin, which the two-host
+# environment has not built. See docs/plans/2026-11-21-environment-isomorphism.md.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: workbench-migrate
+  namespace: speechnexus
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: workbench-migrate
+          image: speechnexus-python:203d412b
+          imagePullPolicy: IfNotPresent
+          command: ["speechnexus-workbench-migrate"]
+          envFrom:
+            - secretRef:
+                name: workbench-migrate-env
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 32Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workbench-api
+  namespace: speechnexus
+  labels:
+    app: workbench-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: workbench-api
+  template:
+    metadata:
+      labels:
+        app: workbench-api
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: workbench-api
+          image: speechnexus-python:203d412b
+          imagePullPolicy: IfNotPresent
+          # The reference service runs this gate as its entrypoint; there is no
+          # console script for the workbench API.
+          command: ["python", "/opt/speechnexus/workbench-startup-gate.py"]
+          envFrom:
+            - secretRef:
+                name: workbench-api-env
+          ports:
+            - name: http
+              containerPort: 8000
+          # The API rejects an unexpected Host header, so both probes address it as
+          # the loopback origin the service trusts.
+          readinessProbe:
+            httpGet:
+              path: /v1/workbench/status
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: 127.0.0.1:8000
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /v1/workbench/status
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: 127.0.0.1:8000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: gate
+              mountPath: /opt/speechnexus
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: gate
+          configMap:
+            name: workbench-startup-gate
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: workbench-api
+  namespace: speechnexus
+spec:
+  selector:
+    app: workbench-api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

@@ -1,0 +1,496 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1600" viewBox="0 0 1600 1600" font-family="ui-sans-serif, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', Helvetica, Arial, sans-serif">
+<defs>
+  <marker id="arr" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+  </marker>
+  <marker id="arrT" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#0f766e"/>
+  </marker>
+  <marker id="arrA" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#b45309"/>
+  </marker>
+  <marker id="arrG" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#047857"/>
+  </marker>
+  <filter id="cardShadow" x="-2%" y="-4%" width="104%" height="112%">
+    <feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-color="#0f172a" flood-opacity="0.04"/>
+  </filter>
+  <style>
+    .page { fill: #ffffff; }
+    .panel { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1.2; }
+    .paneldev { fill: #f8fcfa; stroke: #a7f3d0; stroke-width: 1.3; }
+    .strip { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1.2; stroke-dasharray: 5 4; }
+    .card { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.1; }
+    .app { fill: #eff6ff; stroke: #bfdbfe; stroke-width: 1.1; }
+    .comp { fill: #fffbeb; stroke: #fde68a; stroke-width: 1.1; }
+    .data { fill: #f5f3ff; stroke: #ddd6fe; stroke-width: 1.1; }
+    .ext { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.1; stroke-dasharray: 4 3; }
+    .slot { fill: #f8fafc; stroke: #94a3b8; stroke-width: 1.1; stroke-dasharray: 3 3; }
+    .tmp { fill: #ecfdf5; stroke: #6ee7b7; stroke-width: 1.1; stroke-dasharray: 4 3; }
+
+    .h1 { font-size: 24px; font-weight: 700; fill: #0f172a; letter-spacing: -0.3px; }
+    .h2 { font-size: 13px; fill: #475569; }
+    .h2r { font-size: 12.5px; fill: #065f46; font-weight: 600; }
+    .seclabel { font-size: 12px; font-weight: 800; fill: #0f172a; letter-spacing: 0.14em; }
+    .secnote { font-size: 12px; fill: #475569; }
+    .rail { font-size: 11px; font-weight: 700; fill: #475569; letter-spacing: 0.08em; }
+    .pt { font-size: 15px; font-weight: 700; fill: #0f172a; }
+    .pm { font-size: 11px; font-weight: 600; fill: #475569; letter-spacing: 0.04em; }
+    .ct { font-size: 12.5px; font-weight: 600; fill: #0f172a; }
+    .cm { font-size: 10.5px; fill: #475569; }
+    .th { font-size: 11.5px; font-weight: 700; fill: #1e293b; }
+    .td { font-size: 12px; fill: #1e293b; }
+    .leg { font-size: 11.5px; fill: #334155; }
+    .note { font-size: 11px; font-weight: 600; fill: #92400e; }
+    .dnote { font-size: 11px; font-weight: 700; fill: #065f46; }
+
+    .rule { stroke: #e2e8f0; stroke-width: 1.2; }
+    .call { stroke: #64748b; stroke-width: 1.3; }
+    .dash { stroke: #0f766e; stroke-width: 1.35; stroke-dasharray: 5 4; }
+    .repl { stroke: #b45309; stroke-width: 1.6; stroke-dasharray: 3 4; }
+    .dev { stroke: #047857; stroke-width: 1.5; stroke-dasharray: 5 4; }
+    .grid { stroke: #e2e8f0; stroke-width: 1; }
+  </style>
+</defs>
+
+<!-- Background -->
+<rect class="page" x="0" y="0" width="1600" height="1600"/>
+
+<!-- Header -->
+<text x="40" y="50" class="h1" text-anchor="start">SpeechNexus 目标架构</text>
+<text x="40" y="74" class="h2" text-anchor="start">两个平面 · 一个 PostgreSQL 事务域 · 业务不直连引擎</text>
+<rect x="1126" y="34" width="434" height="28" rx="14" fill="#ecfdf5" stroke="#a7f3d0" stroke-width="1"/>
+<text x="1343" y="52.5" class="h2r" text-anchor="middle">开发环境尽量同构：除 GPU 引擎外，两台机器跑同一套单元</text>
+<line x1="40" y1="96" x2="1560" y2="96" class="rule"/>
+
+<!-- ==================== PRODUCTION SECTION ==================== -->
+<text x="40" y="124" class="seclabel" text-anchor="start">生产</text>
+<text x="90" y="124" class="secnote" text-anchor="start">双中心：无状态双活、同中心优先；有状态单写可切换</text>
+
+<!-- Panels -->
+<rect x="40" y="140" width="740" height="436" rx="10" class="panel"/>
+<rect x="820" y="140" width="740" height="436" rx="10" class="panel"/>
+
+<!-- Panel Headers -->
+<circle cx="66" cy="166" r="4" fill="#2563eb"/>
+<text x="78" y="171" class="pt" text-anchor="start">生产中心</text>
+<text x="756" y="170" class="pm" text-anchor="end">PRODUCTION</text>
+
+<circle cx="846" cy="166" r="4" fill="#64748b"/>
+<text x="858" y="171" class="pt" text-anchor="start">同城灾备中心</text>
+<text x="1536" y="170" class="pm" text-anchor="end">DR-SITE</text>
+
+<!-- Rails -->
+<text x="64" y="298" class="rail" text-anchor="start">应用面</text>
+<text x="64" y="380" class="rail" text-anchor="start">算力面</text>
+<text x="64" y="460" class="rail" text-anchor="start">数据面</text>
+
+<text x="844" y="298" class="rail" text-anchor="start">应用面</text>
+<text x="844" y="380" class="rail" text-anchor="start">算力面</text>
+<text x="844" y="460" class="rail" text-anchor="start">数据面</text>
+
+<!-- Production Center Cards -->
+<rect x="136" y="190" width="620" height="36" rx="8" class="card" filter="url(#cardShadow)"/>
+<text x="152" y="213" class="ct" text-anchor="start">入口代理 · 同源路由 / TLS / 静态资源（workbench 前端 + admin 控制台）</text>
+
+<rect x="136" y="268" width="112" height="52" rx="8" class="app" filter="url(#cardShadow)"/>
+<text x="148" y="290" class="ct" text-anchor="start">api</text>
+<text x="148" y="307" class="cm" text-anchor="start">准入 / 派发</text>
+
+<rect x="260" y="268" width="112" height="52" rx="8" class="app" filter="url(#cardShadow)"/>
+<text x="272" y="290" class="ct" text-anchor="start">workbench-api</text>
+<text x="272" y="307" class="cm" text-anchor="start">/v1/workbench</text>
+
+<rect x="384" y="268" width="112" height="52" rx="8" class="app" filter="url(#cardShadow)"/>
+<text x="396" y="290" class="ct" text-anchor="start">web · admin</text>
+<text x="396" y="307" class="cm" text-anchor="start">静态页 + 控制台</text>
+
+<rect x="508" y="268" width="112" height="52" rx="8" class="app" filter="url(#cardShadow)"/>
+<text x="520" y="290" class="ct" text-anchor="start">inspector</text>
+<text x="520" y="307" class="cm" text-anchor="start">音频沙箱</text>
+
+<rect x="632" y="268" width="124" height="52" rx="8" class="app" filter="url(#cardShadow)"/>
+<text x="644" y="290" class="ct" text-anchor="start">workers</text>
+<text x="644" y="307" class="cm" text-anchor="start">admission / retention</text>
+
+<rect x="136" y="354" width="184" height="44" rx="8" class="comp" filter="url(#cardShadow)"/>
+<text x="148" y="373" class="ct" text-anchor="start">执行网关</text>
+<text x="148" y="389" class="cm" text-anchor="start">提交屏障 / fencing</text>
+
+<rect x="334" y="354" width="192" height="44" rx="8" class="comp" filter="url(#cardShadow)"/>
+<text x="346" y="373" class="ct" text-anchor="start">节点控制器</text>
+<text x="346" y="389" class="cm" text-anchor="start">只管理获准模板</text>
+
+<rect x="546" y="354" width="210" height="44" rx="8" class="comp" filter="url(#cardShadow)"/>
+<text x="558" y="373" class="ct" text-anchor="start">引擎实例（vLLM）</text>
+<text x="558" y="389" class="cm" text-anchor="start">VRAM = ENGINE_GPU_MEMORY_MIB</text>
+
+<rect x="136" y="434" width="306" height="46" rx="8" class="data" filter="url(#cardShadow)"/>
+<text x="150" y="454" class="ct" text-anchor="start">PostgreSQL 主库</text>
+<text x="150" y="470" class="cm" text-anchor="start">唯一可写事务域，异步复制出站</text>
+
+<rect x="456" y="434" width="272" height="46" rx="8" class="ext" filter="url(#cardShadow)"/>
+<text x="470" y="454" class="ct" text-anchor="start">S3 端点（对象存储）</text>
+<text x="470" y="470" class="cm" text-anchor="start">输入、制品、导出</text>
+
+<!-- DR-Site Cards -->
+<rect x="916" y="190" width="620" height="36" rx="8" class="card" filter="url(#cardShadow)"/>
+<text x="932" y="213" class="ct" text-anchor="start">入口代理 · 同源路由 / TLS / 静态资源（workbench 前端 + admin 控制台）</text>
+
+<rect x="916" y="268" width="112" height="52" rx="8" class="app" filter="url(#cardShadow)"/>
+<text x="928" y="290" class="ct" text-anchor="start">api</text>
+<text x="928" y="307" class="cm" text-anchor="start">准入 / 派发</text>
+
+<rect x="1040" y="268" width="112" height="52" rx="8" class="app" filter="url(#cardShadow)"/>
+<text x="1052" y="290" class="ct" text-anchor="start">workbench-api</text>
+<text x="1052" y="307" class="cm" text-anchor="start">/v1/workbench</text>
+
+<rect x="1164" y="268" width="112" height="52" rx="8" class="app" filter="url(#cardShadow)"/>
+<text x="1176" y="290" class="ct" text-anchor="start">web · admin</text>
+<text x="1176" y="307" class="cm" text-anchor="start">静态页 + 控制台</text>
+
+<rect x="1288" y="268" width="112" height="52" rx="8" class="app" filter="url(#cardShadow)"/>
+<text x="1300" y="290" class="ct" text-anchor="start">inspector</text>
+<text x="1300" y="307" class="cm" text-anchor="start">音频沙箱</text>
+
+<rect x="1412" y="268" width="124" height="52" rx="8" class="app" filter="url(#cardShadow)"/>
+<text x="1424" y="290" class="ct" text-anchor="start">workers</text>
+<text x="1424" y="307" class="cm" text-anchor="start">admission / retention</text>
+
+<rect x="916" y="354" width="184" height="44" rx="8" class="comp" filter="url(#cardShadow)"/>
+<text x="928" y="373" class="ct" text-anchor="start">执行网关</text>
+<text x="928" y="389" class="cm" text-anchor="start">提交屏障 / fencing</text>
+
+<rect x="1114" y="354" width="192" height="44" rx="8" class="comp" filter="url(#cardShadow)"/>
+<text x="1126" y="373" class="ct" text-anchor="start">节点控制器</text>
+<text x="1126" y="389" class="cm" text-anchor="start">只管理获准模板</text>
+
+<rect x="1326" y="354" width="210" height="44" rx="8" class="comp" filter="url(#cardShadow)"/>
+<text x="1338" y="373" class="ct" text-anchor="start">引擎实例（vLLM）</text>
+<text x="1338" y="389" class="cm" text-anchor="start">VRAM = ENGINE_GPU_MEMORY_MIB</text>
+
+<rect x="916" y="434" width="306" height="46" rx="8" class="data" filter="url(#cardShadow)"/>
+<text x="930" y="454" class="ct" text-anchor="start">PostgreSQL 备库</text>
+<text x="930" y="470" class="cm" text-anchor="start">只读待命，切换后升级为主</text>
+
+<rect x="1236" y="434" width="272" height="46" rx="8" class="ext" filter="url(#cardShadow)"/>
+<text x="1250" y="454" class="ct" text-anchor="start">S3 端点（对象存储）</text>
+<text x="1250" y="470" class="cm" text-anchor="start">输入、制品、导出</text>
+
+<!-- Production Connectors -->
+<line x1="446" y1="226" x2="446" y2="266" class="call" marker-end="url(#arr)"/>
+<line x1="192" y1="320" x2="192" y2="352" class="call" marker-end="url(#arr)"/>
+<line x1="526" y1="376" x2="544" y2="376" class="call" marker-end="url(#arr)"/>
+<line x1="630" y1="398" x2="630" y2="432" class="dash" marker-end="url(#arrT)"/>
+<path d="M 744 320 L 744 590" class="dash" fill="none" marker-end="url(#arrT)"/>
+
+<line x1="1226" y1="226" x2="1226" y2="266" class="call" marker-end="url(#arr)"/>
+<line x1="972" y1="320" x2="972" y2="352" class="call" marker-end="url(#arr)"/>
+<line x1="1306" y1="376" x2="1324" y2="376" class="call" marker-end="url(#arr)"/>
+<line x1="1410" y1="398" x2="1410" y2="432" class="dash" marker-end="url(#arrT)"/>
+<path d="M 1524 320 L 1524 590" class="dash" fill="none" marker-end="url(#arrT)"/>
+
+<!-- Replication Connector -->
+<path d="M 289 480 L 289 520 L 1069 520 L 1069 484" class="repl" fill="none" marker-end="url(#arrA)"/>
+<rect x="556" y="528" width="246" height="22" rx="11" fill="#fffbeb" stroke="#fde68a" stroke-width="1"/>
+<text x="679" y="543" class="note" text-anchor="middle">异步复制 · RPO &gt; 0 · 切换后全量对账</text>
+
+<!-- External SaaS Strip -->
+<rect x="40" y="592" width="1520" height="64" rx="10" class="strip"/>
+<text x="58" y="613" class="secnote" text-anchor="start">外部 SaaS（其他团队提供，HA 不由我们承担；我们只消费端点）</text>
+<rect x="58" y="622" width="736" height="26" rx="6" class="ext"/>
+<text x="72" y="639" class="ct" text-anchor="start">PostgreSQL 服务 · 可切换写端点，跨中心复制</text>
+<rect x="806" y="622" width="736" height="26" rx="6" class="ext"/>
+<text x="820" y="639" class="ct" text-anchor="start">S3 协议对象存储</text>
+
+<!-- ==================== DEVELOPMENT SECTION ==================== -->
+<text x="40" y="692" class="seclabel" text-anchor="start">开发</text>
+<text x="90" y="692" class="secnote" text-anchor="start">同构优先：同一套单元分别部署；唯一系统性差异是 A 没有 GPU</text>
+
+<rect x="40" y="706" width="740" height="346" rx="10" class="paneldev"/>
+<rect x="820" y="706" width="740" height="346" rx="10" class="paneldev"/>
+
+<!-- Dev Panel Headers -->
+<circle cx="66" cy="732" r="4" fill="#059669"/>
+<text x="78" y="737" class="pt" text-anchor="start">开发环境 A · MacBook</text>
+<text x="756" y="736" class="pm" text-anchor="end">Docker Desktop k8s · 无 GPU</text>
+
+<circle cx="846" cy="732" r="4" fill="#059669"/>
+<text x="858" y="737" class="pt" text-anchor="start">开发环境 B · MegaCube</text>
+<text x="1536" y="736" class="pm" text-anchor="end">k3s 单节点 · 单卡 GPU · GB10 统一内存</text>
+
+<!-- Dev Rails -->
+<text x="64" y="828" class="rail" text-anchor="start">应用面</text>
+<text x="64" y="892" class="rail" text-anchor="start">算力面</text>
+<text x="64" y="954" class="rail" text-anchor="start">数据面</text>
+
+<text x="844" y="828" class="rail" text-anchor="start">应用面</text>
+<text x="844" y="892" class="rail" text-anchor="start">算力面</text>
+<text x="844" y="954" class="rail" text-anchor="start">数据面</text>
+
+<!-- Dev A Cards -->
+<rect x="136" y="752" width="620" height="32" rx="8" class="card" filter="url(#cardShadow)"/>
+<text x="152" y="772" class="ct" text-anchor="start">Ingress / IngressClass · 同源路由</text>
+
+<rect x="136" y="802" width="112" height="44" rx="8" class="app" filter="url(#cardShadow)"/>
+<text x="148" y="828" class="ct" text-anchor="start">api</text>
+
+<rect x="260" y="802" width="112" height="44" rx="8" class="app" filter="url(#cardShadow)"/>
+<text x="272" y="828" class="ct" text-anchor="start">workbench-api</text>
+
+<rect x="384" y="802" width="112" height="44" rx="8" class="app" filter="url(#cardShadow)"/>
+<text x="396" y="828" class="ct" text-anchor="start">web · admin</text>
+
+<rect x="508" y="802" width="112" height="44" rx="8" class="app" filter="url(#cardShadow)"/>
+<text x="520" y="828" class="ct" text-anchor="start">inspector</text>
+
+<rect x="632" y="802" width="124" height="44" rx="8" class="app" filter="url(#cardShadow)"/>
+<text x="644" y="828" class="ct" text-anchor="start">workers</text>
+
+<rect x="136" y="866" width="184" height="44" rx="8" class="slot"/>
+<text x="148" y="885" class="ct" text-anchor="start">执行网关槽位</text>
+<text x="148" y="901" class="cm" text-anchor="start">目标本地一份，当前经隧道</text>
+
+<rect x="334" y="866" width="192" height="44" rx="8" class="slot"/>
+<text x="346" y="885" class="ct" text-anchor="start">控制器槽位</text>
+<text x="346" y="901" class="cm" text-anchor="start">目标管理本机 daemon</text>
+
+<rect x="546" y="866" width="210" height="44" rx="8" class="slot"/>
+<text x="558" y="885" class="ct" text-anchor="start">引擎槽位（空）</text>
+<text x="558" y="901" class="cm" text-anchor="start">没有 GPU，无法同构</text>
+
+<rect x="136" y="928" width="306" height="44" rx="8" class="data" filter="url(#cardShadow)"/>
+<text x="150" y="947" class="ct" text-anchor="start">PostgreSQL（自建）</text>
+<text x="150" y="963" class="cm" text-anchor="start">模拟外部 PG 服务</text>
+
+<rect x="456" y="928" width="300" height="44" rx="8" class="ext" filter="url(#cardShadow)"/>
+<text x="470" y="947" class="ct" text-anchor="start">MinIO（S3 协议，自建）</text>
+<text x="470" y="963" class="cm" text-anchor="start">模拟对象存储</text>
+
+<rect x="136" y="988" width="620" height="46" rx="8" class="tmp"/>
+<text x="150" y="1008" class="ct" text-anchor="start">bridge（SSH 隧道）· 出站访问算力面，算力面回连数据面</text>
+<text x="150" y="1024" class="cm" text-anchor="start">开发期替代内网 TLS；引擎成为 Pod 后可删除</text>
+
+<!-- Dev B Cards -->
+<rect x="916" y="752" width="620" height="32" rx="8" class="card" filter="url(#cardShadow)"/>
+<text x="932" y="772" class="ct" text-anchor="start">Ingress / IngressClass · 同源路由</text>
+
+<rect x="916" y="802" width="112" height="44" rx="8" class="app" filter="url(#cardShadow)"/>
+<text x="928" y="828" class="ct" text-anchor="start">api</text>
+
+<rect x="1040" y="802" width="112" height="44" rx="8" class="app" filter="url(#cardShadow)"/>
+<text x="1052" y="828" class="ct" text-anchor="start">workbench-api</text>
+
+<rect x="1164" y="802" width="112" height="44" rx="8" class="app" filter="url(#cardShadow)"/>
+<text x="1176" y="828" class="ct" text-anchor="start">web · admin</text>
+
+<rect x="1288" y="802" width="112" height="44" rx="8" class="app" filter="url(#cardShadow)"/>
+<text x="1300" y="828" class="ct" text-anchor="start">inspector</text>
+
+<rect x="1412" y="802" width="124" height="44" rx="8" class="app" filter="url(#cardShadow)"/>
+<text x="1424" y="828" class="ct" text-anchor="start">workers</text>
+
+<rect x="916" y="866" width="184" height="44" rx="8" class="comp" filter="url(#cardShadow)"/>
+<text x="928" y="885" class="ct" text-anchor="start">执行网关</text>
+<text x="928" y="901" class="cm" text-anchor="start">提交屏障</text>
+
+<rect x="1114" y="866" width="192" height="44" rx="8" class="comp" filter="url(#cardShadow)"/>
+<text x="1126" y="885" class="ct" text-anchor="start">节点控制器</text>
+<text x="1126" y="901" class="cm" text-anchor="start">本机 daemon</text>
+
+<rect x="1326" y="866" width="210" height="44" rx="8" class="comp" filter="url(#cardShadow)"/>
+<text x="1338" y="885" class="ct" text-anchor="start">引擎实例（真 GPU）</text>
+<text x="1338" y="901" class="cm" text-anchor="start">libvgpu + 额度 env</text>
+
+<rect x="916" y="928" width="306" height="44" rx="8" class="data" filter="url(#cardShadow)"/>
+<text x="930" y="947" class="ct" text-anchor="start">PostgreSQL（自建）</text>
+<text x="930" y="963" class="cm" text-anchor="start">模拟外部 PG 服务</text>
+
+<rect x="1236" y="928" width="300" height="44" rx="8" class="ext" filter="url(#cardShadow)"/>
+<text x="1250" y="947" class="ct" text-anchor="start">MinIO（S3 协议，自建）</text>
+<text x="1250" y="963" class="cm" text-anchor="start">模拟对象存储</text>
+
+<!-- Dev Connectors -->
+<line x1="446" y1="784" x2="446" y2="800" class="call" marker-end="url(#arr)"/>
+<line x1="192" y1="846" x2="192" y2="864" class="call" marker-end="url(#arr)"/>
+<line x1="1226" y1="784" x2="1226" y2="800" class="call" marker-end="url(#arr)"/>
+<line x1="972" y1="846" x2="972" y2="864" class="call" marker-end="url(#arr)"/>
+<line x1="1306" y1="888" x2="1324" y2="888" class="call" marker-end="url(#arr)"/>
+
+<!-- Dev Bridge Connector -->
+<path d="M 756 888 L 818 888" class="dev" fill="none" marker-end="url(#arrG)"/>
+<rect x="768" y="856" width="64" height="20" rx="10" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1"/>
+<text x="800" y="870" class="dnote" text-anchor="middle">bridge</text>
+
+<!-- ==================== LEGEND ==================== -->
+<g transform="translate(40, 1084)">
+  <circle cx="6" cy="-4" r="4.5" fill="#0f172a"/>
+  <text x="18" y="0" class="leg">同构运行</text>
+
+  <circle cx="96" cy="-4" r="4.6" fill="#ffffff" stroke="#0f172a" stroke-width="1.2"/>
+  <circle cx="96" cy="-4" r="1.7" fill="#0f172a"/>
+  <text x="108" y="0" class="leg">目标同构（当前未本地部署）</text>
+
+  <circle cx="290" cy="-4" r="4.5" fill="#ffffff" stroke="#0f172a" stroke-width="1.2"/>
+  <path d="M 290 -8.5 A 4.5 4.5 0 0 1 290 0.5 Z" fill="#0f172a"/>
+  <text x="302" y="0" class="leg">同构但实现不同</text>
+
+  <circle cx="422" cy="-4" r="4.3" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2"/>
+  <text x="434" y="0" class="leg">不运行</text>
+
+  <line x1="500" y1="-4" x2="528" y2="-4" class="call"/>
+  <text x="536" y="0" class="leg">调用</text>
+
+  <line x1="590" y1="-4" x2="618" y2="-4" class="dash"/>
+  <text x="626" y="0" class="leg">跨边界 / 回连</text>
+
+  <line x1="730" y1="-4" x2="758" y2="-4" class="repl"/>
+  <text x="766" y="0" class="leg">异步复制</text>
+
+  <line x1="840" y1="-4" x2="868" y2="-4" class="dev"/>
+  <text x="876" y="0" class="leg">开发隧道</text>
+</g>
+
+<!-- ==================== ISOMORPHISM TABLE ==================== -->
+<text x="40" y="1124" class="seclabel" text-anchor="start">同构度</text>
+<text x="108" y="1124" class="secnote" text-anchor="start">逐单元核对：哪些真正跑了、哪些只是替身、哪些是待补的同构缺口</text>
+
+<!-- Table Header -->
+<rect x="40" y="1138" width="1520" height="32" rx="6" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1"/>
+<text x="56" y="1158" class="th" text-anchor="start">单元</text>
+<text x="495" y="1158" class="th" text-anchor="middle">生产</text>
+<text x="589" y="1158" class="th" text-anchor="middle">MacBook</text>
+<text x="707" y="1158" class="th" text-anchor="middle">MegaCube</text>
+<text x="784" y="1158" class="th" text-anchor="start">说明</text>
+
+<!-- Zebra Rows (12 rows * 30px = 360px, y=1170..1530) -->
+<rect x="40" y="1170" width="1520" height="30" fill="#ffffff"/>
+<rect x="40" y="1200" width="1520" height="30" fill="#f8fafc"/>
+<rect x="40" y="1230" width="1520" height="30" fill="#ffffff"/>
+<rect x="40" y="1260" width="1520" height="30" fill="#f8fafc"/>
+<rect x="40" y="1290" width="1520" height="30" fill="#ffffff"/>
+<rect x="40" y="1320" width="1520" height="30" fill="#f8fafc"/>
+<rect x="40" y="1350" width="1520" height="30" fill="#ffffff"/>
+<rect x="40" y="1380" width="1520" height="30" fill="#f8fafc"/>
+<rect x="40" y="1410" width="1520" height="30" fill="#ffffff"/>
+<rect x="40" y="1440" width="1520" height="30" fill="#f8fafc"/>
+<rect x="40" y="1470" width="1520" height="30" fill="#ffffff"/>
+<rect x="40" y="1500" width="1520" height="30" fill="#f8fafc"/>
+
+<!-- Table Grid Lines -->
+<line x1="40" y1="1170" x2="1560" y2="1170" stroke="#cbd5e1" stroke-width="1"/>
+<line x1="40" y1="1200" x2="1560" y2="1200" class="grid"/>
+<line x1="40" y1="1230" x2="1560" y2="1230" class="grid"/>
+<line x1="40" y1="1260" x2="1560" y2="1260" class="grid"/>
+<line x1="40" y1="1290" x2="1560" y2="1290" class="grid"/>
+<line x1="40" y1="1320" x2="1560" y2="1320" class="grid"/>
+<line x1="40" y1="1350" x2="1560" y2="1350" class="grid"/>
+<line x1="40" y1="1380" x2="1560" y2="1380" class="grid"/>
+<line x1="40" y1="1410" x2="1560" y2="1410" class="grid"/>
+<line x1="40" y1="1440" x2="1560" y2="1440" class="grid"/>
+<line x1="40" y1="1470" x2="1560" y2="1470" class="grid"/>
+<line x1="40" y1="1500" x2="1560" y2="1500" class="grid"/>
+
+<line x1="460" y1="1138" x2="460" y2="1530" class="grid"/>
+<line x1="530" y1="1138" x2="530" y2="1530" class="grid"/>
+<line x1="648" y1="1138" x2="648" y2="1530" class="grid"/>
+<line x1="766" y1="1138" x2="766" y2="1530" class="grid"/>
+
+<!-- Table Outer Border -->
+<rect x="40" y="1138" width="1520" height="392" rx="6" fill="none" stroke="#cbd5e1" stroke-width="1.2"/>
+
+<!-- Table Rows Content -->
+<!-- Row 1 (y=1170..1200, cy=1185, ty=1189) -->
+<text x="56" y="1189" class="td">入口代理 · AdminUI · Workbench 前端</text>
+<circle cx="495" cy="1185" r="4.5" fill="#0f172a"/>
+<circle cx="589" cy="1185" r="4.5" fill="#0f172a"/>
+<circle cx="707" cy="1185" r="4.5" fill="#0f172a"/>
+<text x="784" y="1189" class="td">同源路由；A 用本地 caddy，B 用 Ingress</text>
+
+<!-- Row 2 (y=1200..1230, cy=1215, ty=1219) -->
+<text x="56" y="1219" class="td">Speech API</text>
+<circle cx="495" cy="1215" r="4.5" fill="#0f172a"/>
+<circle cx="589" cy="1215" r="4.5" fill="#0f172a"/>
+<circle cx="707" cy="1215" r="4.5" fill="#0f172a"/>
+<text x="784" y="1219" class="td">同一镜像、同一配置键</text>
+
+<!-- Row 3 (y=1230..1260, cy=1245, ty=1249) -->
+<text x="56" y="1249" class="td">Workbench API</text>
+<circle cx="495" cy="1245" r="4.5" fill="#0f172a"/>
+<circle cx="589" cy="1245" r="4.5" fill="#0f172a"/>
+<circle cx="707" cy="1245" r="4.5" fill="#0f172a"/>
+<text x="784" y="1249" class="td">独立表所有权，两台都跑</text>
+
+<!-- Row 4 (y=1260..1290, cy=1275, ty=1279) -->
+<text x="56" y="1279" class="td">音频安全检查（asset-inspector）</text>
+<circle cx="495" cy="1275" r="4.5" fill="#0f172a"/>
+<circle cx="589" cy="1275" r="4.5" fill="#0f172a"/>
+<circle cx="707" cy="1275" r="4.5" fill="#0f172a"/>
+<text x="784" y="1279" class="td">CPU 沙箱，不需要 GPU</text>
+
+<!-- Row 5 (y=1290..1320, cy=1305, ty=1309) -->
+<text x="56" y="1309" class="td">Scheduler / Job Worker</text>
+<circle cx="495" cy="1305" r="4.5" fill="#0f172a"/>
+<circle cx="589" cy="1305" r="4.5" fill="#0f172a"/>
+<circle cx="707" cy="1305" r="4.5" fill="#0f172a"/>
+<text x="784" y="1309" class="td">admission / retention / migrate 随集群部署</text>
+
+<!-- Row 6 (y=1320..1350, cy=1335, ty=1339) -->
+<text x="56" y="1339" class="td">Execution Gateway（提交屏障 / fencing）</text>
+<circle cx="495" cy="1335" r="4.5" fill="#0f172a"/>
+<circle cx="589" cy="1335" r="4.6" fill="#ffffff" stroke="#0f172a" stroke-width="1.2"/>
+<circle cx="589" cy="1335" r="1.7" fill="#0f172a"/>
+<circle cx="707" cy="1335" r="4.5" fill="#0f172a"/>
+<text x="784" y="1339" class="td">当前经隧道调用 B；目标 A 本地也跑一份</text>
+
+<!-- Row 7 (y=1350..1380, cy=1365, ty=1369) -->
+<text x="56" y="1369" class="td">Node Controller</text>
+<circle cx="495" cy="1365" r="4.5" fill="#0f172a"/>
+<circle cx="589" cy="1365" r="4.6" fill="#ffffff" stroke="#0f172a" stroke-width="1.2"/>
+<circle cx="589" cy="1365" r="1.7" fill="#0f172a"/>
+<circle cx="707" cy="1365" r="4.5" fill="#0f172a"/>
+<text x="784" y="1369" class="td">当前只在 B；目标 A 管理本机 daemon</text>
+
+<!-- Row 8 (y=1380..1410, cy=1395, ty=1399) -->
+<text x="56" y="1399" class="td">推理引擎 + 模型（vLLM）</text>
+<circle cx="495" cy="1395" r="4.5" fill="#0f172a"/>
+<circle cx="589" cy="1395" r="4.3" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2"/>
+<circle cx="707" cy="1395" r="4.5" fill="#0f172a"/>
+<text x="784" y="1399" class="td">A 无 GPU；B 单卡真跑，额度由配置声明</text>
+
+<!-- Row 9 (y=1410..1440, cy=1425, ty=1429) -->
+<text x="56" y="1429" class="td">PostgreSQL（唯一事务域）</text>
+<circle cx="495" cy="1425" r="4.5" fill="#0f172a"/>
+<circle cx="589" cy="1425" r="4.5" fill="#ffffff" stroke="#0f172a" stroke-width="1.2"/>
+<path d="M 589 1420.5 A 4.5 4.5 0 0 1 589 1429.5 Z" fill="#0f172a"/>
+<circle cx="707" cy="1425" r="4.5" fill="#ffffff" stroke="#0f172a" stroke-width="1.2"/>
+<path d="M 707 1420.5 A 4.5 4.5 0 0 1 707 1429.5 Z" fill="#0f172a"/>
+<text x="784" y="1429" class="td">生产是 SaaS 主备；开发自建单实例</text>
+
+<!-- Row 10 (y=1440..1470, cy=1455, ty=1459) -->
+<text x="56" y="1459" class="td">S3 对象存储</text>
+<circle cx="495" cy="1455" r="4.5" fill="#0f172a"/>
+<circle cx="589" cy="1455" r="4.5" fill="#ffffff" stroke="#0f172a" stroke-width="1.2"/>
+<path d="M 589 1450.5 A 4.5 4.5 0 0 1 589 1459.5 Z" fill="#0f172a"/>
+<circle cx="707" cy="1455" r="4.5" fill="#ffffff" stroke="#0f172a" stroke-width="1.2"/>
+<path d="M 707 1450.5 A 4.5 4.5 0 0 1 707 1459.5 Z" fill="#0f172a"/>
+<text x="784" y="1459" class="td">生产是 SaaS；开发用 MinIO</text>
+
+<!-- Row 11 (y=1470..1500, cy=1485, ty=1489) -->
+<text x="56" y="1489" class="td">Realtime Gateway</text>
+<circle cx="495" cy="1485" r="4.5" fill="#0f172a"/>
+<circle cx="589" cy="1485" r="4.3" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2"/>
+<circle cx="707" cy="1485" r="4.3" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2"/>
+<text x="784" y="1489" class="td">设计已定、入口未实现</text>
+
+<!-- Row 12 (y=1500..1530, cy=1515, ty=1519) -->
+<text x="56" y="1519" class="td">双活与中心级切换</text>
+<circle cx="495" cy="1515" r="4.5" fill="#0f172a"/>
+<circle cx="589" cy="1515" r="4.3" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2"/>
+<circle cx="707" cy="1515" r="4.3" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2"/>
+<text x="784" y="1519" class="td">只能靠演练验证，开发环境不模拟</text>
+
+<!-- Footer Notes -->
+<text x="40" y="1558" class="leg" text-anchor="start">口径：业务单元永不直连引擎；执行一律经网关提交屏障，再由控制器创建容器——这条链路在生产与两台开发机上必须一致。</text>
+<text x="40" y="1578" class="leg" text-anchor="start">开发环境的差异只允许出现在数据面实现（自建 vs SaaS）与 GPU 有无；其余不引入新协议、新组件或新配置格式。</text>
+</svg>

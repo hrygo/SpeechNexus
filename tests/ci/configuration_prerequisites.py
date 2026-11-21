@@ -519,6 +519,18 @@ ROWS: tuple[Row, ...] = (
         message_keys=(CONTROLLER_ROOT_KEY,),
     ),
     Row(
+        keys=(
+            "SPEECHNEXUS_CONTROLLER_ENGINE_GPU_MEMORY_MIB",
+            "SPEECHNEXUS_CONTROLLER_ENGINE_GPU_MEMORY_UTILIZATION",
+            "SPEECHNEXUS_CONTROLLER_ENGINE_LIBVGPU_PATH",
+        ),
+        prerequisite="模板带显存额度或上限大于 0；额度为 0 表示显式不设限",
+        behaviour=DOCUMENTED,
+        disposition="无需：额度是部署配置，ADR 0015 已声明依赖",
+        names_keys=False,
+        evidence="docs/decisions/0015-gpu-memory-quota-by-configuration.md::额度是部署配置",
+    ),
+    Row(
         keys=WORKBENCH_LLM_KEYS,
         prerequisite="四个键同配；缺任一项即不装配内网 LLM",
         behaviour=NAMED,

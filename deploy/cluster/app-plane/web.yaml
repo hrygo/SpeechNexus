@@ -1,0 +1,162 @@
+# Web front ends: the workbench app and the /admin console, each an nginx image that
+# serves its own build and proxies the two upstreams it was built against.
+#
+# Both images come from deploy/images/web.Dockerfile (APP_NAME=workbench / admin).
+# The single-origin ingress is the workbench Service: it is the origin a browser
+# loads, and the admin console is reached through it at /admin (see ingress below).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workbench
+  namespace: speechnexus
+  labels:
+    app: workbench
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: workbench
+  template:
+    metadata:
+      labels:
+        app: workbench
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: workbench
+          image: speechnexus-workbench-web:203d412b
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            # Rendered from the live Services by render-web-upstreams.py; the
+            # ClusterIPs are cluster-assigned and never committed.
+            - configMapRef:
+                name: web-upstreams
+          env:
+            - name: WEB_DNS_RESOLVER
+              valueFrom:
+                configMapKeyRef:
+                  name: web-upstreams
+                  key: WEB_DNS_RESOLVER
+                  optional: true
+            - name: NGINX_ENVSUBST_FILTER
+              value: ^WEB_(SPEECH_UPSTREAM|WORKBENCH_UPSTREAM|SPEECH_HOST|WORKBENCH_HOST|DNS_RESOLVER)$
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 10
+          # The workbench API trusts only 127.0.0.1/localhost as Host, so the proxy
+          # rewrites it instead of widening the API's trusted hosts. The template is
+          # the image's own with that one header changed.
+          volumeMounts:
+            - name: nginx-template
+              mountPath: /etc/nginx/templates/default.conf.template
+              subPath: default.conf.template
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: nginx-template
+          configMap:
+            name: workbench-nginx-template
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: workbench
+  namespace: speechnexus
+spec:
+  selector:
+    app: workbench
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: admin
+  namespace: speechnexus
+  labels:
+    app: admin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: admin
+  template:
+    metadata:
+      labels:
+        app: admin
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: admin
+          image: speechnexus-admin-web:203d412b
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            # Rendered from the live Services by render-web-upstreams.py; the
+            # ClusterIPs are cluster-assigned and never committed.
+            - configMapRef:
+                name: web-upstreams
+          env:
+            - name: WEB_DNS_RESOLVER
+              valueFrom:
+                configMapKeyRef:
+                  name: web-upstreams
+                  key: WEB_DNS_RESOLVER
+                  optional: true
+            - name: NGINX_ENVSUBST_FILTER
+              value: ^WEB_(SPEECH_UPSTREAM|WORKBENCH_UPSTREAM|SPEECH_HOST|WORKBENCH_HOST|DNS_RESOLVER)$
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 10
+          volumeMounts:
+            - name: nginx-template
+              mountPath: /etc/nginx/templates/default.conf.template
+              subPath: default.conf.template
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: nginx-template
+          configMap:
+            name: workbench-nginx-template
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: admin
+  namespace: speechnexus
+spec:
+  selector:
+    app: admin
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

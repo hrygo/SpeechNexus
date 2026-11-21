@@ -1294,6 +1294,40 @@
       "parent_issue_url": null
     },
     {
+      "number": 1085,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1085",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "应用面 k8s 装配：PG、对象存储、迁移与 Speech API 可独立启动",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "type:work-package"
+        },
+        {
+          "name": "status:done"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/342"
+    },
+    {
+      "number": 1086,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1086",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "跨主机桥接：k8s 与 MegaCube 之间建立可重建的双向通道",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "type:work-package"
+        },
+        {
+          "name": "status:done"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/342"
+    },
+    {
       "number": 1087,
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/1087",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",

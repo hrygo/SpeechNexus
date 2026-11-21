@@ -639,7 +639,7 @@ def _verify_privileges(connection: SpeechConnection, schema: str) -> None:
     # "no admission reservations" repair hint wins over the generic stray grant.
     for table in _ADMISSION_RESERVATION_TABLES:
         row = connection.execute(
-            "SELECT pg_catalog.has_any_column_privilege(CURRENT_USER, %s, 'INSERT') AS ok",
+            "SELECT pg_catalog.has_any_column_privilege(CURRENT_USER, ?, 'INSERT') AS ok",
             (f"{schema}.{table}",),
         ).fetchone()
         if row is None or row["ok"]:
@@ -656,7 +656,7 @@ def _verify_privileges(connection: SpeechConnection, schema: str) -> None:
         "SELECT c.relname AS name, c.relkind AS kind, "
         "pg_catalog.has_table_privilege(CURRENT_USER, c.oid, 'SELECT') AS can_select "
         "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
-        "WHERE n.nspname = %s AND c.relkind IN ('r', 'p', 'v', 'm', 'f')",
+        "WHERE n.nspname = ? AND c.relkind IN ('r', 'p', 'v', 'm', 'f')",
         (schema,),
     ).fetchall()
     privileges = {row["name"]: row for row in rows}
@@ -667,7 +667,7 @@ def _verify_privileges(connection: SpeechConnection, schema: str) -> None:
     for table, columns in REQUIRED_INSERT_COLUMNS.items():
         for column in columns:
             allowed = connection.execute(
-                "SELECT pg_catalog.has_column_privilege(CURRENT_USER, %s, %s, 'INSERT') AS ok",
+                "SELECT pg_catalog.has_column_privilege(CURRENT_USER, ?, ?, 'INSERT') AS ok",
                 (f"{schema}.{table}", column),
             ).fetchone()
             if allowed is None or not allowed["ok"]:
@@ -675,7 +675,7 @@ def _verify_privileges(connection: SpeechConnection, schema: str) -> None:
     for table, columns in REQUIRED_UPDATE_COLUMNS.items():
         for column in columns:
             allowed = connection.execute(
-                "SELECT pg_catalog.has_column_privilege(CURRENT_USER, %s, %s, 'UPDATE') AS ok",
+                "SELECT pg_catalog.has_column_privilege(CURRENT_USER, ?, ?, 'UPDATE') AS ok",
                 (f"{schema}.{table}", column),
             ).fetchone()
             if allowed is None or not allowed["ok"]:
@@ -723,9 +723,9 @@ def _verify_privileges(connection: SpeechConnection, schema: str) -> None:
             repair=repair,
         )
         column_rows = connection.execute(
-            "SELECT column_name, pg_catalog.has_column_privilege(CURRENT_USER, %s, "
+            "SELECT column_name, pg_catalog.has_column_privilege(CURRENT_USER, ?, "
             "column_name, 'INSERT') AS insertable FROM information_schema.columns "
-            "WHERE table_schema=%s AND table_name=%s",
+            "WHERE table_schema=? AND table_name=?",
             (qualified, schema, table),
         ).fetchall()
         granted_columns = {row["column_name"] for row in column_rows if row["insertable"]}
@@ -762,9 +762,9 @@ def _verify_privileges(connection: SpeechConnection, schema: str) -> None:
     for table in _JOB_DECLARED_TABLES:
         allowed_columns = set(_JOB_UPDATE_SURFACE.get(table, ()))
         column_rows = connection.execute(
-            "SELECT column_name, pg_catalog.has_column_privilege(CURRENT_USER, %s, "
+            "SELECT column_name, pg_catalog.has_column_privilege(CURRENT_USER, ?, "
             "column_name, 'UPDATE') AS updatable FROM information_schema.columns "
-            "WHERE table_schema=%s AND table_name=%s",
+            "WHERE table_schema=? AND table_name=?",
             (f"{schema}.{table}", schema, table),
         ).fetchall()
         granted = {row["column_name"] for row in column_rows if row["updatable"]}
@@ -810,21 +810,21 @@ def _verify_publication_privileges(connection: SpeechConnection, schema: str) ->
     _verify_publication_surface(connection, schema)
     for table in _PUBLICATION_REQUIRED_SELECT:
         allowed = connection.execute(
-            "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, 'SELECT') AS ok",
+            "SELECT pg_catalog.has_table_privilege(CURRENT_USER, ?, 'SELECT') AS ok",
             (f"{schema}.{table}",),
         ).fetchone()
         if allowed is None or not allowed["ok"]:
             raise ValueError(f"Voice publisher lacks SELECT on {table}")
     for table in _PUBLICATION_REQUIRED_INSERT:
         allowed = connection.execute(
-            "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, 'INSERT') AS ok",
+            "SELECT pg_catalog.has_table_privilege(CURRENT_USER, ?, 'INSERT') AS ok",
             (f"{schema}.{table}",),
         ).fetchone()
         if allowed is None or not allowed["ok"]:
             raise ValueError(f"Voice publisher lacks INSERT on {table}")
     for table in ("speech_voice_drafts", "speech_catalog_state"):
         append = connection.execute(
-            "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, 'INSERT') AS ok",
+            "SELECT pg_catalog.has_table_privilege(CURRENT_USER, ?, 'INSERT') AS ok",
             (f"{schema}.{table}",),
         ).fetchone()
         if append is None or append["ok"]:
@@ -857,9 +857,9 @@ def _verify_publication_privileges(connection: SpeechConnection, schema: str) ->
             subject=_PUBLICATION_SUBJECT,
         )
         column_rows = connection.execute(
-            "SELECT column_name, pg_catalog.has_column_privilege(CURRENT_USER, %s, "
+            "SELECT column_name, pg_catalog.has_column_privilege(CURRENT_USER, ?, "
             "column_name, 'UPDATE') AS updatable FROM information_schema.columns "
-            "WHERE table_schema=%s AND table_name=%s",
+            "WHERE table_schema=? AND table_name=?",
             (qualified, schema, table),
         ).fetchall()
         if {row["column_name"] for row in column_rows if row["updatable"]} != set(columns):
@@ -875,7 +875,7 @@ def _verify_publication_privileges(connection: SpeechConnection, schema: str) ->
             subject=_PUBLICATION_SUBJECT,
         )
         append = connection.execute(
-            "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, 'INSERT') AS ok",
+            "SELECT pg_catalog.has_table_privilege(CURRENT_USER, ?, 'INSERT') AS ok",
             (qualified,),
         ).fetchone()
         if append is None or append["ok"]:
@@ -901,7 +901,7 @@ def _verify_publication_privileges(connection: SpeechConnection, schema: str) ->
             subject=_PUBLICATION_SUBJECT,
         )
         rewrite = connection.execute(
-            "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, 'UPDATE') AS ok",
+            "SELECT pg_catalog.has_table_privilege(CURRENT_USER, ?, 'UPDATE') AS ok",
             (qualified,),
         ).fetchone()
         if rewrite is None or rewrite["ok"]:
@@ -920,7 +920,7 @@ def _verify_admission_privileges(connection: SpeechConnection, schema: str) -> N
     """The admission role must read every frozen fact and write every reservation."""
     for table in _ADMISSION_REQUIRED_SELECT:
         allowed = connection.execute(
-            "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, 'SELECT') AS ok",
+            "SELECT pg_catalog.has_table_privilege(CURRENT_USER, ?, 'SELECT') AS ok",
             (f"{schema}.{table}",),
         ).fetchone()
         if allowed is None or not allowed["ok"]:
@@ -936,7 +936,7 @@ def _verify_admission_privileges(connection: SpeechConnection, schema: str) -> N
         ("speech_job_events", "job_id"),
     ):
         allowed = connection.execute(
-            "SELECT pg_catalog.has_column_privilege(CURRENT_USER, %s, %s, 'INSERT') AS ok",
+            "SELECT pg_catalog.has_column_privilege(CURRENT_USER, ?, ?, 'INSERT') AS ok",
             (f"{schema}.{table}", column),
         ).fetchone()
         if allowed is None or not allowed["ok"]:
@@ -947,7 +947,7 @@ def _verify_admission_privileges(connection: SpeechConnection, schema: str) -> N
         ("engine_instances", "held_slots"),
     ):
         allowed = connection.execute(
-            "SELECT pg_catalog.has_column_privilege(CURRENT_USER, %s, %s, 'UPDATE') AS ok",
+            "SELECT pg_catalog.has_column_privilege(CURRENT_USER, ?, ?, 'UPDATE') AS ok",
             (f"{schema}.{table}", column),
         ).fetchone()
         if allowed is None or not allowed["ok"]:

@@ -73,7 +73,7 @@ def lock_cancellation_fence(cursor: FenceCursor, job_id: str) -> None:
     The gateway derives the same key, so a submit either observes the committed
     fence or completes before acceptance. The lock is released by commit/rollback.
     """
-    cursor.execute("SELECT pg_advisory_xact_lock(%s)", (job_cancellation_fence_lock_key(job_id),))
+    cursor.execute("SELECT pg_advisory_xact_lock(?)", (job_cancellation_fence_lock_key(job_id),))
 
 
 def read_cancellation_fence(cursor: FenceCursor, job_id: str) -> CancellationFence | None:

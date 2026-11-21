@@ -48,7 +48,7 @@ class PostgresAsrSettlementStore:
             conn.execute("SET TRANSACTION READ ONLY")
             self._deadline(conn)
             rows = conn.execute(
-                "SELECT submit_intent_id FROM submit_intents WHERE lease_id=%s "
+                "SELECT submit_intent_id FROM submit_intents WHERE lease_id=? "
                 "ORDER BY submit_intent_id",
                 (lease_id,),
             ).fetchall()
@@ -79,6 +79,6 @@ class PostgresAsrSettlementStore:
 
     def _deadline(self, conn: Any) -> None:
         conn.execute(
-            "SELECT set_config('statement_timeout', %s, true)",
+            "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(self._timeout * 1000))),),
         )

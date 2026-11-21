@@ -269,9 +269,9 @@ class PostgresVersionUnitOfWork:
                         await connection.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
                         await connection.execute("SET LOCAL search_path = pg_catalog")
                         await connection.execute(
-                            "SELECT set_config('lock_timeout', %s, true), "
-                            "set_config('statement_timeout', %s, true), "
-                            "set_config('idle_in_transaction_session_timeout', %s, true), "
+                            "SELECT set_config('lock_timeout', ?, true), "
+                            "set_config('statement_timeout', ?, true), "
+                            "set_config('idle_in_transaction_session_timeout', ?, true), "
                             "set_config('TimeZone', 'UTC', true), "
                             "set_config('application_name', "
                             "'speechnexus-workbench-versions', true)",
@@ -373,7 +373,7 @@ class _Session:
                 v.status, v.updated_at
             FROM {s}.projects p JOIN {s}.project_versions v
                 ON v.project_id = p.id AND v.revision = p.metadata_revision
-            WHERE p.workspace_id = %s AND NOT EXISTS (
+            WHERE p.workspace_id = ? AND NOT EXISTS (
                 SELECT 1 FROM {s}.resource_tombstones d
                 WHERE d.resource_kind = 'project' AND d.resource_id = p.id
                 UNION ALL
@@ -416,9 +416,9 @@ class _Session:
                 """
             + seek
             + """
-                ORDER BY t.created_at DESC, t.id DESC LIMIT %s
+                ORDER BY t.created_at DESC, t.id DESC LIMIT ?
             ) c ON true
-            WHERE p.id = %s AND NOT EXISTS (
+            WHERE p.id = ? AND NOT EXISTS (
                 SELECT 1 FROM {s}.resource_tombstones d
                 WHERE d.resource_kind = 'project' AND d.resource_id = p.id
                 UNION ALL
@@ -443,10 +443,10 @@ class _Session:
             _Tombstone,
             """
             SELECT EXISTS (SELECT 1 FROM {s}.resource_tombstones
-                WHERE resource_kind = %s AND resource_id = %s
+                WHERE resource_kind = ? AND resource_id = ?
                 UNION ALL
                 SELECT 1 FROM {s}.deletion_ledger l, jsonb_array_elements(l.deleted) e
-                WHERE e->>1 = %s AND e->>2 = %s) AS present
+                WHERE e->>1 = ? AND e->>2 = ?) AS present
         """,
             (kind, identity, kind, identity),
         )
@@ -461,7 +461,7 @@ class _Session:
             """
             SELECT p.id, p.workspace_id, p.created_at, v.revision, v.name, v.description,
                 v.status, v.updated_at FROM {s}.projects p JOIN {s}.project_versions v
-                ON v.project_id = p.id WHERE p.id = %s AND v.revision = %s
+                ON v.project_id = p.id WHERE p.id = ? AND v.revision = ?
         """,
             (project_id, revision),
         )
@@ -473,7 +473,7 @@ class _Session:
         suffix = " FOR UPDATE" if for_update else ""
         head = await self._one(
             _ProjectHead,
-            "SELECT metadata_revision FROM {s}.projects WHERE id = %s" + suffix,
+            "SELECT metadata_revision FROM {s}.projects WHERE id = ?" + suffix,
             (project_id,),
         )
         if head is None:
@@ -505,7 +505,7 @@ class _Session:
             await self._execute(
                 """
                 INSERT INTO {s}.projects (id, workspace_id, created_at, metadata_revision)
-                VALUES (%s, %s, %s, %s)
+                VALUES (?, ?, ?, ?)
             """,
                 (project.id, project.workspace_id, project.created_at, 1),
             )
@@ -519,7 +519,7 @@ class _Session:
             """
             INSERT INTO {s}.project_versions
                 (project_id, revision, name, description, status, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            VALUES (?, ?, ?, ?, ?, ?)
         """,
             (
                 project.id,
@@ -547,7 +547,7 @@ class _Session:
         row = await self._one(
             _TranscriptRow,
             "SELECT id, project_id, display_name, created_at, head_revision "
-            "FROM {s}.transcripts WHERE id = %s" + suffix,
+            "FROM {s}.transcripts WHERE id = ?" + suffix,
             (transcript_id,),
         )
         if row is None:
@@ -577,7 +577,7 @@ class _Session:
             """
             SELECT id, transcript_id, revision, status, text, source_revision,
                 source_artifact_id, source_receipt_id, created_at
-            FROM {s}.transcript_revisions WHERE transcript_id = %s AND revision = %s
+            FROM {s}.transcript_revisions WHERE transcript_id = ? AND revision = ?
         """,
             (transcript_id, revision),
         )
@@ -598,8 +598,8 @@ class _Session:
                 t.created_at AS transcript_created_at, t.head_revision
             FROM {s}.transcripts t JOIN {s}.projects p ON p.id = t.project_id
             JOIN {s}.transcript_revisions v ON v.transcript_id = t.id
-                AND (v.revision = t.head_revision OR v.revision = %s)
-            WHERE t.id = %s AND NOT EXISTS (
+                AND (v.revision = t.head_revision OR v.revision = ?)
+            WHERE t.id = ? AND NOT EXISTS (
                 SELECT 1 FROM {s}.resource_tombstones d
                 WHERE (d.resource_kind = 'project' AND d.resource_id = p.id)
                     OR (d.resource_kind = 'transcript' AND d.resource_id = t.id))
@@ -647,7 +647,7 @@ class _Session:
                 """
                 INSERT INTO {s}.transcripts
                     (id, project_id, display_name, created_at, head_revision)
-                VALUES (%s, %s, %s, %s, 1)
+                VALUES (?, ?, ?, ?, 1)
             """,
                 (
                     transcript.id,
@@ -686,7 +686,7 @@ class _Session:
             """
             INSERT INTO {s}.transcript_revisions (id, transcript_id, revision, status, text,
                 source_revision, source_artifact_id, source_receipt_id, created_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
             (
                 head.id,
@@ -738,7 +738,7 @@ class _Session:
             )
         ).digest()[:8]
         lock_id = int.from_bytes(lock_bytes, signed=True)
-        await self._execute("SELECT pg_advisory_xact_lock(%s)", (lock_id,))
+        await self._execute("SELECT pg_advisory_xact_lock(?)", (lock_id,))
         self._claims.add((scope, digest))
         # Cleanup moves receipts atomically. Read both tables in one statement so
         # READ COMMITTED cannot observe a gap between two different snapshots.
@@ -749,12 +749,12 @@ class _Session:
                 SELECT intent_digest, project_id, project_revision, transcript_id,
                     transcript_revision, false AS erased
                 FROM {s}.mutation_receipts
-                WHERE operation = %s AND scope_id = %s AND key_digest = %s
+                WHERE operation = ? AND scope_id = ? AND key_digest = ?
                 UNION ALL
                 SELECT intent_digest, NULL::text, NULL::numeric, NULL::text,
                     NULL::numeric, true AS erased
                 FROM {s}.erased_mutation_receipts
-                WHERE operation = %s AND scope_id = %s AND key_digest = %s
+                WHERE operation = ? AND scope_id = ? AND key_digest = ?
             ) AS candidates ORDER BY erased DESC LIMIT 1
         """,
             (*scope, digest, *scope, digest),
@@ -809,7 +809,7 @@ class _Session:
             """
             INSERT INTO {s}.mutation_receipts (operation, scope_id, key_digest, intent_digest,
                 project_id, project_revision, transcript_id, transcript_revision)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
             (*scope, digest, receipt.intent_digest, *target),
         )

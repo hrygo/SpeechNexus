@@ -161,7 +161,7 @@ class PostgresBooks:
             """
             SELECT id, project_id, title, status, casting_revision, source_text,
                 created_at, updated_at
-            FROM {s}.books WHERE id = %s
+            FROM {s}.books WHERE id = ?
         """,
             (book_id,),
         )
@@ -171,7 +171,7 @@ class PostgresBooks:
             _ChapterRow,
             """
             SELECT id, book_id, title, ordinal, text, text_revision, created_at
-            FROM {s}.chapters WHERE id = %s
+            FROM {s}.chapters WHERE id = ?
         """,
             (chapter_id,),
         )
@@ -183,7 +183,7 @@ class PostgresBooks:
             _ReceiptRow,
             """
             SELECT intent_digest, book_id, chapter_id FROM {s}.book_receipts
-            WHERE scope_kind = %s AND scope_id = %s AND key_digest = %s
+            WHERE scope_kind = ? AND scope_id = ? AND key_digest = ?
         """,
             (kind, scope_id, key_digest),
         )
@@ -212,7 +212,7 @@ class PostgresBooks:
             """
             INSERT INTO {s}.book_receipts
                 (scope_kind, scope_id, key_digest, intent_digest, book_id, chapter_id, created_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
             (kind, scope_id, key_digest, intent_digest, book_id, chapter_id, now),
         )
@@ -255,7 +255,7 @@ class PostgresBooks:
                 INSERT INTO {s}.books
                     (id, project_id, title, status, casting_revision, source_text,
                         created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     book.id,
@@ -305,9 +305,9 @@ class PostgresBooks:
                 """
                 + seek
                 + """
-                    ORDER BY b.created_at DESC, b.id DESC LIMIT %s
+                    ORDER BY b.created_at DESC, b.id DESC LIMIT ?
                 ) b ON true
-                WHERE p.id = %s AND p.workspace_id = %s AND NOT EXISTS (
+                WHERE p.id = ? AND p.workspace_id = ? AND NOT EXISTS (
                     SELECT 1 FROM {s}.resource_tombstones d
                     WHERE d.resource_kind = 'project' AND d.resource_id = p.id
                     UNION ALL
@@ -365,7 +365,7 @@ class PostgresBooks:
             taken = await base._one(
                 _Taken,
                 """
-                SELECT 1 AS taken FROM {s}.chapters WHERE book_id = %s AND ordinal = %s
+                SELECT 1 AS taken FROM {s}.chapters WHERE book_id = ? AND ordinal = ?
             """,
                 (book_id, ordinal),
             )
@@ -384,7 +384,7 @@ class PostgresBooks:
                 """
                 INSERT INTO {s}.chapters
                     (id, book_id, title, ordinal, text, text_revision, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     chapter.id,
@@ -433,9 +433,9 @@ class PostgresBooks:
                 """
                 + seek
                 + """
-                    ORDER BY c.created_at DESC, c.id DESC LIMIT %s
+                    ORDER BY c.created_at DESC, c.id DESC LIMIT ?
                 ) c ON true
-                WHERE b.id = %s AND p.workspace_id = %s AND NOT EXISTS (
+                WHERE b.id = ? AND p.workspace_id = ? AND NOT EXISTS (
                     SELECT 1 FROM {s}.resource_tombstones d
                     WHERE d.resource_kind = 'project' AND d.resource_id = p.id
                     UNION ALL

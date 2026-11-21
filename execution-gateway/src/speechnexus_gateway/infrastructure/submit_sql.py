@@ -102,9 +102,9 @@ _UPDATE_INTENT = (
 REJECT_UNSENT_INTENT = """
 UPDATE submit_intents
 SET execution_state = 'failed', cleanup_state = 'not_required',
-    engine_request_id = NULL, dispatched_at_us = NULL, error_code = %s,
-    terminated_at_us = NULL, updated_at_us = %s, version = version + 1
-WHERE submit_intent_id = %s AND version = %s
+    engine_request_id = NULL, dispatched_at_us = NULL, error_code = ?,
+    terminated_at_us = NULL, updated_at_us = ?, version = version + 1
+WHERE submit_intent_id = ? AND version = ?
   AND execution_state = 'executing' AND cleanup_state = 'pending'
   AND generated_pcm_samples = 0
   AND staging_output_object_key IS NULL
@@ -116,23 +116,23 @@ WHERE submit_intent_id = %s AND version = %s
   )
 """
 
-_LOCK_POOL = "SELECT pool_id FROM resource_pools WHERE pool_id = %s FOR UPDATE"
+_LOCK_POOL = "SELECT pool_id FROM resource_pools WHERE pool_id = ? FOR UPDATE"
 
 _LOCK_ATTEMPT = (
     "SELECT operation_id FROM admission_attempts "
-    "WHERE operation_id = %s AND attempt_id = %s FOR UPDATE"
+    "WHERE operation_id = ? AND attempt_id = ? FOR UPDATE"
 )
 
 _LOCK_INSTANCE_HEAD = (
-    "SELECT instance_id FROM runtime_instance_heads WHERE instance_id = %s FOR UPDATE"
+    "SELECT instance_id FROM runtime_instance_heads WHERE instance_id = ? FOR UPDATE"
 )
 
 _LOCK_INSTANCE = (
     "SELECT instance_id FROM engine_instances "
-    "WHERE instance_id = %s AND instance_generation = %s FOR UPDATE"
+    "WHERE instance_id = ? AND instance_generation = ? FOR UPDATE"
 )
 
-_LOCK_LEASE = "SELECT lease_id FROM admission_leases WHERE lease_id = %s FOR UPDATE"
+_LOCK_LEASE = "SELECT lease_id FROM admission_leases WHERE lease_id = ? FOR UPDATE"
 
 _SELECT_AUTHORITY = """
 SELECT l.lease_id, l.operation_id, l.attempt_id, l.stage_id, l.host_node_id, l.instance_id,
@@ -147,21 +147,21 @@ JOIN admission_attempts AS a
 JOIN engine_instances AS i
   ON i.instance_id = l.instance_id AND i.instance_generation = l.instance_generation
 JOIN runtime_instance_heads AS h ON h.instance_id = l.instance_id
-WHERE l.lease_id = %s
+WHERE l.lease_id = ?
 """
 
 _SELECT_BARRIER = (
-    "SELECT min_fencing_token FROM gateway_fencing_barriers WHERE gateway_id = %s AND pool_id = %s"
+    "SELECT min_fencing_token FROM gateway_fencing_barriers WHERE gateway_id = ? AND pool_id = ?"
 )
 
 _SELECT_STREAM_HEAD = (
     "SELECT sample_rate_hz FROM output_stream_heads "
-    "WHERE operation_id = %s AND attempt_id = %s AND output_stream_id = %s FOR UPDATE"
+    "WHERE operation_id = ? AND attempt_id = ? AND output_stream_id = ? FOR UPDATE"
 )
 
 _INSERT_STREAM_HEAD = (
     "INSERT INTO output_stream_heads "
-    "(operation_id, attempt_id, output_stream_id, sample_rate_hz) VALUES (%s, %s, %s, %s)"
+    "(operation_id, attempt_id, output_stream_id, sample_rate_hz) VALUES (?, ?, ?, ?)"
 )
 
 _INTENT_SELECTION = """
@@ -583,8 +583,8 @@ def save_staging_result(cursor: SubmitCursor, intent: SubmissionIntent) -> None:
     if result is None:
         raise InvalidExecutionRequestError("result metadata is missing")
     cursor.execute(
-        "UPDATE submit_intents SET staging_result_document = %s, staging_output_object_key = %s "
-        "WHERE submit_intent_id = %s AND version = %s "
+        "UPDATE submit_intents SET staging_result_document = ?, staging_output_object_key = ? "
+        "WHERE submit_intent_id = ? AND version = ? "
         "AND staging_result_document IS NULL AND staging_output_object_key IS NULL",
         (
             result.document,
@@ -604,25 +604,25 @@ def lock_submit_intent(
     cursor.execute(
         "SELECT l.pool_id, l.lease_id FROM submit_intents AS s "
         "JOIN admission_leases AS l ON l.lease_id = s.lease_id "
-        "WHERE s.submit_intent_id = %s",
+        "WHERE s.submit_intent_id = ?",
         (submit_intent_id,),
     )
     rows = cursor.fetchall()
     if not rows:
         raise InvalidExecutionRequestError("unknown submit intent for execution observation")
     pool_id = rows[0]["pool_id"]
-    cursor.execute("SELECT pool_id FROM resource_pools WHERE pool_id = %s FOR UPDATE", (pool_id,))
+    cursor.execute("SELECT pool_id FROM resource_pools WHERE pool_id = ? FOR UPDATE", (pool_id,))
     if not cursor.fetchall():
         raise SubmissionStoreError("execution pool is missing")
     if lock_lease:
         cursor.execute(
-            "SELECT lease_id FROM admission_leases WHERE lease_id = %s FOR UPDATE",
+            "SELECT lease_id FROM admission_leases WHERE lease_id = ? FOR UPDATE",
             (rows[0]["lease_id"],),
         )
         if not cursor.fetchall():
             raise SubmissionStoreError("execution lease is missing")
     cursor.execute(
-        "SELECT submit_intent_id FROM submit_intents WHERE submit_intent_id = %s FOR UPDATE",
+        "SELECT submit_intent_id FROM submit_intents WHERE submit_intent_id = ? FOR UPDATE",
         (submit_intent_id,),
     )
     if not cursor.fetchall():

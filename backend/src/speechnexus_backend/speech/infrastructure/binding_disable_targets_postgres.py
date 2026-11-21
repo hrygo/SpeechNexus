@@ -54,7 +54,7 @@ def list_disable_event_ids(cursor: TargetCursor, *, after: str | None, limit: in
         identifier(after)
     cursor.execute(
         "SELECT event_id FROM speech_binding_disable_intents "
-        "WHERE (%s::text IS NULL OR event_id > %s) ORDER BY event_id LIMIT %s",
+        "WHERE (?::text IS NULL OR event_id > ?) ORDER BY event_id LIMIT ?",
         (after, after, limit),
     )
     event_ids = [row["event_id"] for row in cursor.fetchall()]
@@ -156,17 +156,17 @@ def capture_disable_targets(
         "SELECT s.submit_intent_id, s.operation_id, s.attempt_id, l.lease_id, l.stage_id, "
         "a.workspace_id, l.pool_id, l.gateway_id, l.host_node_id, l.instance_id, "
         "l.instance_generation, a.binding_revision_id, a.policy_revision_id, "
-        "s.voice_revision_id, l.fencing_token, s.command_digest, %s AS wait_timeout_ms "
+        "s.voice_revision_id, l.fencing_token, s.command_digest, ? AS wait_timeout_ms "
         "FROM speech_binding_disable_intents i "
         "JOIN speech_publication_lifecycle_events e ON e.event_id=i.event_id "
         "JOIN admission_attempts a ON a.binding_revision_id=e.revision_id "
         "JOIN admission_leases l ON l.operation_id=a.operation_id AND l.attempt_id=a.attempt_id "
         "JOIN submit_intents s ON s.lease_id=l.lease_id AND s.operation_id=l.operation_id "
         "AND s.attempt_id=l.attempt_id "
-        "WHERE i.event_id=%s AND e.action='model_binding.disable' "
+        "WHERE i.event_id=? AND e.action='model_binding.disable' "
         "AND s.execution_state IN ('submitting','executing','stopping','unknown_quarantined') "
-        "AND (%s::text IS NULL OR l.gateway_id=%s) "
-        "AND (%s::text IS NULL OR l.host_node_id=%s) "
+        "AND (?::text IS NULL OR l.gateway_id=?) "
+        "AND (?::text IS NULL OR l.host_node_id=?) "
         f"AND NOT EXISTS (SELECT 1 FROM {TARGET_TABLE} t "
         "WHERE t.event_id=i.event_id AND t.submit_intent_id=s.submit_intent_id) "
         "ORDER BY s.submit_intent_id LIMIT %s",

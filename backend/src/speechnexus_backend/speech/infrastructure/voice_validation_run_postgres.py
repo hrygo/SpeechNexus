@@ -39,7 +39,7 @@ class PostgresValidationRunFacts:
                     # document: an admitted Job carries the complete business
                     # command, while the intent still names the validation facts.
                     intent_row = cursor.execute(
-                        "SELECT request_document FROM speech_job_intents WHERE job_id=%s",
+                        "SELECT request_document FROM speech_job_intents WHERE job_id=?",
                         (job.job_id,),
                     ).fetchone()
                     if intent_row is None:
@@ -69,7 +69,7 @@ class PostgresValidationRunFacts:
                         "FROM speech_voice_draft_revisions AS r "
                         "JOIN speech_jobs AS j ON j.job_id = r.generation_job_id "
                         "JOIN speech_job_intents AS i ON i.job_id = r.generation_job_id "
-                        "WHERE r.draft_id=%s AND r.revision=%s",
+                        "WHERE r.draft_id=? AND r.revision=?",
                         (draft_id, draft_revision),
                     ).fetchone()
                     if revision is None or revision["workspace_id"] != job.workspace_id:
@@ -87,7 +87,7 @@ class PostgresValidationRunFacts:
                     asset = cursor.execute(
                         "SELECT asset_state, purpose, sha256, bytes, media_type, "
                         "sample_rate_hz, channels FROM speech_assets "
-                        "WHERE workspace_id=%s AND asset_id=%s",
+                        "WHERE workspace_id=? AND asset_id=?",
                         (job.workspace_id, asset_id),
                     ).fetchone()
         except psycopg.Error:

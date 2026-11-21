@@ -57,10 +57,10 @@ class PostgresDisableCoordinatorStore:
                 "JOIN speech_publication_lifecycle_events e ON e.event_id=i.event_id "
                 "JOIN admission_attempts a ON a.binding_revision_id=e.revision_id "
                 "JOIN admission_leases l ON l.operation_id=a.operation_id "
-                "AND l.attempt_id=a.attempt_id WHERE i.event_id=%s "
-                "AND e.action='model_binding.disable' AND l.gateway_id=%s "
-                "AND l.host_node_id=%s AND l.lease_state<>'released' "
-                "AND (%s::text IS NULL OR l.lease_id>%s) ORDER BY l.lease_id LIMIT %s",
+                "AND l.attempt_id=a.attempt_id WHERE i.event_id=? "
+                "AND e.action='model_binding.disable' AND l.gateway_id=? "
+                "AND l.host_node_id=? AND l.lease_state<>'released' "
+                "AND (?::text IS NULL OR l.lease_id>?) ORDER BY l.lease_id LIMIT ?",
                 (event_id, gateway_id, node_id, after, after, limit),
             )
             leases = [row["lease_id"] for row in cursor.fetchall()]
@@ -75,7 +75,7 @@ class PostgresDisableCoordinatorStore:
     ) -> None:
         with self._pool.connection(timeout=self._timeout) as connection:
             connection.execute(
-                "SELECT set_config('statement_timeout', %s, true)",
+                "SELECT set_config('statement_timeout', ?, true)",
                 (str(int(self._timeout * 1000)),),
             )
             with connection.cursor() as cursor:
@@ -91,7 +91,7 @@ class PostgresDisableCoordinatorStore:
     def begin_abort(self, event_id: str, submit_intent_id: str) -> bool:
         with self._pool.connection(timeout=self._timeout) as connection:
             connection.execute(
-                "SELECT set_config('statement_timeout', %s, true)",
+                "SELECT set_config('statement_timeout', ?, true)",
                 (str(int(self._timeout * 1000)),),
             )
             with connection.cursor() as cursor:
@@ -107,7 +107,7 @@ class PostgresDisableCoordinatorStore:
         with self._pool.connection(timeout=self._timeout) as connection:
             connection.execute("SET TRANSACTION READ ONLY")
             connection.execute(
-                "SELECT set_config('statement_timeout', %s, true)",
+                "SELECT set_config('statement_timeout', ?, true)",
                 (str(int(self._timeout * 1000)),),
             )
             with connection.cursor() as cursor:

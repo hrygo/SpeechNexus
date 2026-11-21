@@ -350,7 +350,7 @@ def _binding(cursor: _Cursor, model_id: str, revision: str) -> tuple[str, int, d
         "FROM speech_publications AS p "
         "JOIN speech_binding_revisions AS r ON r.binding_id=p.object_id "
         "AND r.revision=p.revision AND r.revision_id=p.revision_id "
-        "WHERE p.kind='binding' AND p.object_id=%s AND p.revision=%s "
+        "WHERE p.kind='binding' AND p.object_id=? AND p.revision=? "
         "AND NOT EXISTS ("
         f"SELECT 1 FROM {RETIREMENT_TABLE} AS retired WHERE retired.kind=p.kind "
         "AND retired.object_id=p.object_id AND retired.revision=p.revision "
@@ -388,7 +388,7 @@ def _quota(cursor: _Cursor, workspace_id: str) -> dict[str, Any]:
         "q.quarantined_attempts, q.max_attempts, "
         "w.policy_revision AS workspace_policy_revision "
         "FROM workspace_quotas AS q JOIN speech_workspaces AS w "
-        "ON w.workspace_id=q.workspace_id WHERE q.workspace_id=%s",
+        "ON w.workspace_id=q.workspace_id WHERE q.workspace_id=?",
         (workspace_id,),
     )
     rows = cursor.fetchall()
@@ -414,7 +414,7 @@ def _instance(cursor: _Cursor, binding_revision_id: str, model_id: str) -> dict[
         "JOIN runtime_instance_heads AS h ON h.instance_id=e.instance_id "
         "AND h.current_generation=e.instance_generation "
         "JOIN resource_pools AS p ON p.pool_id=e.pool_id "
-        "WHERE e.binding_revision_id=%s AND e.instance_state='ready' "
+        "WHERE e.binding_revision_id=? AND e.instance_state='ready' "
         "AND h.current_prepare_intent_id IS NOT NULL "
         "ORDER BY e.instance_id, e.instance_generation LIMIT 1",
         (binding_revision_id,),
@@ -428,7 +428,7 @@ def _instance(cursor: _Cursor, binding_revision_id: str, model_id: str) -> dict[
         # separates "nothing was ever registered" from "registered, not ready":
         # only the first needs the engine-registration profile.
         cursor.execute(
-            "SELECT instance_state FROM engine_instances WHERE binding_revision_id=%s "
+            "SELECT instance_state FROM engine_instances WHERE binding_revision_id=? "
             "ORDER BY instance_state",
             (binding_revision_id,),
         )
@@ -454,7 +454,7 @@ def _instance(cursor: _Cursor, binding_revision_id: str, model_id: str) -> dict[
 def _runtime_plan(cursor: _Cursor, instance: dict[str, Any]) -> ApprovedRuntimePlan:
     row = _one(
         cursor,
-        "SELECT * FROM runtime_instance_intents WHERE target_node_id=%s AND intent_id=%s",
+        "SELECT * FROM runtime_instance_intents WHERE target_node_id=? AND intent_id=?",
         (instance["host_node_id"], instance["current_prepare_intent_id"]),
     )
     try:
@@ -479,7 +479,7 @@ def _voice(cursor: _Cursor, intent: dict[str, Any]) -> dict[str, Any]:
         raise PublicJobAdmissionRejectedError("voice_not_published")
     cursor.execute(
         "SELECT revision_id, revision FROM speech_publications "
-        "WHERE kind='voice' AND object_id=%s AND revision=%s AND NOT EXISTS ("
+        "WHERE kind='voice' AND object_id=? AND revision=? AND NOT EXISTS ("
         f"SELECT 1 FROM {RETIREMENT_TABLE} AS retired WHERE retired.kind='voice' "
         "AND retired.object_id=speech_publications.object_id "
         "AND retired.revision=speech_publications.revision "
@@ -512,7 +512,7 @@ def _require_evidenced_qualification(cursor: _Cursor, voice: dict[str, Any]) -> 
     """
     cursor.execute(
         "SELECT 1 FROM speech_builtin_voice_qualifications q "
-        "WHERE q.voice_id=%s AND q.revision=%s AND q.revision_id=%s",
+        "WHERE q.voice_id=? AND q.revision=? AND q.revision_id=?",
         (voice["id"], str(voice["revision"]), voice["revision_id"]),
     )
     if not cursor.fetchall():
@@ -551,7 +551,7 @@ def _custom_voice(
     """
     cursor.execute(
         "SELECT source_type, material, draft_id, draft_revision, document "
-        "FROM speech_voice_revisions WHERE voice_id=%s AND revision=%s AND revision_id=%s",
+        "FROM speech_voice_revisions WHERE voice_id=? AND revision=? AND revision_id=?",
         (voice["id"], str(voice["revision"]), voice["revision_id"]),
     )
     rows = cursor.fetchall()
@@ -567,7 +567,7 @@ def _custom_voice(
             # and without an accepted operator declaration.
             cursor.execute(
                 "SELECT 1 FROM speech_builtin_voice_qualifications q "
-                "WHERE q.voice_id=%s AND q.revision=%s AND q.revision_id=%s",
+                "WHERE q.voice_id=? AND q.revision=? AND q.revision_id=?",
                 (voice["id"], str(voice["revision"]), voice["revision_id"]),
             )
             qualified = bool(cursor.fetchall())
@@ -582,7 +582,7 @@ def _custom_voice(
             "draft-" + voice["id"].removeprefix(prefix) if voice["id"].startswith(prefix) else None
         )
         if draft_id is not None:
-            cursor.execute("SELECT 1 FROM speech_voice_drafts WHERE draft_id=%s", (draft_id,))
+            cursor.execute("SELECT 1 FROM speech_voice_drafts WHERE draft_id=?", (draft_id,))
             if cursor.fetchall():
                 raise PublicJobAdmissionRejectedError("voice_not_published")
         # A published row that names a builtin qualification is trusted only with
@@ -621,10 +621,10 @@ def _custom_voice(
     # intent has no foreign key to the revision, so this row lock is the only
     # serialization point. Lock order is draft row first, then the revision/asset
     # reads, matching the deletion path.
-    cursor.execute("SELECT 1 FROM speech_voice_drafts WHERE draft_id=%s FOR SHARE", (draft_id,))
+    cursor.execute("SELECT 1 FROM speech_voice_drafts WHERE draft_id=? FOR SHARE", (draft_id,))
     cursor.execute(
         "SELECT asset_state, purpose, object_key, sha256, bytes, expires_at_us "
-        "FROM speech_assets WHERE workspace_id=%s AND asset_id=%s",
+        "FROM speech_assets WHERE workspace_id=? AND asset_id=?",
         (workspace_id, material.asset_id),
     )
     assets = cursor.fetchall()
@@ -647,7 +647,7 @@ def _custom_voice(
         # The publication ledger names material this workspace can no longer use.
         raise PublicJobAdmissionRejectedError("voice_not_published")
     cursor.execute(
-        "SELECT input_json FROM speech_voice_draft_revisions WHERE draft_id=%s AND revision=%s",
+        "SELECT input_json FROM speech_voice_draft_revisions WHERE draft_id=? AND revision=?",
         (draft_id, draft_revision),
     )
     drafts = cursor.fetchall()
@@ -704,7 +704,7 @@ def _pronunciation(
     row = _one(
         cursor,
         "SELECT definition_json FROM speech_pronunciation_revisions "
-        "WHERE pronunciation_id=%s AND revision=%s",
+        "WHERE pronunciation_id=? AND revision=?",
         (pronunciation_id, str(revision)),
     )
     try:
@@ -728,7 +728,7 @@ def _audio(cursor: _Cursor, workspace_id: str, intent: dict[str, Any], bucket: s
         cursor,
         "SELECT asset_state, purpose, object_key, sha256, bytes, media_type, "
         "sample_rate_hz, channels FROM speech_assets "
-        "WHERE workspace_id=%s AND asset_id=%s",
+        "WHERE workspace_id=? AND asset_id=?",
         (workspace_id, asset_id),
     )
     if row["asset_state"] != "ready" or row["purpose"] != "asr_input":
@@ -1080,7 +1080,7 @@ def build_public_job_admission(
         # unpinned create reaches this read first; taking FOR SHARE here covers
         # both and keeps deletion from removing the revision between this read and
         # the intent insert.
-        cursor.execute("SELECT 1 FROM speech_voice_drafts WHERE draft_id=%s FOR SHARE", (draft_id,))
+        cursor.execute("SELECT 1 FROM speech_voice_drafts WHERE draft_id=? FOR SHARE", (draft_id,))
         # A revision that is gone is a binding the caller can fix by pinning a new
         # one, not a store that refused the read, so it must not answer
         # ``job_unavailable`` -- that code is reserved for a genuinely unavailable
@@ -1091,7 +1091,7 @@ def build_public_job_admission(
             "SELECT r.kind, r.input_json, r.binding_json, j.workspace_id "
             "FROM speech_voice_draft_revisions AS r "
             "JOIN speech_jobs AS j ON j.job_id = r.generation_job_id "
-            "WHERE r.draft_id=%s AND r.revision=%s",
+            "WHERE r.draft_id=? AND r.revision=?",
             (draft_id, draft_revision),
         )
         rows = cursor.fetchall()
@@ -1221,7 +1221,7 @@ def _voice_reference(
     cursor.execute(
         "SELECT asset_state, purpose, object_key, sha256, bytes, media_type, "
         "sample_rate_hz, channels FROM speech_assets "
-        "WHERE workspace_id=%s AND asset_id=%s",
+        "WHERE workspace_id=? AND asset_id=?",
         (workspace_id, asset_id),
     )
     rows = cursor.fetchall()
@@ -1331,7 +1331,7 @@ _PROBE_STATE_CODES: dict[str, AdmissionReadinessCause] = {
 
 def _readiness_workspace_state(cursor: _Cursor, workspace_id: str) -> str | None:
     cursor.execute(
-        "SELECT workspace_state FROM speech_workspaces WHERE workspace_id=%s",
+        "SELECT workspace_state FROM speech_workspaces WHERE workspace_id=?",
         (workspace_id,),
     )
     rows = cursor.fetchall()
@@ -1451,12 +1451,12 @@ def _readiness_runtime(
     """
     instance_row = _readiness_one(
         cursor,
-        "SELECT * FROM engine_instances WHERE instance_id=%s AND instance_generation=%s",
+        "SELECT * FROM engine_instances WHERE instance_id=? AND instance_generation=?",
         (candidate["instance_id"], candidate["instance_generation"]),
     )
     head = _readiness_one(
         cursor,
-        "SELECT * FROM runtime_instance_heads WHERE instance_id=%s AND current_generation=%s",
+        "SELECT * FROM runtime_instance_heads WHERE instance_id=? AND current_generation=?",
         (candidate["instance_id"], candidate["instance_generation"]),
     )
     prepare_id = head["current_prepare_intent_id"]
@@ -1464,7 +1464,7 @@ def _readiness_runtime(
         raise PublicJobAdmissionRejectedError("job_capacity_exhausted")
     intent = _readiness_one(
         cursor,
-        "SELECT * FROM runtime_instance_intents WHERE target_node_id=%s AND intent_id=%s",
+        "SELECT * FROM runtime_instance_intents WHERE target_node_id=? AND intent_id=?",
         (instance_row["host_node_id"], prepare_id),
     )
     record = _record(intent)
@@ -1485,8 +1485,8 @@ def _readiness_runtime(
     cursor.execute(
         "SELECT COALESCE(SUM(l.reserved_slots), 0) AS slots FROM admission_leases AS l "
         "JOIN admission_attempts AS a ON a.operation_id = l.operation_id "
-        "AND a.attempt_id = l.attempt_id WHERE l.instance_id = %s "
-        "AND l.instance_generation = %s AND l.lease_state <> 'released' "
+        "AND a.attempt_id = l.attempt_id WHERE l.instance_id = ? "
+        "AND l.instance_generation = ? AND l.lease_state <> 'released' "
         "AND a.service_class <> 'realtime'",
         (instance.instance_id, instance.instance_generation),
     )
@@ -1494,7 +1494,7 @@ def _readiness_runtime(
     if readiness is None:
         raise PublicJobAdmissionRejectedError("job_unavailable")
     cursor.execute(
-        "SELECT * FROM host_nodes WHERE host_node_id=%s",
+        "SELECT * FROM host_nodes WHERE host_node_id=?",
         (instance_row["host_node_id"],),
     )
     host_rows = cursor.fetchall()
@@ -1724,7 +1724,7 @@ def load_admission_readiness(
             continue
         pool_row = _readiness_one(
             cursor,
-            "SELECT * FROM resource_pools WHERE pool_id=%s",
+            "SELECT * FROM resource_pools WHERE pool_id=?",
             (runtime.instance.plan.binding.pool_id,),
         )
         if not isinstance(pool_row["owner_id"], str) or int(pool_row["fencing_token"]) < 1:

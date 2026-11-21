@@ -132,12 +132,12 @@ def issue_probe_authorization(
     def operation(cursor: Any) -> str:
         cursor.execute(
             "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:'||current_schema()||':binding:'||%s,0))",
+            "'speechnexus:catalog:'||current_schema()||':binding:'||?,0))",
             (auth["binding_id"],),
         )
         cursor.execute(
             "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:'||current_schema()||':voice:'||%s,0))",
+            "'speechnexus:catalog:'||current_schema()||':voice:'||?,0))",
             (auth["voice_id"],),
         )
         cursor.execute(
@@ -153,8 +153,7 @@ def issue_probe_authorization(
         ) != (auth["database"], auth["schema"], auth["installation_id"]):
             raise ProbeAuthorizationError("probe_authorization_unverified")
         cursor.execute(
-            "SELECT intent FROM speech_builtin_voice_probe_authorizations "
-            "WHERE authorization_id=%s",
+            "SELECT intent FROM speech_builtin_voice_probe_authorizations WHERE authorization_id=?",
             (auth["authorization_id"],),
         )
         existing = cursor.fetchall()
@@ -164,9 +163,9 @@ def issue_probe_authorization(
             return "replayed"
         cursor.execute(
             "SELECT s.source_approval_id FROM speech_builtin_voice_source_approvals s "
-            "WHERE s.source_approval_id=%s AND s.voice_id=%s "
+            "WHERE s.source_approval_id=? AND s.voice_id=? "
             "AND s.native_speaker_id='Vivian' AND s.expires_at>clock_timestamp() "
-            "AND s.expires_at >= to_timestamp(%s / 1000000.0) "
+            "AND s.expires_at >= to_timestamp(? / 1000000.0) "
             "AND NOT EXISTS (SELECT 1 FROM speech_builtin_voice_source_revocations r "
             "WHERE r.source_approval_id=s.source_approval_id)",
             (auth["source_approval_id"], auth["voice_id"], auth["expires_at_us"]),
@@ -174,7 +173,7 @@ def issue_probe_authorization(
         if len(cursor.fetchall()) != 1:
             raise ProbeAuthorizationError("probe_authorization_unverified")
         cursor.execute(
-            "SELECT revision FROM speech_binding_revisions WHERE binding_id=%s AND revision_id=%s",
+            "SELECT revision FROM speech_binding_revisions WHERE binding_id=? AND revision_id=?",
             (auth["binding_id"], auth["binding_revision_id"]),
         )
         revisions = cursor.fetchall()
@@ -225,9 +224,9 @@ def issue_probe_authorization(
             "JOIN runtime_instance_intents r ON r.instance_id=h.instance_id AND "
             "r.instance_generation=h.current_generation "
             "AND r.intent_id=h.current_prepare_intent_id "
-            "AND r.target_node_id=%s JOIN engine_instances i ON i.instance_id=h.instance_id "
-            "AND i.instance_generation=h.current_generation WHERE h.instance_id=%s "
-            "AND h.current_generation=%s AND r.action='prepare' AND r.intent_state='succeeded' "
+            "AND r.target_node_id=? JOIN engine_instances i ON i.instance_id=h.instance_id "
+            "AND i.instance_generation=h.current_generation WHERE h.instance_id=? "
+            "AND h.current_generation=? AND r.action='prepare' AND r.intent_state='succeeded' "
             "AND i.instance_state='ready' FOR UPDATE OF h,i",
             (auth["host_node_id"], auth["instance_id"], auth["instance_generation"]),
         )
@@ -274,7 +273,7 @@ def issue_probe_authorization(
             raise ProbeAuthorizationError("probe_authorization_unverified")
         cursor.execute(
             "INSERT INTO speech_builtin_voice_probe_authorizations "
-            "(authorization_id,source_approval_id,voice_id,intent) VALUES (%s,%s,%s,%s)",
+            "(authorization_id,source_approval_id,voice_id,intent) VALUES (?,?,?,?)",
             (auth["authorization_id"], auth["source_approval_id"], auth["voice_id"], Jsonb(auth)),
         )
         return "committed"

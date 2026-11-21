@@ -53,7 +53,7 @@ class PostgresWorkspaceReads:
                     raise WorkspaceUnavailableError
                 connection.execute("SET TRANSACTION READ ONLY")
                 connection.execute(
-                    "SELECT set_config('statement_timeout', %s, true)",
+                    "SELECT set_config('statement_timeout', ?, true)",
                     (str(max(1, int(remaining * 1000))),),
                 )
                 records = connection.execute(query, parameters).fetchall()
@@ -97,7 +97,7 @@ class _Cursor:
         if remaining <= 0:
             raise WorkspaceUnavailableError
         self.raw.execute(
-            "SELECT set_config('statement_timeout', %s, true)",
+            "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(remaining * 1000))),),
         )
         self.raw.execute(query, parameters)
@@ -225,7 +225,7 @@ class PostgresWorkspaceWrites:
         # so a bucket collision adds contention and can never alias a replay.
         cursor.rows(
             "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:workspace:' || current_schema() || ':idempotency:' || %s, 0))",
+            "'speechnexus:workspace:' || current_schema() || ':idempotency:' || ?, 0))",
             (key_digest,),
         )
         rows = cursor.rows(
@@ -274,7 +274,7 @@ class PostgresWorkspaceWrites:
         rows = cursor.rows(
             "INSERT INTO speech_workspaces "
             "(workspace_id, display_name, workspace_state, created_at_us) "
-            "VALUES (%s, %s, 'active', %s) RETURNING " + _COLUMNS,
+            "VALUES (?, ?, 'active', ?) RETURNING " + _COLUMNS,
             (workspace_id, command.display_name, now),
         )
         if len(rows) != 1:
@@ -295,10 +295,10 @@ class PostgresWorkspaceWrites:
         now = cursor.clock()
         rows = cursor.rows(
             "UPDATE speech_workspaces SET "
-            "display_name = COALESCE(%s, display_name), "
-            "workspace_state = COALESCE(%s, workspace_state), "
+            "display_name = COALESCE(?, display_name), "
+            "workspace_state = COALESCE(?, workspace_state), "
             "metadata_revision = metadata_revision + 1 "
-            "WHERE workspace_id = %s AND metadata_revision = %s RETURNING " + _COLUMNS,
+            "WHERE workspace_id = ? AND metadata_revision = ? RETURNING " + _COLUMNS,
             (
                 command.display_name,
                 command.status,

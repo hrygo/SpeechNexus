@@ -47,7 +47,7 @@ def _original(cursor: DeliveryCursor, event_id: str) -> tuple[RuntimeIntent, str
         "LEFT JOIN runtime_instance_heads h ON h.instance_id=r.instance_id "
         "LEFT JOIN engine_instances i ON i.instance_id=r.instance_id "
         "AND i.instance_generation=r.instance_generation "
-        "WHERE o.event_id=%s AND o.event_kind='runtime' AND o.delivered_at_us IS NULL",
+        "WHERE o.event_id=? AND o.event_kind='runtime' AND o.delivered_at_us IS NULL",
         (event_id,),
     )
     if len(records) != 1:
@@ -120,7 +120,7 @@ def _ticket(row: dict[str, Any], original: RuntimeIntent, request_digest: str) -
 def _owned(cursor: DeliveryCursor, ticket: DeliveryTicket, now_us: int) -> dict[str, Any] | None:
     rows = _rows(
         cursor,
-        "SELECT * FROM runtime_intent_deliveries WHERE event_id=%s FOR UPDATE",
+        "SELECT * FROM runtime_intent_deliveries WHERE event_id=? FOR UPDATE",
         (ticket.event_id,),
     )
     if not rows:
@@ -148,8 +148,8 @@ def claim_in_transaction(
     rows = _rows(
         cursor,
         "SELECT d.* FROM runtime_intent_deliveries d "
-        "WHERE d.delivery_phase IN ('unsent','unknown') AND d.next_attempt_at_us<=%s "
-        "AND d.claim_expires_at_us<=%s AND EXISTS (SELECT 1 FROM coordination_outbox o "
+        "WHERE d.delivery_phase IN ('unsent','unknown') AND d.next_attempt_at_us<=? "
+        "AND d.claim_expires_at_us<=? AND EXISTS (SELECT 1 FROM coordination_outbox o "
         "WHERE o.event_id=d.event_id AND o.event_kind='runtime' AND o.delivered_at_us IS NULL "
         "AND o.target_node_id IN (" + nodes + ")) "
         "ORDER BY d.next_attempt_at_us,d.event_id LIMIT 1 FOR UPDATE SKIP LOCKED",
@@ -165,15 +165,15 @@ def claim_in_transaction(
         cursor.execute(
             "UPDATE runtime_intent_deliveries SET delivery_phase='blocked', "
             "claim_holder_id=NULL,claim_expires_at_us=0,last_failure_code='invalid_record', "
-            "updated_at_us=%s,version=version+1 WHERE event_id=%s AND version=%s",
+            "updated_at_us=?,version=version+1 WHERE event_id=? AND version=?",
             (now_us, row["event_id"], row["version"]),
         )
         return DeliveryClaim("blocked")
     now_us = clock()
     expires = integer(now_us + request.lease_us, minimum=1)
     cursor.execute(
-        "UPDATE runtime_intent_deliveries SET claim_holder_id=%s,claim_expires_at_us=%s, "
-        "updated_at_us=%s,version=version+1 WHERE event_id=%s AND version=%s",
+        "UPDATE runtime_intent_deliveries SET claim_holder_id=?,claim_expires_at_us=?, "
+        "updated_at_us=?,version=version+1 WHERE event_id=? AND version=?",
         (request.holder_id, expires, now_us, row["event_id"], row["version"]),
     )
     if cursor.rowcount != 1:
@@ -204,8 +204,8 @@ def start_in_transaction(
     # reply is lost, the caller has no permit; a successor may only GET.
     cursor.execute(
         "UPDATE runtime_intent_deliveries SET delivery_phase='unknown', "
-        "submission_started_at_us=%s,updated_at_us=%s,version=version+1 "
-        "WHERE event_id=%s AND version=%s AND claim_holder_id=%s AND claim_expires_at_us>%s",
+        "submission_started_at_us=?,updated_at_us=?,version=version+1 "
+        "WHERE event_id=? AND version=? AND claim_holder_id=? AND claim_expires_at_us>?",
         (
             now_us if submit else None,
             now_us,
@@ -242,8 +242,8 @@ def acknowledge_in_transaction(
         return DeliveryWrite("rejected")
     events = _rows(
         cursor,
-        "SELECT event_id FROM coordination_outbox WHERE event_id=%s AND event_kind='runtime' "
-        "AND event_digest=%s AND delivered_at_us IS NULL FOR UPDATE",
+        "SELECT event_id FROM coordination_outbox WHERE event_id=? AND event_kind='runtime' "
+        "AND event_digest=? AND delivered_at_us IS NULL FOR UPDATE",
         (ticket.event_id, request_digest),
     )
     if len(events) != 1:
@@ -254,17 +254,17 @@ def acknowledge_in_transaction(
     if row["claim_expires_at_us"] <= now_us:
         return DeliveryWrite("stale")
     cursor.execute(
-        "UPDATE coordination_outbox SET delivered_at_us=%s WHERE event_id=%s "
-        "AND event_kind='runtime' AND event_digest=%s AND delivered_at_us IS NULL",
+        "UPDATE coordination_outbox SET delivered_at_us=? WHERE event_id=? "
+        "AND event_kind='runtime' AND event_digest=? AND delivered_at_us IS NULL",
         (now_us, ticket.event_id, request_digest),
     )
     if cursor.rowcount != 1:
         return DeliveryWrite("stale")
     cursor.execute(
         "UPDATE runtime_intent_deliveries SET delivery_phase='acknowledged', "
-        "claim_holder_id=NULL,claim_expires_at_us=0,acknowledged_at_us=%s, "
-        "last_failure_code=NULL,updated_at_us=%s,version=version+1 "
-        "WHERE event_id=%s AND version=%s AND claim_holder_id=%s",
+        "claim_holder_id=NULL,claim_expires_at_us=0,acknowledged_at_us=?, "
+        "last_failure_code=NULL,updated_at_us=?,version=version+1 "
+        "WHERE event_id=? AND version=? AND claim_holder_id=?",
         (now_us, now_us, ticket.event_id, ticket.version, ticket.holder_id),
     )
     if cursor.rowcount != 1:
@@ -293,8 +293,8 @@ def defer_in_transaction(
     retry_at = integer(now_us + delay_us, minimum=1)
     cursor.execute(
         "UPDATE runtime_intent_deliveries SET claim_holder_id=NULL,claim_expires_at_us=0, "
-        "next_attempt_at_us=%s,last_failure_code=%s,updated_at_us=%s,version=version+1 "
-        "WHERE event_id=%s AND version=%s AND claim_holder_id=%s",
+        "next_attempt_at_us=?,last_failure_code=?,updated_at_us=?,version=version+1 "
+        "WHERE event_id=? AND version=? AND claim_holder_id=?",
         (retry_at, failure_code, now_us, ticket.event_id, ticket.version, ticket.holder_id),
     )
     return DeliveryWrite("committed" if cursor.rowcount == 1 else "stale")

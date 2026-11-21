@@ -208,7 +208,7 @@ class _Transaction:
         if remaining <= 0:
             raise _unavailable()
         self._connection.execute(
-            "SELECT set_config('statement_timeout', %s, true)",
+            "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(remaining * 1000))),),
         )
         cursor = self._connection.execute(statement, args)
@@ -351,7 +351,7 @@ class _DeletionExecution:
             # commits first and admission finds no revision. Without this lock the
             # intent has no foreign key to catch the race.
             self._tx.rows(
-                "SELECT 1 FROM speech_voice_drafts WHERE draft_id = %s FOR UPDATE",
+                "SELECT 1 FROM speech_voice_drafts WHERE draft_id = ? FOR UPDATE",
                 (plan.target.resource_id,),
             )
         snapshot = snapshot_target(self._tx, self._workspace_id, plan.target, exclusive=True)
@@ -491,7 +491,7 @@ class _DeletionExecution:
         """
         deleted = self._tx.rows(
             "DELETE FROM speech_voice_draft_revisions "
-            "WHERE draft_id = %s AND revision = %s RETURNING draft_id",
+            "WHERE draft_id = ? AND revision = ? RETURNING draft_id",
             (plan.target.resource_id, str(plan.target.revision)),
         )
         if not deleted:
@@ -574,11 +574,11 @@ class _DeletionExecution:
         # document and digest together, so retry cannot replay a body (#540).
         deleted = self._tx.rows(
             "DELETE FROM speech_job_intents "
-            "WHERE job_id = %s AND request_digest = %s RETURNING job_id",
+            "WHERE job_id = ? AND request_digest = ? RETURNING job_id",
             (job_id, target_digest),
         )
         if not deleted and self._tx.rows(
-            "SELECT request_digest FROM speech_job_intents WHERE job_id = %s", (job_id,)
+            "SELECT request_digest FROM speech_job_intents WHERE job_id = ?", (job_id,)
         ):
             # A row survived with another digest: the content is not the one this
             # plan pinned, so the plan no longer authorizes its removal.
@@ -588,10 +588,10 @@ class _DeletionExecution:
         # it keeps the operation identity while removing the body.
         self._tx.rows(
             "UPDATE admission_operations SET request_document = NULL, "
-            "command_redacted_at_us = GREATEST(recorded_at_us, %s), "
-            "command_deletion_job_id = %s, command_deletion_evidence_digest = %s, "
+            "command_redacted_at_us = GREATEST(recorded_at_us, ?), "
+            "command_deletion_job_id = ?, command_deletion_evidence_digest = ?, "
             "version = version + 1 "
-            "WHERE operation_id = %s AND request_document IS NOT NULL",
+            "WHERE operation_id = ? AND request_document IS NOT NULL",
             (self._tx.now_us(), deletion_id, plan_digest(plan), job_id),
         )
         return self._record(
@@ -618,7 +618,7 @@ class _DeletionExecution:
             raise _unavailable()
         content = self._tx.rows(
             "SELECT deletion_state, storage_version_id FROM speech_content_deletions "
-            "WHERE ledger_id = %s",
+            "WHERE ledger_id = ?",
             (content_ledger_id,),
         )
         if not content:
@@ -691,10 +691,10 @@ class _DeletionExecution:
             raise _unavailable()
         content = cast(dict[str, Any], plan_row["content_snapshot"])
         updated = self._tx.rows(
-            "UPDATE speech_artifacts SET artifact_state = 'deleted', deleted_at_us = %s "
-            "WHERE artifact_id = %s AND workspace_id = %s "
+            "UPDATE speech_artifacts SET artifact_state = 'deleted', deleted_at_us = ? "
+            "WHERE artifact_id = ? AND workspace_id = ? "
             "AND artifact_state IN ('ready','expired') "
-            "AND sha256 = %s AND object_key = %s AND storage_version_id = %s "
+            "AND sha256 = ? AND object_key = ? AND storage_version_id = ? "
             "RETURNING artifact_id",
             (
                 self._tx.now_us(),
@@ -726,7 +726,7 @@ class _DeletionExecution:
     def _proof(self, asset_id: str) -> VerifiedObject | None:
         rows = self._tx.rows(
             "SELECT asset_id, object_key, storage_version_id, bytes, sha256, writer_id "
-            "FROM speech_asset_objects WHERE asset_id = %s",
+            "FROM speech_asset_objects WHERE asset_id = ?",
             (asset_id,),
         )
         if not rows:

@@ -42,7 +42,7 @@ def require_complete_asr_roots(pool: SpeechPool, *, timeout_seconds: float = 3) 
         with pool.connection(timeout=timeout_seconds) as conn:
             conn.execute("SET TRANSACTION READ ONLY")
             conn.execute(
-                "SELECT set_config('statement_timeout',%s,true)",
+                "SELECT set_config('statement_timeout',?,true)",
                 (str(max(1, int(timeout_seconds * 1000))),),
             )
             row = conn.execute(query).fetchone()

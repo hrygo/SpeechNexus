@@ -99,7 +99,7 @@ def _intents(cursor: LeaseCursor, lease_id: str, *, locked: bool) -> list[Row]:
         cursor,
         "SELECT submit_intent_id, execution_state, cleanup_state, recorded_at_us, "
         "dispatched_at_us, terminated_at_us, version FROM submit_intents "
-        "WHERE lease_id = %s ORDER BY submit_intent_id" + suffix,
+        "WHERE lease_id = ? ORDER BY submit_intent_id" + suffix,
         (lease_id,),
     )
 
@@ -120,7 +120,7 @@ def _branch_f(cursor: LeaseCursor, lease: Row, evidence: ReleaseEvidence) -> Rel
     rows = _rows(
         cursor,
         "SELECT submit_intent_id, execution_state, cleanup_state FROM submit_intents "
-        "WHERE lease_id = %s",
+        "WHERE lease_id = ?",
         (lease["lease_id"],),
     )
     if len(rows) != 1 or rows[0]["execution_state"] not in _TERMINAL_INTENTS:
@@ -130,7 +130,7 @@ def _branch_f(cursor: LeaseCursor, lease: Row, evidence: ReleaseEvidence) -> Rel
     stops = _rows(
         cursor,
         "SELECT evidence_kind, evidence_digest, observed_at_us, reason "
-        "FROM execution_stop_evidence WHERE submit_intent_id = %s",
+        "FROM execution_stop_evidence WHERE submit_intent_id = ?",
         (rows[0]["submit_intent_id"],),
     )
     if len(stops) != 1:
@@ -167,7 +167,7 @@ def _insert_stop_evidence(
         "INSERT INTO execution_stop_evidence "
         "(evidence_id, submit_intent_id, evidence_kind, evidence_digest, observed_at_us, "
         "reason, execution_stopped, resources_released) "
-        "VALUES (%s, %s, %s, %s, %s, %s, 1, 1)",
+        "VALUES (?, ?, ?, ?, ?, ?, 1, 1)",
         (
             operator_stop_evidence_id(intent.submit_intent_id),
             intent.submit_intent_id,
@@ -187,9 +187,9 @@ def _close_intent(
     """Cross-owner CAS: the gateway's own version check loses or wins, never both."""
     cursor.execute(
         "UPDATE submit_intents SET execution_state = 'aborted', cleanup_state = 'complete', "
-        "terminated_at_us = %s, updated_at_us = %s, version = version + 1 "
-        "WHERE submit_intent_id = %s AND execution_state = 'unknown_quarantined' "
-        "AND cleanup_state = 'quarantined' AND version = %s",
+        "terminated_at_us = ?, updated_at_us = ?, version = version + 1 "
+        "WHERE submit_intent_id = ? AND execution_state = 'unknown_quarantined' "
+        "AND cleanup_state = 'quarantined' AND version = ?",
         (evidence.observed_at_us, now_us, intent.submit_intent_id, intent.version),
     )
     if cursor.rowcount != 1:
@@ -273,7 +273,7 @@ def _lock_release_target(cursor: LeaseCursor, lease_id: str) -> Row:
     The unlocked read only locates the parent keys; every identity it found is
     rechecked against the locked lease before any decision runs.
     """
-    rows = _rows(cursor, "SELECT * FROM admission_leases WHERE lease_id = %s", (lease_id,))
+    rows = _rows(cursor, "SELECT * FROM admission_leases WHERE lease_id = ?", (lease_id,))
     if not rows:
         raise QuarantineReleaseRejectedError("not_found")
     if len(rows) != 1:
@@ -282,41 +282,41 @@ def _lock_release_target(cursor: LeaseCursor, lease_id: str) -> Row:
     identity = (hint["operation_id"], hint["attempt_id"])
     attempt_hint = _one(
         cursor,
-        "SELECT * FROM admission_attempts WHERE operation_id = %s AND attempt_id = %s",
+        "SELECT * FROM admission_attempts WHERE operation_id = ? AND attempt_id = ?",
         identity,
     )
     # Ordered locks shared with admission/quarantine/settlement: pool, quota,
     # host, instance, attempt, lease, then the submit intents.
     _one(
         cursor,
-        "SELECT pool_id FROM resource_pools WHERE pool_id = %s FOR UPDATE",
+        "SELECT pool_id FROM resource_pools WHERE pool_id = ? FOR UPDATE",
         (hint["pool_id"],),
     )
     _one(
         cursor,
-        "SELECT * FROM workspace_quotas WHERE workspace_id = %s FOR UPDATE",
+        "SELECT * FROM workspace_quotas WHERE workspace_id = ? FOR UPDATE",
         (attempt_hint["workspace_id"],),
     )
     _one(
         cursor,
-        "SELECT * FROM host_nodes WHERE host_node_id = %s FOR UPDATE",
+        "SELECT * FROM host_nodes WHERE host_node_id = ? FOR UPDATE",
         (hint["host_node_id"],),
     )
     instance_key = (hint["instance_id"], hint["instance_generation"])
     instance = _one(
         cursor,
-        "SELECT * FROM engine_instances WHERE instance_id = %s "
-        "AND instance_generation = %s FOR UPDATE",
+        "SELECT * FROM engine_instances WHERE instance_id = ? "
+        "AND instance_generation = ? FOR UPDATE",
         instance_key,
     )
     attempt = _one(
         cursor,
-        "SELECT * FROM admission_attempts WHERE operation_id = %s AND attempt_id = %s FOR UPDATE",
+        "SELECT * FROM admission_attempts WHERE operation_id = ? AND attempt_id = ? FOR UPDATE",
         identity,
     )
     lease = _one(
         cursor,
-        "SELECT * FROM admission_leases WHERE lease_id = %s FOR UPDATE",
+        "SELECT * FROM admission_leases WHERE lease_id = ? FOR UPDATE",
         (lease_id,),
     )
     if (
@@ -405,7 +405,7 @@ def _completed_facts(
         _rows(
             cursor,
             "SELECT evidence_kind, observed_at_us, execution_stopped, resources_released "
-            "FROM execution_stop_evidence WHERE submit_intent_id = %s",
+            "FROM execution_stop_evidence WHERE submit_intent_id = ?",
             (intent_rows[0]["submit_intent_id"],),
         )
         if len(intent_rows) == 1
@@ -418,16 +418,16 @@ def _completed_facts(
     job_id = lease["operation_id"]
     fence = _rows(
         cursor,
-        "SELECT job_id, accepted_at_us FROM speech_job_cancellation_fences WHERE job_id = %s",
+        "SELECT job_id, accepted_at_us FROM speech_job_cancellation_fences WHERE job_id = ?",
         (job_id,),
     )
     reconciliation = _rows(
         cursor,
         "SELECT job_id, settled_at_us FROM speech_job_cancellation_reconciliations "
-        "WHERE job_id = %s",
+        "WHERE job_id = ?",
         (job_id,),
     )
-    job = _rows(cursor, "SELECT job_id, state FROM speech_jobs WHERE job_id = %s", (job_id,))
+    job = _rows(cursor, "SELECT job_id, state FROM speech_jobs WHERE job_id = ?", (job_id,))
     if len(fence) > 1 or len(reconciliation) > 1 or len(job) > 1:
         raise LeaseRejectedError("reconciliation_required")
     return completed_release_domain.CompletedReleaseFacts(

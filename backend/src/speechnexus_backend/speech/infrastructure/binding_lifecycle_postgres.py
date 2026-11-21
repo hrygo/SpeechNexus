@@ -65,7 +65,7 @@ class _Cursor:
         if remaining <= 0:
             raise BindingLifecycleUnavailableError
         self.raw.execute(
-            "SELECT set_config('statement_timeout', %s, true)",
+            "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(remaining * 1000))),),
         )
         return self.raw.execute(query, parameters)
@@ -282,7 +282,7 @@ class PostgresBindingLifecycle:
             raise BindingLifecycleConflictError("binding_not_draft")
         cursor.execute(
             "SELECT revision_id, definition_json, created_at_us FROM speech_binding_revisions "
-            "WHERE binding_id=%s AND revision=%s",
+            "WHERE binding_id=? AND revision=?",
             (command.binding_id, command.revision),
         )
         drafts = cursor.fetchall()
@@ -369,7 +369,7 @@ class PostgresBindingLifecycle:
             return None
         cursor.execute(
             "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:' || current_schema() || ':idempotency:' || %s, 0))",
+            "'speechnexus:catalog:' || current_schema() || ':idempotency:' || ?, 0))",
             (command.key_digest,),
         )
         cursor.execute(
@@ -509,7 +509,7 @@ class PostgresBindingLifecycle:
     def _advance_catalog(self, cursor: _Cursor, changed_at_us: int) -> None:
         cursor.execute(
             "UPDATE speech_catalog_state SET revision=revision+1, "
-            "generated_at_us=GREATEST(generated_at_us, %s)",
+            "generated_at_us=GREATEST(generated_at_us, ?)",
             (changed_at_us,),
         )
         if cursor.rowcount != 1:

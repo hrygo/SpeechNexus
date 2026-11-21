@@ -55,7 +55,7 @@ def append_publication(
     """
     cursor.execute(
         "SELECT pg_advisory_xact_lock(hashtextextended("
-        "'speechnexus:catalog:' || current_schema() || ':' || %s || ':' || %s, 0))",
+        "'speechnexus:catalog:' || current_schema() || ':' || ? || ':' || ?, 0))",
         (publication.kind, publication.object_id),
     )
     if publication.kind == "binding":
@@ -97,7 +97,7 @@ def append_publication(
     cursor.execute(
         "INSERT INTO speech_publications "
         "(kind, object_id, revision, revision_id, published_at_us) "
-        "VALUES (%s, %s, %s, %s, %s) "
+        "VALUES (?, ?, ?, ?, ?) "
         "ON CONFLICT (kind, object_id, revision) DO NOTHING",
         (
             publication.kind,
@@ -137,7 +137,7 @@ def find_publication(
     cursor.execute(
         "SELECT kind, object_id, revision, revision_id, published_at_us "
         "FROM speech_publications "
-        "WHERE kind = %s AND object_id = %s AND revision = %s",
+        "WHERE kind = ? AND object_id = ? AND revision = ?",
         (kind, object_id, str(revision)),
     )
     rows = cursor.fetchall()
@@ -170,7 +170,7 @@ def find_current_publication(
         "JOIN speech_publications AS p "
         "  ON p.kind = h.kind AND p.object_id = h.object_id "
         " AND p.revision = h.revision AND p.revision_id = h.revision_id "
-        f"WHERE h.kind = %s AND h.object_id = %s "
+        f"WHERE h.kind = ? AND h.object_id = ? "
         "AND NOT EXISTS ("
         f"SELECT 1 FROM {RETIREMENT_TABLE} AS retired "
         "WHERE retired.kind = h.kind AND retired.object_id = h.object_id "
@@ -203,7 +203,7 @@ def retire_publication(
     # so the current-revision check cannot be split by a newer publication.
     cursor.execute(
         "SELECT pg_advisory_xact_lock(hashtextextended("
-        "'speechnexus:catalog:' || current_schema() || ':' || %s || ':' || %s, 0))",
+        "'speechnexus:catalog:' || current_schema() || ':' || ? || ':' || ?, 0))",
         (publication.kind, publication.object_id),
     )
     current = find_current_publication(cursor, publication.kind, publication.object_id)
@@ -250,9 +250,9 @@ def retire_publication(
         # same transaction; content deletion must not stay pinned forever by a
         # revision that can no longer be selected.
         cursor.execute(
-            "UPDATE speech_asset_references SET released_at_us = %s "
-            "WHERE consumer_kind = 'voice_revision' AND consumer_id = %s "
-            "AND consumer_revision = %s AND released_at_us IS NULL",
+            "UPDATE speech_asset_references SET released_at_us = ? "
+            "WHERE consumer_kind = 'voice_revision' AND consumer_id = ? "
+            "AND consumer_revision = ? AND released_at_us IS NULL",
             (retired_at_us, publication.object_id, str(publication.revision)),
         )
     return True
@@ -265,7 +265,7 @@ def find_binding_revision(cursor: PublicationCursor, binding_id: str, revision: 
     write path must prove the target revision exists before promoting it.
     """
     cursor.execute(
-        "SELECT revision_id FROM speech_binding_revisions WHERE binding_id = %s AND revision = %s",
+        "SELECT revision_id FROM speech_binding_revisions WHERE binding_id = ? AND revision = ?",
         (binding_id, str(revision)),
     )
     rows = cursor.fetchall()
@@ -277,7 +277,7 @@ def find_binding_revision(cursor: PublicationCursor, binding_id: str, revision: 
 def list_publications(cursor: PublicationCursor, kind: PublicationKind) -> list[Publication]:
     cursor.execute(
         "SELECT kind, object_id, revision, revision_id, published_at_us "
-        "FROM speech_publications WHERE kind = %s ORDER BY object_id, revision",
+        "FROM speech_publications WHERE kind = ? ORDER BY object_id, revision",
         (kind,),
     )
     return [_publication(row) for row in cursor.fetchall()]

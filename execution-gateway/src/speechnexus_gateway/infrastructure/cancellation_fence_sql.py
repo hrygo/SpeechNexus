@@ -21,7 +21,7 @@ from speechnexus_gateway.infrastructure.submit_sql import SubmitCursor
 def cancellation_fence_present(cursor: SubmitCursor, operation_id: str) -> bool:
     """Lock and read the fence; a missing row means no accepted cancellation."""
     cursor.execute(
-        "SELECT pg_advisory_xact_lock(%s)", (job_cancellation_fence_lock_key(operation_id),)
+        "SELECT pg_advisory_xact_lock(?)", (job_cancellation_fence_lock_key(operation_id),)
     )
     cursor.execute(
         f"SELECT job_id FROM {JOB_CANCELLATION_FENCE_TABLE} WHERE job_id = %s",

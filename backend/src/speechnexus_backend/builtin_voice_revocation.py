@@ -64,7 +64,7 @@ def revoke_builtin_voice(
             raise BuiltinVoiceRevocationRejectedError("approval_not_found")
         cursor.execute(
             "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:' || current_schema() || ':voice:' || %s, 0))",
+            "'speechnexus:catalog:' || current_schema() || ':voice:' || ?, 0))",
             (approvals_found[0]["voice_id"],),
         )
         cursor.execute(

@@ -31,7 +31,7 @@ def record_execution_observation_in_transaction(
             cursor.execute(
                 "SELECT MIN(sample_start) AS sample_start, MAX(sample_end) AS sample_end, "
                 "COALESCE(SUM(sample_end - sample_start), 0) AS sample_count "
-                "FROM output_sample_intervals WHERE submit_intent_id = %s "
+                "FROM output_sample_intervals WHERE submit_intent_id = ? "
                 "AND meter_kind = 'generated'",
                 (current.identity.submit_intent_id,),
             )

@@ -133,7 +133,7 @@ class PostgresAssistantTurns(AssistantTurnStore):
             _ReceiptRow,
             """
             SELECT intent_digest, turn_id FROM {s}.assistant_turn_receipts
-            WHERE scope_id = %s AND key_digest = %s
+            WHERE scope_id = ? AND key_digest = ?
         """,
             (scope_id, key_digest),
         )
@@ -201,7 +201,7 @@ class PostgresAssistantTurns(AssistantTurnStore):
                     voice_id, voice_revision, model, profile_id, profile_revision,
                     speech_job_id, playback_generation, error, created_at, updated_at
                 ) VALUES (
-                    %s, %s, %s, %s, %s, NULL, %s, %s, %s, %s, %s, NULL, %s, NULL, %s, %s
+                    ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, NULL, ?, NULL, ?, ?
                 )
             """,
                 (
@@ -225,7 +225,7 @@ class PostgresAssistantTurns(AssistantTurnStore):
                     """
                     INSERT INTO {s}.assistant_turn_receipts
                         (scope_id, key_digest, intent_digest, turn_id, created_at)
-                    VALUES (%s, %s, %s, %s, %s)
+                    VALUES (?, ?, ?, ?, ?)
                 """,
                     (project_id, digest, intent, turn.id, now),
                 )

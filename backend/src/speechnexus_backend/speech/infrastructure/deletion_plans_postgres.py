@@ -129,7 +129,7 @@ def lock_workspace(reader: DeletionRows, workspace_id: str) -> bool:
     return bool(
         reader.rows(
             "SELECT workspace_id FROM speech_workspaces "
-            "WHERE workspace_id = %s AND workspace_state = 'active' FOR KEY SHARE",
+            "WHERE workspace_id = ? AND workspace_state = 'active' FOR KEY SHARE",
             (workspace_id,),
         )
     )
@@ -174,7 +174,7 @@ def asset_snapshot(
         "a.object_key, o.storage_version_id "
         "FROM speech_assets AS a "
         "LEFT JOIN speech_asset_objects AS o ON o.asset_id = a.asset_id "
-        "WHERE a.asset_id = %s AND a.workspace_id = %s "
+        "WHERE a.asset_id = ? AND a.workspace_id = ? "
         + ("FOR UPDATE OF a" if exclusive else "FOR SHARE OF a"),
         (target.resource_id, workspace_id),
     )
@@ -216,7 +216,7 @@ def asset_references(reader: DeletionRows, asset_id: str) -> list[dict[str, Any]
     references = reader.rows(
         "SELECT consumer_kind, consumer_id, consumer_revision "
         "FROM speech_asset_references "
-        "WHERE asset_id = %s AND released_at_us IS NULL "
+        "WHERE asset_id = ? AND released_at_us IS NULL "
         "ORDER BY consumer_kind, consumer_id, consumer_revision",
         (asset_id,),
     )
@@ -239,7 +239,7 @@ def job_snapshot(
     rows = reader.rows(
         "SELECT j.job_id, j.workspace_id, j.status_version, j.request_digest, j.state "
         "FROM speech_jobs AS j "
-        "WHERE j.job_id = %s AND j.workspace_id = %s "
+        "WHERE j.job_id = ? AND j.workspace_id = ? "
         + ("FOR UPDATE OF j" if exclusive else "FOR SHARE OF j"),
         (target.resource_id, workspace_id),
     )
@@ -260,7 +260,7 @@ def job_snapshot(
         dependencies.append(Dependency(current, "active_execution", "blocks"))
     for draft in reader.rows(
         "SELECT draft_id, revision FROM speech_voice_draft_revisions "
-        "WHERE generation_job_id = %s ORDER BY draft_id, revision",
+        "WHERE generation_job_id = ? ORDER BY draft_id, revision",
         (target.resource_id,),
     ):
         dependencies.append(
@@ -278,11 +278,11 @@ def job_snapshot(
     artifacts = reader.rows(
         "SELECT artifact_id, artifact_state, sha256, object_key, storage_version_id "
         "FROM speech_artifacts "
-        "WHERE source_operation_id = %s AND workspace_id = %s ORDER BY artifact_id",
+        "WHERE source_operation_id = ? AND workspace_id = ? ORDER BY artifact_id",
         (target.resource_id, workspace_id),
     )
     intents = reader.rows(
-        "SELECT job_id, request_digest FROM speech_job_intents WHERE job_id = %s",
+        "SELECT job_id, request_digest FROM speech_job_intents WHERE job_id = ?",
         (target.resource_id,),
     )
     return PlanSnapshot(
@@ -342,7 +342,7 @@ def artifact_snapshot(
         "SELECT artifact_id, workspace_id, artifact_kind, artifact_state, media_type, "
         "bytes, sha256, object_key, storage_version_id "
         "FROM speech_artifacts "
-        "WHERE artifact_id = %s AND workspace_id = %s " + ("FOR UPDATE" if exclusive else ""),
+        "WHERE artifact_id = ? AND workspace_id = ? " + ("FOR UPDATE" if exclusive else ""),
         (target.resource_id, workspace_id),
     )
     if not rows:
@@ -365,7 +365,7 @@ def artifact_snapshot(
             "SELECT e.validation_job_id, j.status_version "
             "FROM speech_voice_capability_evidence AS e "
             "JOIN speech_jobs AS j ON j.job_id = e.validation_job_id "
-            "WHERE e.report_artifact_id = %s ORDER BY e.validation_job_id",
+            "WHERE e.report_artifact_id = ? ORDER BY e.validation_job_id",
             (target.resource_id,),
         )
     )
@@ -409,7 +409,7 @@ def voice_revision_snapshot(
         "FROM speech_voice_draft_revisions AS r "
         "JOIN speech_voice_drafts AS d ON d.draft_id = r.draft_id "
         "JOIN speech_jobs AS j ON j.job_id = r.generation_job_id "
-        "WHERE r.draft_id = %s AND r.revision = %s AND j.workspace_id = %s",
+        "WHERE r.draft_id = ? AND r.revision = ? AND j.workspace_id = ?",
         (target.resource_id, str(target.revision), workspace_id),
     )
     if not rows:
@@ -443,7 +443,7 @@ def voice_revision_snapshot(
         "SELECT validation_job_id, j.status_version "
         "FROM speech_voice_capability_evidence AS e "
         "JOIN speech_jobs AS j ON j.job_id = e.validation_job_id "
-        "WHERE e.draft_id = %s AND e.draft_revision = %s ORDER BY e.validation_job_id",
+        "WHERE e.draft_id = ? AND e.draft_revision = ? ORDER BY e.validation_job_id",
         (target.resource_id, str(target.revision)),
     ):
         dependencies.append(
@@ -459,7 +459,7 @@ def voice_revision_snapshot(
             )
         )
     if reader.rows(
-        "SELECT 1 FROM speech_voice_revisions WHERE draft_id = %s AND draft_revision = %s",
+        "SELECT 1 FROM speech_voice_revisions WHERE draft_id = ? AND draft_revision = ?",
         (target.resource_id, str(target.revision)),
     ):
         dependencies.append(Dependency(me, "persistent_reference", "blocks"))
@@ -471,8 +471,8 @@ def voice_revision_snapshot(
         "FROM speech_job_intents AS i "
         "JOIN speech_jobs AS j ON j.job_id = i.job_id "
         "WHERE i.request_document IS JSON "
-        "AND (i.request_document::jsonb -> 'input' ->> 'voice_draft_id') = %s "
-        "AND (i.request_document::jsonb -> 'input' ->> 'draft_revision') = %s "
+        "AND (i.request_document::jsonb -> 'input' ->> 'voice_draft_id') = ? "
+        "AND (i.request_document::jsonb -> 'input' ->> 'draft_revision') = ? "
         "ORDER BY i.job_id",
         (target.resource_id, str(target.revision)),
     ):
@@ -522,7 +522,7 @@ class _Transaction:
         if remaining <= 0:
             raise _unavailable()
         self._connection.execute(
-            "SELECT set_config('statement_timeout', %s, true)",
+            "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(remaining * 1000))),),
         )
         cursor = self._connection.execute(statement, args)

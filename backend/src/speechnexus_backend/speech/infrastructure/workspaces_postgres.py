@@ -44,7 +44,9 @@ class PostgresWorkspaceReads:
             raise ValueError("Workspace reads require bounded deadlines")
         self._pool, self._timeout = pool, timeout_seconds
 
-    def _read(self, query: str, parameters: tuple[object, ...]) -> tuple[Workspace, ...]:
+    def _read(
+        self, query: str, parameters: tuple[object, ...], *, page_size: int | None = None
+    ) -> tuple[Workspace, ...]:
         deadline = time.monotonic() + self._timeout
         try:
             with self._pool.connection(timeout=self._timeout) as connection:
@@ -56,7 +58,9 @@ class PostgresWorkspaceReads:
                     "SELECT set_config('statement_timeout', ?, true)",
                     (str(max(1, int(remaining * 1000))),),
                 )
-                records = connection.execute(query, parameters).fetchall()
+                cursor = connection.execute(query, parameters)
+                # 受限方言没有 `LIMIT`:keyset 谓词已把扫描面收窄,页大小由 fetchmany 决定。
+                records = cursor.fetchall() if page_size is None else cursor.fetchmany(page_size)
                 result = tuple(_workspace(row) for row in records)
                 if time.monotonic() >= deadline:
                     raise WorkspaceUnavailableError
@@ -83,8 +87,9 @@ class PostgresWorkspaceReads:
     def scan(self, query: WorkspaceQuery) -> tuple[Workspace, ...]:
         return self._read(
             "SELECT " + _COLUMNS + " FROM speech_workspaces "
-            "WHERE workspace_id > ? ORDER BY workspace_id LIMIT ?",
-            (query.after_id or "", query.limit + 1),
+            "WHERE workspace_id > ? ORDER BY workspace_id",
+            (query.after_id or "",),
+            page_size=query.limit + 1,
         )
 
 

@@ -28,19 +28,19 @@ def order_clause(text: str) -> str:
 
 
 def test_the_page_is_ordered_by_the_unique_keyset_key_and_nothing_else() -> None:
-    text, _ = statement(BindingSummaryQuery(2))
+    text, _parameters, _page_size = statement(BindingSummaryQuery(2))
     clause = order_clause(text)
-    assert clause == "ORDER BY family.binding_id LIMIT ?"
+    assert clause == "ORDER BY family.binding_id"
     # A secondary term would make the order depend on equal keys, and a missing
     # ordering would let the physical scan order leak into the page.
-    assert "," not in clause.split(" LIMIT ")[0]
+    assert "," not in clause
     assert clause.count("ORDER BY") == 1
     # The frontier must be compared on the same key the page is ordered by.
     assert "WHERE family.binding_id > ?" in text
 
 
 def test_binding_id_is_the_only_mutable_free_ordering_column() -> None:
-    text, _ = statement(BindingSummaryQuery(1))
+    text, _parameters, _page_size = statement(BindingSummaryQuery(1))
     clause = order_clause(text)
     for mutable_column in (
         "latest_revision",
@@ -55,8 +55,11 @@ def test_binding_id_is_the_only_mutable_free_ordering_column() -> None:
 
 def test_one_extra_row_is_requested_so_has_more_is_derivable() -> None:
     for limit in (1, 50, 100):
-        _, parameters = statement(BindingSummaryQuery(limit))
-        assert parameters == ("", limit + 1)
+        text, parameters, page_size = statement(BindingSummaryQuery(limit))
+        assert parameters == ("",)
+        assert page_size == limit + 1
+        # 页大小不进 SQL:方言没有 LIMIT,多取的一行由 fetchmany 决定。
+        assert "LIMIT" not in text
 
 
 def test_the_frontier_is_the_recorded_key_or_the_empty_prefix() -> None:
@@ -65,7 +68,7 @@ def test_the_frontier_is_the_recorded_key_or_the_empty_prefix() -> None:
 
 
 def test_only_the_declared_read_relations_are_selected() -> None:
-    text, _ = statement(BindingSummaryQuery(1))
+    text, _parameters, _page_size = statement(BindingSummaryQuery(1))
     for relation in (
         "speech_binding_families",
         "speech_binding_revisions",
@@ -89,7 +92,7 @@ def predicate_clause(text: str) -> str:
 
 
 def test_an_unfiltered_page_has_no_status_predicate() -> None:
-    text, _ = statement(BindingSummaryQuery(1))
+    text, _parameters, _page_size = statement(BindingSummaryQuery(1))
     clause = predicate_clause(text)
     assert "publication.revision IS" not in clause
     assert "retired.mode" not in clause
@@ -97,7 +100,7 @@ def test_an_unfiltered_page_has_no_status_predicate() -> None:
 
 @pytest.mark.parametrize("status", BINDING_PUBLICATION_STATUSES)
 def test_each_status_predicate_is_exactly_the_derived_status(status: str) -> None:
-    text, _ = statement(BindingSummaryQuery(1, "asr-a", status))  # type: ignore[arg-type]
+    text, _parameters, _page_size = statement(BindingSummaryQuery(1, "asr-a", status))  # type: ignore[arg-type]
     predicates = {
         "draft": "publication.revision IS NULL",
         "published": "publication.revision IS NOT NULL AND retired.mode IS NULL",
@@ -108,7 +111,7 @@ def test_each_status_predicate_is_exactly_the_derived_status(status: str) -> Non
     # Exactly one filter form can be present, otherwise two statuses would leak
     # into one page.
     assert sum(text.count(shape) for shape in predicates.values()) == 1
-    assert order_clause(text) == "ORDER BY family.binding_id LIMIT ?"
+    assert order_clause(text) == "ORDER BY family.binding_id"
 
 
 def test_a_foreign_query_object_is_refused() -> None:

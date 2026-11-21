@@ -31,25 +31,29 @@ BASE = (
     "LEFT JOIN speech_binding_revisions AS revision "
     "ON revision.revision_id = instance.binding_revision_id"
 )
-ORDER = " ORDER BY instance.instance_id, instance.instance_generation LIMIT ?"
+ORDER = " ORDER BY instance.instance_id, instance.instance_generation"
 
 
 def test_an_unfiltered_page_starts_before_every_key_and_over_reads_one_row() -> None:
-    text, parameters = statement(ModelInstanceQuery(50))
+    text, parameters, page_size = statement(ModelInstanceQuery(50))
     assert text == BASE + (
         " WHERE (instance.instance_id, instance.instance_generation) > (?, ?)" + ORDER
     )
-    assert parameters == ("", 0, 51)
+    # 页大小不进 SQL:方言没有 LIMIT,多取的一行由 fetchmany(page_size) 决定。
+    assert parameters == ("", 0)
+    assert page_size == 51
+    assert "LIMIT" not in text
 
 
 def test_the_frontier_and_both_filters_are_bound_in_order() -> None:
     query = ModelInstanceQuery(2, InstancePosition("inst-a", 3), "node-a", "ready")
-    text, parameters = statement(query)
+    text, parameters, page_size = statement(query)
     assert text == BASE + (
         " WHERE (instance.instance_id, instance.instance_generation) > (?, ?)"
         " AND instance.host_node_id = ? AND instance.instance_state = ?" + ORDER
     )
-    assert parameters == ("inst-a", 3, "node-a", "ready", 3)
+    assert parameters == ("inst-a", 3, "node-a", "ready")
+    assert page_size == 3
 
 
 @pytest.mark.parametrize(
@@ -66,15 +70,17 @@ def test_the_frontier_and_both_filters_are_bound_in_order() -> None:
 def test_each_filter_combination_keeps_one_statement(
     query: ModelInstanceQuery, expected: tuple[Any, ...]
 ) -> None:
-    text, parameters = statement(query)
+    text, parameters, page_size = statement(query)
     assert text.count(" WHERE ") == 1
     assert text.endswith(ORDER)
-    assert parameters == expected
+    assert parameters == expected[:-1]
+    assert page_size == expected[-1]
 
 
 def test_the_ordering_names_both_key_columns_and_no_mutable_column() -> None:
-    text, _ = statement(ModelInstanceQuery(10))
-    assert " ORDER BY instance.instance_id, instance.instance_generation LIMIT ?" in text
+    text, _parameters, _page_size = statement(ModelInstanceQuery(10))
+    assert " ORDER BY instance.instance_id, instance.instance_generation" in text
+    assert "LIMIT" not in text
     for mutable in ("ready_at_us", "stopped_at_us", "instance_state", "host_node_id"):
         assert f"ORDER BY instance.{mutable}" not in text
     # Selected once, compared once in the frontier, ordered once.

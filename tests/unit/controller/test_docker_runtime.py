@@ -695,3 +695,58 @@ def test_changed_managed_environment_still_quarantines_the_container() -> None:
 
     assert observation is not None
     assert observation.observed_instance_state is ObservedInstanceState.QUARANTINED
+
+
+def test_gpu_quota_comes_from_deployment_config_not_the_template() -> None:
+    """The approved template is shared across card sizes, so the budget cannot live in it."""
+    engine = _engine()
+    runtime = _runtime(
+        engine,
+        gpu_memory_mib=6144,
+        gpu_memory_utilization=0.9,
+        libvgpu_path="/opt/speechnexus/libvgpu.so",
+    )
+    runtime.prepare(
+        build_request(),
+        build_template(gpu_device_count=1, command=("--model", "m", "--port", "1")),
+    )
+    created = engine.created[0]
+
+    assert created.command is not None
+    assert created.command[-2:] == ("--gpu-memory-utilization", "0.9")
+    assert "CUDA_DEVICE_MEMORY_LIMIT=6144m" in created.environment
+    assert "LD_PRELOAD=/opt/speechnexus/libvgpu.so" in created.environment
+    assert "/opt/speechnexus/libvgpu.so:/opt/speechnexus/libvgpu.so:ro" in created.host_config[
+        "Binds"
+    ]
+
+
+def test_gpu_quota_leaves_a_template_that_already_states_it_alone() -> None:
+    """An explicit ratio in a template stays authoritative instead of being appended twice."""
+    engine = _engine()
+    runtime = _runtime(engine, gpu_memory_mib=6144, gpu_memory_utilization=0.9)
+    runtime.prepare(
+        build_request(),
+        build_template(
+            gpu_device_count=1,
+            command=("--model", "m", "--gpu-memory-utilization", "0.5"),
+        ),
+    )
+    assert engine.created[0].command == (
+        "--model",
+        "m",
+        "--gpu-memory-utilization",
+        "0.5",
+    )
+
+
+def test_no_gpu_quota_means_no_cap_and_no_shim() -> None:
+    """Without deployment config the controller must not invent a VRAM budget."""
+    engine = _engine()
+    runtime = _runtime(engine)
+    runtime.prepare(build_request(), build_template(gpu_device_count=1, command=("--model", "m")))
+    created = engine.created[0]
+
+    assert created.command == ("--model", "m")
+    assert not any(item.startswith("CUDA_DEVICE_MEMORY_LIMIT=") for item in created.environment)
+    assert not any("libvgpu" in bind for bind in created.host_config["Binds"])

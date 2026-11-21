@@ -295,4 +295,3 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
         )
     )
     print("roles ready: " + " ".join(sorted(roles)))
-

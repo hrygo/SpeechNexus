@@ -137,7 +137,7 @@ def cluster_corpus(root: Path) -> str:
     for path in sorted(root.rglob("*")):
         if path.name == Path(__file__).name:
             continue
-        if path.is_file() and path.suffix in {".py", ".yaml", ".yml", ".sh", ".env", ".md"}:
+        if path.is_file() and path.suffix in {".py", ".yaml", ".yml", ".sh", ".env", ".md", ".json"}:
             chunks.append(path.read_text(errors="ignore"))
     return "\n".join(chunks)
 
@@ -147,6 +147,11 @@ def cluster_corpus(root: Path) -> str:
 # time (render-web-upstreams.py) and must never be committed.
 ENVIRONMENT_ADDRESS = re.compile(r"\b(?:10\.96|172\.17|10\.244)\.\d{1,3}\.\d{1,3}\b")
 
+# A VRAM ratio is correct for exactly one card size. The approved template is the
+# same file on a 48 GB production card and on a development box, so the number
+# belongs in deployment configuration, not here.
+TEMPLATE_GPU_RATIO = re.compile(r"--gpu-memory-utilization")
+
 
 def check(
     services: dict[str, list[str]], corpus: str, coverage: dict[str, tuple[str, str, str]]
@@ -155,6 +160,11 @@ def check(
     for address in sorted(set(ENVIRONMENT_ADDRESS.findall(corpus))):
         problems.append(
             f"hardcoded cluster address {address}: assigned by the cluster, render it instead"
+        )
+    if TEMPLATE_GPU_RATIO.search(corpus):
+        problems.append(
+            "approved template carries --gpu-memory-utilization: the VRAM budget is "
+            "deployment configuration (ENGINE_GPU_MEMORY_MIB), not a template constant"
         )
     for name in services:
         if name not in coverage:

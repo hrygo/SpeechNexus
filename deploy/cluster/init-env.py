@@ -137,6 +137,18 @@ def render_compute(values: dict[str, str], versions: dict[str, str]) -> str:
         # only known after a prepare. An empty value makes Compose refuse to start the
         # shim with a message naming the variable, instead of guessing.
         "ENGINE_ADDRESS": preserved_engine_address() or "",
+        # VRAM budget for one engine. The approved template carries no GPU memory
+        # number, so this is the only place a deployment states how much VRAM an
+        # engine may use. Values assume the shim below is installed on the node.
+        "SPEECHNEXUS_CONTROLLER_ENGINE_GPU_MEMORY_MIB": values.get(
+            "SPEECHNEXUS_ENGINE_GPU_MEMORY_MIB", "12316"
+        ),
+        "SPEECHNEXUS_CONTROLLER_ENGINE_GPU_MEMORY_UTILIZATION": values.get(
+            "SPEECHNEXUS_ENGINE_GPU_MEMORY_UTILIZATION", "0.9"
+        ),
+        "SPEECHNEXUS_CONTROLLER_ENGINE_LIBVGPU_PATH": values.get(
+            "SPEECHNEXUS_ENGINE_LIBVGPU_PATH", "/opt/speechnexus/libvgpu.so"
+        ),
     }
     header = (
         "# Compute-plane values for deploy/cluster/compute/compose.yaml.\n"

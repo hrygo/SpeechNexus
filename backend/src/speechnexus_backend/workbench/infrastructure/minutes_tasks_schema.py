@@ -58,7 +58,7 @@ CREATE TABLE {s}.minutes_tasks (
     profile_sha256 text NOT NULL CHECK (profile_sha256 ~ '^sha256:[0-9a-f]{{64}}$'),
     binding_id text NOT NULL CHECK (binding_id ~ '^sha256:[0-9a-f]{{64}}$'),
     profile jsonb NOT NULL CHECK (jsonb_typeof(profile) = 'object'
-        AND octet_length(CAST(profile AS text)) <= 128000),
+        AND octet_length(profile::text) <= 128000),
     status text NOT NULL CHECK (status IN
         ('queued','running','succeeded','failed','cancelled','expired')),
     attempt integer NOT NULL CHECK (attempt >= 0),

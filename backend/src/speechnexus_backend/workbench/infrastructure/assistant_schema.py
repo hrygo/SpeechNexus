@@ -52,7 +52,7 @@ CREATE TABLE {s}.assistant_turns (
     speech_job_id text CHECK (char_length(speech_job_id) BETWEEN 1 AND 128),
     playback_generation integer NOT NULL CHECK (playback_generation >= 1),
     error jsonb CHECK (error IS NULL OR (jsonb_typeof(error) = 'object'
-        AND octet_length(CAST(error AS text)) <= 4000)),
+        AND octet_length(error::text) <= 4000)),
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL CHECK (updated_at >= created_at),
     UNIQUE (project_id, id),

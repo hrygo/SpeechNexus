@@ -117,7 +117,8 @@ VOICE_VALIDATION_PROBES: tuple[tuple[str, str], ...] = (
 
 # 复制自 job_dispatch_runtime.DISPATCH_ROLE_GUARD_SQL;为真即拒绝启动。
 DISPATCH_ROLE_GUARD = (
-    "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(CAST(%(role)s AS name),%(schema)s,'CREATE') "
+    "SELECT r.rolsuper OR "
+    "pg_catalog.has_schema_privilege(CAST(%(role)s AS name),%(schema)s,'CREATE') "
     "OR pg_catalog.pg_has_role(CAST(%(role)s AS name),d.datdba,'MEMBER') OR EXISTS ("
     "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
     "ON n.oid=c.relnamespace WHERE n.nspname=%(schema)s "

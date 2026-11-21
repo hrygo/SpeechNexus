@@ -53,7 +53,6 @@
     "format::backend/src/speechnexus_backend/workbench/infrastructure/postgres_render_units.py": 3,
     "format::backend/src/speechnexus_backend/workbench/infrastructure/postgres_versions.py": 1,
     "named::backend/src/speechnexus_backend/speech/infrastructure/migrations/env.py": 2,
-    "paging-limit::backend/src/speechnexus_backend/engine_registration.py": 1,
     "paging-limit::backend/src/speechnexus_backend/model_catalog_runtime.py": 1,
     "paging-limit::backend/src/speechnexus_backend/speech/infrastructure/admission_recovery_sql.py": 1,
     "paging-limit::backend/src/speechnexus_backend/speech/infrastructure/admission_sql.py": 2,

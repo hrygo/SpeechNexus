@@ -61,12 +61,14 @@ class PostgresVoiceCatalogue:
             # Check publication integrity before filters or pagination can hide
             # a selected fact whose exact qualification is unavailable.
             db.execute(
-                f"SELECT 1 FROM {VOICE_READER_VIEW} WHERE selected "
+                f"SELECT EXISTS (SELECT 1 FROM {VOICE_READER_VIEW} WHERE selected "
                 "AND retired_at_us IS NULL AND (document IS NULL "
                 "OR document->>'voice_id' IS DISTINCT FROM voice_id "
-                "OR document->>'revision' IS DISTINCT FROM revision) LIMIT 1"
+                "OR document->>'revision' IS DISTINCT FROM revision)) AS stale"
             )
-            if db.fetchall():
+            stale = db.fetchall()
+            # 判定必须恰好一行;返回多行说明视图/驱动违约,不能当成「没有」。
+            if len(stale) != 1 or stale[0]["stale"]:
                 raise PublicationUnavailableError
             db.execute(
                 # 这里用的是 JSONB `?` 存在运算符,不是占位符;整条语句保持旧式 `%s`,

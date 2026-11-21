@@ -206,7 +206,7 @@ async def _refuse_table_privilege(
             "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
             "WHERE n.nspname=? AND c.relkind IN ('r','p','v','m','f') "
             f"AND pg_catalog.has_table_privilege(c.oid,?){scope}"
-            "ORDER BY c.relname LIMIT 1",
+            "ORDER BY c.relname",
             parameters,
         )
     ).fetchone()
@@ -239,7 +239,7 @@ async def _refuse_column_privilege(
             "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
             "WHERE n.nspname=? AND c.relkind IN ('r','p','v','m','f') "
             f"AND pg_catalog.has_any_column_privilege(c.oid,?){scope}"
-            "ORDER BY c.relname LIMIT 1",
+            "ORDER BY c.relname",
             parameters,
         )
     ).fetchone()
@@ -324,7 +324,6 @@ async def _refuse_foreign_relation_privileges(
                     END
                 )
             ORDER BY n.nspname, c.relname
-            LIMIT 1
             """,
             (schema,),
         )

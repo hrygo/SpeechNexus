@@ -384,10 +384,10 @@ class Store:
         if "FROM runtime_instance_heads" in sql:
             head = self.heads.get(cast(str, params[0]))
             return [head] if head is not None else []
-        if "SELECT instance_id FROM engine_instances" in sql:
-            return [
-                {"instance_id": key[0]} for key in self.instances if key[0] == cast(str, params[0])
-            ][:1]
+        if "EXISTS (SELECT 1 FROM engine_instances" in sql:
+            # 探针现在问的是存在性;假存储按同样口径回一行布尔。
+            present = any(key[0] == cast(str, params[0]) for key in self.instances)
+            return [{"present": present}]
         if "FROM engine_instances" in sql:
             if len(params) == 2:
                 instance = self.instances.get((cast(str, params[0]), cast(int, params[1])))

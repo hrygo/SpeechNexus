@@ -612,11 +612,12 @@ def _existing_result(
         (spec.instance_id,),
     )
     if not heads:
-        if _rows(
+        existing = _rows(
             cursor,
-            "SELECT instance_id FROM engine_instances WHERE instance_id = ? LIMIT 1",
+            "SELECT EXISTS (SELECT 1 FROM engine_instances WHERE instance_id = ?) AS present",
             (spec.instance_id,),
-        ):
+        )
+        if existing and existing[0]["present"]:
             raise RegistrationError(
                 "reconciliation_required",
                 "engine rows exist without a runtime head",

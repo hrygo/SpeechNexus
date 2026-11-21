@@ -138,8 +138,10 @@ class _ObservedJobs(PostgresPublicJobs):
         submission_key: tuple[str, str] | None = None,
         page_size: int | None = None,
     ) -> list[dict[str, Any]]:
+        # 记下真实执行的语句(去掉页大小后与运行时一致),再交给父类取一页。
         self.calls.append((query, parameters))
-        return super()._read(query, parameters, submission_key=submission_key)
+        rows = super()._read(query, parameters, submission_key=submission_key)
+        return rows if page_size is None else rows[:page_size]
 
 
 def _nodes(plan: dict[str, Any]) -> Iterable[dict[str, Any]]:

@@ -386,7 +386,7 @@ class PostgresMinutesTasks:
         if type(limit) is not int or not 1 <= limit <= 100:
             raise ValueError("invalid minutes queue limit")
         async with self._transaction() as base:
-            rows = await base._many(
+            rows = await base._page(
                 _Id,
                 """SELECT j.id FROM {s}.minutes_tasks j
                 WHERE j.workspace_id=? AND j.status='queued' AND NOT EXISTS (
@@ -397,8 +397,9 @@ class PostgresMinutesTasks:
                     SELECT 1 FROM {s}.deletion_ledger l, jsonb_array_elements(l.deleted) e
                     WHERE (e->>1='project' AND e->>2=j.project_id)
                        OR (e->>1='transcript' AND e->>2=j.transcript_id))
-                ORDER BY j.created_at,j.id LIMIT %s""",
-                (workspace_id, limit),
+                ORDER BY j.created_at,j.id""",
+                (workspace_id,),
+                limit,
             )
             return tuple(row.id for row in rows)
 

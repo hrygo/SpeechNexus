@@ -359,6 +359,16 @@ class _Session:
             await cursor.execute(statement, params)
             return tuple(await cursor.fetchall())
 
+    async def _page[T](
+        self, factory: type[T], query: str, params: Sequence[object], size: int
+    ) -> tuple[T, ...]:
+        """取一页:页大小不进 SQL(方言没有 `LIMIT`),由驱动按需取行。"""
+
+        statement = self._sql(query)
+        async with self._connection.cursor(row_factory=class_row(factory)) as cursor:
+            await cursor.execute(statement, params)
+            return tuple(await cursor.fetchmany(size))
+
     async def list_projects(
         self, workspace_id: str, *, limit: int, after: ListingPosition | None
     ) -> tuple[Project, ...]:
@@ -366,8 +376,7 @@ class _Session:
         params: list[object] = [workspace_id]
         if after is not None:
             params.extend((after.created_at, after.item_id))
-        params.append(limit)
-        rows = await self._many(
+        rows = await self._page(
             _ProjectRow,
             """
             SELECT p.id, p.workspace_id, p.created_at, v.revision, v.name, v.description,
@@ -382,8 +391,9 @@ class _Session:
                 WHERE e->>1 = 'project' AND e->>2 = p.id)
             """
             + seek
-            + " ORDER BY p.created_at DESC, p.id DESC LIMIT %s",
+            + " ORDER BY p.created_at DESC, p.id DESC",
             params,
+            limit,
         )
         return tuple(row.domain() for row in rows)
 
@@ -396,8 +406,8 @@ class _Session:
         params: list[object] = []
         if after is not None:
             params.extend((after.created_at, after.item_id))
-        params.extend((limit, project_id))
-        rows = await self._many(
+        params.append(project_id)
+        rows = await self._page(
             _TranscriptListingRow,
             """
             SELECT p.id AS parent_id, c.id, c.display_name, c.created_at,
@@ -417,7 +427,7 @@ class _Session:
                 """
             + seek
             + """
-                ORDER BY t.created_at DESC, t.id DESC LIMIT %s
+                ORDER BY t.created_at DESC, t.id DESC
             ) c ON true
             WHERE p.id = ? AND NOT EXISTS (
                 SELECT 1 FROM {s}.resource_tombstones d
@@ -428,6 +438,7 @@ class _Session:
             ORDER BY c.created_at DESC, c.id DESC
             """,
             params,
+            limit,
         )
         if not rows:
             return None

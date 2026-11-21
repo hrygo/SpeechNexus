@@ -56,7 +56,7 @@ class _PendingId:
 _PENDING_OBJECTS = """
     SELECT o.deletion_id FROM {s}.deletion_outbox o
     WHERE o.completed_at IS NULL OR o.objects_erased_at IS NULL
-    ORDER BY o.created_at, o.deletion_id LIMIT %s
+    ORDER BY o.created_at, o.deletion_id
 """
 
 
@@ -115,11 +115,7 @@ class PostgresDeletionCleanup:
             raise ValueError("pending deletion limit outside the supported range")
         async with self._uow.transaction() as base:
             assert isinstance(base, _Session)
-            rows = await base._many(
-                _PendingId,
-                _PENDING_OBJECTS,
-                (limit,),
-            )
+            rows = await base._page(_PendingId, _PENDING_OBJECTS, (), limit)
         return tuple(row.deletion_id for row in rows)
 
     async def run(self, deletion_id: str) -> DeletionResult | None:

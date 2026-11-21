@@ -288,10 +288,10 @@ class PostgresBooks:
         params: list[object] = []
         if after is not None:
             params.extend((after.created_at, after.item_id))
-        params.extend((limit, project_id, workspace_id))
+        params.extend((project_id, workspace_id))
         async with self._versions.transaction() as base:
             assert isinstance(base, _Session)
-            rows = await base._many(
+            rows = await base._page(
                 _BookListingRow,
                 """
                 SELECT p.id AS parent_id, b.id, b.title, b.status, b.casting_revision,
@@ -305,7 +305,7 @@ class PostgresBooks:
                 """
                 + seek
                 + """
-                    ORDER BY b.created_at DESC, b.id DESC LIMIT %s
+                    ORDER BY b.created_at DESC, b.id DESC
                 ) b ON true
                 WHERE p.id = ? AND p.workspace_id = ? AND NOT EXISTS (
                     SELECT 1 FROM {s}.resource_tombstones d
@@ -315,6 +315,7 @@ class PostgresBooks:
                     WHERE e->>1 = 'project' AND e->>2 = p.id)
                 """,
                 tuple(params),
+                limit,
             )
         if not rows:
             return None
@@ -416,10 +417,10 @@ class PostgresBooks:
         params: list[object] = []
         if after is not None:
             params.extend((after.created_at, after.item_id))
-        params.extend((limit, book_id, workspace_id))
+        params.extend((book_id, workspace_id))
         async with self._versions.transaction() as base:
             assert isinstance(base, _Session)
-            rows = await base._many(
+            rows = await base._page(
                 _ChapterListingRow,
                 """
                 SELECT b.id AS parent_id, c.id, c.title, c.ordinal, c.text,
@@ -433,7 +434,7 @@ class PostgresBooks:
                 """
                 + seek
                 + """
-                    ORDER BY c.created_at DESC, c.id DESC LIMIT %s
+                    ORDER BY c.created_at DESC, c.id DESC
                 ) c ON true
                 WHERE b.id = ? AND p.workspace_id = ? AND NOT EXISTS (
                     SELECT 1 FROM {s}.resource_tombstones d
@@ -443,6 +444,7 @@ class PostgresBooks:
                     WHERE e->>1 = 'project' AND e->>2 = p.id)
                 """,
                 tuple(params),
+                limit,
             )
         if not rows:
             return None

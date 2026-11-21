@@ -246,10 +246,10 @@ class PostgresRenderUnits(RenderUnitStore):
         params: list[object] = []
         if after is not None:
             params.extend((after.created_at, after.item_id))
-        params.extend((limit, chapter_id, workspace_id))
+        params.extend((chapter_id, workspace_id))
         async with self._versions.transaction() as base:
             assert isinstance(base, _Session)
-            rows = await base._many(
+            rows = await base._page(
                 _UnitListingRow,
                 """
                 SELECT c.id AS parent_id, u.*, sa.id AS saved_copy_id
@@ -265,7 +265,7 @@ class PostgresRenderUnits(RenderUnitStore):
                 """
                 + seek
                 + """
-                    ORDER BY u.created_at DESC, u.id DESC LIMIT %s
+                    ORDER BY u.created_at DESC, u.id DESC
                 ) u ON true
                 LEFT JOIN LATERAL (
                     SELECT a.id FROM {s}.saved_assets a
@@ -282,6 +282,7 @@ class PostgresRenderUnits(RenderUnitStore):
                     WHERE e->>1 = 'project' AND e->>2 = p.id)
                 """,
                 tuple(params),
+                limit,
             )
             if not rows:
                 return None
@@ -572,7 +573,7 @@ class PostgresRenderUnits(RenderUnitStore):
     async def scan_generating(self, *, workspace_id: str, limit: int) -> tuple[str, ...]:
         async with self._versions.transaction() as base:
             assert isinstance(base, _Session)
-            rows = await base._many(
+            rows = await base._page(
                 _UnitIdRow,
                 """
                 SELECT u.id FROM {s}.render_units u
@@ -585,16 +586,17 @@ class PostgresRenderUnits(RenderUnitStore):
                         SELECT 1 FROM {s}.deletion_ledger l,
                             jsonb_array_elements(l.deleted) e
                         WHERE e->>1 = 'project' AND e->>2 = p.id)
-                ORDER BY u.updated_at, u.id LIMIT %s
+                ORDER BY u.updated_at, u.id
             """,
-                (workspace_id, limit),
+                (workspace_id,),
+                limit,
             )
         return tuple(row.id for row in rows)
 
     async def scan_ready_without_copy(self, *, workspace_id: str, limit: int) -> tuple[str, ...]:
         async with self._versions.transaction() as base:
             assert isinstance(base, _Session)
-            rows = await base._many(
+            rows = await base._page(
                 _UnitIdRow,
                 """
                 SELECT u.id FROM {s}.render_units u
@@ -613,9 +615,10 @@ class PostgresRenderUnits(RenderUnitStore):
                         SELECT 1 FROM {s}.deletion_ledger l,
                             jsonb_array_elements(l.deleted) e
                         WHERE e->>1 = 'project' AND e->>2 = p.id)
-                ORDER BY u.updated_at, u.id LIMIT %s
+                ORDER BY u.updated_at, u.id
             """,
-                (workspace_id, limit),
+                (workspace_id,),
+                limit,
             )
         return tuple(row.id for row in rows)
 

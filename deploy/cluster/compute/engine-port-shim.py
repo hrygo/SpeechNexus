@@ -18,6 +18,7 @@ instance is prepared with a different address.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import socket
 import sys
@@ -40,10 +41,8 @@ def pump(source: socket.socket, sink: socket.socket) -> None:
         pass
     finally:
         for side in (source, sink):
-            try:
+            with contextlib.suppress(OSError):
                 side.shutdown(socket.SHUT_RDWR)
-            except OSError:
-                pass
 
 
 def handle(client: socket.socket, target: tuple[str, int]) -> None:

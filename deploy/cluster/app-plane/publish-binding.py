@@ -114,8 +114,7 @@ def build_draft(recipe: dict) -> dict:
     pin = json.loads((ROOT / "deploy/engines/file-asr-audio/artifact-pin.json").read_text())
     runtime = json.loads(
         (
-            ROOT
-            / "deploy/engines/vllm-asr-lifecycle/src/speechnexus_vllm_asr/runtime-pin.json"
+            ROOT / "deploy/engines/vllm-asr-lifecycle/src/speechnexus_vllm_asr/runtime-pin.json"
         ).read_text()
     )
     definition = json.loads(

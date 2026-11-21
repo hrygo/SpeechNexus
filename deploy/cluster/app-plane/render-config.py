@@ -8,7 +8,6 @@ command line, printed, or written outside ``.runtime``.
 
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 import tempfile
@@ -20,6 +19,8 @@ RUNTIME = ROOT / ".runtime/cluster"
 ENV_FILE = RUNTIME / "compose.env"
 PRIVATE = RUNTIME / "private"
 NAMESPACE = "speechnexus"
+
+
 def role_dsn(env: dict[str, str], role: str, password_key: str) -> str:
     """Build one role DSN from the single password definition point."""
     password = env[password_key]
@@ -59,10 +60,21 @@ def kubectl(*args: str, stdin: str | None = None) -> None:
 def apply_secret(name: str, source: Path) -> None:
     rendered = subprocess.run(
         [
-            "kubectl", "-n", NAMESPACE, "create", "secret", "generic", name,
-            f"--from-env-file={source}", "--dry-run=client", "-o", "yaml",
+            "kubectl",
+            "-n",
+            NAMESPACE,
+            "create",
+            "secret",
+            "generic",
+            name,
+            f"--from-env-file={source}",
+            "--dry-run=client",
+            "-o",
+            "yaml",
         ],
-        text=True, capture_output=True, check=False,
+        text=True,
+        capture_output=True,
+        check=False,
     )
     if rendered.returncode != 0:
         sys.stderr.write(rendered.stderr)
@@ -83,7 +95,7 @@ def apply_file_secret(name: str, files: dict[str, Path]) -> None:
 
 def write_env_file(path: Path, values: dict[str, str]) -> None:
     path.write_text("".join(f"{key}={value}\n" for key, value in values.items()))
-    os.chmod(path, 0o600)
+    path.chmod(0o600)
 
 
 def main() -> int:
@@ -95,7 +107,7 @@ def main() -> int:
         target = PRIVATE / name
         if not target.exists():
             target.write_text(example.read_text())
-            os.chmod(target, 0o600)
+            target.chmod(0o600)
 
     namespace = subprocess.run(
         ["kubectl", "get", "namespace", NAMESPACE], capture_output=True, text=True
@@ -140,7 +152,9 @@ def main() -> int:
             "SPEECHNEXUS_OBJECT_STORAGE_BUCKET": BUCKET,
             "SPEECHNEXUS_OBJECT_STORAGE_ACCESS_KEY": env["MINIO_ROOT_USER"],
             "SPEECHNEXUS_OBJECT_STORAGE_SECRET_KEY": env["MINIO_ROOT_PASSWORD"],
-            "SPEECHNEXUS_TRANSCRIPTION_RECIPE_FILE": "/run/speechnexus-private/transcription-recipe.json",
+            "SPEECHNEXUS_TRANSCRIPTION_RECIPE_FILE": (
+                "/run/speechnexus-private/transcription-recipe.json"
+            ),
             "SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET": BUCKET,
             "SPEECHNEXUS_TRANSCRIPTION_POLL_SECONDS": "0.25",
             "SPEECHNEXUS_TRANSCRIPTION_MAX_AUDIO_MS": "120000",
@@ -346,11 +360,20 @@ def main() -> int:
 
         configmap = subprocess.run(
             [
-                "kubectl", "-n", NAMESPACE, "create", "configmap", "minio-init-script",
+                "kubectl",
+                "-n",
+                NAMESPACE,
+                "create",
+                "configmap",
+                "minio-init-script",
                 f"--from-file=init-object-storage.py={ROOT / 'deploy/init-object-storage.py'}",
-                "--dry-run=client", "-o", "yaml",
+                "--dry-run=client",
+                "-o",
+                "yaml",
             ],
-            text=True, capture_output=True, check=False,
+            text=True,
+            capture_output=True,
+            check=False,
         )
         if configmap.returncode != 0:
             sys.stderr.write(configmap.stderr)
@@ -359,11 +382,21 @@ def main() -> int:
 
         gate = subprocess.run(
             [
-                "kubectl", "-n", NAMESPACE, "create", "configmap", "workbench-startup-gate",
-                f"--from-file=workbench-startup-gate.py={ROOT / 'deploy/workbench-startup-gate.py'}",
-                "--dry-run=client", "-o", "yaml",
+                "kubectl",
+                "-n",
+                NAMESPACE,
+                "create",
+                "configmap",
+                "workbench-startup-gate",
+                f"--from-file=workbench-startup-gate.py="
+                f"{ROOT / 'deploy/workbench-startup-gate.py'}",
+                "--dry-run=client",
+                "-o",
+                "yaml",
             ],
-            text=True, capture_output=True, check=False,
+            text=True,
+            capture_output=True,
+            check=False,
         )
         if gate.returncode != 0:
             sys.stderr.write(gate.stderr)
@@ -372,12 +405,21 @@ def main() -> int:
 
         nginx = subprocess.run(
             [
-                "kubectl", "-n", NAMESPACE, "create", "configmap", "workbench-nginx-template",
+                "kubectl",
+                "-n",
+                NAMESPACE,
+                "create",
+                "configmap",
+                "workbench-nginx-template",
                 "--from-file=default.conf.template="
                 f"{CLUSTER / 'app-plane/workbench-nginx.conf.template'}",
-                "--dry-run=client", "-o", "yaml",
+                "--dry-run=client",
+                "-o",
+                "yaml",
             ],
-            text=True, capture_output=True, check=False,
+            text=True,
+            capture_output=True,
+            check=False,
         )
         if nginx.returncode != 0:
             sys.stderr.write(nginx.stderr)

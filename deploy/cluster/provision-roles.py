@@ -1,55 +1,61 @@
 import os
-from psycopg import sql
+
 import psycopg
+from psycopg import sql
+
+from speechnexus_backend.speech.infrastructure.admission_postgres import (
+    binding_disable_admission_grants,
+)
 from speechnexus_backend.speech.infrastructure.artifact_schema import (
     artifact_reader_grants,
     artifact_retention_grants,
 )
+from speechnexus_backend.speech.infrastructure.asr_settlement_schema import (
+    asr_settlement_writer_grants,
+)
 from speechnexus_backend.speech.infrastructure.asset_schema import asset_runtime_grants
-from speechnexus_backend.speech.infrastructure.binding_draft_schema import binding_draft_grants
-from speechnexus_backend.speech.infrastructure.binding_publication_evidence_schema import (
-    binding_admin_reader_grants,
-)
-from speechnexus_backend.speech.infrastructure.coordination_grants import (
-    coordination_runtime_grants,
-)
-from speechnexus_backend.speech.infrastructure.gateway_query_grants import (
-    gateway_query_grants, gateway_query_target_grants,
-)
-from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
-    gateway_cancellation_fence_grants,
-)
-from speechnexus_backend.speech.infrastructure.gateway_abort_intent_schema import (
-    gateway_abort_grants, gateway_binding_barrier_grants,
-)
-from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema import (
-    audit_reader_grants, binding_lifecycle_grants, binding_publication_grants,
-)
-from speechnexus_backend.speech.infrastructure.publication_schema import (
-    model_catalog_reader_grants,
-)
-from speechnexus_backend.speech.infrastructure.quarantine_release_schema import (
-    quarantine_release_grants,
-)
-from speechnexus_backend.speech.infrastructure.admission_postgres import (
-    binding_disable_admission_grants,
-)
 from speechnexus_backend.speech.infrastructure.binding_disable_targets_schema import (
     disable_coordinator_grants,
     disable_settlement_grants,
+)
+from speechnexus_backend.speech.infrastructure.binding_draft_schema import binding_draft_grants
+from speechnexus_backend.speech.infrastructure.binding_publication_evidence_schema import (
+    binding_admin_reader_grants,
 )
 from speechnexus_backend.speech.infrastructure.builtin_voice_grants import (
     operator_attestation_writer_grants,
     qualification_reader_grants,
 )
-from speechnexus_backend.speech.infrastructure.settlement_worker_verifier import (
-    settlement_worker_grants,
+from speechnexus_backend.speech.infrastructure.coordination_grants import (
+    coordination_runtime_grants,
+)
+from speechnexus_backend.speech.infrastructure.gateway_abort_intent_schema import (
+    gateway_abort_grants,
+    gateway_binding_barrier_grants,
+)
+from speechnexus_backend.speech.infrastructure.gateway_query_grants import (
+    gateway_query_grants,
+    gateway_query_target_grants,
+)
+from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
+    gateway_cancellation_fence_grants,
+)
+from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema import (
+    audit_reader_grants,
+    binding_lifecycle_grants,
+    binding_publication_grants,
+)
+from speechnexus_backend.speech.infrastructure.publication_schema import (
+    model_catalog_reader_grants,
 )
 from speechnexus_backend.speech.infrastructure.qualified_speech_facts_postgres import (
     speech_synthesis_reader_grants,
 )
-from speechnexus_backend.speech.infrastructure.asr_settlement_schema import (
-    asr_settlement_writer_grants,
+from speechnexus_backend.speech.infrastructure.quarantine_release_schema import (
+    quarantine_release_grants,
+)
+from speechnexus_backend.speech.infrastructure.settlement_worker_verifier import (
+    settlement_worker_grants,
 )
 from speechnexus_backend.speech.infrastructure.workspace_schema import workspace_writer_grants
 
@@ -94,17 +100,28 @@ roles = {
     "sn_qualification_reader": os.environ["SPEECHNEXUS_QUALIFICATION_READER_ROLE_PASSWORD"],
 }
 with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
-    # PostgreSQL 角色属于整个集群，即使数据库是专用的也要先核对。
+    # PostgreSQL 角色属于整个集群,即使数据库是专用的也要先核对。
     for role in roles:
         if conn.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)).fetchone():
             raise SystemExit(f"role {role} already exists; inspect ownership before proceeding")
     database = conn.execute("SELECT current_database()").fetchone()[0]
-    conn.execute(sql.SQL("REVOKE CREATE, TEMPORARY ON DATABASE {} FROM PUBLIC")
-                 .format(sql.Identifier(database)))
+    conn.execute(
+        sql.SQL("REVOKE CREATE, TEMPORARY ON DATABASE {} FROM PUBLIC").format(
+            sql.Identifier(database)
+        )
+    )
     conn.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
     large_object_writers = (
-        "lo_create", "lo_creat", "lo_from_bytea", "lo_import", "lo_export", "lo_unlink",
-        "lo_put", "lo_truncate", "lo_truncate64", "lowrite",
+        "lo_create",
+        "lo_creat",
+        "lo_from_bytea",
+        "lo_import",
+        "lo_export",
+        "lo_unlink",
+        "lo_put",
+        "lo_truncate",
+        "lo_truncate64",
+        "lowrite",
     )
     for (signature,) in conn.execute(
         "SELECT p.oid::regprocedure::text FROM pg_proc p "
@@ -113,23 +130,20 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
         (list(large_object_writers),),
     ).fetchall():
         # regprocedure is server-generated, including the complete argument types.
-        conn.execute(sql.SQL("REVOKE EXECUTE ON FUNCTION {} FROM PUBLIC")
-                     .format(sql.SQL(signature)))
+        conn.execute(
+            sql.SQL("REVOKE EXECUTE ON FUNCTION {} FROM PUBLIC").format(sql.SQL(signature))
+        )
     for role, password in roles.items():
-        exists = conn.execute(
-            "SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)
-        ).fetchone()
+        exists = conn.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)).fetchone()
         if exists is not None:
             raise SystemExit(f"role {role} appeared during setup; stop without changing it")
         conn.execute(
-            sql.SQL(
-                "CREATE ROLE {} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT"
-            ).format(sql.Identifier(role))
+            sql.SQL("CREATE ROLE {} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT").format(
+                sql.Identifier(role)
+            )
         )
         conn.execute(
-            sql.SQL("ALTER ROLE {} PASSWORD {}").format(
-                sql.Identifier(role), sql.Literal(password)
-            )
+            sql.SQL("ALTER ROLE {} PASSWORD {}").format(sql.Identifier(role), sql.Literal(password))
         )
         memberships = conn.execute(
             "SELECT 1 FROM pg_auth_members m JOIN pg_roles r ON r.oid = m.member "
@@ -137,8 +151,7 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
             (role,),
         ).fetchone()
         forbidden = conn.execute(
-            "SELECT rolsuper OR rolcreatedb OR rolcreaterole FROM pg_roles "
-            "WHERE rolname = %s",
+            "SELECT rolsuper OR rolcreatedb OR rolcreaterole FROM pg_roles WHERE rolname = %s",
             (role,),
         ).fetchone()
         if memberships is not None or forbidden is None or any(forbidden):
@@ -242,8 +255,7 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
         )
     )
     conn.execute(
-        sql.SQL("GRANT SELECT ON {}.engine_instances, {}.speech_binding_revisions TO {}")
-        .format(
+        sql.SQL("GRANT SELECT ON {}.engine_instances, {}.speech_binding_revisions TO {}").format(
             sql.Identifier(schema),
             sql.Identifier(schema),
             sql.Identifier("sn_model_instance_reader"),
@@ -255,8 +267,7 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
         )
     )
     conn.execute(
-        sql.SQL("GRANT SELECT ON {}.engine_instances, {}.resource_pools TO {}")
-        .format(
+        sql.SQL("GRANT SELECT ON {}.engine_instances, {}.resource_pools TO {}").format(
             sql.Identifier(schema),
             sql.Identifier(schema),
             sql.Identifier("sn_resource_pool_reader"),
@@ -268,10 +279,11 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
         )
     )
     conn.execute(
-        sql.SQL('GRANT SELECT ON {}.speech_binding_families, {}.speech_binding_revisions, '
-                '{}.speech_publications, {}.speech_publication_heads, '
-                '{}.speech_publication_retirements TO {}')
-        .format(
+        sql.SQL(
+            "GRANT SELECT ON {}.speech_binding_families, {}.speech_binding_revisions, "
+            "{}.speech_publications, {}.speech_publication_heads, "
+            "{}.speech_publication_retirements TO {}"
+        ).format(
             sql.Identifier(schema),
             sql.Identifier(schema),
             sql.Identifier(schema),
@@ -284,9 +296,10 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     # Transcription resolves the selected published binding and checks its
     # retirement through the runtime facts port.
     conn.execute(
-        sql.SQL('GRANT SELECT ON {}.speech_publications, {}.speech_binding_revisions, '
-                '{}.speech_publication_heads, {}.speech_publication_retirements TO {}')
-        .format(
+        sql.SQL(
+            "GRANT SELECT ON {}.speech_publications, {}.speech_binding_revisions, "
+            "{}.speech_publication_heads, {}.speech_publication_retirements TO {}"
+        ).format(
             sql.Identifier(schema),
             sql.Identifier(schema),
             sql.Identifier(schema),

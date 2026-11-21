@@ -93,7 +93,7 @@ def main() -> int:
                     )
                     connection.execute(query).fetchone()
                     print(f"ok    {role:<28} {target or 'login only (no table SELECT)'}")
-            except Exception as exc:  # noqa: BLE001 - the probe reports the failure class
+            except Exception as exc:
                 failures.append(f"{role}: {type(exc).__name__}: {str(exc).splitlines()[0]}")
     if failures:
         for failure in failures:

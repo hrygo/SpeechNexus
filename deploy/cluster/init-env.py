@@ -23,7 +23,6 @@ Re-running keeps existing secrets and only fills in what is missing.
 
 from __future__ import annotations
 
-import os
 import re
 import secrets
 from pathlib import Path
@@ -166,11 +165,12 @@ def main() -> int:
         text = ensure_disable_roles(TARGET.read_text())
         unchanged = text == TARGET.read_text()
         TARGET.write_text(text)
-        os.chmod(TARGET, 0o600)
+        TARGET.chmod(0o600)
         print(f"{'kept' if unchanged else 'updated'} {TARGET}")
     else:
         text = EXAMPLE.read_text()
-        replacements = {literal: secrets.token_urlsafe(32) for literal in set(LITERAL.findall(text))}
+        literals = set(LITERAL.findall(text))
+        replacements = {literal: secrets.token_urlsafe(32) for literal in literals}
         for literal, token in replacements.items():
             text = text.replace(literal, token)
         leftover = LITERAL.findall(text)
@@ -178,7 +178,7 @@ def main() -> int:
             raise SystemExit(f"unreplaced placeholders remain: {sorted(set(leftover))}")
         text = ensure_disable_roles(text)
         TARGET.write_text(text)
-        os.chmod(TARGET, 0o600)
+        TARGET.chmod(0o600)
         print(f"wrote {TARGET} with {len(replacements)} generated secrets")
 
     values = parse(TARGET.read_text())
@@ -198,7 +198,7 @@ def main() -> int:
         raise SystemExit(f"compose.env is missing values for: {', '.join(missing)}")
 
     COMPUTE.write_text(render_compute(values, versions))
-    os.chmod(COMPUTE, 0o600)
+    COMPUTE.chmod(0o600)
     print(f"wrote {COMPUTE}")
     return 0
 

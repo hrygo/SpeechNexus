@@ -82,21 +82,21 @@ ENV_EXCEPTIONS: dict[str, str] = {
     # The reference runs the audio sandbox in-process (bubblewrap + prlimit); the
     # two-host deployment uses the separate inspector container instead, which is
     # the same boundary and the only one Docker Desktop can provide.
-    "SPEECHNEXUS_AUDIO_INSPECTION_BUBBLEWRAP": "sandboxed inspector container replaces in-process bubblewrap",
-    "SPEECHNEXUS_AUDIO_INSPECTION_COMMAND": "sandboxed inspector container replaces in-process launcher",
-    "SPEECHNEXUS_AUDIO_INSPECTION_CPU_SECONDS": "sandboxed inspector container owns its rlimits",
-    "SPEECHNEXUS_AUDIO_INSPECTION_LAUNCHER_PYTHON": "sandboxed inspector container replaces in-process launcher",
-    "SPEECHNEXUS_AUDIO_INSPECTION_MAX_DURATION_MS": "sandboxed inspector container owns its limits",
-    "SPEECHNEXUS_AUDIO_INSPECTION_MAX_INPUT_BYTES": "sandboxed inspector container owns its limits",
-    "SPEECHNEXUS_AUDIO_INSPECTION_MAX_RECEIPT_BYTES": "sandboxed inspector container owns its limits",
-    "SPEECHNEXUS_AUDIO_INSPECTION_MEMORY_BYTES": "sandboxed inspector container owns its rlimits",
-    "SPEECHNEXUS_AUDIO_INSPECTION_OUTPUT_BYTES": "sandboxed inspector container owns its limits",
-    "SPEECHNEXUS_AUDIO_INSPECTION_PRLIMIT": "sandboxed inspector container owns its rlimits",
-    "SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT": "sandboxed inspector container owns its runtime root",
-    "SPEECHNEXUS_AUDIO_INSPECTION_WALL_SECONDS": "sandboxed inspector container owns its rlimits",
+    "SPEECHNEXUS_AUDIO_INSPECTION_BUBBLEWRAP": "inspector replaces in-process bubblewrap",
+    "SPEECHNEXUS_AUDIO_INSPECTION_COMMAND": "inspector replaces in-process launcher",
+    "SPEECHNEXUS_AUDIO_INSPECTION_CPU_SECONDS": "inspector owns its rlimits",
+    "SPEECHNEXUS_AUDIO_INSPECTION_LAUNCHER_PYTHON": "inspector replaces launcher",
+    "SPEECHNEXUS_AUDIO_INSPECTION_MAX_DURATION_MS": "sandboxed inspector owns its limits",
+    "SPEECHNEXUS_AUDIO_INSPECTION_MAX_INPUT_BYTES": "sandboxed inspector owns its limits",
+    "SPEECHNEXUS_AUDIO_INSPECTION_MAX_RECEIPT_BYTES": "sandboxed inspector owns its limits",
+    "SPEECHNEXUS_AUDIO_INSPECTION_MEMORY_BYTES": "inspector owns its rlimits",
+    "SPEECHNEXUS_AUDIO_INSPECTION_OUTPUT_BYTES": "inspector owns its limits",
+    "SPEECHNEXUS_AUDIO_INSPECTION_PRLIMIT": "inspector owns its rlimits",
+    "SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT": "sandboxed inspector owns its runtime root",
+    "SPEECHNEXUS_AUDIO_INSPECTION_WALL_SECONDS": "sandboxed inspector owns its rlimits",
     # Defaults-writer and profile-writer identities stay unconfigured on purpose;
     # see docs/operations/compose-minimal.md §"不创建的账号".
-    "SPEECHNEXUS_BINDING_DEFAULTS_WRITER_DATABASE_URL": "defaults-writer identity is not created by design",
+    "SPEECHNEXUS_BINDING_DEFAULTS_WRITER_DATABASE_URL": "defaults-writer not created by design",
     "SPEECHNEXUS_PROFILE_WRITER_DATABASE_URL": "profile-writer identity is not created by design",
     # File TTS and voice-clone/voice-design lanes are not assembled in the two-host
     # deployment yet; their gateway config files and object credentials arrive with
@@ -126,8 +126,10 @@ def reference_services(path: Path) -> dict[str, list[str]]:
     result: dict[str, list[str]] = {}
     for name, body in services.items():
         env = (body or {}).get("environment") or {}
-        result[name] = sorted(env) if isinstance(env, dict) else sorted(
-            entry.split("=", 1)[0] for entry in env
+        result[name] = (
+            sorted(env)
+            if isinstance(env, dict)
+            else sorted(entry.split("=", 1)[0] for entry in env)
         )
     return result
 
@@ -137,7 +139,8 @@ def cluster_corpus(root: Path) -> str:
     for path in sorted(root.rglob("*")):
         if path.name == Path(__file__).name:
             continue
-        if path.is_file() and path.suffix in {".py", ".yaml", ".yml", ".sh", ".env", ".md", ".json"}:
+        suffixes = {".py", ".yaml", ".yml", ".sh", ".env", ".md", ".json"}
+        if path.is_file() and path.suffix in suffixes:
             chunks.append(path.read_text(errors="ignore"))
     return "\n".join(chunks)
 
@@ -169,7 +172,7 @@ def check(
     for name in services:
         if name not in coverage:
             problems.append(f"{name}: no coverage entry in the two-host deployment")
-    for name, (state, where, note) in coverage.items():
+    for name, (state, _where, note) in coverage.items():
         if state not in {"ported", "equivalent", "planned"}:
             problems.append(f"{name}: unknown state {state!r}")
         if state == "planned" and not note:

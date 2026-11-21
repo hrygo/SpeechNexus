@@ -50,8 +50,14 @@ def dns_resolver() -> str:
     """The cluster DNS address the front ends' nginx config refers to."""
     result = subprocess.run(
         [
-            "kubectl", "-n", "kube-system", "get", "svc", "kube-dns",
-            "-o", "jsonpath={.spec.clusterIP}",
+            "kubectl",
+            "-n",
+            "kube-system",
+            "get",
+            "svc",
+            "kube-dns",
+            "-o",
+            "jsonpath={.spec.clusterIP}",
         ],
         text=True,
         capture_output=True,
@@ -65,8 +71,7 @@ def dns_resolver() -> str:
 
 def main() -> int:
     data = {
-        key: f"http://{cluster_ip(service)}:{port}"
-        for key, (service, port) in SERVICES.items()
+        key: f"http://{cluster_ip(service)}:{port}" for key, (service, port) in SERVICES.items()
     }
     data["WEB_DNS_RESOLVER"] = dns_resolver()
     manifest = {

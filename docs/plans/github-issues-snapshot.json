@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-21T18:51:25+0800",
+  "fetched_at": "2026-11-21T11:37:01Z",
   "issues": [
     {
       "number": 336,
@@ -1348,7 +1348,7 @@
       "number": 1094,
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/1094",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "冻结四库共同 SQL / schema / ODBC 驱动契约，禁止业务数据库 adapter",
+      "title": "冻结首发 PostgreSQL 可移植数据契约、受限数据库方言与 ODBC 边界",
       "state": "open",
       "state_reason": null,
       "labels": [
@@ -1365,7 +1365,7 @@
       "number": 1095,
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/1095",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "实现 claim bucket 与 outbox 推进，不依赖 SKIP LOCKED 或数据库通知",
+      "title": "实现 claim bucket、bucket fencing 与 Job SSE event_seq",
       "state": "open",
       "state_reason": null,
       "labels": [
@@ -1382,7 +1382,7 @@
       "number": 1096,
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/1096",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "实现持久实时 budget grant、epoch 续租与幂等回收",
+      "title": "实现 PostgreSQL 首发持久 budget grant、锁后时间探针与幂等回收",
       "state": "open",
       "state_reason": null,
       "labels": [
@@ -1399,7 +1399,7 @@
       "number": 1097,
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/1097",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "实现实时本地 credit、边界 usage 区间与 grant 耗尽背压",
+      "title": "实现实时本地 credit、崩溃恢复证据、精确 usage 与实时 SLO 资格",
       "state": "open",
       "state_reason": null,
       "labels": [
@@ -1416,7 +1416,7 @@
       "number": 1100,
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/1100",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "将现有 PostgreSQL 专用数据访问收敛到单一可移植 SQL 路径",
+      "title": "将现有 PostgreSQL 专用数据访问收敛到 canonical 数据契约",
       "state": "open",
       "state_reason": null,
       "labels": [
@@ -1433,7 +1433,7 @@
       "number": 1101,
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/1101",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "验证同一应用 SQL / schema 只替换 DSN 与 ODBC driver 运行于 PG、MySQL、Oracle、OceanBase",
+      "title": "验证后续数据库激活资格：MySQL、Oracle、OceanBase 使用同一数据契约",
       "state": "open",
       "state_reason": null,
       "labels": [
@@ -1450,7 +1450,7 @@
       "number": 1102,
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/1102",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "交付 schema bootstrap、存量数据搬迁、切换对账与回退演练",
+      "title": "后续数据库激活时交付 schema bootstrap、存量搬迁、切换对账与回退",
       "state": "open",
       "state_reason": null,
       "labels": [

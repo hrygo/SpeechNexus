@@ -1,7 +1,7 @@
 ---
 title: 受控协调事务：程序实现方案与契约
 status: active
-version: "1.0.1"
+version: "1.0.2"
 date: 2026-10-24
 ---
 
@@ -10,9 +10,10 @@ date: 2026-10-24
 依据 [ADR 0006](../decisions/0006-cluster-coordination-and-storage-portability.md)，
 业务裁决从 PostgreSQL 函数迁入应用事务。集群是必须支持的部署形态，Node=1 使用
 同一协议；不引入 etcd，Redis 只能缓存或唤醒。[ADR 0016](../decisions/0016-database-portability-core.md)
-要求目标实现收敛为一条 SQL / schema 路径：业务层不维护数据库 adapter，运行时只替换 DSN
-与底层 ODBC driver。下文 PostgreSQL / InnoDB 专用机制与双库原型是待迁移的当前证据，
-目标约束见[单一可移植 SQL 数据路径](database-portability.md)。
+要求目标实现收敛为同一应用产物、statement contract 和 canonical 逻辑 schema；允许少量已登记的
+物理 DDL / 静态 SQL profile，但业务层不维护数据库 adapter。部署可切换 DSN、ODBC driver、物理 DDL
+制品和显式 profile。下文 PostgreSQL / InnoDB 专用机制与双库原型是待迁移的当前证据，
+目标约束见[可移植数据契约](database-portability.md)。
 
 本次已交付精简 DDL、事务机器契约、权限生成工具，以及两个真实数据库共用的
 测试原型。[首个生产 Job/outbox 事务](../components/production-jobs.md)另行实现创建、完整身份重放、
@@ -25,8 +26,8 @@ date: 2026-10-24
 | 配方完整性、预算计算、状态转换、证据裁决 | `speech/domain`；执行事实规则在 gateway domain | 框架无关的值对象和纯函数；不导入 SQL、Pydantic、生成 DTO 或 vendor SDK |
 | owner、准入、释放、任务恢复 | `speech/application` | 按用例定义窄事务端口；一次完整准入只能用一个事务会话 |
 | 外发提交、abort、停止事实 | gateway application | 先持久化 intent，提交后再外发；与 Scheduler 释放分属不同所有者事务 |
-| 统一 ODBC 事务、锁、条件写入与时间读取 | 各模块 `infrastructure` | 实现端口，不复制预算或证据策略；SQL 与 schema 不按品牌分叉 |
-| 四库驱动与行为验证 | `tests/integration` | 同一测试程序只替换 DSN / ODBC driver；不进入产品业务代码 |
+| 统一 ODBC 事务、锁、条件写入与时间读取 | 各模块 `infrastructure` | 实现端口，不复制预算或证据策略；业务 statement 与逻辑 schema 不按品牌分叉，受限 profile 显式登记 |
+| 四库驱动与行为验证 | `tests/integration` | 同一测试程序和 behavior oracle 只切换 DSN / ODBC driver / schema 与 SQL profile；不进入产品业务代码 |
 
 不新建协调微服务、通用数据库插件系统、分布式事务管理器或另一套消息队列。
 端口使用数据库无关的领域输入/结果，具体类型由机器契约生成或在边界校验。
@@ -152,14 +153,16 @@ binding、voice 顺序串行化禁用与退役，详见[同步语音合成](../c
 结果沿用 FactSnapshot，不编造区间版本；详细身份/重放/恢复规则见
 [执行网关](../components/execution-gateway.md#11-append_interval-与原区间查询)。
 
-等待锁以后，通过同一权威主库上的独立只读短事务读取一次当前时间判断当前租期，并让后续期限
-比较复用该值；不能在持锁写事务里依赖各库 `CURRENT_TIMESTAMP` 的事务开始语义。新行的
-全局唯一键/FK 也可能在 INSERT 时等待；竞争事务回滚后 INSERT 会成功，不能仅靠唯一冲突异常
-识别。创建路径必须在最后一次可能等待的写入后重新核验 owner/请求及资格窗口，过期则整笔回滚。
-探针查询为 `SELECT CURRENT_TIMESTAMP FROM schema_meta WHERE meta_id = ?`；不把客户端时钟、锁前旧时间
-或持锁事务开始时间当作续租依据。Job/outbox 使用 claim bucket，bucket 与 Job/outbox 分别以
-version / owner / expiry CAS 认领，不使用 `SKIP LOCKED`。没有 Redis 或通知时扫描持久
-outbox/待办行。
+需要时间判断的写路径先取得专用探针连接，再开启写事务并按锁序完成全部权威锁和潜在阻塞写入。
+唯一键 / FK 的 INSERT 也可能等待，因此必须在最后一次可能等待的写入后，通过同一权威主库的预取得
+连接读取一次当前时间，再回到写事务复核 owner/请求、version/epoch 和资格窗口；过期则整笔回滚。
+探针查询为
+`SELECT CURRENT_TIMESTAMP, schema_rev, schema_fingerprint, authority_epoch FROM schema_meta WHERE meta_id = ?`；
+必须比对期望 schema 与部署代次，不把客户端时钟、锁前旧时间、持锁事务开始时间或副本时间当作续租依据。
+探针池容量至少覆盖允许并发的写事务，探针和写事务共享硬 deadline；禁止持有写锁等待共享池中的第二连接。
+Job/outbox 使用 claim bucket，bucket 与 Job/outbox 分别以 version / owner / expiry CAS 认领；
+每次实际认领都要在同一事务复核 bucket fence，旧 dispatcher 不能使用过期候选。不使用 `SKIP LOCKED`。
+没有 Redis 或通知时扫描持久 outbox/待办行。
 
 业务不读取 SQLSTATE 或 vendor error code。未执行 `commit()` 前出现异常时，回滚整笔事务并在
 新连接按原业务身份查询；只有确认原身份不存在、仍满足 deadline 且使用完全相同业务键时才允许
@@ -376,8 +379,8 @@ uv run python scripts/dev-env/coordination-grants.py \
 1. 从契约生成/校验边界类型，完成纯预算/状态/证据规则及 fake 用例；
    纳入加载 peak/steady、runtime 指针、pre-dispatch failure、quota 全部维度、
    日志脱敏与对象 staging 规则。
-2. 完成统一 ODBC 数据访问、无品牌错误分支的事务恢复和 claim bucket；沿用共享 oracle，
-   补齐实际生产端口的四库矩阵，并在每个目标安装、验证最小权限。不得把测试工具直接注入
+2. 完成统一 ODBC 数据访问、无品牌错误分支的事务恢复和 claim bucket；首发先补齐 PostgreSQL
+   生产端口的完整 oracle、最小权限和真实业务消费者，其他目标激活时再加入同 harness。不得把测试工具直接注入
    产品组合根，也不得新增 PostgreSQL / MySQL 业务 adapter。
 3. 接入多个 Scheduler/Worker/gateway/controller 与持久轮询，补 Job claim fencing、
    重复 outbox 送达、真实外发未知恢复、旧 gateway 暂停恢复与入口隔离。

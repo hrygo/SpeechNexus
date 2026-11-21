@@ -20,6 +20,6 @@ ADR 记录架构决定及其理由；每项状态以该文 frontmatter 为准，
 
 - [0013：binding 生命周期管理 HTTP 与激活冲突提示](0013-binding-lifecycle-admin-http.md)（proposed，2026-10-29；补录已合入路由的契约选择及冲突提示，待非作者审查，不结算 #273 或投产 Gate）。
 
-- [0016：单一可移植 SQL 数据路径与实时预算](0016-database-portability-core.md)（proposed，2026-11-21；同一应用、SQL 与 schema 只通过 DSN / ODBC driver 切换 PostgreSQL、MySQL、Oracle、OceanBase；无业务 adapter、品牌快路径或方言分支；实时使用持久 grant / 本地 credit）。
+- [0016：可移植数据契约、受限数据库方言与实时预算](0016-database-portability-core.md)（proposed，2026-11-21；首发 PostgreSQL；同一应用产物、statement contract 和逻辑 schema，允许少量登记物理 DDL / 静态 SQL profile；无业务 adapter；实时使用持久 grant / 本地 credit）。
 
 [文档索引](../README.md)

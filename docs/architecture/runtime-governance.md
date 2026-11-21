@@ -11,8 +11,9 @@ date: 2026-10-24
 
 [ADR 0006](../decisions/0006-cluster-coordination-and-storage-portability.md)已将跨表
 规则的主要执行边界调整为受控应用事务；[ADR 0016](../decisions/0016-database-portability-core.md)
-进一步要求只有一条可移植 SQL / schema 路径，运行时只通过 DSN 和 ODBC driver 替换数据库。
-当前 PostgreSQL 专用实现是待迁移状态；不采用 etcd，Redis 不承担协调权威。
+进一步要求同一应用产物、statement contract 和 canonical 逻辑 schema 通过 ODBC 边界运行；允许少量
+已登记物理 DDL / 静态 SQL profile。首发采用 PostgreSQL，其他目标完成独立资格前不声明支持；
+不采用 etcd，Redis 不承担协调权威。
 活动 DDL 已精简，规则的程序实现见[受控事务方案与契约](coordination-transactions.md)；
 测试/工具原型在真实 PostgreSQL 与 MySQL 上验证关键路径。生产调度、运行时接入与完整
 集群故障资格的当前范围和证据见[交付跟踪矩阵](../plans/delivery-tracking.md)；
@@ -60,6 +61,8 @@ date: 2026-10-24
 
 计量固定为：ASR input_audio_ms 按验证后 accepted 的 canonical samples 计算；TTS input_text_codepoints 按首次冻结的文本区间计算，未冻结尾部撤销不计入；TTS output_audio_ms 按各 attempt 实际 generated 的 PCM samples 计算，包含取消前已生成但未交付的音频；delivered / played 只作独立诊断，不用于退还生成额度。重复 event、重复 commit 和重试回放不重复记同一输入区间，重试实际重新生成的输出仍是资源消耗。
 
+本地 credit 不是崩溃后的最终账本。ASR accepted samples、TTS 首次冻结输入和 TTS generated PCM 必须在越过不可恢复边界前形成持久接收水位、冻结摘要或生成区间 / 停止证据；恢复时证据缺失的未结量保留原 grant 并 quarantine，不得按零消费、投递量或本地播放进度补账。
+
 冻结每个 TTS 单元后、进入引擎前预留其可强制约束的最大输出预算。这个上界来自已验证的 token / codec frame / 样本限制，不能只靠“生成太多后再断连接”。完成后按实际样本结算并释放余量；没有可强制输出上界的绑定声明 `hard_output_quota=false`，部署策略要求硬输出时长限制时不得使用它。累计额度按部署配置的日界线结算，跨日预留不能在两个日账本重复消费。
 
 双工会话需要 ASR 和 TTS 能力时，一次原子预留所需的资源组合或会话配额；不得持有 ASR 等待 TTS，再让另一会话持有 TTS 等待 ASR。配额预留和实际 active compute slot 分离：活跃会话可保有已批准的实时容量承诺，计算片段按预算分派；承诺总量不超过已验证容量。
@@ -82,7 +85,7 @@ date: 2026-10-24
 
 ### 1.4 多进程一致性与 fencing
 
-每个 pool 的调度 owner 使用关系数据库持久租约与递增 fencing token，数据库访问遵循[单一可移植 SQL 路径](database-portability.md)。容量预留在事务中原子完成，lease 绑定 operation、engine 与 token；所有回写都验证 attempt 与 fencing。API 副本不能使用各自内存中的 semaphore 充当全局准入。
+每个 pool 的调度 owner 使用关系数据库持久租约与递增 fencing token，数据库访问遵循[可移植数据契约](database-portability.md)。容量预留在事务中原子完成，lease 绑定 operation、engine 与 token；所有回写都验证 attempt 与 fencing。API 副本不能使用各自内存中的 semaphore 充当全局准入。
 
 管理面 `ResourcePool` 是跨节点聚合投影：`realtime_reserved_slots <= max_active_slots`，`active_slots + quarantine_slots <= max_active_slots`；任何计数都不能把隔离容量当成空闲容量。`status=ready` 必须至少有一个贡献节点和正容量，否则只能是 `degraded` / `unavailable`。聚合计数变化与节点租约账目保持同一事务口径，不能先展示可接单再补扣隔离槽位。受控应用事务必须使 host 与 instance 的 reserved / incremental / quarantine 投影等于实例基础预算与 admission lease 状态推导值；通过同一事务维护租约和预算、核对参与资源的当前状态/版本保证一致性，检查失败整体回滚。历史保护和最小写入权限继续保留，后台对账不能替代同步防超卖；不再强制由 PostgreSQL 延迟约束触发器完成跨表校验。
 

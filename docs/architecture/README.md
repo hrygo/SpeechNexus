@@ -16,7 +16,7 @@
 - [OpenAI 兼容与增强边界](openai-compatibility.md)：兼容子集和 `nexus` 扩展。
 - [规范执行命令](execution-command.md)：网关与生产者间的私有执行输入。
 - [契约与协调事务所有权](contract-ownership.md)：生产者、消费者与事务归属。
-- [单一可移植 SQL 数据路径](database-portability.md)：四库共同 SQL / schema、ODBC 驱动契约、claim bucket、outbox 与实时 grant / credit。
+- [可移植数据契约](database-portability.md)：canonical SQL / 逻辑 schema、受限静态 profile、ODBC 驱动契约、claim bucket、outbox 与实时 grant / credit；首发 PostgreSQL。
 - [应用事务方案与契约](coordination-transactions.md)：原子准入、锁序、恢复和预算不变量。
 - [精简协调 Schema](distributed-coordination-schema.md)：表关系、所有权与约束。
 

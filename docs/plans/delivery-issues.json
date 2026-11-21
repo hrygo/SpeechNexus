@@ -1364,15 +1364,15 @@
         "docs/architecture/database-portability.md",
         "docs/decisions/0016-database-portability-core.md"
       ],
-      "implementation": "拟议设计已落盘；产品仍走 PostgreSQL 专用路径，尚无同一 SQL / DDL / ODBC driver 的四库实现。",
-      "integration": "尚无目标数据库驱动环境、同一 application artifact 资格报告或真实业务消费者四库联验。",
-      "verification": "未执行 PostgreSQL、MySQL、Oracle、OceanBase MySQL/Oracle 模式的同 SQL 竞赛、故障和类型 oracle。",
-      "gap": "四库资格、驱动一致性、Oracle / OceanBase 实跑和目标负载均未验证；设计不证明运行时只换驱动已成立。",
+      "implementation": "拟议设计已收敛为 canonical statement contract、逻辑 schema、受限 DDL / SQL profile，并明确首发 PostgreSQL；产品仍走 PostgreSQL 专用路径，尚未完成首发契约迁移。",
+      "integration": "尚无 PostgreSQL 首发 qualification 报告、真实业务消费者完整联验或显式 schema / SQL profile 资格。",
+      "verification": "未执行 PostgreSQL 首发的并发、提交未知、SSE 续读、usage 区间、credit 崩溃恢复、实时 SLO 与故障 oracle。",
+      "gap": "PostgreSQL 首发实现与资格、驱动一致性、物理 DDL / SQL profile 等价性和目标负载未验证；MySQL、Oracle、OceanBase 未激活，设计不证明其运行支持。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/main/docs/architecture/database-portability.md",
-          "label": "单一可移植 SQL 设计",
-          "note": "共同 SQL、schema、ODBC 契约与资格边界；不证明目标库已运行"
+          "label": "可移植数据契约设计",
+          "note": "canonical 契约、受限数据库方言与 PostgreSQL 首发边界；不证明实现或运行资格"
         }
       ],
       "issues": [

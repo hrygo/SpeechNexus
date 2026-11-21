@@ -9,9 +9,9 @@ date: 2026-11-21
 
 本文记录当前 15 个协调表的过渡实现清单，供生产接线、迁移和证据映射使用。数据库可移植目标由
 [ADR 0016](../decisions/0016-database-portability-core.md) 与
-[单一可移植 SQL 数据路径](database-portability.md) 冻结；本文指向的
+[可移植数据契约](database-portability.md) 冻结；本文指向的
 [`0001_cluster_coordination_draft.sql`](../../migrations/0001_cluster_coordination_draft.sql)
-是迁移输入，不是四库共同目标 DDL，不得继续扩展 PostgreSQL 专用类型或测试期驱动映射。
+是迁移输入，不是最终 canonical 目标 DDL，不得继续扩展 PostgreSQL 专用类型或测试期驱动映射。
 它使用普通表、主键/唯一键、外键、行内 CHECK 和普通索引；没有业务函数、触发器、
 扩展、容量验证队列、部分唯一索引或 GiST 区间约束。跨表业务裁决由受控应用事务承担。
 
@@ -83,8 +83,9 @@ tombstone，不能清除协调身份、原摘要、fencing 或停止证据，也
 隔离 MySQL/InnoDB 上应用逻辑等价 DDL、运行同一期望，以验证受控事务行为。MySQL 测试适配器把
 草案中的 `TEXT` 映射为 `LONGTEXT`，这是过渡期测试证据，不是目标兼容路径。
 两库均未配置时相关测试会跳过，仅配置其中一库则配置检查失败；收集或跳过不代表双库验证通过。
-目标资格要求同一应用产物、同一 SQL 与同一 DDL 只换 DSN / ODBC driver 运行于 PostgreSQL、
-MySQL、Oracle、OceanBase MySQL/Oracle 模式；当前单库、双库和测试映射都不能证明该资格。
+目标资格要求同一应用产物、statement contract 与 canonical 逻辑 schema fingerprint 在已激活目标
+运行同一 behavior oracle；首发目标是 PostgreSQL。物理 DDL 与静态 SQL profile 可登记差异，但不得改变
+业务语义。当前单库、双库和测试映射都不能证明 PostgreSQL 首发或后续目标资格。
 真实多主机、引擎、主备切换和备份恢复保持强制验收要求。
 
 修复后的旧 SQL 完整保存在

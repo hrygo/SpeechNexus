@@ -1,7 +1,7 @@
 ---
 title: "SpeechNexus 整体技术方案"
 status: active
-version: "0.3.1"
+version: "0.3.2"
 date: 2026-10-26
 ---
 
@@ -13,11 +13,13 @@ date: 2026-10-26
 
 [ADR 0006](../decisions/0006-cluster-coordination-and-storage-portability.md)确定集群能力
 完整保留、跨表规则迁入受控应用事务、不采用 etcd。[ADR 0016](../decisions/0016-database-portability-core.md)
-进一步要求同一应用、SQL 与 schema 只通过 DSN / ODBC driver 切换 PostgreSQL、MySQL、Oracle、
-OceanBase，业务层不得维护数据库 adapter 或方言分支。原替代步骤见[历史重构计划](../archive/plans/2026-10-23-cluster-coordination-refactor.md)；
-四库共同 DDL 设计见数据库可移植文档，[应用事务方案与契约](coordination-transactions.md)及双库
+进一步要求同一应用产物、statement contract、逻辑 schema 和恢复语义通过 ODBC 边界运行于
+PostgreSQL、MySQL、Oracle、OceanBase；允许少量等价物理 DDL 和已登记静态 SQL profile，业务层不得
+维护数据库 adapter 或方言分支。原替代步骤见[历史重构计划](../archive/plans/2026-10-23-cluster-coordination-refactor.md)；
+多目标数据契约设计见数据库可移植文档，[应用事务方案与契约](coordination-transactions.md)及双库
 测试原型提供当前过渡证据，旧 PG 独立兜底测试另存历史 fixture。生产协调已有分段实现与证据地图，
-完整业务装配、单 SQL 迁移和四库资格仍待完成；按 ADR 0007 的退出条件判断旧原型，不按目录或
+完整业务装配、canonical 数据契约迁移和 PostgreSQL 首发资格仍待完成；非 PG 目标只在明确激活后
+建立资格。按 ADR 0007 的退出条件判断旧原型，不按目录或
 测试数量推定验收。
 
 ## 1. 技术基线与职责
@@ -26,8 +28,8 @@ OceanBase，业务层不得维护数据库 adapter 或方言分支。原替代�
 | --- | --- | --- |
 | 应用运行时 | Python 3.14、FastAPI、Pydantic、Uvicorn、HTTPX | 保持现有 uv workspace；重型解码和推理不在事件循环内执行 |
 | 领域与应用 | 领域对象、服务中立端口、显式用例、Repository / Unit of Work | domain 不导入框架、生成 DTO、数据库或 vendor；adapter 在边界转换 |
-| 数据访问 | 统一 ODBC DB-API、静态 SQL、单一 schema；只使用四库共同 SQL 子集 | 无 ORM / SQLAlchemy 运行时方言层；无品牌 SQL、驱动异常、SQLSTATE 或 adapter；参数只用 `?` |
-| 数据迁移 | 单一可移植 SQL revision，由部署角色执行 | 不自动建表；schema bootstrap、存量数据搬迁和切换须分别验收 |
+| 数据访问 | 统一 ODBC DB-API、canonical statement manifest / 逻辑 schema、受控静态 profile | 无 ORM / SQLAlchemy 运行时方言层；无业务品牌分支或 adapter；profile 只在 infrastructure 且部署显式选择；参数只用 `?` |
+| 数据迁移 | 单一 canonical 逻辑 schema revision + 目标物理 DDL profile | 不自动建表；schema bootstrap、存量数据搬迁和切换须分别验收 |
 | 任务与协调 | 关系数据库 Job / outbox / 租约，单行 CAS + claim bucket + 持久轮询 | 不采用 etcd；Redis 仅可选非权威缓存/唤醒；不使用 `SKIP LOCKED`、通知、upsert 或 sequence |
 | 对象与媒体 | S3 兼容存储、MinIO 开发验证；PyAV / FFmpeg 有界媒体处理 | 对象提交和数据库引用分开协调；编码、重采样、临时磁盘纳入预算 |
 | 公共和内部协议 | HTTP / JSON 控制、SSE 持久事件、WebSocket 实时流 | 公共、执行网关、部署控制器分别拥有契约，不透传 vendor 协议 |
@@ -42,7 +44,7 @@ OceanBase，业务层不得维护数据库 adapter 或方言分支。原替代�
 
 产品按分布式部署单元设计，当前单节点 Compose 是 [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md) 的开发预览拓扑（`Node=1, Replica=1`），默认未装配全部部署单元，不能单凭 Compose 声称同构链路已验收。平台与节点边界遵循 [ADR 0011](../decisions/0011-distributed-deployment-and-platform-boundaries.md)，职责、实际启动入口和装配缺口见[部署单元规划](deployment-units.md)。业务、控制和工作台不因推理栈使用 Linux 而继承 GPU 或 Linux 内核依赖；节点执行栈和[私有媒体沙箱](../archive/components/audio-asset-inspection.md)各自保留平台要求，公开音频检查装配仍须验收。
 
-逻辑角色按职责分离，每个进程显式声明节点、角色与唯一实例身份；配置字段和入口按部署单元核对，`process_role` 声明不自动选择服务工厂。backend 与 execution-gateway 独立部署，跨单元内容经网络协议与对象存储传递。本地锁与控制器回执只承担节点范围职责，不替代关系数据库全局权威；首个部署可使用 PostgreSQL，但应用、SQL 与 schema 不得依赖该品牌。单机验证可按 ADR 0004 折叠 scheduler / job-worker 逻辑角色，但保留独立身份、连接池、租约、claim 与协议边界；`node-controller` 不与业务 API 合并。跨平台、跨主机故障恢复与节点级高可用分别验收；扩容先增加已资格化节点与实例，再验证父物理预算与 owner 路由。
+逻辑角色按职责分离，每个进程显式声明节点、角色与唯一实例身份；配置字段和入口按部署单元核对，`process_role` 声明不自动选择服务工厂。backend 与 execution-gateway 独立部署，跨单元内容经网络协议与对象存储传递。本地锁与控制器回执只承担节点范围职责，不替代关系数据库全局权威；首发采用 PostgreSQL，但应用、statement contract 和逻辑 schema 不得依赖该品牌。单机验证可按 ADR 0004 折叠 scheduler / job-worker 逻辑角色，但保留独立身份、连接池、租约、claim 与协议边界；`node-controller` 不与业务 API 合并。跨平台、跨主机故障恢复与节点级高可用分别验收；扩容先增加已资格化节点与实例，再验证父物理预算与 owner 路由。
 
 ```mermaid
 flowchart LR
@@ -82,7 +84,7 @@ flowchart LR
 
 内部协议只在部署管理网络可达，使用独立组件凭据，跨主机连接使用 TLS；这些凭据是组件边界，不引入首期用户目录。普通业务进程不挂载 Docker socket。只有部署侧受限执行器接触运维权限，入口不接受用户提供的引擎地址或容器参数。
 
-首轮可共用一个 PostgreSQL 实例，但按表的所有者设置运行凭据和写入权。目标实现只使用四库共同的同一 schema / SQL，应用产物不因品牌变化；gateway 获得校验租约、锁定提交屏障和写入执行事实所需的最小数据库操作权限；它不能绕过 scheduler 增加预算，也不能直接发布业务结果。schema bootstrap、数据搬迁和切换由单独的部署角色执行。
+首轮可共用一个 PostgreSQL 实例，但按表的所有者设置运行凭据和写入权。首发采用 PostgreSQL；目标实现保持 canonical 逻辑 schema / statement contract，允许登记过的物理 DDL 与静态 SQL profile，业务和应用产物不因品牌变化；gateway 获得校验租约、锁定提交屏障和写入执行事实所需的最小数据库操作权限；它不能绕过 scheduler 增加预算，也不能直接发布业务结果。schema bootstrap、数据搬迁和切换由单独的部署角色执行。
 
 ## 3. 契约与类型生成
 
@@ -153,7 +155,7 @@ VAD 的滞回、去抖和前缀缓冲与识别段策略版本化；预览与正�
 
 ## 7. 可移植 SQL 事务、迁移与对象一致性
 
-运行时采用显式短事务、条件更新、单行行锁和唯一约束，全部 SQL 遵守[共同子集与驱动契约](database-portability.md)。需要跨行不变量时按固定顺序锁定对应权威行；高竞争 Job / outbox 使用 claim bucket 与 version CAS，不依赖 `SKIP LOCKED`、通知或品牌异常码。迁移数据库时应用产物、SQL 与 DDL 保持不变，只安装目标 ODBC driver 并切换 DSN；schema 初始化和存量数据搬迁作为独立部署作业。跨表规则由受控应用事务保证，数据库保留基础约束、历史保护和最小权限。不能用“先读余量，再无条件写入”维护容量。
+运行时采用显式短事务、条件更新、单行行锁和唯一约束，全部 statement 遵守[共同语义子集与驱动契约](database-portability.md)。需要跨行不变量时按固定顺序锁定对应权威行；高竞争 Job / outbox 使用 claim bucket 与 version CAS，不依赖 `SKIP LOCKED`、通知或品牌异常码。迁移数据库时应用产物、statement contract、逻辑 schema 和恢复语义不变；可切换 ODBC driver、DSN、目标物理 DDL profile 和显式 SQL profile，schema 初始化与存量数据搬迁仍作为独立部署作业。跨表规则由受控应用事务保证，数据库保留基础约束、历史保护和最小权限。不能用“先读余量，再无条件写入”维护容量。
 
 | 原子边界 | 同一事务内必须成立的事实 |
 | --- | --- |
@@ -166,12 +168,14 @@ VAD 的滞回、去抖和前缀缓冲与识别段策略版本化；预览与正�
 
 claim Job / outbox 通过 claim bucket、持久认领版本和条件更新确定归属，不使用 `FOR UPDATE SKIP LOCKED` 或品牌快路径。容量校验仍需锁定对应预算权威，不能把 bucket 租约当成配额证明。领取后尽快提交，推理、HTTP、对象写入和长时编码不占用数据库事务。数据库通知不属于目标路径；Redis 只可作可丢失唤醒，轮询 / reconcile 以持久记录为准。
 
-用量按稳定样本 / 文本区间和单调水位校验；唯一键只能防完全相同记录，还必须处理部分重叠区间。输入跨 attempt 去重，输出按实际生成分别计入；清理未知时不伪造零消耗或提前释放。
+公共 Job SSE 使用每 Job 连续 `event_seq`，与 Job 状态和事件同事务提交；`Last-Event-ID` 只按该序号续读。全局 outbox 的 ULID 和 `created_at` 只用于投递 / 审计，不定义公共事件顺序。
 
-单一可移植 SQL revision 由唯一部署步骤执行，部署器在任何目标数据库上使用同一顺序与版本校验；speech、gateway 控制记录和 workbench 分别维护明确表所有权与可兼容的迁移顺序。运行角色无 DDL 权限。迁移以显式 SQL / 经审核操作为准，禁止应用启动自动建表或自动猜测破坏性修改。优先采用先扩展、迁移数据、切换消费者、后收缩的过程，回滚应用前验证旧版本能读取当前 schema。
+用量按稳定样本 / 文本区间和单调水位校验；唯一键只能防完全相同记录，还必须处理部分重叠区间。锁 stream head 后先识别同身份、同摘要的精确重放，再拒绝部分重叠。输入跨 attempt 去重，输出按实际生成分别计入；ASR accepted、TTS 冻结输入 / generated PCM 必须有崩溃后可读的证据，清理未知时不伪造零消耗或提前释放。
+
+单一 canonical 逻辑 schema revision 由唯一部署步骤执行；每个目标使用已登记、逻辑 fingerprint 等价的物理 DDL profile，并沿用同一版本与 apply 顺序校验。speech、gateway 控制记录和 workbench 分别维护明确表所有权与可兼容的迁移顺序。运行角色无 DDL 权限。迁移以显式 SQL / 经审核操作为准，禁止应用启动自动建表或自动猜测破坏性修改。优先采用先扩展、迁移数据、切换消费者、后收缩的过程，回滚应用前验证旧版本能读取当前 schema。
 
 当前包内 Alembic 链覆盖语音与网关协调存储，是待迁移的 PostgreSQL 专用路径，不属于目标数据
-访问或迁移方案；四库资格完成前不能用它证明可移植性。Workbench 的 `runtime_schema` 是由 owner
+访问或迁移方案；PostgreSQL 首发资格完成前不能用它证明 canonical 契约。Workbench 的 `runtime_schema` 是由 owner
 事务执行的新建 schema 基线，不是现有数据库升级器，也不属于该链。已有
 Workbench 数据库的受控版本迁移仍须单独交付；其运行时只检查 schema revision，不自动建表。
 具体启动和恢复限制见[数据删除与恢复屏障](data-deletion.md#workbench-当前实现与恢复边界)。

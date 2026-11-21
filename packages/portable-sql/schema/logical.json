@@ -1,5 +1,5 @@
 {
-  "revision": "0003",
+  "revision": "0004",
   "tables": [
     {
       "name": "schema_meta",
@@ -233,6 +233,166 @@
           }
         }
       ],
+      "checks": [],
+      "indexes": []
+    },
+    {
+      "name": "workspace_quotas",
+      "columns": [
+        {
+          "name": "workspace_id",
+          "type": "varchar(128)",
+          "nullable": false
+        },
+        {
+          "name": "meter_kind",
+          "type": "varchar(24)",
+          "nullable": false
+        },
+        {
+          "name": "limit_units",
+          "type": "decimal(38,0)",
+          "nullable": false
+        },
+        {
+          "name": "held_units",
+          "type": "decimal(38,0)",
+          "nullable": false
+        },
+        {
+          "name": "committed_units",
+          "type": "decimal(38,0)",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "type": "decimal(38,0)",
+          "nullable": false
+        }
+      ],
+      "primary_key": [
+        "workspace_id",
+        "meter_kind"
+      ],
+      "uniques": [],
+      "foreign_keys": [],
+      "checks": [],
+      "indexes": []
+    },
+    {
+      "name": "host_capacity_budgets",
+      "columns": [
+        {
+          "name": "host_id",
+          "type": "varchar(128)",
+          "nullable": false
+        },
+        {
+          "name": "meter_kind",
+          "type": "varchar(24)",
+          "nullable": false
+        },
+        {
+          "name": "limit_units",
+          "type": "decimal(38,0)",
+          "nullable": false
+        },
+        {
+          "name": "held_units",
+          "type": "decimal(38,0)",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "type": "decimal(38,0)",
+          "nullable": false
+        }
+      ],
+      "primary_key": [
+        "host_id",
+        "meter_kind"
+      ],
+      "uniques": [],
+      "foreign_keys": [],
+      "checks": [],
+      "indexes": []
+    },
+    {
+      "name": "admission_budget_grants",
+      "columns": [
+        {
+          "name": "grant_id",
+          "type": "varchar(128)",
+          "nullable": false
+        },
+        {
+          "name": "session_id",
+          "type": "varchar(128)",
+          "nullable": false
+        },
+        {
+          "name": "lease_id",
+          "type": "varchar(128)",
+          "nullable": false
+        },
+        {
+          "name": "meter_kind",
+          "type": "varchar(24)",
+          "nullable": false
+        },
+        {
+          "name": "authority_epoch",
+          "type": "decimal(38,0)",
+          "nullable": false
+        },
+        {
+          "name": "renew_seq",
+          "type": "decimal(38,0)",
+          "nullable": false
+        },
+        {
+          "name": "granted_units",
+          "type": "decimal(38,0)",
+          "nullable": false
+        },
+        {
+          "name": "consumed_units",
+          "type": "decimal(38,0)",
+          "nullable": false
+        },
+        {
+          "name": "returned_units",
+          "type": "decimal(38,0)",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "type": "decimal(38,0)",
+          "nullable": false
+        },
+        {
+          "name": "grant_state",
+          "type": "varchar(24)",
+          "nullable": false
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamp(6)",
+          "nullable": false
+        }
+      ],
+      "primary_key": [
+        "grant_id"
+      ],
+      "uniques": [
+        [
+          "session_id",
+          "meter_kind",
+          "authority_epoch",
+          "renew_seq"
+        ]
+      ],
+      "foreign_keys": [],
       "checks": [],
       "indexes": []
     }

@@ -1046,3 +1046,36 @@ pnpm test:a11y
 ```
 
 Linux CI 使用 `--with-deps` 安装浏览器系统依赖。本机须有对应浏览器前置条件；失败不改用 jsdom 伪装浏览器通过。自动门禁覆盖当前工程外壳，不能代替屏幕阅读器、人工键盘走查、缩放/复杂遮挡、所有非文本图形或后续业务流程验收。规范核验日期为 2026-10-25：[WCAG 2.2](https://www.w3.org/TR/WCAG22/)、[文本对比度](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html)、[Playwright 自动与人工测试边界](https://playwright.dev/docs/accessibility-testing)。
+
+## Python 测量作业：收集期不得执行外部命令（2026-11-21）
+
+**两个测量作业已成为整条流水线的最慢作业。** run `44888334151`（PR 分支 `feat/isomorphic-cluster-web-plane`，2026-11-21）中，`Python: tests, coverage and build (part a)` 墙钟 419 s（测量步骤 374 s），`(part b)` 墙钟 700 s（测量步骤 657 s）；同一 run 最慢的集成分片是 325 s，`Gate: integration partitions and merged coverage` 38 s。也就是说本轮的关键路径由这两个作业决定，而不是集成分片——这与 2026-11-15 的六分片基线（`python_tests` 480 s，集成分片 429–566 s）方向相反，是十二片拓扑与用例增长之后的结果。
+
+**同一次 run 内八个分区的实测耗时并不均衡。**
+
+| 分区 | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 耗时（s） | 284.0 | 364.3 | 284.6 | 326.3 | 362.2 | 379.6 | 347.9 | 645.3 |
+
+七个分区落在 284–380 s，唯一的异常是分区 7。它的 `--durations=20` 首位是
+`tests/unit/test_python_coverage.py::test_every_declared_skip_is_a_real_nodeid_in_this_suite`
+的 180.58 s；同一用例在 run `44787347918`（2026-11-20）的分区 5 上是 180.43 s。两次不同的提交、两个不同的分区、两个值都等于 180 s 加零点几秒的收尾——这是**超时**的特征，不是负载波动。
+
+**根因：收集期导入的模块在 import 时执行了一次 `docker compose --dry-run`。**
+`tests/ci/test_build_sequences_without_minio.py` 的 `ComposeNegativeControlTest` 用
+`@unittest.skipUnless(up_build_plan(), …)` 装饰，而 `up_build_plan()` 会经 `dry_run_images` 执行
+`docker compose --dry-run up -d --build --wait api gateway`，子进程 `timeout=180`。装饰器在**导入模块时**求值，于是收集这套用例的每个进程都要跑一次该命令；在 GitHub runner 上它不返回，直到被 180 s 超时杀掉并返回 `None`（因此类别显示 `skipped`，看起来一切正常）。`tests/unit/test_python_coverage.py` 的那条用例又用 `pytest --collect-only` 子进程收集同一个文件，于是再付一次。
+
+代价因此是九次而不是一次：八个覆盖率 worker 各在收集期付 180 s，分区 7 再在用例内部付一次。按分区耗时把 180 s 扣掉，八片的实际测试耗时约为 104 / 184 / 105 / 146 / 182 / 200 / 168 / 285 s；本 run 总计约 1 624 s（≈27 runner 分钟）停在同一个 `docker` 超时上。本机复现的最小证据：把 `docker` 换成记录调用的 shim 后 `pytest --collect-only -q tests/ci/test_build_sequences_without_minio.py` 仍会记录一次 `--dry-run up … --build` 调用；换成不挂起的 docker 时同一次收集只要 0.3–2 s。
+
+**修法：探针跟着运行的那一层走，不跟着 import 走。** 两个 plan 类的 `skipUnless` 条件改为只读环境（`not running_in_github_actions()`），`plan_tier_available()` 与 `up_build_plan()` 移入 `setUpClass`：runner 上照旧收集并报告 `skipped`（`EXPECTED_SKIPS` 的五个 nodeid 不变），开发机上照旧实测 `docker compose --dry-run` 的构建计划，而收集不再触碰 `docker`。新增 `CollectionCostTest::test_importing_this_module_runs_no_docker` 钉住这条规则：PATH 前置 shim，先正控证明 shim 能记录一次调用，再断言导入该模块的子进程没有留下调用记录；对改前的形状实测为红（`AssertionError: … importing this module ran docker`），改后为绿。子进程用 `importlib` 导入目标模块，而不是跑 `pytest --collect-only`：`guards` 作业在 runner 的系统 Python 上跑 `tests/ci`（不安装项目依赖），第一版实现因此在 run `44891380010` 的 `Verify routing boundaries without installing project dependencies` 步骤实测为红（`AssertionError: 1 != 0 : …/Python/3.14.9/x64/bin/python: No module named pytest`）。两条作业都执行这个守卫，所以它不能依赖 pytest；`import` 正是收集的第一步，也就是探针原先执行的位置。
+
+**同类残留一并清掉。** 静态普查（模块级 `skipif`/`skipUnless` 装饰器、模块级用函数调用初始化的常量、模块级裸调用）在测量范围内只找到一处同类：`tests/unit/backend/test_reader_dsn_wiring.py` 的 `@pytest.mark.skipif(not _compose_available(), …)` 在 import 期执行 `docker compose version`（`timeout=60`）。它在 runner 上很快返回，所以不是这次的 180 s，但同样把外部命令放进了**收集**：八个 worker 各起一次进程，docker CLI 卡住时每个进程最多等 60 s。探针移入用例体内（`pytest.skip` 保留原 skip 语义），改后健康环境下的全量收集（`tests/unit` + `tests/contract` + `tests/ci` + `tests/integration/test_probe_inventory.py`，12 736 条）在记录调用的 `docker` shim 下为 **0 次调用**；改前同口径残留的正是这一次 `version` 调用。docker 不可用时该用例在体内 skip（实测 30 passed / 1 skipped），有 docker 时照旧运行。
+
+守卫仍只钉本模块：仓库级「收集期零外部命令」目前由这次普查加 CI 时长背书，不是常驻断言——把全量收集再跑一遍的守卫会给每个 worker 再加约 3 s，且无法在只装解释器的 `guards` 作业里执行。
+
+**预期收益是算术，不是实测。** 按上面的扣减，`part a` 应从 419 s 降到约 220 s、`part b` 从 700 s 降到约 320 s（含各约 35 s 的作业前置）。届时两个作业与最慢分片（325 s）同量级，关键路径回到集成分片；在那种拓扑下继续压 `python_tests` 不再缩短合并等待时间，只省 runner 秒，与本文件 2026-11-15 的结论一致。该预期需要下一个 full 路由 run 的 `ci-timing-report.py --run` 同口径样本确认，本小节不据此宣称已达成。
+
+**残留不均衡与不做的改变。** 扣掉超时后分区 7 仍是其余七片均值（104 / 184 / 105 / 146 / 182 / 200 / 168 s，均值 156 s）的约 1.8 倍：代价集中在少数契约门禁用例文件上（`tests/contract/test_approved_tts_receipt_planner_widening.py` 在一个分片约 104 s、`test_approved_http_response_vocabulary_changes.py` 在另一分片约 78 s），而分区按**用例数**均衡、不按耗时（2026-11-15/16 两节已记录该取舍：集成分片的耗时加权被 run 间噪声淹没）。这里的集中是确定性的、可复现的，但收益上界受最慢分片约束，且修完超时后已不在关键路径上，因此本轮不引入耗时模型、不改分片数、不动 15 分钟预算（预算规则是「上限至少高于常态慢值 5 分钟」，预期常态 320 s 时 10 分钟不满足）。下一轮若要再压，优先采集每用例耗时并版本化为数据源，而不是继续调权重。
+
+**规则。** 收集期只做静态工作：import 不得执行外部命令、起服务或等超时。探针、容器与网络前置属于真正运行该层的用例（`setUpClass` 或用例体内），并由 `CollectionCostTest` 这类带正控的守卫钉住，否则「收集变慢」会在 CI 上表现为某个陌生用例的 180 s 时长，而不是一条能定位的错误。

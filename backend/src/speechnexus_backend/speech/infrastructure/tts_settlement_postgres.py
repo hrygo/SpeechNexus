@@ -88,11 +88,18 @@ class PostgresTtsSettlementStore:
             raise ValueError("Invalid TTS abort reason")
         with self._pool.connection(timeout=self._timeout) as conn:
             self._deadline(conn)
-            row = conn.execute(
+            updated = conn.execute(
                 "UPDATE speech_tts_settlement SET abort_reason=COALESCE(abort_reason,?), "
-                "next_check_at_us=0 WHERE lease_id=? AND settled_at_us IS NULL "
-                "RETURNING abort_reason",
+                "next_check_at_us=0 WHERE lease_id=? AND settled_at_us IS NULL",
                 (reason, lease_id),
+            )
+            if updated.rowcount != 1:
+                # 条件 UPDATE 没命中:没有这条租约,或它已经结算完成。
+                return None
+            # 方言没有 `RETURNING`:同一事务里按主键读回刚写的那一列。
+            row = conn.execute(
+                "SELECT abort_reason FROM speech_tts_settlement WHERE lease_id=?",
+                (lease_id,),
             ).fetchone()
         return cast(AbortReason, row["abort_reason"]) if row else None
 

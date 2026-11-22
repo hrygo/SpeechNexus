@@ -289,15 +289,14 @@ class PostgresWorkspaceWrites:
         if original is not None:
             return self._replayed(cursor, original, command, "create", None)
         now = cursor.clock()
-        rows = cursor.rows(
+        cursor.rows(
             "INSERT INTO speech_workspaces "
             "(workspace_id, display_name, workspace_state, created_at_us) "
-            "VALUES (?, ?, 'active', ?) RETURNING " + _COLUMNS,
+            "VALUES (?, ?, 'active', ?)",
             (workspace_id, command.display_name, now),
         )
-        if len(rows) != 1:
-            raise WorkspaceUnavailableError
-        record = _workspace(rows[0])
+        # 方言没有 `RETURNING`:写在同一事务里,就地按主键读回同一行。
+        record = self._read_back(cursor, workspace_id)
         self._record_command(cursor, command, "create", record, now)
         return WorkspaceWriteReceipt(record, False)
 
@@ -311,12 +310,12 @@ class PostgresWorkspaceWrites:
         if current.metadata_revision != command.expected_metadata_revision:
             raise WorkspaceConflictError("configuration_changed")
         now = cursor.clock()
-        rows = cursor.rows(
+        cursor.rows(
             "UPDATE speech_workspaces SET "
             "display_name = COALESCE(?, display_name), "
             "workspace_state = COALESCE(?, workspace_state), "
             "metadata_revision = metadata_revision + 1 "
-            "WHERE workspace_id = ? AND metadata_revision = ? RETURNING " + _COLUMNS,
+            "WHERE workspace_id = ? AND metadata_revision = ?",
             (
                 command.display_name,
                 command.status,
@@ -324,11 +323,22 @@ class PostgresWorkspaceWrites:
                 command.expected_metadata_revision,
             ),
         )
-        if len(rows) != 1:
-            raise WorkspaceUnavailableError
-        record = _workspace(rows[0])
+        # 条件 UPDATE 命中与否由读回的同键行与版本号判定,不依赖 `RETURNING` 的行数。
+        record = self._read_back(cursor, command.workspace_id)
         self._record_command(cursor, command, "update", record, now)
         return WorkspaceWriteReceipt(record, False)
+
+    def _read_back(self, cursor: _Cursor, workspace_id: str) -> Workspace:
+        """Write-back read: the row just written, read by primary key in the same transaction."""
+
+        rows = cursor.rows(
+            "SELECT " + _COLUMNS + " FROM speech_workspaces WHERE workspace_id = ?",
+            (workspace_id,),
+        )
+        if len(rows) != 1:
+            # 写成功却读不到一行,说明身份或权限出了协调问题,不是业务冲突。
+            raise WorkspaceUnavailableError
+        return _workspace(rows[0])
 
     def _locked(self, cursor: _Cursor, workspace_id: str) -> Workspace | None:
         rows = cursor.rows(

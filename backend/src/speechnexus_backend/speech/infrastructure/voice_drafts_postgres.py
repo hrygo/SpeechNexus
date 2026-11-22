@@ -312,12 +312,18 @@ class PostgresVoiceDrafts:
             # Candidate facts are checked while the row lock and transaction are
             # open. A failure rolls back before the UPDATE or receipt insert.
             _require_candidate(connection, row)
-            changed = connection.execute(
+            updated = connection.execute(
                 "UPDATE speech_voice_drafts SET display_name=?, "
                 "metadata_revision=metadata_revision+1, "
                 "updated_at_us=GREATEST(updated_at_us, CAST(? AS BIGINT)) "
-                "WHERE draft_id=? RETURNING *",
+                "WHERE draft_id=?",
                 (command["display_name"], now_us(cast(ClockReader, connection)), draft_id),
+            )
+            if updated.rowcount != 1:
+                raise PublicJobUnavailableError
+            # 方言没有 `RETURNING`:同一事务里按主键读回刚改的那一行。
+            changed = connection.execute(
+                "SELECT * FROM speech_voice_drafts WHERE draft_id=?", (draft_id,)
             ).fetchone()
             if changed is None:
                 raise PublicJobUnavailableError

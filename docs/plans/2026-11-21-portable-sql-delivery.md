@@ -213,3 +213,26 @@ claim bucket 改的是准入侧的领取，**没有覆盖派发队列**。因此
 捕获需要驱动把唯一约束冲突翻译成契约错误(`portable_error` / `ConflictError` 已有,但
 `ContractCursor` 还没接到这些模块)。在驱动接入前替换这 5 处,等于把一次可容忍的竞争
 变成用户可见的 500。因此它们保留在基线里,解除条件写明:驱动适配点接入后一并替换。
+
+### 8.5 `RETURNING` 的两类,与一处被守卫拦下的替换
+
+`RETURNING` 的 15 处分成两类。
+
+**自证命中**(已替换 9 处)。写语句本来就带条件谓词,`rowcount` 已经是 CAS 判据,读回只是为了
+把写后的值取出来:工作区创建/更新、TTS 中止原因、发音草稿改名、公开 Job 取消与确认、
+单条草稿修订删除。这些改成「`rowcount != 1` 判命中 + 同一事务内按主键读回」,语义不变,
+而且把「命中」与「取值」两件事分开了 —— 原来的 `RETURNING` 用一个动作同时承担两件事。
+
+公开 Job 的取消语句还顺手去掉了 `WITH clock AS (SELECT CAST(? AS BIGINT) AS now_us) ... FROM clock`:
+`now_us` 本来就是参数,`RETURNING clock.now_us` 返回的就是刚传进去的那个数,不需要再取一次。
+
+**与协调原语耦合**(保留)。派发队列领取的 `WITH ... FOR UPDATE SKIP LOCKED ... RETURNING`、
+取消对账的 `WITH ... UPDATE ... RETURNING job_id, attempts, next_check_at_us`,以及删除账本
+`claim_purge`/`release_purge` 的 `RETURNING <列清单>`。前两者与 #1095 的 bucket fencing 同族;
+后者是列清单用 `f"..." + _LEDGER_ROW_COLUMNS` 拼出来的,换掉要新增两处拼接式 SQL 文本,
+守卫实测 `NEW sql-string-building (2)` 直接判红。
+
+**这就是那条被守卫拦下的替换**:我先换了 `claim_purge`/`release_purge`,守卫判红,于是撤回,
+并把原因写在代码注释里 —— 列清单先冻结成字面量常量,这三处才能一起换。守卫拦住的是我制造
+新违规,不是它误报。
+

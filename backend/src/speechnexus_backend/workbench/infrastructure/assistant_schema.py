@@ -5,9 +5,8 @@ progress, result and error are mutable afterwards. The LLM itself stays optional
 this fragment never records an endpoint or credential.
 """
 
-from psycopg import sql
-
 from speechnexus_backend.workbench.infrastructure.version_schema import schema_identifier
+from speechnexus_portable_sql.vendor import sql
 
 # The exact mutable column set, shared by the grant below and the startup check.
 UPDATABLE_COLUMNS = frozenset(

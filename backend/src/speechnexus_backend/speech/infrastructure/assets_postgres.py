@@ -10,9 +10,6 @@ from contextlib import contextmanager
 from dataclasses import replace
 from typing import Any, cast
 
-import psycopg
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
-
 from speechnexus_backend.speech.application.assets import DeletionTicket
 from speechnexus_backend.speech.domain.assets import (
     AssetError,
@@ -33,6 +30,7 @@ from speechnexus_backend.speech.domain.assets import (
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_portable_sql.clock import ClockReader, now_us
 from speechnexus_portable_sql.contract import ListMarker
+from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 
 class AssetCursor:

@@ -13,7 +13,6 @@ from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Literal, Self
 
-from psycopg.conninfo import conninfo_to_dict
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -28,6 +27,7 @@ from speechnexus_backend.speech.infrastructure.runtime_controller_http import (
 from speechnexus_backend.speech.infrastructure.runtime_delivery_postgres import (
     PostgresRuntimeDelivery,
 )
+from speechnexus_portable_sql.vendor import conninfo_to_dict
 
 
 class RuntimeDeliverySettings(BaseSettings):

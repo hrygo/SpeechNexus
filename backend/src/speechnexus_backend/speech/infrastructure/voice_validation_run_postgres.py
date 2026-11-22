@@ -5,9 +5,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import psycopg
-from psycopg.rows import dict_row
-
 from speechnexus_backend.speech.application.voice_validation_report import (
     MAX_PROBE_TEXT,
     MAX_REFERENCE_TEXT,
@@ -20,6 +17,7 @@ from speechnexus_backend.speech.domain.job_dispatch import (
 )
 from speechnexus_backend.speech.domain.voice_capability_evidence import VoiceMaterial
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
+from speechnexus_portable_sql.vendor import dict_row, psycopg
 
 
 class PostgresValidationRunFacts:

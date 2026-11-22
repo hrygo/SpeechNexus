@@ -6,9 +6,6 @@ import time
 from collections.abc import Callable
 from typing import Any, cast
 
-import psycopg
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
-
 from speechnexus_backend.speech.application.profile_documents import check_command
 from speechnexus_backend.speech.domain.assets import identifier
 from speechnexus_backend.speech.domain.profile_drafts import (
@@ -25,6 +22,7 @@ from speechnexus_backend.speech.infrastructure.profile_drafts_sql import (
     recover_draft,
 )
 from speechnexus_portable_sql.clock import ClockReader, now_us
+from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 
 class _Cursor:

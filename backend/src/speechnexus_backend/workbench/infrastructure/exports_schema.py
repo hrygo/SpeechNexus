@@ -4,9 +4,8 @@ An export names the casting revision it was accepted against, so a later casting
 change can never silently alter what a running or finished export produced.
 """
 
-from psycopg import sql
-
 from speechnexus_backend.workbench.infrastructure.version_schema import schema_identifier
+from speechnexus_portable_sql.vendor import sql
 
 # The exact mutable column set, shared by the grant below and the startup check.
 UPDATABLE_COLUMNS = frozenset(

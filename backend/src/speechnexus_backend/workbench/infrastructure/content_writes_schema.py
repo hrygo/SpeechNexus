@@ -1,8 +1,7 @@
 """Private content-write identities survive project erasure; no runtime DDL."""
 
-from psycopg import sql
-
 from speechnexus_backend.workbench.infrastructure.version_schema import schema_identifier
+from speechnexus_portable_sql.vendor import sql
 
 
 def content_writes_migration_sql(schema: str) -> sql.Composed:

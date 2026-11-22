@@ -6,13 +6,12 @@ bytes, a public URL or a second copy of speech state. Project deletion cascades 
 tables, and object bytes stay discoverable under the project's object prefix.
 """
 
-from psycopg import sql
-
 from speechnexus_backend.workbench.infrastructure.content_writes_schema import (
     content_writes_migration_sql,
     grant_content_writes_runtime_sql,
 )
 from speechnexus_backend.workbench.infrastructure.version_schema import schema_identifier
+from speechnexus_portable_sql.vendor import sql
 
 
 def saved_assets_migration_sql(schema: str) -> sql.Composed:

@@ -6,13 +6,11 @@ import time
 from collections.abc import Callable
 from typing import Any, cast
 
-import psycopg
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
-
 from speechnexus_backend.speech.domain.artifacts import ArtifactError, ArtifactRecord
 from speechnexus_backend.speech.domain.assets import identifier
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_portable_sql.clock import now_us
+from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 
 class PostgresArtifactMetadata:

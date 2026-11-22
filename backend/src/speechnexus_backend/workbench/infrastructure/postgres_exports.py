@@ -15,8 +15,6 @@ from decimal import Decimal
 from typing import cast
 from uuid import uuid4
 
-from psycopg.types.json import Jsonb
-
 from speechnexus_backend.workbench.application.downloads import DownloadContent, DownloadError
 from speechnexus_backend.workbench.application.exports import ExportJobStore
 from speechnexus_backend.workbench.application.versions import (
@@ -42,6 +40,7 @@ from speechnexus_backend.workbench.infrastructure.postgres_versions import (
     _Session,
 )
 from speechnexus_portable_sql.contract import ListMarker
+from speechnexus_portable_sql.vendor import Jsonb
 
 _COLUMNS = """
     id, project_id, book_id, status, export_format, manifest_revision,

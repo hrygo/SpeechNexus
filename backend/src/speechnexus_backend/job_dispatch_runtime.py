@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from typing import Any, Literal, Self, cast
 from urllib.parse import urlsplit
 
-from psycopg.conninfo import conninfo_to_dict
 from pydantic import AnyHttpUrl, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -57,6 +56,7 @@ from speechnexus_backend.speech.infrastructure.stored_command_planner import (
 from speechnexus_backend.speech.infrastructure.voice_validation_run_postgres import (
     PostgresValidationRunFacts,
 )
+from speechnexus_portable_sql.vendor import conninfo_to_dict
 
 
 class DispatchDependenciesUnavailableError(RuntimeError):

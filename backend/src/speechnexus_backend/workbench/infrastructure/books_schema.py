@@ -6,9 +6,8 @@ deletion cascades books then chapters then their receipts, and a chapter positio
 is unique inside its book so composition cannot silently fork.
 """
 
-from psycopg import sql
-
 from speechnexus_backend.workbench.infrastructure.version_schema import schema_identifier
+from speechnexus_portable_sql.vendor import sql
 
 
 def books_migration_sql(schema: str) -> sql.Composed:

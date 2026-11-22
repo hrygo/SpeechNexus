@@ -12,14 +12,12 @@ from __future__ import annotations
 import time
 from typing import Any
 
-import psycopg
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
-
 from speechnexus_backend.speech.domain.resource_pools import (
     ResourcePoolFacts,
     ResourcePoolsUnavailableError,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
+from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 _QUERY = """
 SELECT pool.pool_id, pool.pool_state, pool.service_class,

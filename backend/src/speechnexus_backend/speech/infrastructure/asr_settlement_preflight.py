@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import psycopg
-
 from speechnexus_backend.speech.domain.job_prerequisites import MIGRATION_COMMAND
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.tts_settlement_preflight import (
     SettlementPreflightUnavailableError,
 )
+from speechnexus_portable_sql.vendor import psycopg
 
 _ROOT_ABSENT = (
     "NOT EXISTS (SELECT 1 FROM speech_asr_settlement s "

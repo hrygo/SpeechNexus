@@ -21,8 +21,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-import psycopg
-from psycopg.conninfo import conninfo_to_dict
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -42,6 +40,7 @@ from speechnexus_backend.speech.infrastructure.gateway_execution_client import (
 from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
 from speechnexus_backend.speech.infrastructure.publications_postgres import PostgresPublications
 from speechnexus_backend.speech.infrastructure.transcription_recipe import private_file
+from speechnexus_portable_sql.vendor import conninfo_to_dict, psycopg
 
 _MAX_BYTES = 1_048_576
 

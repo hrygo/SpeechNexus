@@ -141,6 +141,7 @@ module = ["imageio_ffmpeg", "soundfile"]
 ignore_missing_imports = true
 
 [tool.importlinter]
+include_external_packages = true
 root_packages = [
   "speechnexus_asset_inspector",
   "speechnexus_backend",
@@ -167,6 +168,25 @@ name = "Shared media does not depend on services or wire DTOs"
 type = "forbidden"
 source_modules = ["speechnexus_media"]
 forbidden_modules = ["speechnexus_backend", "speechnexus_gateway", "speechnexus_node_controller", "speechnexus_contracts"]
+
+[[tool.importlinter.contracts]]
+name = "Vendor drivers enter only through the portable SQL package"
+type = "forbidden"
+source_modules = [
+  "speechnexus_backend",
+  "speechnexus_gateway",
+  "speechnexus_node_controller",
+  "speechnexus_asset_inspector",
+  "speechnexus_media",
+  "speechnexus_contracts",
+]
+forbidden_modules = [
+  "psycopg",
+  "psycopg_pool",
+  "pymysql",
+]
+allow_indirect_imports = "true"
+# portable-sql 自己就是唯一允许碰驱动的包;这里用 allow 单独把它排除。
 
 [[tool.importlinter.contracts]]
 name = "Speech backend dependency direction"

@@ -24,9 +24,6 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
-import psycopg
-from psycopg.rows import dict_row
-
 from speechnexus_backend.speech.domain.capacity import PhysicalResources
 from speechnexus_backend.speech.domain.runtime_intents import (
     ApprovedRuntimePlan,
@@ -61,6 +58,7 @@ from speechnexus_portable_sql.clock import ClockReader
 from speechnexus_portable_sql.clock import now_us as now_us_for
 from speechnexus_portable_sql.psycopg_driver import PortableConnection
 from speechnexus_portable_sql.psycopg_driver import connect as portable_connect
+from speechnexus_portable_sql.vendor import dict_row, psycopg
 
 EXIT_INVALID = 2
 EXIT_CONFLICT = 4

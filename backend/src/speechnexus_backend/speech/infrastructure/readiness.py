@@ -10,7 +10,6 @@ from collections.abc import Sequence
 from typing import Any
 
 import httpx
-import psycopg
 from pydantic import AnyHttpUrl
 
 from speechnexus_backend.speech.domain.job_dispatch import VERIFIED_STOP_EVIDENCE_KINDS
@@ -19,6 +18,7 @@ from speechnexus_backend.speech.infrastructure import (
     public_job_schema,
 )
 from speechnexus_portable_sql.psycopg_driver import connect_async as portable_connect_async
+from speechnexus_portable_sql.vendor import psycopg
 
 
 class PostgresReadinessProbe:

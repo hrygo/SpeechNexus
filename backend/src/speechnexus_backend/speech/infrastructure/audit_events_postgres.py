@@ -18,9 +18,6 @@ from __future__ import annotations
 import time
 from typing import Any
 
-import psycopg
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
-
 from speechnexus_backend.speech.domain.audit_events import (
     AUDIT_RESOURCE_TYPE,
     AuditChangeSummary,
@@ -30,6 +27,7 @@ from speechnexus_backend.speech.domain.audit_events import (
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema import EVENT_TABLE
+from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 _COLUMNS = (
     "event_id, kind, action, binding_id, request_id, actor_type, credential_label, "

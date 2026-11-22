@@ -4,8 +4,6 @@ Team A assigns the global migration order. This composes unchanged C fragments;
 it is not an idempotent runner, an upgrade of an existing schema, or runtime DDL.
 """
 
-from psycopg import sql
-
 from speechnexus_backend.workbench.infrastructure.assistant_schema import (
     assistant_migration_sql,
     grant_assistant_runtime_sql,
@@ -55,6 +53,7 @@ from speechnexus_backend.workbench.infrastructure.version_schema import (
     migration_sql,
     schema_identifier,
 )
+from speechnexus_portable_sql.vendor import sql
 
 SCHEMA_REVISION = 11
 TABLES = frozenset(

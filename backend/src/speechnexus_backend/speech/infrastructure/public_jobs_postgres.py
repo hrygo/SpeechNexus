@@ -8,9 +8,6 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any, Protocol, cast
 
-import psycopg
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
-
 from speechnexus_backend.speech.application.public_jobs import (
     BindingFact,
     ModelBindingError,
@@ -85,6 +82,7 @@ from speechnexus_backend.speech.infrastructure.public_job_admission import (
 )
 from speechnexus_portable_sql.clock import ClockReader, now_us
 from speechnexus_portable_sql.psycopg_driver import portable_error
+from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 _LATEST_PROGRESS = (
     "(SELECT e.progress_{column} FROM speech_job_events AS e "

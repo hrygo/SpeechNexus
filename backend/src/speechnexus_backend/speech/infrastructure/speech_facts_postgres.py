@@ -14,9 +14,6 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
-import psycopg
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
-
 from speechnexus_backend.speech.application.speech_synthesis import (
     BindingFact,
     WorkspaceFact,
@@ -27,6 +24,7 @@ from speechnexus_backend.speech.domain.publications import (
     PublicationUnavailableError,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechConnection, SpeechPool
+from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 
 class SpeechFactsView:

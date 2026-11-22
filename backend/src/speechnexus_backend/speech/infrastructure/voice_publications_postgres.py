@@ -19,9 +19,6 @@ import json
 import time
 from typing import Any, cast
 
-import psycopg
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
-
 from speechnexus_backend.speech.application.voice_capability_evidence import (
     ValidationRunFacts,
     VoiceEvidenceNotEligibleError,
@@ -55,6 +52,7 @@ from speechnexus_backend.speech.infrastructure.voice_publication_schema import (
     REVISION_TABLE,
 )
 from speechnexus_portable_sql.clock import ClockReader, now_us
+from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 _SELECT_DRAFT = (
     "SELECT draft_id, kind, status, head_revision, display_name "

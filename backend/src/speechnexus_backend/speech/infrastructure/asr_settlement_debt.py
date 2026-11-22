@@ -10,10 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from psycopg.rows import dict_row
-
 from speechnexus_portable_sql.clock import now_us
 from speechnexus_portable_sql.psycopg_driver import connect as portable_connect
+from speechnexus_portable_sql.vendor import dict_row
 
 _NOW = "CAST(? AS BIGINT)"
 _LIMIT = 200

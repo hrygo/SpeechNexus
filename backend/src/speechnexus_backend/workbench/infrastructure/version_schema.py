@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 
-from psycopg import sql
+from speechnexus_portable_sql.vendor import sql
 
 
 def schema_identifier(name: str) -> sql.Identifier:

@@ -4,9 +4,6 @@ from __future__ import annotations
 
 from typing import Any, Protocol, cast
 
-import psycopg
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
-
 from speechnexus_backend.speech.application.job_cancellation_reconciliation import (
     CancellationCandidate,
     ReconciliationOutcome,
@@ -18,6 +15,7 @@ from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema imp
     TABLE,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
+from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 _MAX_TIMESTAMP_US = 253_402_300_799_999_999
 # The schema's ``attempts`` CHECK bound, imported rather than restated: the DDL and this

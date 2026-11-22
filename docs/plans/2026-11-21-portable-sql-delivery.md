@@ -494,5 +494,12 @@ from speechnexus_portable_sql.vendor import dict_row  # 替代 from psycopg.rows
 这样「品牌依赖只在 portable-sql 内」这条边界从守卫规则变成结构事实。首批 12 个文件、34 处已迁移,
 基线 877 → 843。
 
-后续每轮迁移一批;全部迁完后应当新增一条 `lint-imports` 反向契约(业务包不得导入 `psycopg`),
-把边界钉在结构上而不是靠扫描。
+**第二批 62 个文件、96 处一次迁完**,基线 843 → 747。`vendor-sdk` 归零。
+
+边界现在由结构守住,不再靠扫描:`lint-imports` 新增契约
+**"Vendor drivers enter only through the portable SQL package"**(`forbidden`,源是六个业务包,
+禁止 `psycopg`/`psycopg_pool`/`pymysql`,`allow_indirect_imports = true` 让 portable-sql 的再导出
+作为合法中转)。共 10 条契约。
+
+注入实测:往 `backend/src` 放一个 `import psycopg` 的探针文件,`lint-imports` 立刻
+`9 kept, 1 broken`;删掉即恢复 `10 kept`。

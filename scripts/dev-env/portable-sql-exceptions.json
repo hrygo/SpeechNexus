@@ -267,14 +267,6 @@
     },
     {
       "rule": "paging-limit",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/admission_recovery_sql.py",
-      "count": 1,
-      "card": "#1100",
-      "reason": "先去重定序再决定取哪一行,逐条判断",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "paging-limit",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/admission_sql.py",
       "count": 2,
       "card": "#1100",

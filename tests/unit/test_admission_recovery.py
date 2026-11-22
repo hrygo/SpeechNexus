@@ -112,6 +112,24 @@ class OriginalRows:
         return self.current
 
 
+def test_more_leases_than_the_contract_allows_is_a_reconciliation_failure() -> None:
+    """去掉 `LIMIT` 之后,超量行必须仍然失败闭合.
+
+    准入契约保证阶段数 1..64,所以第 65 行只可能来自损坏数据。旧语句用 `LIMIT 65` 截断,
+    现在没有截断 —— 这条用例钉住「多出来的行不会被当成一致」,也就是 `LIMIT` 的冗余结论。
+    """
+
+    cursor = OriginalRows()
+    template = cursor.data["admission_leases"][0]
+    # 准入契约上限是 64 个阶段;造 65 行租约,读回必须整体判不符,不能截断后当成一致。
+    cursor.data["admission_leases"] = [
+        {**template, "stage_id": f"stage-{index:03d}", "lease_id": f"lease-{index:03d}"}
+        for index in range(65)
+    ]
+    with pytest.raises(AdmissionRejectedError, match="reconciliation_required"):
+        read_original(cursor, ADMISSION.identity, max_command_bytes=1048576)
+
+
 def test_original_recovery_is_complete_and_never_reads_current_runtime_or_policy() -> None:
     cursor = OriginalRows()
     result = read_original(

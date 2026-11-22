@@ -859,3 +859,22 @@ f"configured but SPEECHNEXUS_ASSET_INSPECTOR=text; select audio or unset every �
 反例写进 `--selftest`:把判据退回只匹配 `SQL_SHAPE`,`SELFTEST FAIL`。
 
 基线 **529 → 511**(18 条假阳归零),涉及 14 个文件的登记条目一并删除。
+
+### 8.34 删掉一个冗余的 `LIMIT`,并说明它为什么是冗余的
+
+`admission_recovery_sql.read_original` 里有一条 `ORDER BY stage_id LIMIT 65`。表面看它给读回
+加了上界,实际是多余的:
+
+- 准入契约保证阶段数 `1..64`(`AdmissionRequest.__post_init__`);
+- 紧随其后的判定是「读回行数必须等于阶段数,且 stage_id 集合相同」—— 真出现第 65 行,这条
+  判定自己就会报 `reconciliation_required`。
+
+我先按「显式判界」加了一个 `MAX_STAGES` 常量和一个 `len(leases) > MAX_STAGES` 分支,注入测试
+立刻证明它是**死代码**:只要行数超出,后面的等值判定必然先失败,新分支永远走不到。于是撤回常量,
+只删 `LIMIT`,把「上界由等值判定承担」写进注释。
+
+这是「先量自己的基线」那条纪律的实例:去掉 `LIMIT` 不改变任何判定结果,只是删掉一个方言依赖;
+新增一条永远走不到的分支,比保留 `LIMIT` 更糟。基线 **511 → 510**。
+
+用例 `test_more_leases_than_the_contract_allows_is_a_reconciliation_failure` 钉住的是
+「65 行不会被当成一致」——它说明 `LIMIT` 的结论由等值判定给出,**不**声称它单独证明了这次删除。

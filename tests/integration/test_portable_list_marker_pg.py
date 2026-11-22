@@ -16,9 +16,17 @@ from psycopg.rows import dict_row
 from speechnexus_portable_sql.contract import ListMarker
 from speechnexus_portable_sql.psycopg_driver import connect
 
-DSN = os.environ.get("SPEECHNEXUS_TEST_DATABASE_URL", "")
+pytestmark = pytest.mark.integration
+VARIABLE = "SPEECHNEXUS_TEST_DATABASE_URL"
 
-pytestmark = pytest.mark.skipif(not DSN, reason="real database DSN not configured")
+
+def _dsn() -> str:
+    """缺 DSN 时失败而不是跳过:跳过不会被当成证据。"""
+
+    url = os.environ.get(VARIABLE)
+    if not url:
+        pytest.fail("Configure an isolated PostgreSQL DSN; skip is not portable-SQL evidence")
+    return url
 
 _NAMES = (
     "SELECT CAST(? AS text) AS name UNION ALL SELECT CAST(? AS text) "
@@ -27,7 +35,7 @@ _NAMES = (
 
 
 def test_a_runtime_sized_set_binds_through_the_driver() -> None:
-    with connect(DSN, row_factory=dict_row) as connection, connection.cursor() as cursor:
+    with connect(_dsn(), row_factory=dict_row) as connection, connection.cursor() as cursor:
         cursor.execute(
             f"SELECT name FROM ({_NAMES}) AS t WHERE name IN (?) ORDER BY name",
             ("a", "b", "c", ListMarker(["a", "c"])),
@@ -38,7 +46,7 @@ def test_a_runtime_sized_set_binds_through_the_driver() -> None:
 def test_an_empty_batch_is_refused_before_the_statement_is_sent() -> None:
     # 空批次不展开成 `IN ()` 也不猜「匹配不到任何行」:调用方应当根本不发这条语句。
     with (
-        connect(DSN, row_factory=dict_row) as connection,
+        connect(_dsn(), row_factory=dict_row) as connection,
         connection.cursor() as cursor,
         pytest.raises(ValueError, match="at least one value"),
     ):

@@ -115,12 +115,12 @@ class PostgresOriginalTtsCommands:
             with self._pool.connection(timeout=self._timeout) as connection:
                 connection.execute("SET TRANSACTION READ ONLY")
                 connection.execute(
-                    "SELECT set_config('statement_timeout', %s, true)",
+                    "SELECT set_config('statement_timeout', ?, true)",
                     (str(max(1, int(self._timeout * 1000))),),
                 )
                 row = connection.execute(
                     "SELECT request_document, request_digest, initial_attempt_id "
-                    "FROM admission_operations WHERE operation_id=%s",
+                    "FROM admission_operations WHERE operation_id=?",
                     (identity.operation_id,),
                 ).fetchone()
             if row is None:

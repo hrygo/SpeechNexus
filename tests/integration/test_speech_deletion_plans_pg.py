@@ -37,6 +37,7 @@ from psycopg.rows import dict_row
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 from tests.contract.test_architecture_repairs import _deletion_validator
+from tests.support.portable_pg import connect as portable_pg_connect
 from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app
@@ -109,7 +110,7 @@ def sandbox() -> Iterator[Sandbox]:
             command.upgrade(config, "head")
     finally:
         engine.dispose()
-    admin = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+    admin = portable_pg_connect(url, autocommit=True, row_factory=dict_row)
     try:
         admin.execute(f'SET search_path TO "{schema}", pg_catalog')
         _seed(admin)
@@ -206,18 +207,18 @@ def _seed(admin: psycopg.Connection[dict[str, Any]]) -> None:
 
 
 def _stored(url: str, schema: str, plan_id: str) -> dict[str, Any]:
-    with psycopg.connect(url, row_factory=dict_row) as connection:
+    with portable_pg_connect(url, row_factory=dict_row) as connection:
         connection.execute(f'SET search_path TO "{schema}", pg_catalog')
         connection.execute("SET TIME ZONE 'UTC'")
         row = connection.execute(
             "SELECT * FROM speech_deletion_plans WHERE id = %s", (plan_id,)
         ).fetchone()
     assert row is not None, plan_id
-    return row
+    return cast(dict[str, Any], row)
 
 
 def _rows_for_key(url: str, schema: str, key_digest: str) -> int:
-    with psycopg.connect(url, row_factory=dict_row) as connection:
+    with portable_pg_connect(url, row_factory=dict_row) as connection:
         connection.execute(f'SET search_path TO "{schema}", pg_catalog')
         connection.execute("SET TIME ZONE 'UTC'")
         row = connection.execute(
@@ -393,7 +394,7 @@ async def test_one_key_replays_the_old_snapshot_after_the_target_moved(
     try:
         first = await _post(app, _body("asset", ASSET_ID, 3), "key-move-1")
         assert first.status_code == 200
-        with psycopg.connect(sandbox.url, autocommit=True) as connection:
+        with portable_pg_connect(sandbox.url, autocommit=True) as connection:
             connection.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
             connection.execute(
                 "UPDATE speech_assets SET version = version + 1 WHERE asset_id = %s",
@@ -433,7 +434,7 @@ async def test_a_tampered_plan_row_is_not_replayed(sandbox: Sandbox) -> None:
     try:
         first = await _post(app, _body("asset", ASSET_ID, 3), "key-tamper-1")
         assert first.status_code == 200
-        with psycopg.connect(sandbox.url, autocommit=True) as connection:
+        with portable_pg_connect(sandbox.url, autocommit=True) as connection:
             connection.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
             # The row is content-addressed: changing any hashed value must stop it
             # from being replayed as if it were the plan the client accepted.
@@ -471,7 +472,7 @@ def _provision_writer(
 ) -> tuple[str, psycopg.Connection[dict[str, Any]]]:
     """Provision exactly the reference writer set, with or without the route's grants."""
     role = "sn_del_writer_" + uuid.uuid4().hex[:8]
-    admin = psycopg.connect(sandbox.url, autocommit=True, row_factory=dict_row)
+    admin = portable_pg_connect(sandbox.url, autocommit=True, row_factory=dict_row)
     admin.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
     admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{ROLE_PASSWORD}'")
     for grant in (
@@ -500,7 +501,7 @@ async def test_the_provisioned_writer_role_can_preview_both_targets(sandbox: San
     role, admin = _provision_writer(sandbox)
     pool = None
     try:
-        with psycopg.connect(
+        with portable_pg_connect(
             make_conninfo(sandbox.url, user=role, password=ROLE_PASSWORD), row_factory=dict_row
         ) as connection:
             connection.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
@@ -546,7 +547,7 @@ async def test_workspace_is_locked_before_the_asset_like_the_writer_path(
 
     def publisher() -> None:
         try:
-            with psycopg.connect(sandbox.url, row_factory=dict_row) as connection:
+            with portable_pg_connect(sandbox.url, row_factory=dict_row) as connection:
                 connection.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
                 connection.execute(
                     "SELECT 1 FROM speech_workspaces WHERE workspace_id = %s FOR UPDATE",
@@ -585,7 +586,7 @@ async def test_missing_deletion_grants_fail_the_route_not_the_process(
     role, admin = _provision_writer(sandbox, include_deletion=False)
     pool = None
     try:
-        with psycopg.connect(
+        with portable_pg_connect(
             make_conninfo(sandbox.url, user=role, password=ROLE_PASSWORD), row_factory=dict_row
         ) as connection:
             connection.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')

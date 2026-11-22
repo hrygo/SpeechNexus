@@ -31,7 +31,7 @@ PASS/FAIL/PENDING,FAIL 时点名缺的是哪一项;需要 Docker daemon、psql �
 一项 FAIL(env 文件缺失也是 1);2 参数或 compose 路径错误.
 
 判定边界:静态检查只读 `deploy/compose.env`、`deploy/compose.yaml` 与私有配置的
-文件形态;运行时检查只做 `SELECT`(含 `has_*_privilege` 与 `LIMIT 0` 列探测)、引擎
+文件形态;运行时检查只做 `SELECT`(含 `has_*_privilege` 与零行列探测)、引擎
 `/health` GET 和 `docker inspect` 读取,不插入、不更新、不授权、不建表。脚本验证的是
 "缺少权限"这一类静默失败,不验证"多授予了权限"——后者的权威仍是进程启动校验。
 
@@ -84,25 +84,28 @@ REQUIRED_JOB_TABLES: tuple[str, ...] = (
 
 # 复制自 job_dispatch_runtime.DISPATCH_STARTUP_PROBES;语句不带 schema 前缀,依赖
 # search_path(psql 由 PGOPTIONS 设置,worker 由连接池设置)。第一项是用于报错的表名。
+# 探针只验证「语句可解析 + 这些列对该角色可读」,所以用恒假谓词取零行:
+# 受限方言没有 `LIMIT`,这里也没有分页语义。#751 的一致性检查保证与运行时逐字相等。
 DISPATCH_PROBES: tuple[tuple[str, str], ...] = (
-    ("speech_jobs", "SELECT job_id FROM speech_jobs LIMIT 0"),
+    ("speech_jobs", "SELECT job_id FROM speech_jobs WHERE 1=0"),
     (
         "speech_job_events",
         "SELECT job_id, event_seq, state, occurred_at_us, kind, progress_unit, "
-        "progress_completed, progress_total FROM speech_job_events LIMIT 0",
+        "progress_completed, progress_total FROM speech_job_events WHERE 1=0",
     ),
-    ("coordination_jobs", "SELECT job_id FROM coordination_jobs LIMIT 0"),
+    ("coordination_jobs", "SELECT job_id FROM coordination_jobs WHERE 1=0"),
     (
         "admission_operations",
-        "SELECT operation_id, request_document FROM admission_operations LIMIT 0",
+        "SELECT operation_id, request_document FROM admission_operations WHERE 1=0",
     ),
-    ("admission_attempts", "SELECT attempt_id FROM admission_attempts LIMIT 0"),
-    ("admission_requests", "SELECT request_document FROM admission_requests LIMIT 0"),
+    ("admission_attempts", "SELECT attempt_id FROM admission_attempts WHERE 1=0"),
+    ("admission_requests", "SELECT request_document FROM admission_requests WHERE 1=0"),
     (
         "admission_leases",
-        "SELECT lease_id, lease_state, cleanup_state, deadline_at_us FROM admission_leases LIMIT 0",
+        "SELECT lease_id, lease_state, cleanup_state, deadline_at_us FROM admission_leases "
+        "WHERE 1=0",
     ),
-    ("speech_artifacts", "SELECT artifact_id FROM speech_artifacts LIMIT 0"),
+    ("speech_artifacts", "SELECT artifact_id FROM speech_artifacts WHERE 1=0"),
 )
 
 # 复制自 job_dispatch_runtime.DISPATCH_VOICE_VALIDATION_PROBES;只在 kinds 含
@@ -110,18 +113,19 @@ DISPATCH_PROBES: tuple[tuple[str, str], ...] = (
 VOICE_VALIDATION_PROBES: tuple[tuple[str, str], ...] = (
     (
         "speech_voice_draft_revisions",
-        "SELECT draft_id, revision FROM speech_voice_draft_revisions LIMIT 0",
+        "SELECT draft_id, revision FROM speech_voice_draft_revisions WHERE 1=0",
     ),
-    ("speech_assets", "SELECT workspace_id, asset_id FROM speech_assets LIMIT 0"),
+    ("speech_assets", "SELECT workspace_id, asset_id FROM speech_assets WHERE 1=0"),
 )
 
 # 复制自 job_dispatch_runtime.DISPATCH_ROLE_GUARD_SQL;为真即拒绝启动。
 DISPATCH_ROLE_GUARD = (
-    "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(%(role)s::name,%(schema)s,'CREATE') "
-    "OR pg_catalog.pg_has_role(%(role)s::name,d.datdba,'MEMBER') OR EXISTS ("
+    "SELECT r.rolsuper OR "
+    "pg_catalog.has_schema_privilege(CAST(%(role)s AS name),%(schema)s,'CREATE') "
+    "OR pg_catalog.pg_has_role(CAST(%(role)s AS name),d.datdba,'MEMBER') OR EXISTS ("
     "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
     "ON n.oid=c.relnamespace WHERE n.nspname=%(schema)s "
-    "AND pg_catalog.pg_has_role(%(role)s::name,c.relowner,'MEMBER')) AS forbidden "
+    "AND pg_catalog.pg_has_role(CAST(%(role)s AS name),c.relowner,'MEMBER')) AS forbidden "
     "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
     "WHERE r.rolname=%(role)s AND d.datname=CURRENT_DATABASE()"
 )

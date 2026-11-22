@@ -332,28 +332,34 @@ def build_dispatch_dependencies(settings: JobDispatchSettings) -> DispatchDepend
 # inside the pool's ``search_path``; a preflight running psql must set the same
 # search_path. Order is the startup order.
 DISPATCH_ROLE_GUARD_SQL = (
-    "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(%(role)s::name,%(schema)s,'CREATE') "
-    "OR pg_catalog.pg_has_role(%(role)s::name,d.datdba,'MEMBER') OR EXISTS ("
+    "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(CAST(%(role)s AS "
+    "name),%(schema)s,'CREATE') "
+    "OR pg_catalog.pg_has_role(CAST(%(role)s AS name),d.datdba,'MEMBER') OR EXISTS ("
     "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
     "ON n.oid=c.relnamespace WHERE n.nspname=%(schema)s "
-    "AND pg_catalog.pg_has_role(%(role)s::name,c.relowner,'MEMBER')) AS forbidden "
+    "AND pg_catalog.pg_has_role(CAST(%(role)s AS name),c.relowner,'MEMBER')) AS forbidden "
     "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
     "WHERE r.rolname=%(role)s AND d.datname=CURRENT_DATABASE()"
 )
+# 零行探针:只验证语句可解析、这些列对该角色可读(列级授权),不取任何行。
+# 受限方言没有 `LIMIT`,而这里也没有分页语义(keyset + fetchmany 规则因此不适用),
+# 所以用一个恒假谓词;规划器在计划阶段就剪掉扫描。
+_ZERO_ROWS = " WHERE 1=0"
 DISPATCH_STARTUP_PROBES: tuple[str, ...] = (
-    "SELECT job_id FROM speech_jobs LIMIT 0",
+    "SELECT job_id FROM speech_jobs" + _ZERO_ROWS,
     "SELECT job_id, event_seq, state, occurred_at_us, kind, progress_unit, "
-    "progress_completed, progress_total FROM speech_job_events LIMIT 0",
-    "SELECT job_id FROM coordination_jobs LIMIT 0",
-    "SELECT operation_id, request_document FROM admission_operations LIMIT 0",
-    "SELECT attempt_id FROM admission_attempts LIMIT 0",
-    "SELECT request_document FROM admission_requests LIMIT 0",
-    "SELECT lease_id, lease_state, cleanup_state, deadline_at_us FROM admission_leases LIMIT 0",
-    "SELECT artifact_id FROM speech_artifacts LIMIT 0",
+    "progress_completed, progress_total FROM speech_job_events" + _ZERO_ROWS,
+    "SELECT job_id FROM coordination_jobs" + _ZERO_ROWS,
+    "SELECT operation_id, request_document FROM admission_operations" + _ZERO_ROWS,
+    "SELECT attempt_id FROM admission_attempts" + _ZERO_ROWS,
+    "SELECT request_document FROM admission_requests" + _ZERO_ROWS,
+    "SELECT lease_id, lease_state, cleanup_state, deadline_at_us FROM admission_leases"
+    + _ZERO_ROWS,
+    "SELECT artifact_id FROM speech_artifacts" + _ZERO_ROWS,
 )
 DISPATCH_VOICE_VALIDATION_PROBES: tuple[str, ...] = (
-    "SELECT draft_id, revision FROM speech_voice_draft_revisions LIMIT 0",
-    "SELECT workspace_id, asset_id FROM speech_assets LIMIT 0",
+    "SELECT draft_id, revision FROM speech_voice_draft_revisions" + _ZERO_ROWS,
+    "SELECT workspace_id, asset_id FROM speech_assets" + _ZERO_ROWS,
 )
 
 
@@ -443,7 +449,7 @@ class JobDispatchRuntime:
         # role and its column grants separately.
         with self._pool.connection(timeout=self.settings.storage_timeout_seconds) as connection:
             connection.execute(
-                "SELECT set_config('statement_timeout', %s, true)",
+                "SELECT set_config('statement_timeout', ?, true)",
                 (str(max(1, int(self.settings.storage_timeout_seconds * 1000))),),
             )
             identities = connection.execute(

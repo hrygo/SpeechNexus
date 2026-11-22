@@ -23,6 +23,7 @@ from psycopg.rows import dict_row
 from pydantic import SecretStr
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.speech.application.job_dispatcher import JobDispatcher
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
@@ -126,7 +127,7 @@ def dispatch_db() -> Iterator[DispatchSandbox]:
             command.upgrade(config, "head")
     finally:
         engine.dispose()
-    admin = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+    admin = portable_pg_connect(url, autocommit=True, row_factory=dict_row)
     admin.execute(f'SET search_path TO "{schema}", pg_catalog')
     pool = None
     try:

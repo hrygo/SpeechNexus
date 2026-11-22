@@ -430,7 +430,8 @@ class JobCancellationRuntime:
                     "speech_job_cancellation_reconciliations",
                     NOT_SUBMITTED_TABLE,
                 ):
-                    connection.execute(f"SELECT 1 FROM {table} LIMIT 0")
+                    # 零行探针:验证表可读即可,方言没有 `LIMIT`,这里也没有分页语义。
+                    connection.execute(f"SELECT 1 FROM {table} WHERE 1=0")
             adapter = PostgresPublicJobs(pool, timeout_seconds=settings.transaction_timeout_seconds)
             jobs = PublicJobs(adapter, adapter)
             store = PostgresCancellationReconciliationStore(

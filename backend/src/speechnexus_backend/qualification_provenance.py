@@ -26,8 +26,10 @@ import sys
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, TextIO, cast
 
-import psycopg
 from psycopg.rows import dict_row
+
+from speechnexus_portable_sql.clock import ClockReader, now_us
+from speechnexus_portable_sql.psycopg_driver import connect as portable_connect
 
 SOURCE_CONTROLLER = "controller_observed"
 SOURCE_OPERATOR = "operator_attested"
@@ -55,10 +57,9 @@ REPORT_SQL = (
     "a.probe_authorization_id AS approval_probe_authorization_id, "
     "a.facts->>'instance_id' AS instance_id, a.facts->>'generation' AS instance_generation, "
     "a.facts->'attestation'->>'fencing_token' AS fencing_token, "
-    "floor(extract(epoch FROM a.expires_at)*1000000)::bigint AS approval_expires_at_us, "
+    "CAST(floor(extract(epoch FROM a.expires_at)*1000000) AS bigint) AS approval_expires_at_us, "
     "t.declared_by, t.declaration_digest, t.image_digest, t.template_digest, "
-    "t.declared_lifecycle_digest, t.observed_at_us, t.expires_at_us, "
-    "floor(extract(epoch FROM clock_timestamp())*1000000)::bigint AS now_us "
+    "t.declared_lifecycle_digest, t.observed_at_us, t.expires_at_us "
     "FROM speech_builtin_voice_qualifications q "
     "LEFT JOIN speech_builtin_voice_qualification_provenance p "
     "ON p.voice_id=q.voice_id AND p.revision=q.revision "
@@ -258,13 +259,14 @@ def main(
 
 
 def _connect(database_url: str, schema: str) -> tuple[list[Row], int]:
-    with psycopg.connect(database_url, row_factory=dict_row) as connection:
+    with portable_connect(database_url, row_factory=dict_row) as connection:
         connection.execute("SET TRANSACTION READ ONLY")
         connection.execute(f'SET search_path TO "{schema}", pg_catalog')
+        # `REPORT_SQL` 不带参数:报告语句是对外发布的常量,外部读取方按原样执行。
+        # 「现在」在连接层读一次,交给报告函数裁定「已过期」。
         rows = connection.execute(REPORT_SQL).fetchall()
-    if not rows:
-        return [], 0
-    return rows, int(rows[0]["now_us"])
+        observed = now_us(cast(ClockReader, connection))
+    return rows, observed
 
 
 if __name__ == "__main__":

@@ -40,9 +40,9 @@ from speechnexus_backend.speech.infrastructure.public_jobs_postgres import (
     _remaining,
 )
 
-QUERY = "SELECT payload FROM example WHERE identity = %s"
+QUERY = "SELECT payload FROM example WHERE identity = ?"
 PARAMETERS = ("row-a",)
-SET_TIMEOUT = "SELECT set_config('statement_timeout', %s, true)"
+SET_TIMEOUT = "SELECT set_config('statement_timeout', ?, true)"
 ROW = {"payload": "row-a"}
 
 

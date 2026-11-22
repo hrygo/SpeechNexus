@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from speechnexus_backend.speech.domain.operator_attestation import (
     AttestationRequest,
@@ -41,6 +41,8 @@ from speechnexus_backend.speech.infrastructure.publications_sql import find_publ
 from speechnexus_backend.speech.interfaces.binding_release_evidence import (
     verify_binding_release_evidence,
 )
+from speechnexus_portable_sql.clock import ClockReader
+from speechnexus_portable_sql.clock import now_us as _portable_now_us
 
 _LEDGER_RELATIONS = (
     "speech_builtin_voice_source_approvals",
@@ -96,8 +98,8 @@ _REGISTRATION = (
     "JOIN runtime_instance_heads h ON h.instance_id=i.instance_id "
     "AND h.current_generation=i.instance_generation "
     "JOIN resource_pools p ON p.pool_id=i.pool_id "
-    "JOIN workspace_quotas w ON w.workspace_id=%s "
-    "WHERE i.instance_id=%s AND i.instance_generation=%s"
+    "JOIN workspace_quotas w ON w.workspace_id=? "
+    "WHERE i.instance_id=? AND i.instance_generation=?"
 )
 
 
@@ -176,12 +178,12 @@ def record_operator_attestation(
         lock_binding(cursor, request.binding_id)
         cursor.execute(
             "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:'||current_schema()||':voice:'||%s,0))",
+            "'speechnexus:catalog:'||current_schema()||':voice:'||?,0))",
             (request.voice_id,),
         )
         cursor.execute(
             "SELECT current_database() AS database,current_schema() AS schema,"
-            "installation_id::text AS installation_id FROM speech_publication_installation "
+            "CAST(installation_id AS text) AS installation_id FROM speech_publication_installation "
             "WHERE singleton IS TRUE"
         )
         targets = cursor.fetchall()
@@ -202,32 +204,33 @@ def record_operator_attestation(
         # the revision reusable.
         cursor.execute(
             "SELECT attestation_id FROM speech_builtin_voice_operator_attestations "
-            "WHERE voice_id=%s AND revision=%s AND revision_id=%s AND binding_revision_id=%s",
+            "WHERE voice_id=? AND revision=? AND revision_id=? AND binding_revision_id=?",
             (request.voice_id, request.revision, request.revision_id, request.binding_revision_id),
         )
         if cursor.fetchall():
             raise OperatorAttestationError("attestation_revision_already_attested")
-        cursor.execute(
-            "SELECT floor(extract(epoch FROM clock_timestamp())*1000000)::bigint AS now_us"
-        )
-        now_us = int(cursor.fetchall()[0]["now_us"])
+        now_us = _now_us(cursor)
         declaration.require_live(now_us)
         cursor.execute(
             "SELECT s.source_revision,s.source_digest,"
-            "floor(extract(epoch FROM s.expires_at)*1000000)::bigint AS expires_us "
+            "CAST(floor(extract(epoch FROM s.expires_at)*1000000) AS bigint) AS expires_us "
             "FROM speech_builtin_voice_source_approvals s "
-            "WHERE s.source_approval_id=%s AND s.voice_id=%s AND s.native_speaker_id='Vivian' "
-            "AND s.expires_at>clock_timestamp() "
+            "WHERE s.source_approval_id=? AND s.voice_id=? AND s.native_speaker_id='Vivian' "
+            "AND s.expires_at > ? "
             "AND NOT EXISTS (SELECT 1 FROM speech_builtin_voice_source_revocations r "
             "WHERE r.source_approval_id=s.source_approval_id)",
-            (request.source_approval_id, request.voice_id),
+            (
+                request.source_approval_id,
+                request.voice_id,
+                datetime.fromtimestamp(now_us / 1_000_000, tz=UTC),
+            ),
         )
         sources = cursor.fetchall()
         if len(sources) != 1:
             raise OperatorAttestationError("source_approval_unavailable")
         source = sources[0]
         cursor.execute(
-            "SELECT revision FROM speech_binding_revisions WHERE binding_id=%s AND revision_id=%s",
+            "SELECT revision FROM speech_binding_revisions WHERE binding_id=? AND revision_id=?",
             (request.binding_id, request.binding_revision_id),
         )
         revisions = cursor.fetchall()
@@ -264,7 +267,7 @@ def record_operator_attestation(
         registrations = cursor.fetchall()
         if len(registrations) != 1:
             cursor.execute(
-                "SELECT current_generation FROM runtime_instance_heads WHERE instance_id=%s",
+                "SELECT current_generation FROM runtime_instance_heads WHERE instance_id=?",
                 (request.instance_id,),
             )
             if cursor.fetchall():
@@ -339,7 +342,7 @@ def record_operator_attestation(
         cursor.execute(
             "INSERT INTO speech_builtin_voice_approvals "
             "(approval_id,voice_id,revision,revision_id,binding_revision_id,"
-            "source_approval_id,facts,expires_at) VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s)",
+            "source_approval_id,facts,expires_at) VALUES (?,?,?,?,?,?,CAST(? AS jsonb),?)",
             (
                 request.approval_id,
                 request.voice_id,
@@ -359,8 +362,8 @@ def record_operator_attestation(
             "template_digest,declared_lifecycle_digest,model_id,model_revision,"
             "model_artifact_digest,observed_at_us,expires_at_us,declaration,declaration_digest,"
             "attestation_intent,declared_by) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
-            "%s::jsonb,%s,%s::jsonb,%s)",
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,"
+            "CAST(? AS jsonb),?,CAST(? AS jsonb),?)",
             (
                 request.attestation_id,
                 request.approval_id,
@@ -411,7 +414,7 @@ def _replay(
     """Return the original result for the identical attestation, or refuse a conflict."""
     cursor.execute(
         "SELECT attestation_id,approval_id,declaration_digest,expires_at_us "
-        "FROM speech_builtin_voice_operator_attestations WHERE attestation_id=%s",
+        "FROM speech_builtin_voice_operator_attestations WHERE attestation_id=?",
         (request.attestation_id,),
     )
     rows = cursor.fetchall()
@@ -433,16 +436,24 @@ def _replay(
             "expires_at_us": int(row["expires_at_us"]),
         }
     cursor.execute(
-        "SELECT attestation_id FROM speech_builtin_voice_operator_attestations "
-        "WHERE approval_id=%s",
+        "SELECT attestation_id FROM speech_builtin_voice_operator_attestations WHERE approval_id=?",
         (request.approval_id,),
     )
     if cursor.fetchall():
         raise OperatorAttestationError("attestation_conflict")
     cursor.execute(
-        "SELECT approval_id FROM speech_builtin_voice_approvals WHERE approval_id=%s",
+        "SELECT approval_id FROM speech_builtin_voice_approvals WHERE approval_id=?",
         (request.approval_id,),
     )
     if cursor.fetchall():
         raise OperatorAttestationError("attestation_conflict")
     return None
+
+
+def _now_us(cursor: Any) -> int:
+    """「现在」只从便携时钟读一次;失败按本模块的错误语义上报."""
+
+    try:
+        return _portable_now_us(cast(ClockReader, cursor))
+    except (LookupError, TypeError) as error:
+        raise OperatorAttestationError("attestation_unavailable") from error

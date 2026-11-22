@@ -16,7 +16,6 @@ import pytest
 from alembic import command as migration
 from alembic.config import Config
 from psycopg.conninfo import make_conninfo
-from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 from sqlalchemy import create_engine
 from sqlalchemy.exc import ProgrammingError
@@ -29,6 +28,7 @@ from tests.support.binding_database import BindingCursor, MySQLBindingDrafts
 from tests.support.binding_examples import binding_request
 from tests.support.job_database import MySQLJobTransactions
 from tests.support.migrations import HEAD
+from tests.support.portable_pg import connect_kwargs as portable_connect_kwargs
 
 from speechnexus_backend.speech.application.binding_documents import (
     decode_document,
@@ -289,7 +289,7 @@ def test_lost_actual_commit_then_native_query_pressure_recovers_original_identit
         with ConnectionPool[FaultConnection](
             make_conninfo(bindings.db.url, user=bindings.db.role, password="synthetic_job_test"),
             connection_class=FaultConnection,
-            kwargs={"row_factory": dict_row},
+            kwargs=portable_connect_kwargs(),
             configure=configure,
             min_size=1,
             max_size=1,

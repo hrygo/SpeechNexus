@@ -34,7 +34,7 @@ from speechnexus_backend.speech.infrastructure.job_cancellation_reconciliation_p
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 
-SET_TIMEOUT = "SELECT set_config('statement_timeout', %s, true)"
+SET_TIMEOUT = "SELECT set_config('statement_timeout', ?, true)"
 NOW = 1_700_000_000_000_000
 
 

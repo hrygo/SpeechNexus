@@ -22,6 +22,8 @@ from psycopg.rows import dict_row
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 from tests.support.migrations import DELETION_LEDGER_REVISION, head_revision
+from tests.support.portable_pg import connect as portable_pg_connect
+from tests.support.portable_pg import connect_kwargs as portable_connect_kwargs
 from tests.support.profile_evidence import publication_evidence
 from tests.support.profile_examples import profile_request
 from tests.unit.test_profile_lifecycle import request
@@ -157,7 +159,7 @@ def sandbox() -> Iterator[Sandbox]:
         )
     suffix = uuid.uuid4().hex[:12]
     schema, role = "sn_profile_" + suffix, "sn_profile_role_" + suffix
-    admin = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+    admin = portable_pg_connect(url, autocommit=True, row_factory=dict_row)
     engine = create_engine(
         url.replace("postgresql://", "postgresql+psycopg://", 1),
         poolclass=NullPool,
@@ -244,7 +246,7 @@ def test_competing_activations_wait_on_family_and_only_one_cas_wins(sandbox: San
     s.port.mutate(s.publish("2", "1", "publish-second"))
     s.draft("3")
     s.port.mutate(s.publish("3", "2", "publish-third"))
-    blocker = psycopg.connect(s.url)
+    blocker = portable_pg_connect(s.url)
     try:
         blocker.execute(f'SET search_path TO "{s.schema}",pg_catalog')
         blocker.execute("SELECT * FROM speech_profile_families FOR UPDATE").fetchall()
@@ -288,7 +290,7 @@ def test_same_target_concurrent_activation_is_one_documented_noop(sandbox: Sandb
     xmin_before = s.admin.execute(
         "SELECT xmin::text AS xmin FROM speech_profile_families"
     ).fetchone()["xmin"]
-    blocker = psycopg.connect(s.url)
+    blocker = portable_pg_connect(s.url)
     try:
         blocker.execute(f'SET search_path TO "{s.schema}",pg_catalog')
         blocker.execute("SELECT * FROM speech_profile_families FOR UPDATE").fetchall()
@@ -453,7 +455,7 @@ def test_writer_and_reader_privileges_and_real_runtime_refuses_unreviewed_public
     try:
         for grant in profile_publication_reader_grants(s.schema, reader):
             s.admin.execute(grant)
-        with psycopg.connect(
+        with portable_pg_connect(
             make_conninfo(s.url, user=reader, password="synthetic_profile_test"), autocommit=True
         ) as connection:
             connection.execute(f'SET search_path TO "{s.schema}",pg_catalog')
@@ -603,7 +605,7 @@ def test_startup_rejects_writer_privilege_escalation(
             )
         )
         with (
-            psycopg.connect(
+            portable_pg_connect(
                 make_conninfo(s.url, user=role, password="synthetic_profile_test"),
                 row_factory=dict_row,
             ) as connection,
@@ -713,7 +715,7 @@ def test_actual_committed_reply_loss_then_original_recovery_is_read_only(sandbox
     with ConnectionPool[FaultConnection](
         make_conninfo(s.url, user=s.role, password="synthetic_profile_test"),
         connection_class=FaultConnection,
-        kwargs={"row_factory": dict_row},
+        kwargs=portable_connect_kwargs(),
         configure=configure,
         min_size=1,
         max_size=1,
@@ -877,7 +879,7 @@ def test_concurrent_same_key_retirement_serializes_on_the_original_intent(
     s.draft()
     assert s.port.mutate(s.publish()).outcome == "completed"
     command = s.retirement({"mode": "retire"}, "same-retirement-key")
-    blocker = psycopg.connect(s.url)
+    blocker = portable_pg_connect(s.url)
     try:
         blocker.execute(f'SET search_path TO "{s.schema}",pg_catalog')
         blocker.execute("SELECT * FROM speech_profile_families FOR UPDATE").fetchall()
@@ -923,7 +925,7 @@ def test_concurrent_distinct_key_retirements_only_one_changes_the_facts(sandbox:
     commands = [
         s.retirement({"mode": "retire"}, "distinct-retire-" + suffix) for suffix in ("a", "b")
     ]
-    blocker = psycopg.connect(s.url)
+    blocker = portable_pg_connect(s.url)
     try:
         blocker.execute(f'SET search_path TO "{s.schema}",pg_catalog')
         blocker.execute("SELECT * FROM speech_profile_families FOR UPDATE").fetchall()

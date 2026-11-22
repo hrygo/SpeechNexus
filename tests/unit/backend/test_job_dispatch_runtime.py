@@ -136,7 +136,7 @@ async def test_open_assembles_an_admission_filtered_dispatcher() -> None:
     queue = cast(PostgresDispatchQueue, runtime.dispatcher._queue)
     assert queue.require_admission is True
     assert queue.kinds == ("asr", "tts")
-    assert "SELECT operation_id, request_document FROM admission_operations LIMIT 0" in (
+    assert "SELECT operation_id, request_document FROM admission_operations WHERE 1=0" in (
         pool.statements
     )
 
@@ -179,8 +179,10 @@ async def test_voice_validation_lane_probes_the_validation_fact_tables() -> None
     await runtime.open()
 
     assert runtime.dispatcher is not None
-    assert "SELECT draft_id, revision FROM speech_voice_draft_revisions LIMIT 0" in pool.statements
-    assert "SELECT workspace_id, asset_id FROM speech_assets LIMIT 0" in pool.statements
+    assert "SELECT draft_id, revision FROM speech_voice_draft_revisions WHERE 1=0" in (
+        pool.statements
+    )
+    assert "SELECT workspace_id, asset_id FROM speech_assets WHERE 1=0" in pool.statements
 
 
 async def test_missing_validation_fact_grants_refuse_startup_before_dispatch() -> None:

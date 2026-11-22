@@ -79,7 +79,7 @@ def test_read_exact_original_and_bound_document_inside_sql(setup_reader: Any) ->
     assert restored == request and restored.request_document == request.request_document
     assert len(cursor.calls) == 1
     query, params = cursor.calls[0]
-    assert "CASE WHEN OCTET_LENGTH(request_document) <= %s" in query
+    assert "CASE WHEN OCTET_LENGTH(request_document) <= ?" in query
     assert params == (16384, request.identity.submit_intent_id)
     assert query.startswith("SELECT ") and "FOR UPDATE" not in query
 

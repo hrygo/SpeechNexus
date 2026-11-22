@@ -28,6 +28,7 @@ from tests.integration.test_publications_storage import (
     create_binding_revision,
     publication,
 )
+from tests.support.portable_pg import connect as portable_pg_connect
 from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app
@@ -111,7 +112,7 @@ def test_0022_upgrade_preserves_publications_and_legacy_visibility() -> None:
     )
     config = Config(str(ROOT / "alembic.ini"))
     config.attributes["schema"] = schema
-    admin = psycopg.connect(url, autocommit=True)
+    admin = portable_pg_connect(url, autocommit=True)
     try:
         with engine.connect() as connection:
             config.attributes["connection"] = connection
@@ -247,7 +248,7 @@ def sandbox() -> Iterator[Sandbox]:
             hide_parameters=True,
         )
         cleanup.callback(engine.dispose)
-        admin = psycopg.connect(url, autocommit=True)
+        admin = portable_pg_connect(url, autocommit=True)
         cleanup.callback(admin.close)
         # Drop the new role after its schema, even if DROP OWNED fails.
         role_cleanup = cleanup.enter_context(ExitStack())

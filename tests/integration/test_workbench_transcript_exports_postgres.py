@@ -6,7 +6,6 @@ import hashlib
 from dataclasses import replace
 from typing import Any
 
-import psycopg
 import pytest
 from tests.integration.test_workbench_listings_postgres import delete
 from tests.integration.test_workbench_transcript_import_postgres import (
@@ -17,6 +16,7 @@ from tests.integration.test_workbench_transcript_import_postgres import (
 from tests.integration.test_workbench_transcript_import_postgres import public_http as public_http
 from tests.integration.test_workbench_versions_postgres import Store
 from tests.integration.test_workbench_versions_postgres import store as store
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.workbench.application import transcript_exports as module
 from speechnexus_backend.workbench.application.transcript_exports import TranscriptTextExports
@@ -96,7 +96,7 @@ async def test_utf8_encoding_and_digest_hold_no_runtime_pg_connection(
     phases: list[str] = []
 
     def check(phase: str) -> None:
-        with psycopg.connect(store.owner_dsn, autocommit=True) as owner:
+        with portable_pg_connect(store.owner_dsn, autocommit=True) as owner:
             row = owner.execute(
                 "SELECT count(*) FROM pg_stat_activity "
                 "WHERE datname = current_database() AND usename = %s",

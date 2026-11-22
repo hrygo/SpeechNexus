@@ -21,6 +21,7 @@ from pathlib import Path
 
 import psycopg
 import pytest
+from tests.support.portable_pg import connect as portable_pg_connect
 
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
@@ -50,7 +51,7 @@ def database_url() -> str:
 @pytest.fixture
 def namespace(database_url: str) -> Iterator[tuple[str, str]]:
     name = "sn_schema_meta_" + uuid.uuid4().hex[:12]
-    admin = psycopg.connect(database_url, autocommit=True)
+    admin = portable_pg_connect(database_url, autocommit=True)
     try:
         admin.execute(f'CREATE SCHEMA "{name}"')
         admin.execute(f'SET search_path TO "{name}", pg_catalog')
@@ -66,7 +67,7 @@ def namespace(database_url: str) -> Iterator[tuple[str, str]]:
 
 
 def _connect(database_url: str, namespace: str) -> psycopg.Connection[tuple[object, ...]]:
-    connection: psycopg.Connection[tuple[object, ...]] = psycopg.connect(database_url)
+    connection: psycopg.Connection[tuple[object, ...]] = portable_pg_connect(database_url)
     connection.execute(f'SET search_path TO "{namespace}", pg_catalog')
     connection.commit()
     return connection

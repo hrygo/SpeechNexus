@@ -14,6 +14,7 @@ from tests.integration.test_binding_lifecycle_pg import Sandbox, _body, _seed
 from tests.integration.test_binding_lifecycle_pg import sandbox as sandbox
 from tests.integration.test_coordination_foundation import seed
 from tests.integration.test_production_jobs import JobDatabase
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.binding_disable_worker import _verify_principal
 from speechnexus_backend.speech.application.binding_disable_coordinator import (
@@ -221,7 +222,7 @@ def test_targets_commit_and_recover_original_identity_after_restart(sandbox: San
     assert captured[0].submit_intent_id == "submit-test"
     assert captured[0].operation_id == "operation-test"
     assert captured[0].binding_revision_id == "binding-rev-2"
-    with psycopg.connect(sandbox.url, autocommit=True, row_factory=dict_row) as restarted:
+    with portable_pg_connect(sandbox.url, autocommit=True, row_factory=dict_row) as restarted:
         restarted.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
         with restarted.transaction(), restarted.cursor() as cursor:
             assert list_disable_event_ids(cursor, after=None, limit=10) == [event_id]

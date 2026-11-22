@@ -46,7 +46,7 @@ def revoke_builtin_voice(
     def operation(cursor: PublicationCursor) -> dict[str, str]:
         cursor.execute(
             "SELECT current_database() AS database, current_schema() AS schema, "
-            "installation_id::text AS installation_id FROM speech_publication_installation "
+            "CAST(installation_id AS text) AS installation_id FROM speech_publication_installation "
             "WHERE singleton IS TRUE"
         )
         targets = cursor.fetchall()
@@ -64,7 +64,7 @@ def revoke_builtin_voice(
             raise BuiltinVoiceRevocationRejectedError("approval_not_found")
         cursor.execute(
             "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:' || current_schema() || ':voice:' || %s, 0))",
+            "'speechnexus:catalog:' || current_schema() || ':voice:' || ?, 0))",
             (approvals_found[0]["voice_id"],),
         )
         cursor.execute(
@@ -76,7 +76,7 @@ def revoke_builtin_voice(
                 raise BuiltinVoiceRevocationRejectedError("intent_conflict")
             return {"outcome": "replayed", "kind": kind, "approval_id": approval_id}
         cursor.execute(
-            f"INSERT INTO {revocations} ({identity_column}, reason) VALUES (%s,%s)",
+            f"INSERT INTO {revocations} ({identity_column}, reason) VALUES (?,?)",
             (approval_id, reason),
         )
         return {"outcome": "revoked", "kind": kind, "approval_id": approval_id}

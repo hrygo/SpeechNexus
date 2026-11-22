@@ -17,6 +17,7 @@ from psycopg.rows import dict_row
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import NullPool
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.speech.domain.publications import Publication
 from speechnexus_backend.speech.infrastructure.publications_sql import append_publication
@@ -37,7 +38,7 @@ def historical_schema() -> Iterator[HistoricalSchema]:
     )
     config = Config(str(ROOT / "alembic.ini"))
     config.attributes["schema"] = schema
-    admin = psycopg.connect(url, autocommit=True)
+    admin = portable_pg_connect(url, autocommit=True)
     try:
         with engine.connect() as connection:
             config.attributes["connection"] = connection
@@ -105,7 +106,7 @@ def test_downgrade_waits_for_committed_writer_then_refuses(
             cursor, Publication("voice", "voice-test", 10, "voice-rev-10", 100)
         )
     with ThreadPoolExecutor(max_workers=1) as executor:
-        with psycopg.connect(url, row_factory=dict_row) as writer:
+        with portable_pg_connect(url, row_factory=dict_row) as writer:
             writer.execute(f'SET search_path TO "{schema}", pg_catalog')
             with writer.cursor() as cursor:
                 assert append_publication(

@@ -24,6 +24,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.pool import NullPool
 from tests.support.migrations import head_revision
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.speech.domain.public_jobs import canonical_digest
 from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
@@ -142,7 +143,7 @@ def intent_db() -> Iterator[IntentSandbox]:
     engine = create_engine(
         url.replace("postgresql://", "postgresql+psycopg://", 1), poolclass=NullPool
     )
-    admin = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+    admin = portable_pg_connect(url, autocommit=True, row_factory=dict_row)
     try:
         admin.execute(f'CREATE SCHEMA "{schema}"')
         config = Config(str(ROOT / "alembic.ini"))

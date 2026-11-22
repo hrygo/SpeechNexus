@@ -71,6 +71,7 @@ from speechnexus_contracts.contract_digest import CONTRACT_DIGEST
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 from tests.fake.readiness import StaticProbe
+from tests.support.portable_pg import connect as portable_pg_connect
 from tests.unit.backend.test_health import _settings as _base_settings
 
 from speechnexus_backend.app import create_app
@@ -581,7 +582,7 @@ def _stack(*, image: str | None) -> Iterator[PageSandbox]:
     bucket_created = False
     seeded: list[tuple[str, str]] = []
     try:
-        admin = psycopg.connect(url, row_factory=dict_row, autocommit=True)
+        admin = portable_pg_connect(url, row_factory=dict_row, autocommit=True)
         _migrate(url, schema)
         admin.execute(f'SET search_path TO "{schema}", pg_catalog')
         admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{PASSWORD}'")

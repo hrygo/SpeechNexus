@@ -29,6 +29,7 @@ from speechnexus_contracts.admin_http import validate_response
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 from tests.fake.readiness import StaticProbe
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.app import create_app
 from speechnexus_backend.resource_pool_runtime import ResourcePoolRuntime
@@ -131,7 +132,7 @@ def sandbox() -> Iterator[Sandbox]:
     )
     config = Config(str(ROOT / "alembic.ini"))
     config.attributes["schema"] = schema
-    admin: psycopg.Connection[dict[str, Any]] = psycopg.connect(
+    admin: psycopg.Connection[dict[str, Any]] = portable_pg_connect(
         url, row_factory=dict_row, autocommit=True
     )
     pool = speech_pool(
@@ -343,7 +344,7 @@ async def test_undeclared_query_parameter_is_refused_instead_of_ignored(http: An
 
 
 def test_reader_identity_cannot_write_the_aggregate_inputs(sandbox: Sandbox) -> None:
-    with psycopg.connect(
+    with portable_pg_connect(
         make_conninfo(sandbox.url, user=sandbox.role, password=PASSWORD)
     ) as reader:
         reader.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')

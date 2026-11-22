@@ -5,7 +5,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, cast
 
-import psycopg
 import pytest
 from psycopg.rows import dict_row
 from tests.integration.test_binding_disable_intent_pg import _command
@@ -13,6 +12,7 @@ from tests.integration.test_binding_lifecycle_pg import Sandbox, _seed
 from tests.integration.test_binding_lifecycle_pg import sandbox as sandbox
 from tests.integration.test_coordination_foundation import seed
 from tests.integration.test_production_jobs import JobDatabase
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.speech.infrastructure.binding_disable_targets_postgres import (
     capture_disable_targets,
@@ -50,7 +50,7 @@ def test_capture_is_scoped_and_concurrent_config_uses_original_timeout(sandbox: 
     holder_pid: list[int] = []
 
     def capture(timeout: int, hold: bool) -> Any:
-        with psycopg.connect(sandbox.url, row_factory=dict_row) as connection:
+        with portable_pg_connect(sandbox.url, row_factory=dict_row) as connection:
             connection.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
             with connection.cursor() as cursor:
                 result = capture_disable_targets(

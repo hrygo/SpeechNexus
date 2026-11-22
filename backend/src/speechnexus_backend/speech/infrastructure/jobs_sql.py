@@ -34,7 +34,7 @@ def _existing(cursor: JobCursor, request: CreateJob) -> JobResult | None:
         """SELECT job_id, operation_id, attempt_id,
                   initial_event_id AS event_id, initial_event_digest AS event_digest, request_digest
            FROM coordination_jobs
-           WHERE job_id = %s OR (operation_id = %s AND attempt_id = %s)
+           WHERE job_id = ? OR (operation_id = ? AND attempt_id = ?)
            ORDER BY job_id""",
         (request.job_id, request.operation_id, request.attempt_id),
     )
@@ -51,7 +51,7 @@ def _existing(cursor: JobCursor, request: CreateJob) -> JobResult | None:
     if replay.outcome == "conflict":
         return replay
     cursor.execute(
-        "SELECT job_id, event_digest FROM coordination_outbox WHERE event_id = %s",
+        "SELECT job_id, event_digest FROM coordination_outbox WHERE event_id = ?",
         (original.event_id,),
     )
     events = cursor.fetchall()
@@ -70,7 +70,7 @@ def create_in_transaction(cursor: JobCursor, request: CreateJob) -> JobResult:
         """INSERT INTO coordination_jobs
            (job_id, operation_id, attempt_id, initial_event_id,
             initial_event_digest, request_digest)
-           VALUES (%s, %s, %s, %s, %s, %s)""",
+           VALUES (?, ?, ?, ?, ?, ?)""",
         (
             request.job_id,
             request.operation_id,
@@ -81,7 +81,7 @@ def create_in_transaction(cursor: JobCursor, request: CreateJob) -> JobResult:
         ),
     )
     cursor.execute(
-        "INSERT INTO coordination_outbox (event_id, job_id, event_digest) VALUES (%s, %s, %s)",
+        "INSERT INTO coordination_outbox (event_id, job_id, event_digest) VALUES (?, ?, ?)",
         (request.event_id, request.job_id, request.event_digest),
     )
     # The enclosing adapter may return this only after commit confirmation.

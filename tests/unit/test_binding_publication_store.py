@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 import pytest
@@ -57,6 +58,12 @@ def command(**overrides: Any) -> BindingPublicationCommand:
     return BindingPublicationCommand(**fields)
 
 
+def _epoch_us(microseconds: int) -> datetime:
+    """替身回答时钟时用的时间点:epoch 起算的微秒,必须是带时区的时间。"""
+
+    return datetime(1970, 1, 1, tzinfo=UTC) + timedelta(microseconds=microseconds)
+
+
 class Cursor:
     """Dispatch on the statements the publication port is allowed to issue."""
 
@@ -101,10 +108,11 @@ class Cursor:
             )
         elif "SELECT revision, revision_id FROM speech_publication_heads" in query:
             self.rows = [] if self.head is None else [{"revision": self.head, "revision_id": "r"}]
-        elif "FROM speech_publication_heads WHERE kind = %s" in query:
+        elif "FROM speech_publication_heads WHERE kind = ?" in query:
             self.rows = [] if self.head is None else [{"revision": self.head}]
-        elif "SELECT CAST(EXTRACT" in query:
-            self.rows = [{"t": NOW}]
+        elif query == "SELECT clock_timestamp() AS now":
+            # 时钟语句来自登记的 profile;替身按同一列名回答。
+            self.rows = [{"now": _epoch_us(NOW)}]
         elif "FROM speech_catalog_state WHERE singleton IS TRUE" in query:
             self.rows = [{"revision": 7}]
         elif query.startswith("SELECT kind, object_id, revision, revision_id, published_at_us"):
@@ -126,6 +134,9 @@ class Cursor:
 
     def fetchall(self) -> list[dict[str, Any]]:
         return self.rows
+
+    def fetchone(self) -> dict[str, Any] | None:
+        return self.rows[0] if self.rows else None
 
     def _state(self) -> dict[str, Any]:
         return {

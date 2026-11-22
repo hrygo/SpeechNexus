@@ -24,6 +24,7 @@ from speechnexus_contracts.model_bindings import parse as parse_binding
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 from tests.support.binding_examples import binding_request
+from tests.support.portable_pg import connect as portable_pg_connect
 from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app
@@ -96,7 +97,7 @@ def sandbox(request: pytest.FixtureRequest) -> Iterator[Sandbox]:
             )
     finally:
         engine.dispose()
-    admin = psycopg.connect(base, autocommit=True)
+    admin = portable_pg_connect(base, autocommit=True)
     admin.execute(f'SET search_path TO "{schema}", pg_catalog')
     for role in ROLES:
         admin.execute(f"CREATE ROLE \"{names[role]}\" LOGIN PASSWORD '{PASSWORD}'")
@@ -196,7 +197,7 @@ def publish_intent(sandbox: Sandbox, binding_id: str, key: str) -> BindingPublis
 
 
 def connection(sandbox: Sandbox, role: str) -> psycopg.Connection[tuple[object, ...]]:
-    conn = psycopg.connect(sandbox.urls[role], autocommit=True)
+    conn = portable_pg_connect(sandbox.urls[role], autocommit=True)
     conn.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
     return conn
 

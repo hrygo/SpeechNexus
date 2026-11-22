@@ -30,6 +30,7 @@ from tests.integration.test_production_jobs import database as database
 from tests.support.cancellation_fence_schema import ensure_cancellation_fence_schema
 from tests.support.job_database import MySQLJobTransactions
 from tests.support.migrations import HEAD
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.speech.infrastructure.admission_command_schema import (
     ADMISSION_COMMAND_DDL,
@@ -80,7 +81,7 @@ class Foundation:
         db = self.database
         connection: Any
         if db.dialect == "postgresql":
-            connection = psycopg.connect(
+            connection = portable_pg_connect(
                 make_conninfo(db.url, user=role, password="synthetic_foundation_test"),
                 row_factory=dict_row,
                 autocommit=True,
@@ -701,7 +702,7 @@ def upgrade_sandbox(database: JobDatabase) -> Iterator[UpgradeSandbox]:
     )
     config = Config(str(ROOT / "alembic.ini"))
     config.attributes["schema"] = schema
-    admin = psycopg.connect(database.url, row_factory=dict_row, autocommit=True)
+    admin = portable_pg_connect(database.url, row_factory=dict_row, autocommit=True)
     sandbox = UpgradeSandbox(schema, engine, config, admin)
     try:
         sandbox.upgrade("0001_jobs")
@@ -766,7 +767,7 @@ def test_separate_migration_processes_wait_on_the_same_transaction_lock(
     upgrade_sandbox: UpgradeSandbox,
 ) -> None:
     sandbox = upgrade_sandbox
-    blocker = psycopg.connect(database.url)
+    blocker = portable_pg_connect(database.url)
     applications = [sandbox.schema + "_first", sandbox.schema + "_second"]
     processes: list[subprocess.Popen[str]] = []
     try:

@@ -192,7 +192,7 @@ def test_missing_dispatch_column_grant_fails_in_every_phase(
             return module.PsqlResult(True, True, "f", "")
         if "has_column_privilege" in statement:
             return module.PsqlResult(True, True, "missing UPDATE on speech_jobs.error_code", "")
-        if "LIMIT 0" in statement:
+        if "1=0" in statement:
             return module.PsqlResult(True, True, "", "")
         raise AssertionError(f"unexpected statement: {statement}")
 

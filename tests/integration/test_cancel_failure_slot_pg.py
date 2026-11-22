@@ -42,6 +42,7 @@ from psycopg.rows import dict_row
 from pydantic import AnyHttpUrl, SecretStr
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.app import create_app
 from speechnexus_backend.job_cancellation_runtime import (
@@ -280,7 +281,7 @@ def _sandbox(
     job_id = "job-" + uuid.uuid4().hex
     lease_ids = tuple(lease_id for lease_id, _ in leases)
     _migrate(url, schema)
-    admin = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+    admin = portable_pg_connect(url, autocommit=True, row_factory=dict_row)
     admin.execute(f'SET search_path TO "{schema}", pg_catalog')
     pool = None
     try:

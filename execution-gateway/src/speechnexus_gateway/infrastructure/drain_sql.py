@@ -7,25 +7,27 @@ capacity, and neither statement locks a row the controlled writers take in anoth
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from speechnexus_gateway.domain.instance_drain import DrainInventory, InstanceIdentity
 from speechnexus_gateway.domain.instance_reclaim import ReclaimRecord
 from speechnexus_gateway.infrastructure.submit_sql import SubmitCursor, from_unix_micros
+from speechnexus_portable_sql.clock import ClockReader
+from speechnexus_portable_sql.clock import now_us as _portable_now_us
 
 #: The states that still hold capacity, in the contract's three drain buckets.
 _UNFINISHED_STATES = ("submitting", "executing", "stopping", "unknown_quarantined")
 
 _SELECT_IDENTITY = (
     "SELECT instance_id, instance_generation, host_node_id, pool_id, gateway_id "
-    "FROM engine_instances WHERE instance_id = %s AND instance_generation = %s"
+    "FROM engine_instances WHERE instance_id = ? AND instance_generation = ?"
 )
 
 _SELECT_INVENTORY = (
     "SELECT s.submit_intent_id, s.execution_state FROM submit_intents s "
     "JOIN admission_leases l ON l.lease_id = s.lease_id "
-    "WHERE l.instance_id = %s AND l.instance_generation = %s "
-    "AND l.host_node_id = %s AND l.pool_id = %s AND l.gateway_id = %s "
+    "WHERE l.instance_id = ? AND l.instance_generation = ? "
+    "AND l.host_node_id = ? AND l.pool_id = ? AND l.gateway_id = ? "
     "AND s.execution_state IN ('submitting', 'executing', 'stopping', "
     "'unknown_quarantined') "
     "ORDER BY s.submit_intent_id"
@@ -92,15 +94,15 @@ _SELECT_RECLAIM = (
     "SELECT i.loading_policy, i.binding_revision_id, i.last_fencing_token, i.ready_at_us, "
     "s.submit_intent_id, s.execution_state, s.terminated_at_us, s.dispatched_at_us, "
     "s.updated_at_us, l.lease_id, l.lease_state, "
-    "(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000)::bigint AS observed_at_us "
+    "CAST(? AS bigint) AS observed_at_us "
     "FROM engine_instances i "
     "LEFT JOIN admission_leases l ON l.instance_id = i.instance_id "
     "AND l.instance_generation = i.instance_generation "
     "AND l.host_node_id = i.host_node_id AND l.pool_id = i.pool_id "
     "AND l.gateway_id = i.gateway_id "
     "LEFT JOIN submit_intents s ON s.lease_id = l.lease_id "
-    "WHERE i.instance_id = %s AND i.instance_generation = %s AND i.host_node_id = %s "
-    "AND i.pool_id = %s AND i.gateway_id = %s "
+    "WHERE i.instance_id = ? AND i.instance_generation = ? AND i.host_node_id = ? "
+    "AND i.pool_id = ? AND i.gateway_id = ? "
     "ORDER BY s.submit_intent_id"
 )
 
@@ -113,6 +115,8 @@ def read_reclaim_record(cursor: SubmitCursor, identity: InstanceIdentity) -> Rec
     cursor.execute(
         _SELECT_RECLAIM,
         (
+            # 观察瞬间由便携时钟给出,空闲时长不依赖主机时钟。
+            _now_us(cursor),
             identity.instance_id,
             identity.instance_generation,
             identity.host_node_id,
@@ -169,3 +173,9 @@ def _observed_at(row: dict[str, Any]) -> datetime:
 
 def _optional_int(value: Any) -> int | None:
     return None if value is None else int(value)
+
+
+def _now_us(cursor: Any) -> int:
+    """「现在」只从便携时钟读一次;失败按本模块的语义上报."""
+
+    return _portable_now_us(cast(ClockReader, cursor))

@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
+from typing import Any, cast
 from uuid import UUID
 
 from speechnexus_backend.speech.infrastructure.publications_postgres import PostgresPublications
 from speechnexus_backend.speech.infrastructure.publications_sql import PublicationCursor
+from speechnexus_portable_sql.clock import ClockReader
+from speechnexus_portable_sql.clock import now_us as _portable_now_us
 
 _IDENTIFIER = re.compile(r"[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]\Z")
 _REVISION = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/+\-]{0,511}\Z")
@@ -56,7 +59,7 @@ def approve_builtin_voice_source(
     def operation(cursor: PublicationCursor) -> dict[str, str]:
         cursor.execute(
             "SELECT current_database() AS database,current_schema() AS schema,"
-            "installation_id::text AS installation_id FROM speech_publication_installation "
+            "CAST(installation_id AS text) AS installation_id FROM speech_publication_installation "
             "WHERE singleton IS TRUE"
         )
         targets = cursor.fetchall()
@@ -120,17 +123,17 @@ def approve_builtin_voice_source(
         # ID lock makes cross-voice collisions serialize; revocation takes only voice.
         cursor.execute(
             "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:source-approval:'||current_schema()||':'||%s,0))",
+            "'speechnexus:source-approval:'||current_schema()||':'||?,0))",
             (source_approval_id,),
         )
         cursor.execute(
             "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:'||current_schema()||':voice:'||%s,0))",
+            "'speechnexus:catalog:'||current_schema()||':voice:'||?,0))",
             (voice_id,),
         )
         cursor.execute(
             "SELECT voice_id,source_revision,source_digest,native_speaker_id,expires_at "
-            "FROM speech_builtin_voice_source_approvals WHERE source_approval_id=%s",
+            "FROM speech_builtin_voice_source_approvals WHERE source_approval_id=?",
             (source_approval_id,),
         )
         existing = cursor.fetchall()
@@ -151,14 +154,17 @@ def approve_builtin_voice_source(
                 "schema": schema,
                 "installation_id": installation_id,
             }
-        cursor.execute("SELECT %s::timestamptz > clock_timestamp() AS live", (expiry,))
+        cursor.execute(
+            "SELECT CAST(? AS timestamptz) > ? AS live",
+            (expiry, datetime.fromtimestamp(_now_us(cursor) / 1_000_000, tz=UTC)),
+        )
         if not cursor.fetchall()[0]["live"]:
             raise BuiltinSourceApprovalError("approval_expired")
         cursor.execute(
             "INSERT INTO speech_builtin_voice_source_approvals "
             "(source_approval_id,voice_id,source_revision,source_digest,"
             "native_speaker_id,expires_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s)",
+            "VALUES (?,?,?,?,?,?)",
             (
                 source_approval_id,
                 voice_id,
@@ -170,7 +176,10 @@ def approve_builtin_voice_source(
         )
         # INSERT may wait for a relation lock after the first expiry check.
         # Reject inside the transaction so the new row is rolled back.
-        cursor.execute("SELECT %s::timestamptz > clock_timestamp() AS live", (expiry,))
+        cursor.execute(
+            "SELECT CAST(? AS timestamptz) > ? AS live",
+            (expiry, datetime.fromtimestamp(_now_us(cursor) / 1_000_000, tz=UTC)),
+        )
         if not cursor.fetchall()[0]["live"]:
             raise BuiltinSourceApprovalError("approval_expired")
         return {
@@ -182,3 +191,12 @@ def approve_builtin_voice_source(
         }
 
     return store._run(operation, preserve=(BuiltinSourceApprovalError,))
+
+
+def _now_us(cursor: Any) -> int:
+    """「现在」只从便携时钟读一次;失败按本模块的错误语义上报."""
+
+    try:
+        return _portable_now_us(cast(ClockReader, cursor))
+    except (LookupError, TypeError) as error:
+        raise BuiltinSourceApprovalError("approval_unavailable") from error

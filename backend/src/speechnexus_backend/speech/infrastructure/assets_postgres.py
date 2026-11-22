@@ -30,6 +30,7 @@ from speechnexus_backend.speech.domain.assets import (
     reserve_asset,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
+from speechnexus_portable_sql.clock import ClockReader, now_us
 
 
 class AssetCursor:
@@ -42,29 +43,44 @@ class AssetCursor:
         if remaining <= 0:
             raise AssetError("asset_metadata_deadline")
         self.raw.execute(
-            "SELECT set_config('statement_timeout', %s, true)",
+            "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(remaining * 1000))),),
         )
         self.raw.execute(sql, args)
         return self.raw.fetchall() if self.raw.description else []
 
-    def clock(self) -> int:
-        return cast(
-            int,
-            self.rows(
-                "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) AS t"
-            )[0]["t"],
+    def execute(self, sql: str, args: tuple[object, ...] = ()) -> AssetCursor:
+        """便携时钟的执行入口:与 `rows` 共用预算,但把游标自己交回去取行。"""
+
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise AssetError("asset_metadata_deadline")
+        self.raw.execute(
+            "SELECT set_config('statement_timeout', ?, true)",
+            (str(max(1, int(remaining * 1000))),),
         )
+        self.raw.execute(sql, args)
+        return self
+
+    def fetchone(self) -> dict[str, Any] | None:
+        rows = self.raw.fetchall() if self.raw.description else []
+        return rows[0] if rows else None
+
+    def clock(self) -> int:
+        """「现在」只从便携时钟读一次;语句里不再有品牌函数。"""
+
+        now: int = now_us(cast(ClockReader, self))
+        return now
 
     def asset(self, asset_id: str, *, lock: bool = False) -> AssetRecord | None:
         rows = self.rows(
-            "SELECT * FROM speech_assets WHERE asset_id = %s" + (" FOR UPDATE" if lock else ""),
+            "SELECT * FROM speech_assets WHERE asset_id = ?" + (" FOR UPDATE" if lock else ""),
             (asset_id,),
         )
         return _asset(rows[0]) if rows else None
 
     def proof(self, asset_id: str) -> VerifiedObject | None:
-        rows = self.rows("SELECT * FROM speech_asset_objects WHERE asset_id = %s", (asset_id,))
+        rows = self.rows("SELECT * FROM speech_asset_objects WHERE asset_id = ?", (asset_id,))
         if not rows:
             return None
         row = rows[0]
@@ -79,7 +95,7 @@ class AssetCursor:
 
     def workspace(self, workspace_id: str) -> bool:
         rows = self.rows(
-            "SELECT workspace_state FROM speech_workspaces WHERE workspace_id = %s FOR UPDATE",
+            "SELECT workspace_state FROM speech_workspaces WHERE workspace_id = ? FOR UPDATE",
             (workspace_id,),
         )
         if not rows:
@@ -88,8 +104,8 @@ class AssetCursor:
 
     def save(self, asset: AssetRecord, kind: str, now: int) -> None:
         self.rows(
-            "UPDATE speech_assets SET asset_state = %s, upload_phase = %s, writer_id = %s, "
-            "error_code = %s, version = %s WHERE asset_id = %s",
+            "UPDATE speech_assets SET asset_state = ?, upload_phase = ?, writer_id = ?, "
+            "error_code = ?, version = ? WHERE asset_id = ?",
             (
                 asset.status,
                 asset.phase,
@@ -104,12 +120,46 @@ class AssetCursor:
     def event(self, asset: AssetRecord, kind: str, now: int) -> None:
         # A fact kind occurs at most once for this immutable asset. Reconciliation
         # may encounter it again, but never rewrites its original timestamp.
-        self.rows(
-            "INSERT INTO speech_asset_events "
-            "(event_id,asset_id,event_kind,asset_version,occurred_at_us) VALUES (%s,%s,%s,%s,%s) "
-            "ON CONFLICT (asset_id,event_kind) DO NOTHING",
-            ("event-" + uuid.uuid4().hex, asset.asset_id, kind, asset.version, now),
-        )
+        # 方言没有 `ON CONFLICT`:用「不存在才插入」表达同一件事。并发下两个事务都可能
+        # 通过 NOT EXISTS,唯一约束会拒掉后到的那个 —— 那正说明事实已经记过,不是失败。
+        try:
+            self.rows(
+                "INSERT INTO speech_asset_events "
+                "(event_id,asset_id,event_kind,asset_version,occurred_at_us) "
+                "SELECT ?,?,?,?,? WHERE NOT EXISTS ("
+                "SELECT 1 FROM speech_asset_events e "
+                "WHERE e.asset_id = ? AND e.event_kind = ?)",
+                (
+                    "event-" + uuid.uuid4().hex,
+                    asset.asset_id,
+                    kind,
+                    asset.version,
+                    now,
+                    asset.asset_id,
+                    kind,
+                ),
+            )
+        except psycopg.errors.UniqueViolation:
+            # 另一个事务先写了同一事实;本事实「最多一次」,读回原行即可。
+            pass
+
+
+def _has_unreleased_references(cursor: AssetCursor, asset_id: str) -> bool:
+    """还有未释放的引用吗——存在性判定用标准 `EXISTS`,方言没有 `LIMIT`。"""
+
+    rows = cursor.rows(
+        "SELECT EXISTS (SELECT 1 FROM speech_asset_references "
+        "WHERE asset_id = ? AND released_at_us IS NULL) AS present",
+        (asset_id,),
+    )
+    return bool(rows) and bool(rows[0]["present"])
+
+
+def _any_asset(cursor: AssetCursor) -> bool:
+    """资产表非空吗——用标准 `EXISTS`,方言没有 `LIMIT`,这里也不是分页。"""
+
+    rows = cursor.rows("SELECT EXISTS (SELECT 1 FROM speech_assets) AS present")
+    return bool(rows) and bool(rows[0]["present"])
 
 
 def _asset(row: dict[str, Any]) -> AssetRecord:
@@ -169,19 +219,16 @@ def prepare_content_deletion(
     if asset.status != "expired":
         asset = replace(asset, status="expired", version=asset.version + 1)
         cursor.save(asset, "expired", now)
-    refs = cursor.rows(
-        "SELECT reference_id FROM speech_asset_references "
-        "WHERE asset_id = %s AND released_at_us IS NULL LIMIT 1",
-        (asset.asset_id,),
+    blocked = expiry_blocker(
+        asset, has_references=_has_unreleased_references(cursor, asset.asset_id)
     )
-    blocked = expiry_blocker(asset, has_references=bool(refs))
     proof = cursor.proof(asset.asset_id)
     if proof is None and asset.phase == "settled" and asset.writer_id is not None:
         blocked = "asset_object_binding_missing"
     state = "blocked" if blocked else "queued"
     ledgers = cursor.rows(
         "SELECT ledger_id,deletion_state FROM speech_content_deletions "
-        "WHERE asset_id = %s FOR UPDATE",
+        "WHERE asset_id = ? FOR UPDATE",
         (asset.asset_id,),
     )
     if ledgers:
@@ -189,15 +236,15 @@ def prepare_content_deletion(
         if ledgers[0]["deletion_state"] == "complete":
             return DeletionTicket(ledger_id, asset.asset_id, "complete", proof)
         cursor.rows(
-            "UPDATE speech_content_deletions SET storage_version_id = %s, "
-            "deletion_state = %s, blocked_reason = %s WHERE ledger_id = %s",
+            "UPDATE speech_content_deletions SET storage_version_id = ?, "
+            "deletion_state = ?, blocked_reason = ? WHERE ledger_id = ?",
             (proof.version_id if proof else None, state, blocked, ledger_id),
         )
     else:
         cursor.rows(
             "INSERT INTO speech_content_deletions (ledger_id,asset_id,sha256,"
             "storage_version_id,reason,deletion_state,blocked_reason,created_at_us) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+            "VALUES (?,?,?,?,?,?,?,?)",
             (
                 ledger_id,
                 asset.asset_id,
@@ -221,7 +268,7 @@ def complete_content_deletion(cursor: AssetCursor, asset: AssetRecord, ledger_id
     """
     rows = cursor.rows(
         "SELECT deletion_state, storage_version_id FROM speech_content_deletions "
-        "WHERE ledger_id = %s AND asset_id = %s FOR UPDATE",
+        "WHERE ledger_id = ? AND asset_id = ? FOR UPDATE",
         (ledger_id, asset.asset_id),
     )
     if not rows:
@@ -230,14 +277,7 @@ def complete_content_deletion(cursor: AssetCursor, asset: AssetRecord, ledger_id
         return True
     if asset.status != "expired" or rows[0]["deletion_state"] != "queued":
         return False
-    if (
-        cursor.rows(
-            "SELECT reference_id FROM speech_asset_references "
-            "WHERE asset_id = %s AND released_at_us IS NULL LIMIT 1",
-            (asset.asset_id,),
-        )
-        or asset.phase == "writing"
-    ):
+    if _has_unreleased_references(cursor, asset.asset_id) or asset.phase == "writing":
         return False
     # The accepted deletion pinned one storage version. Never mark the row
     # complete against a newer one: the purge evidence would name an object this
@@ -248,7 +288,7 @@ def complete_content_deletion(cursor: AssetCursor, asset: AssetRecord, ledger_id
     now = cursor.clock()
     cursor.rows(
         "UPDATE speech_content_deletions SET deletion_state = 'complete', "
-        "completed_at_us = %s WHERE ledger_id = %s",
+        "completed_at_us = ? WHERE ledger_id = ?",
         (now, ledger_id),
     )
     cursor.save(replace(asset, status="deleted", version=asset.version + 1), "object_deleted", now)
@@ -300,7 +340,7 @@ class PostgresAssetMetadata:
         found = declared()
         if found is None:
             if readonly:
-                if cursor.rows("SELECT asset_id FROM speech_assets LIMIT 1"):
+                if _any_asset(cursor):
                     raise AssetError("asset_storage_adoption_required")
                 raise AssetError("asset_storage_namespace_unbound")
             # All new writers enter this declaration check before other asset
@@ -311,11 +351,11 @@ class PostgresAssetMetadata:
             )
             found = declared()
             if found is None:
-                if cursor.rows("SELECT asset_id FROM speech_assets LIMIT 1"):
+                if _any_asset(cursor):
                     raise AssetError("asset_storage_adoption_required")
                 cursor.rows(
                     "INSERT INTO speech_asset_storage_authority "
-                    "(binding_id,namespace_digest,recorded_at_us) VALUES (1,%s,%s)",
+                    "(binding_id,namespace_digest,recorded_at_us) VALUES (1,?,?)",
                     (self._namespace, cursor.clock()),
                 )
                 found = self._namespace
@@ -325,7 +365,7 @@ class PostgresAssetMetadata:
     def _original(self, cursor: AssetCursor, intent: UploadIntent) -> AssetRecord | None:
         rows = cursor.rows(
             "SELECT a.* FROM speech_asset_commands c JOIN speech_assets a USING (asset_id) "
-            "WHERE c.workspace_id = %s AND c.key_digest = %s",
+            "WHERE c.workspace_id = ? AND c.key_digest = ?",
             (intent.workspace_id, intent.key_digest),
         )
         return _asset(rows[0]) if rows else None
@@ -360,7 +400,7 @@ class PostgresAssetMetadata:
                     "INSERT INTO speech_assets (asset_id,workspace_id,purpose,asset_state,"
                     "upload_phase,bytes,sha256,request_digest,object_key,media_type,duration_ms,"
                     "sample_rate_hz,channels,created_at_us,expires_at_us,error_code) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         asset.asset_id,
                         asset.workspace_id,
@@ -382,7 +422,7 @@ class PostgresAssetMetadata:
                 )
                 cursor.rows(
                     "INSERT INTO speech_asset_commands "
-                    "(workspace_id,key_digest,request_digest,asset_id) VALUES (%s,%s,%s,%s)",
+                    "(workspace_id,key_digest,request_digest,asset_id) VALUES (?,?,?,?)",
                     (intent.workspace_id, intent.key_digest, intent.request_digest, asset.asset_id),
                 )
                 cursor.event(asset, "created", now)
@@ -442,7 +482,7 @@ class PostgresAssetMetadata:
                 if original is None:
                     cursor.rows(
                         "INSERT INTO speech_asset_objects (asset_id,object_key,storage_version_id,"
-                        "bytes,sha256,writer_id,verified_at_us) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                        "bytes,sha256,writer_id,verified_at_us) VALUES (?,?,?,?,?,?,?)",
                         (
                             proof.asset_id,
                             proof.object_key,
@@ -494,7 +534,7 @@ class PostgresAssetMetadata:
         predicate = (
             "(upload_phase = 'writing' OR (asset_state = 'staging' AND upload_phase = 'settled'))"
             if pending
-            else "asset_state <> 'deleted' AND expires_at_us <= %s"
+            else "asset_state <> 'deleted' AND expires_at_us <= ?"
         )
         # These timestamps are non-authoritative poll hints, independent for
         # recovery and expiry. A permanently blocked original must not consume
@@ -505,7 +545,7 @@ class PostgresAssetMetadata:
             rows = cursor.rows(
                 "SELECT asset_id FROM speech_assets WHERE "
                 + predicate
-                + f" ORDER BY {polled}, expires_at_us, asset_id LIMIT %s",
+                + f" ORDER BY {polled}, expires_at_us, asset_id LIMIT ?",
                 args,
             )
             identities = [row["asset_id"] for row in rows]
@@ -513,12 +553,12 @@ class PostgresAssetMetadata:
                 # Lock only the selected hint rows, in canonical identity order.
                 # No workspace/pool/resource locks or object I/O occur here.
                 cursor.rows(
-                    "SELECT asset_id FROM speech_assets WHERE asset_id = ANY(%s) "
+                    "SELECT asset_id FROM speech_assets WHERE asset_id = ANY(?) "
                     "ORDER BY asset_id FOR UPDATE",
                     (identities,),
                 )
                 cursor.rows(
-                    f"UPDATE speech_assets SET {polled} = %s WHERE asset_id = ANY(%s)",
+                    f"UPDATE speech_assets SET {polled} = ? WHERE asset_id = ANY(?)",
                     (cursor.clock(), identities),
                 )
             return identities
@@ -536,7 +576,7 @@ class PostgresAssetMetadata:
         # asset -> ledger lock order as every publication/expiry path.
         with self._transaction(readonly=True) as cursor:
             rows = cursor.rows(
-                "SELECT asset_id FROM speech_content_deletions WHERE ledger_id = %s", (ledger_id,)
+                "SELECT asset_id FROM speech_content_deletions WHERE ledger_id = ?", (ledger_id,)
             )
         if not rows:
             return False

@@ -26,6 +26,7 @@ from psycopg.rows import dict_row
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 from tests.support.binding_examples import binding_request
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.publish_binding import (
     EXIT_CONFLICT,
@@ -105,7 +106,7 @@ def sandbox() -> Iterator[Sandbox]:
             migration.upgrade(config, "head")
     finally:
         engine.dispose()
-    admin = psycopg.connect(base, autocommit=True)
+    admin = portable_pg_connect(base, autocommit=True)
     admin.execute(f'SET search_path TO "{schema}", pg_catalog')
     admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{PASSWORD}'")
     for grant in (
@@ -302,7 +303,7 @@ def test_changed_database_target_rejects_before_writing(sandbox: Sandbox) -> Non
 def test_runtime_role_cannot_rewrite_or_remove_intent_or_installation(sandbox: Sandbox) -> None:
     draft = create_draft(sandbox)
     publish(sandbox, draft)
-    with psycopg.connect(sandbox.writer_url, autocommit=True) as connection:
+    with portable_pg_connect(sandbox.writer_url, autocommit=True) as connection:
         connection.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
         for statement in (
             "UPDATE speech_binding_publish_intents SET intent='{}'::jsonb",

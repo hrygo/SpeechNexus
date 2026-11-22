@@ -28,7 +28,7 @@ def read_claim(cursor: ClaimCursor, job_id: str, *, lock: bool) -> JobClaim:
     cursor.execute(
         "SELECT job_id, claim_owner_id AS worker_id, claim_version, "
         "claim_expires_at_us AS expires_at_us, job_state FROM coordination_jobs "
-        "WHERE job_id = %s" + (" FOR UPDATE" if lock else ""),
+        "WHERE job_id = ?" + (" FOR UPDATE" if lock else ""),
         (job_id,),
     )
     rows = cursor.fetchall()
@@ -58,9 +58,9 @@ def claim_in_transaction(
     now_us = clock()  # Database clock after any candidate-row lock wait.
     updated = claimed(current, request, now_us)
     cursor.execute(
-        "UPDATE coordination_jobs SET claim_owner_id = %s, claim_version = %s, "
-        "claim_expires_at_us = %s WHERE job_id = %s AND claim_version = %s "
-        "AND claim_expires_at_us <= %s AND job_state = 'pending'",
+        "UPDATE coordination_jobs SET claim_owner_id = ?, claim_version = ?, "
+        "claim_expires_at_us = ? WHERE job_id = ? AND claim_version = ? "
+        "AND claim_expires_at_us <= ? AND job_state = 'pending'",
         (
             updated.worker_id,
             updated.claim_version,

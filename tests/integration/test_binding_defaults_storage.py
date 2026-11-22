@@ -17,7 +17,6 @@ import pymysql
 import pytest
 from alembic import command as migration
 from psycopg.conninfo import make_conninfo
-from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 from sqlalchemy import create_engine, event
 from sqlalchemy.exc import ProgrammingError
@@ -31,6 +30,7 @@ from tests.integration.test_production_jobs import database as database
 from tests.support.binding_defaults_database import MySQLBindingDefaults
 from tests.support.binding_examples import binding_request
 from tests.support.job_database import MySQLJobTransactions
+from tests.support.portable_pg import connect_kwargs as portable_connect_kwargs
 
 from speechnexus_backend.speech.application.binding_default_drafts import BindingDefaultDrafts
 from speechnexus_backend.speech.domain.binding_drafts import (
@@ -332,7 +332,7 @@ def test_actual_commit_loss_then_read_pressure_recovers_exact_original(defaults:
         with ConnectionPool[FaultConnection](
             make_conninfo(db.url, user=db.role, password="synthetic_job_test"),
             connection_class=FaultConnection,
-            kwargs={"row_factory": dict_row},
+            kwargs=portable_connect_kwargs(),
             configure=configure,
             min_size=1,
             max_size=1,
@@ -560,7 +560,7 @@ def test_committed_reply_after_cooperative_deadline_recovers_original(defaults: 
     with ConnectionPool[DelayedCommit](
         make_conninfo(db.url, user=db.role, password="synthetic_job_test"),
         connection_class=DelayedCommit,
-        kwargs={"row_factory": dict_row},
+        kwargs=portable_connect_kwargs(),
         configure=configure,
         min_size=1,
         max_size=1,

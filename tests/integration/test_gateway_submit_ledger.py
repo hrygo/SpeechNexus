@@ -23,6 +23,7 @@ from tests.fake.execution import ScriptedEngine, fake_ingress
 from tests.integration.test_coordination_foundation import Foundation
 from tests.integration.test_coordination_foundation import foundation as foundation
 from tests.integration.test_production_jobs import database as database
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
 from speechnexus_gateway.domain.canonical import JsonValue, command_digest
@@ -685,7 +686,7 @@ def test_the_narrow_role_cannot_rewrite_recorded_identity(
 def test_the_submit_transaction_waits_for_the_pool_row_lock(foundation: Foundation) -> None:
     seed_second_attempt(foundation)
     pool = open_pool(foundation)
-    blocker = psycopg.connect(foundation.database.url, row_factory=dict_row, autocommit=False)
+    blocker = portable_pg_connect(foundation.database.url, row_factory=dict_row, autocommit=False)
     try:
         blocker.execute(f'SET search_path TO "{foundation.database.schema}", pg_catalog')
         blocker.execute(

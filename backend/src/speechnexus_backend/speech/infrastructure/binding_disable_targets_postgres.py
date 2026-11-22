@@ -42,6 +42,8 @@ class TargetCursor(Protocol):
 
     def fetchall(self) -> list[dict[str, Any]]: ...
 
+    def fetchmany(self, size: int) -> list[dict[str, Any]]: ...
+
 
 def _target(row: dict[str, Any]) -> DisableExecutionTarget:
     return DisableExecutionTarget(**{name: row[name] for name in _FIELDS})
@@ -52,12 +54,13 @@ def list_disable_event_ids(cursor: TargetCursor, *, after: str | None, limit: in
     integer(limit, minimum=1, maximum=128)
     if after is not None:
         identifier(after)
+    # 页大小不进 SQL:方言没有 `LIMIT`,keyset 谓词已把扫描面收窄。
     cursor.execute(
         "SELECT event_id FROM speech_binding_disable_intents "
-        "WHERE (%s::text IS NULL OR event_id > %s) ORDER BY event_id LIMIT %s",
-        (after, after, limit),
+        "WHERE (CAST(? AS text) IS NULL OR event_id > ?) ORDER BY event_id",
+        (after, after),
     )
-    event_ids = [row["event_id"] for row in cursor.fetchall()]
+    event_ids = [row["event_id"] for row in cursor.fetchmany(limit)]
     for event_id in event_ids:
         identifier(event_id)
     return event_ids
@@ -84,13 +87,13 @@ def list_disable_targets(
         identifier(node_id)
     cursor.execute(
         f"SELECT {', '.join(_FIELDS)} FROM {TARGET_TABLE} "
-        "WHERE event_id=%s AND (%s::text IS NULL OR submit_intent_id > %s) "
-        "AND (%s::text IS NULL OR gateway_id=%s) "
-        "AND (%s::text IS NULL OR host_node_id=%s) "
-        "ORDER BY submit_intent_id LIMIT %s",
-        (event_id, after, after, gateway_id, gateway_id, node_id, node_id, limit),
+        "WHERE event_id=? AND (CAST(? AS text) IS NULL OR submit_intent_id > ?) "
+        "AND (CAST(? AS text) IS NULL OR gateway_id=?) "
+        "AND (CAST(? AS text) IS NULL OR host_node_id=?) "
+        "ORDER BY submit_intent_id",
+        (event_id, after, after, gateway_id, gateway_id, node_id, node_id),
     )
-    return [_target(row) for row in cursor.fetchall()]
+    return [_target(row) for row in cursor.fetchmany(limit)]
 
 
 def read_disable_target(
@@ -100,8 +103,7 @@ def read_disable_target(
     identifier(event_id)
     identifier(submit_intent_id)
     cursor.execute(
-        f"SELECT {', '.join(_FIELDS)} FROM {TARGET_TABLE} "
-        "WHERE event_id=%s AND submit_intent_id=%s",
+        f"SELECT {', '.join(_FIELDS)} FROM {TARGET_TABLE} WHERE event_id=? AND submit_intent_id=?",
         (event_id, submit_intent_id),
     )
     rows = cursor.fetchall()
@@ -123,7 +125,7 @@ def record_abort_intent(
     integer(recorded_at_us, minimum=1)
     cursor.execute(
         f"INSERT INTO {ABORT_INTENT_TABLE} (event_id, submit_intent_id, recorded_at_us) "
-        "VALUES (%s,%s,%s) ON CONFLICT (event_id, submit_intent_id) DO NOTHING "
+        "VALUES (?,?,?) ON CONFLICT (event_id, submit_intent_id) DO NOTHING "
         "RETURNING event_id",
         (event_id, submit_intent_id, recorded_at_us),
     )
@@ -156,29 +158,29 @@ def capture_disable_targets(
         "SELECT s.submit_intent_id, s.operation_id, s.attempt_id, l.lease_id, l.stage_id, "
         "a.workspace_id, l.pool_id, l.gateway_id, l.host_node_id, l.instance_id, "
         "l.instance_generation, a.binding_revision_id, a.policy_revision_id, "
-        "s.voice_revision_id, l.fencing_token, s.command_digest, %s AS wait_timeout_ms "
+        "s.voice_revision_id, l.fencing_token, s.command_digest, ? AS wait_timeout_ms "
         "FROM speech_binding_disable_intents i "
         "JOIN speech_publication_lifecycle_events e ON e.event_id=i.event_id "
         "JOIN admission_attempts a ON a.binding_revision_id=e.revision_id "
         "JOIN admission_leases l ON l.operation_id=a.operation_id AND l.attempt_id=a.attempt_id "
         "JOIN submit_intents s ON s.lease_id=l.lease_id AND s.operation_id=l.operation_id "
         "AND s.attempt_id=l.attempt_id "
-        "WHERE i.event_id=%s AND e.action='model_binding.disable' "
+        "WHERE i.event_id=? AND e.action='model_binding.disable' "
         "AND s.execution_state IN ('submitting','executing','stopping','unknown_quarantined') "
-        "AND (%s::text IS NULL OR l.gateway_id=%s) "
-        "AND (%s::text IS NULL OR l.host_node_id=%s) "
+        "AND (CAST(? AS text) IS NULL OR l.gateway_id=?) "
+        "AND (CAST(? AS text) IS NULL OR l.host_node_id=?) "
         f"AND NOT EXISTS (SELECT 1 FROM {TARGET_TABLE} t "
         "WHERE t.event_id=i.event_id AND t.submit_intent_id=s.submit_intent_id) "
-        "ORDER BY s.submit_intent_id LIMIT %s",
-        (wait_timeout_ms, event_id, gateway_id, gateway_id, node_id, node_id, limit),
+        "ORDER BY s.submit_intent_id",
+        (wait_timeout_ms, event_id, gateway_id, gateway_id, node_id, node_id),
     )
-    candidates = [_target(row) for row in cursor.fetchall()]
+    candidates = [_target(row) for row in cursor.fetchmany(limit)]
     captured = []
     for target in candidates:
         values = tuple(getattr(target, name) for name in _FIELDS)
         cursor.execute(
             f"INSERT INTO {TARGET_TABLE} (event_id, {', '.join(_FIELDS)}) "
-            f"VALUES ({', '.join(['%s'] * (len(_FIELDS) + 1))}) "
+            f"VALUES ({', '.join(['?'] * (len(_FIELDS) + 1))}) "
             "ON CONFLICT (event_id, submit_intent_id) DO NOTHING",
             (event_id, *values),
         )

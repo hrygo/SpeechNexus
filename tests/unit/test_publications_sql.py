@@ -94,7 +94,7 @@ def test_find_publication_returns_the_exact_full_identity() -> None:
     assert find_publication(cursor, "binding", "binding-tts", 1) == Publication(
         "binding", "binding-tts", 1, "binding-rev-1", 1_700_000_000_000_000
     )
-    assert "revision = %s" in cursor.calls[0][0]
+    assert "revision = ?" in cursor.calls[0][0]
     assert cursor.calls[0][1] == ("binding", "binding-tts", "1")
 
 
@@ -123,5 +123,5 @@ def test_list_publications_reads_one_kind_in_deterministic_order() -> None:
     cursor = Cursor([row(1), row(2, "binding-rev-2")])
 
     assert [item.revision for item in list_publications(cursor, "binding")] == [1, 2]
-    assert "WHERE kind = %s ORDER BY object_id, revision" in cursor.calls[0][0]
+    assert "WHERE kind = ? ORDER BY object_id, revision" in cursor.calls[0][0]
     assert cursor.calls[0][1] == ("binding",)

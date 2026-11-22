@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
@@ -28,6 +28,7 @@ from speechnexus_backend.speech.domain.workspaces import (
     WorkspaceWriteReceipt,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
+from speechnexus_portable_sql.clock import ClockReader, now_us
 
 _COLUMNS = (
     "workspace_id, display_name, workspace_state, metadata_revision, policy_revision, created_at_us"
@@ -44,7 +45,9 @@ class PostgresWorkspaceReads:
             raise ValueError("Workspace reads require bounded deadlines")
         self._pool, self._timeout = pool, timeout_seconds
 
-    def _read(self, query: str, parameters: tuple[object, ...]) -> tuple[Workspace, ...]:
+    def _read(
+        self, query: str, parameters: tuple[object, ...], *, page_size: int | None = None
+    ) -> tuple[Workspace, ...]:
         deadline = time.monotonic() + self._timeout
         try:
             with self._pool.connection(timeout=self._timeout) as connection:
@@ -53,10 +56,12 @@ class PostgresWorkspaceReads:
                     raise WorkspaceUnavailableError
                 connection.execute("SET TRANSACTION READ ONLY")
                 connection.execute(
-                    "SELECT set_config('statement_timeout', %s, true)",
+                    "SELECT set_config('statement_timeout', ?, true)",
                     (str(max(1, int(remaining * 1000))),),
                 )
-                records = connection.execute(query, parameters).fetchall()
+                cursor = connection.execute(query, parameters)
+                # 受限方言没有 `LIMIT`:keyset 谓词已把扫描面收窄,页大小由 fetchmany 决定。
+                records = cursor.fetchall() if page_size is None else cursor.fetchmany(page_size)
                 result = tuple(_workspace(row) for row in records)
                 if time.monotonic() >= deadline:
                     raise WorkspaceUnavailableError
@@ -75,7 +80,7 @@ class PostgresWorkspaceReads:
     def get(self, workspace_id: str) -> Workspace | None:
         identifier(workspace_id)
         rows = self._read(
-            "SELECT " + _COLUMNS + " FROM speech_workspaces WHERE workspace_id = %s",
+            "SELECT " + _COLUMNS + " FROM speech_workspaces WHERE workspace_id = ?",
             (workspace_id,),
         )
         return rows[0] if rows else None
@@ -83,8 +88,9 @@ class PostgresWorkspaceReads:
     def scan(self, query: WorkspaceQuery) -> tuple[Workspace, ...]:
         return self._read(
             "SELECT " + _COLUMNS + " FROM speech_workspaces "
-            "WHERE workspace_id > %s ORDER BY workspace_id LIMIT %s",
-            (query.after_id or "", query.limit + 1),
+            "WHERE workspace_id > ? ORDER BY workspace_id",
+            (query.after_id or "",),
+            page_size=query.limit + 1,
         )
 
 
@@ -97,19 +103,31 @@ class _Cursor:
         if remaining <= 0:
             raise WorkspaceUnavailableError
         self.raw.execute(
-            "SELECT set_config('statement_timeout', %s, true)",
+            "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(remaining * 1000))),),
         )
         self.raw.execute(query, parameters)
         return self.raw.fetchall() if self.raw.description else []
 
-    def clock(self) -> int:
-        rows = self.rows(
-            "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) AS now_us"
-        )
-        if len(rows) != 1:
+    def execute(self, sql: str, parameters: tuple[object, ...] = ()) -> Any:
+        """便携时钟的执行入口:与 `rows` 共用同一预算,把游标交回去取行."""
+
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
             raise WorkspaceUnavailableError
-        return int(rows[0]["now_us"])
+        self.raw.execute(
+            "SELECT set_config('statement_timeout', ?, true)",
+            (str(max(1, int(remaining * 1000))),),
+        )
+        return self.raw.execute(sql, parameters)
+
+    def clock(self) -> int:
+        """「现在」只从便携时钟读一次;语句里不再有品牌函数."""
+
+        try:
+            return now_us(cast(ClockReader, self))
+        except (LookupError, TypeError) as error:
+            raise WorkspaceUnavailableError from error
 
 
 class PostgresWorkspaceWrites:
@@ -225,11 +243,11 @@ class PostgresWorkspaceWrites:
         # so a bucket collision adds contention and can never alias a replay.
         cursor.rows(
             "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:workspace:' || current_schema() || ':idempotency:' || %s, 0))",
+            "'speechnexus:workspace:' || current_schema() || ':idempotency:' || ?, 0))",
             (key_digest,),
         )
         rows = cursor.rows(
-            "SELECT " + _COMMAND_COLUMNS + " FROM speech_workspace_commands WHERE key_digest = %s",
+            "SELECT " + _COMMAND_COLUMNS + " FROM speech_workspace_commands WHERE key_digest = ?",
             (key_digest,),
         )
         if len(rows) > 1:
@@ -259,7 +277,7 @@ class PostgresWorkspaceWrites:
 
     def _record(self, cursor: _Cursor, workspace_id: str) -> Workspace | None:
         rows = cursor.rows(
-            "SELECT " + _COLUMNS + " FROM speech_workspaces WHERE workspace_id = %s",
+            "SELECT " + _COLUMNS + " FROM speech_workspaces WHERE workspace_id = ?",
             (workspace_id,),
         )
         return _workspace(rows[0]) if rows else None
@@ -274,7 +292,7 @@ class PostgresWorkspaceWrites:
         rows = cursor.rows(
             "INSERT INTO speech_workspaces "
             "(workspace_id, display_name, workspace_state, created_at_us) "
-            "VALUES (%s, %s, 'active', %s) RETURNING " + _COLUMNS,
+            "VALUES (?, ?, 'active', ?) RETURNING " + _COLUMNS,
             (workspace_id, command.display_name, now),
         )
         if len(rows) != 1:
@@ -295,10 +313,10 @@ class PostgresWorkspaceWrites:
         now = cursor.clock()
         rows = cursor.rows(
             "UPDATE speech_workspaces SET "
-            "display_name = COALESCE(%s, display_name), "
-            "workspace_state = COALESCE(%s, workspace_state), "
+            "display_name = COALESCE(?, display_name), "
+            "workspace_state = COALESCE(?, workspace_state), "
             "metadata_revision = metadata_revision + 1 "
-            "WHERE workspace_id = %s AND metadata_revision = %s RETURNING " + _COLUMNS,
+            "WHERE workspace_id = ? AND metadata_revision = ? RETURNING " + _COLUMNS,
             (
                 command.display_name,
                 command.status,
@@ -314,7 +332,7 @@ class PostgresWorkspaceWrites:
 
     def _locked(self, cursor: _Cursor, workspace_id: str) -> Workspace | None:
         rows = cursor.rows(
-            "SELECT " + _COLUMNS + " FROM speech_workspaces WHERE workspace_id = %s FOR UPDATE",
+            "SELECT " + _COLUMNS + " FROM speech_workspaces WHERE workspace_id = ? FOR UPDATE",
             (workspace_id,),
         )
         return _workspace(rows[0]) if rows else None
@@ -331,7 +349,7 @@ class PostgresWorkspaceWrites:
             return
         cursor.rows(
             "INSERT INTO speech_workspace_commands "
-            "(" + _COMMAND_COLUMNS + ") VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            "(" + _COMMAND_COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 command.key_digest,
                 operation,

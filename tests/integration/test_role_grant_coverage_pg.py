@@ -97,6 +97,7 @@ from tests.integration.test_cancel_failure_slot_pg import (
 )
 from tests.integration.test_production_jobs import JobDatabase
 from tests.integration.test_production_jobs import database as database
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.admission_watch_runtime import (
     AdmissionWatchRuntime,
@@ -220,7 +221,7 @@ class Coverage:
 
 def _connect(coverage: Coverage, key: str) -> psycopg.Connection[dict[str, Any]]:
     """Open a connection authenticated as one provisioned identity."""
-    connection = psycopg.connect(
+    connection = portable_pg_connect(
         coverage.dsn(key), row_factory=dict_row, autocommit=False, connect_timeout=5
     )
     connection.execute(f'SET search_path TO "{coverage.db.schema}", pg_catalog')
@@ -571,7 +572,7 @@ def _run_debt_summary(coverage: Coverage) -> str:
     """The ``/readyz`` summary: its Job-level read plus the production probe's sentence."""
     # The Job-level read returns five untyped NULL placeholders, so a dict row factory
     # would collapse them into one key and hide the tuple shape the code indexes.
-    connection = psycopg.connect(coverage.dsn("debt"), autocommit=False, connect_timeout=5)
+    connection = portable_pg_connect(coverage.dsn("debt"), autocommit=False, connect_timeout=5)
     try:
         connection.execute(f'SET search_path TO "{coverage.db.schema}", pg_catalog')
         connection.execute("SET TRANSACTION READ ONLY")

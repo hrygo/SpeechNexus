@@ -31,6 +31,7 @@ from sqlalchemy.pool import NullPool
 from tests.support.binding_examples import binding_request
 from tests.support.contracts import ROOT as CONTRACTS
 from tests.support.contracts import document, retrieve
+from tests.support.portable_pg import connect as portable_pg_connect
 from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app
@@ -91,7 +92,7 @@ def sandbox() -> Iterator[Sandbox]:
     )
     config = Config(str(ROOT / "alembic.ini"))
     config.attributes["schema"] = schema
-    admin = psycopg.connect(url, autocommit=True)
+    admin = portable_pg_connect(url, autocommit=True)
     pool: SpeechPool | None = None
     try:
         with engine.connect() as connection:

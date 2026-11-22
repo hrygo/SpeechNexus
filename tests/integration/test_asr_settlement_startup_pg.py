@@ -10,9 +10,9 @@ import sys
 import uuid
 from pathlib import Path
 
-import psycopg
 import pytest
 import rfc8785
+from tests.support.portable_pg import connect as portable_pg_connect
 
 ROOT = Path(__file__).resolve().parents[2]
 EXAMPLE = ROOT / "deploy/private/transcription-recipe.example.json"
@@ -59,7 +59,7 @@ def test_asr_check_prints_one_fail_line_with_the_migration(tmp_path: Path) -> No
     url = database_url()
     schema = "sn_asr_gate_" + uuid.uuid4().hex[:12]
     recipe = write_recipe(tmp_path)
-    with psycopg.connect(url, autocommit=True) as administrator:
+    with portable_pg_connect(url, autocommit=True) as administrator:
         administrator.execute(f'CREATE SCHEMA "{schema}"')
     try:
         result = run_check(
@@ -77,7 +77,7 @@ def test_asr_check_prints_one_fail_line_with_the_migration(tmp_path: Path) -> No
             }
         )
     finally:
-        with psycopg.connect(url, autocommit=True) as administrator:
+        with portable_pg_connect(url, autocommit=True) as administrator:
             administrator.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
 
     text = result.stdout + result.stderr

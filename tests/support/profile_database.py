@@ -40,6 +40,10 @@ class ProfileCursor:
     def fetchall(self) -> list[dict[str, Any]]:
         return list(self.raw.fetchall())
 
+    def fetchmany(self, size: int) -> list[dict[str, Any]]:
+        # 读路径现在按页取行;MySQL 侧替身必须真的按 size 截断。
+        return list(self.raw.fetchmany(size))
+
     def clock(self) -> int:
         self.execute("SELECT CAST(UNIX_TIMESTAMP(CURRENT_TIMESTAMP(6))*1000000 AS SIGNED) AS t")
         return int(self.fetchall()[0]["t"])

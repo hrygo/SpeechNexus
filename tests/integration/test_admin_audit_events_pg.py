@@ -34,6 +34,7 @@ from psycopg.types.json import Jsonb
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 from tests.fake.readiness import StaticProbe
+from tests.support.portable_pg import connect as portable_pg_connect
 from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app
@@ -102,7 +103,7 @@ def sandbox() -> Iterator[Sandbox]:
             command.upgrade(config, "head")
     finally:
         engine.dispose()
-    admin: psycopg.Connection[dict[str, Any]] = psycopg.connect(
+    admin: psycopg.Connection[dict[str, Any]] = portable_pg_connect(
         base, row_factory=dict_row, autocommit=True
     )
     admin.execute(f'SET search_path TO "{schema}", pg_catalog')
@@ -450,7 +451,7 @@ def test_the_audit_reader_identity_can_only_select(sandbox: Sandbox) -> None:
             f'SELECT count(*) AS count FROM "{sandbox.schema}".{EVENT_TABLE}'
         ).fetchone()
         assert row is not None and row["count"] == 1
-    connection = psycopg.connect(sandbox.urls["audit"], autocommit=True)
+    connection = portable_pg_connect(sandbox.urls["audit"], autocommit=True)
     connection.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
     # Every statement below is otherwise complete: with a correct SELECT-only
     # grant it fails on privilege, not on a constraint or a missing reference.

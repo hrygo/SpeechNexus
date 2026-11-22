@@ -34,7 +34,7 @@ def _rows(cursor: ProfileCursor, sql: str, args: tuple[object, ...]) -> list[dic
 def read_draft(cursor: ProfileCursor, profile_id: str, revision: str) -> ProfileDraft | None:
     rows = _rows(
         cursor,
-        "SELECT * FROM speech_profile_revisions WHERE profile_id=%s AND revision=%s",
+        "SELECT * FROM speech_profile_revisions WHERE profile_id=? AND revision=?",
         (profile_id, revision),
     )
     if not rows:
@@ -76,7 +76,7 @@ def _result(
 def recover_draft(cursor: ProfileCursor, command: CreateProfileDraft) -> ProfileDraftResult:
     check_command(command)
     rows = _rows(
-        cursor, "SELECT * FROM speech_profile_commands WHERE key_digest=%s", (command.key_digest,)
+        cursor, "SELECT * FROM speech_profile_commands WHERE key_digest=?", (command.key_digest,)
     )
     return _result(cursor, command, rows[0]) if rows else ProfileDraftResult("unknown")
 
@@ -94,13 +94,13 @@ def create_draft(
     cursor.execute(
         "INSERT INTO speech_profile_commands "
         "(key_digest,profile_id,intent_json,request_digest,command_state) "
-        "VALUES (%s,%s,%s,%s,'pending') ON CONFLICT (key_digest) DO NOTHING",
+        "VALUES (?,?,?,?,'pending') ON CONFLICT (key_digest) DO NOTHING",
         (command.key_digest, command.profile_id, command.intent.decode(), command.request_digest),
     )
     inserted = cursor.rowcount == 1
     rows = _rows(
         cursor,
-        "SELECT * FROM speech_profile_commands WHERE key_digest=%s FOR UPDATE",
+        "SELECT * FROM speech_profile_commands WHERE key_digest=? FOR UPDATE",
         (command.key_digest,),
     )
     if len(rows) != 1:
@@ -110,13 +110,13 @@ def create_draft(
     # A null allocation head is only an internal lock anchor, never a revision
     # or the default/current published profile pointer.
     cursor.execute(
-        "INSERT INTO speech_profile_families (profile_id) VALUES (%s) "
+        "INSERT INTO speech_profile_families (profile_id) VALUES (?) "
         "ON CONFLICT (profile_id) DO NOTHING",
         (command.profile_id,),
     )
     families = _rows(
         cursor,
-        "SELECT latest_revision FROM speech_profile_families WHERE profile_id=%s FOR UPDATE",
+        "SELECT latest_revision FROM speech_profile_families WHERE profile_id=? FOR UPDATE",
         (command.profile_id,),
     )
     if len(families) != 1:
@@ -128,7 +128,7 @@ def create_draft(
         _update(
             cursor,
             "UPDATE speech_profile_commands SET command_state='rejected', "
-            "error_code='configuration_changed' WHERE key_digest=%s AND command_state='pending'",
+            "error_code='configuration_changed' WHERE key_digest=? AND command_state='pending'",
             (command.key_digest,),
         )
         return ProfileDraftResult("rejected", error_code="configuration_changed")
@@ -140,7 +140,7 @@ def create_draft(
     cursor.execute(
         "INSERT INTO speech_profile_revisions "
         "(profile_id,revision,definition_json,definition_digest,request_digest,created_at_us) "
-        "VALUES (%s,%s,%s,%s,%s,%s)",
+        "VALUES (?,?,?,?,?,?)",
         (
             draft.profile_id,
             draft.revision,
@@ -152,13 +152,13 @@ def create_draft(
     )
     _update(
         cursor,
-        "UPDATE speech_profile_families SET latest_revision=%s WHERE profile_id=%s",
+        "UPDATE speech_profile_families SET latest_revision=? WHERE profile_id=?",
         (revision, command.profile_id),
     )
     _update(
         cursor,
-        "UPDATE speech_profile_commands SET command_state='created',revision=%s "
-        "WHERE key_digest=%s AND command_state='pending'",
+        "UPDATE speech_profile_commands SET command_state='created',revision=? "
+        "WHERE key_digest=? AND command_state='pending'",
         (revision, command.key_digest),
     )
     return ProfileDraftResult("created", draft)

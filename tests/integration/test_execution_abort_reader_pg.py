@@ -36,6 +36,7 @@ from tests.integration.test_coordination_foundation import seed
 from tests.integration.test_gateway_submit_ledger import identity_for
 from tests.integration.test_production_jobs import JobDatabase
 from tests.support.execution_reader_database import isolated_reader_database
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.speech.infrastructure.gateway_query_grants import (
     gateway_query_grants,
@@ -151,7 +152,7 @@ def reader_database() -> Iterator[ReaderDatabase]:
         )
     database_name = "sn_abort_reader_" + uuid.uuid4().hex[:12]
     schema = "sn_reader_" + uuid.uuid4().hex[:12]
-    root = psycopg.connect(root_url, autocommit=True)
+    root = portable_pg_connect(root_url, autocommit=True)
     created = False
     admin = None
     try:
@@ -164,7 +165,7 @@ def reader_database() -> Iterator[ReaderDatabase]:
         # keyword syntax; let psycopg parse it via the creator instead of logging it.
         engine = create_engine(
             "postgresql+psycopg://",
-            creator=lambda: psycopg.connect(url),
+            creator=lambda: portable_pg_connect(url),
             poolclass=NullPool,
             hide_parameters=True,
         )
@@ -176,7 +177,7 @@ def reader_database() -> Iterator[ReaderDatabase]:
                 migrations.upgrade(config, "head")
         finally:
             engine.dispose()
-        admin = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+        admin = portable_pg_connect(url, autocommit=True, row_factory=dict_row)
         admin.execute(sql.SQL("SET search_path TO {}, pg_catalog").format(sql.Identifier(schema)))
         admin.execute(
             sql.SQL("REVOKE TEMPORARY ON DATABASE {} FROM PUBLIC").format(
@@ -370,7 +371,7 @@ def test_same_schema_and_copied_installation_in_another_database_is_rejected(
     root_url = os.environ["SPEECHNEXUS_TEST_DATABASE_URL"]
     installation = db.sql("SELECT installation_id FROM speech_publication_installation")[0]
     with isolated_reader_database(root_url) as other_url:
-        with psycopg.connect(other_url, autocommit=True) as other:
+        with portable_pg_connect(other_url, autocommit=True) as other:
             other.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(db.schema)))
             other.execute(
                 sql.SQL(

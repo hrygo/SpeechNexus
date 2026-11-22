@@ -86,6 +86,7 @@ from psycopg import sql
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 from tests.support.migrations import PRE_ASR_SETTLEMENT_REVISION
+from tests.support.portable_pg import connect as portable_pg_connect
 
 pytestmark = pytest.mark.integration
 
@@ -229,7 +230,7 @@ def _provisioned(
     schema the migration rolled back) so it never masks the original failure.
     """
     writer, admission, dispatch, gateway = roles
-    admin = psycopg.connect(url, autocommit=True)
+    admin = portable_pg_connect(url, autocommit=True)
     try:
         migrate(url, schema)
         for role in roles:
@@ -294,7 +295,7 @@ def test_a_failed_migration_still_drops_its_schema() -> None:
         # unknown revision alone rolls the schema back and the assertion below
         # would be vacuous. Fail with the schema already committed, which is the
         # shape a failed grant install (or a post-migration step) leaves behind.
-        admin = psycopg.connect(url, autocommit=True)
+        admin = portable_pg_connect(url, autocommit=True)
         try:
             admin.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
         finally:
@@ -309,7 +310,7 @@ def test_a_failed_migration_still_drops_its_schema() -> None:
     # The failure really happened with the schema in place, so the cleanup below is
     # what removed it - not a no-op against a schema that never existed.
     assert created == [schema]
-    with psycopg.connect(url) as inspector:
+    with portable_pg_connect(url) as inspector:
         assert inspector.execute("SELECT to_regnamespace(%s)", (schema,)).fetchone() == (None,)
         assert (
             inspector.execute(

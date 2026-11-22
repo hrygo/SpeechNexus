@@ -16,6 +16,7 @@ import pytest
 from psycopg.rows import dict_row
 from tests.integration.test_public_jobs_http import JobSandbox, _body
 from tests.integration.test_public_jobs_http import jobs_db as jobs_db
+from tests.support.portable_pg import connect as portable_pg_connect
 from tests.unit.backend.test_public_jobs import Store
 
 from speechnexus_backend.speech.application.public_jobs import (
@@ -100,7 +101,7 @@ def _counts(db: JobSandbox, expected: int) -> None:
 
 @contextmanager
 def _blocker(db: JobSandbox) -> Iterator[Any]:
-    with psycopg.connect(db.url, row_factory=dict_row) as connection:
+    with portable_pg_connect(db.url, row_factory=dict_row) as connection:
         connection.execute(f'SET search_path TO "{db.schema}", pg_catalog')
         yield connection
 

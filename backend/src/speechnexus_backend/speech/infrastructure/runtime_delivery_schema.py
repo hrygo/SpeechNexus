@@ -39,7 +39,7 @@ RUNTIME_DELIVERY_DDL: tuple[str, ...] = (
 ADOPT_RUNTIME_DELIVERIES_SQL = """INSERT INTO runtime_intent_deliveries
     (event_id, delivery_phase, created_at_us, updated_at_us, last_failure_code)
     SELECT o.event_id, 'unknown', stamp.now_us, stamp.now_us, 'legacy_adoption_required'
-    FROM coordination_outbox AS o CROSS JOIN (SELECT %s AS now_us) AS stamp
+    FROM coordination_outbox AS o CROSS JOIN (SELECT ? AS now_us) AS stamp
     WHERE o.event_kind = 'runtime' AND o.delivered_at_us IS NULL"""
 
 

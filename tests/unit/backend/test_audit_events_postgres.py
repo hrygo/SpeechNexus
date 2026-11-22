@@ -52,6 +52,10 @@ class Result:
     def fetchall(self) -> list[dict[str, Any]]:
         return self._rows
 
+    def fetchmany(self, size: int, /) -> list[dict[str, Any]]:
+        # 适配器现在按页取行;假游标必须真的按 size 截断,否则测不出分页契约。
+        return self._rows[:size]
+
 
 class Connection:
     def __init__(self, rows: list[dict[str, Any]] | None = None) -> None:
@@ -113,14 +117,14 @@ def test_one_page_reads_read_only_with_the_composite_frontier_and_exact_action()
     assert sql[1].startswith("SELECT set_config('statement_timeout'")
     assert sql[2] == statement(query)[0]
     params = [parameters for _, parameters in connection.statements][2]
-    assert params == (POSITION[0], POSITION[1], "model_binding.retire", 3)
+    assert params == (POSITION[0], POSITION[1], "model_binding.retire")
 
 
 def test_the_statement_carries_no_filter_when_none_was_requested() -> None:
     reader, connection = reads(rows=[])
     assert reader.scan(AuditEventQuery(1)) == ()
     _, parameters = connection.statements[2]
-    assert parameters == (2,)
+    assert parameters == ()
 
 
 def test_a_row_of_another_kind_is_refused_rather_than_mislabeled() -> None:

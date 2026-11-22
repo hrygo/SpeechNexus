@@ -31,7 +31,7 @@ def redact_execution_command_in_transaction(
         "SELECT l.lease_state, s.request_document IS NOT NULL AS document_present, "
         "s.command_redacted_at_us, s.command_deletion_job_id, s.command_deletion_evidence_digest "
         "FROM submit_intents AS s JOIN admission_leases AS l ON l.lease_id = s.lease_id "
-        "WHERE s.submit_intent_id = %s",
+        "WHERE s.submit_intent_id = ?",
         (request.submit_intent_id,),
     )
     rows = cursor.fetchall()
@@ -65,10 +65,10 @@ def redact_execution_command_in_transaction(
         return result
     redacted_at_us = to_unix_micros(result.tombstone.redacted_at)
     cursor.execute(
-        "UPDATE submit_intents SET request_document = NULL, command_redacted_at_us = %s, "
-        "command_deletion_job_id = %s, command_deletion_evidence_digest = %s, "
-        "updated_at_us = %s, version = version + 1 "
-        "WHERE submit_intent_id = %s AND version = %s AND request_document IS NOT NULL "
+        "UPDATE submit_intents SET request_document = NULL, command_redacted_at_us = ?, "
+        "command_deletion_job_id = ?, command_deletion_evidence_digest = ?, "
+        "updated_at_us = ?, version = version + 1 "
+        "WHERE submit_intent_id = ? AND version = ? AND request_document IS NOT NULL "
         "AND command_redacted_at_us IS NULL AND command_deletion_job_id IS NULL "
         "AND command_deletion_evidence_digest IS NULL",
         (

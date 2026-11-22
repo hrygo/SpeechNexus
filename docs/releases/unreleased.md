@@ -39,6 +39,8 @@
 | `0061_ledger_debt_index` | 建 `speech_job_cancellation_ledger_debt_scan`；**已被 0062 取代**，仍必须按顺序执行（0062 依赖它） |
 | `0062_lease_debt_index` | 删掉 0061 的索引，改建 `speech_job_cancellation_lease_debt_scan`：永久取消债的界从「失败历史」换成「仍持有容量的租约」 |
 | `0063_deletion_targets_blocked` | 删除账本的 `target_kind` 加 `artifact`、`voice_revision`，`status` 加 `blocked`、`failed`，并新增 `error` JSONB 列（与这两个状态一一对应） |
+| `0008_runtime_delivery` | 参数标记迁到 `?` 契约后，迁移把唯一的占位符内联成迁移事务时间戳；行为不变，仍给旧 outbox 行补 `unknown` 投递相位 |
+| `0023_publication_lifecycle`（视图定义） | 视图里的 `::numeric` 改成标准 `CAST(... AS numeric)`，语义等价；只在重新 bootstrap 时生效，不新增迁移 |
 
 ```bash
 docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
@@ -238,6 +240,11 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 | `deletion_plan_grants` | `job_schema.py` | **新增**，见第 3 条 |
 | `deletion_execution_grants` | `job_schema.py` | **新增**，见第 3 条 |
 | `job_runtime_grants` | `job_schema.py` | 未变 |
+| `binding_disable_admission_grants` | `admission_postgres.py` | 未变（SQL 参数标记迁到 `?`，授权列未动） |
+| `tts_voice_admission_grants` | `admission_postgres.py` | 未变（同文件，参数标记迁移） |
+| `speech_synthesis_reader_grants` | `qualified_speech_facts_postgres.py` | 未变（参数标记迁移） |
+| `runtime_delivery_grants` | `runtime_delivery_schema.py` | 未变（参数标记迁移） |
+| `settlement_worker_grants` | `settlement_worker_verifier.py` | 未变（参数标记迁移） |
 | `job_dispatch_grants` | `job_schema.py` | 未变 |
 
 ## 边界澄清（行为未变）

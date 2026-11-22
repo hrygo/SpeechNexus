@@ -168,7 +168,8 @@ class AdmissionWatchRuntime:
         try:
             with pool.connection(timeout=settings.transaction_timeout_seconds) as connection:
                 for table in REQUIRED_TABLES:
-                    connection.execute(f"SELECT 1 FROM {table} LIMIT 0")
+                    # 零行探针:验证表可读即可,方言没有 `LIMIT`,这里也没有分页语义。
+                    connection.execute(f"SELECT 1 FROM {table} WHERE 1=0")
         except psycopg.Error as error:
             # A database that never ran the migration profile, or an admission role
             # whose grants are narrower than the report's read, must fail here with

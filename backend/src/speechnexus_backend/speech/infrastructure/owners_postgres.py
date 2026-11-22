@@ -25,6 +25,7 @@ from speechnexus_backend.speech.infrastructure.owners_sql import (
     query_in_transaction,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
+from speechnexus_portable_sql.clock import ClockReader, now_us
 
 
 class _BudgetExpiredError(Exception):
@@ -45,7 +46,7 @@ class _DeadlineCursor:
         if remaining <= 0:
             raise _BudgetExpiredError
         self._cursor.execute(
-            "SELECT set_config('statement_timeout', %s, true)",
+            "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(remaining * 1000))),),
         )
         return self._cursor.execute(query, parameters)
@@ -53,11 +54,14 @@ class _DeadlineCursor:
     def fetchall(self) -> list[dict[str, Any]]:
         return self._cursor.fetchall()
 
+    def fetchone(self) -> dict[str, Any] | None:
+        rows = self.fetchall()
+        return rows[0] if rows else None
+
     def clock(self) -> int:
-        self.execute(
-            "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) AS now_us"
-        )
-        return cast(int, self.fetchall()[0]["now_us"])
+        # 「现在」只从便携时钟读一次;语句里不再有品牌函数。
+        now: int = now_us(cast(ClockReader, self))
+        return now
 
 
 class PostgresOwnerTransactions:

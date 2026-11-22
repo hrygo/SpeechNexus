@@ -173,7 +173,7 @@ class PostgresExports(ExportJobStore):
             """
             SELECT b.project_id, b.casting_revision,
                 (SELECT count(*) FROM {s}.render_units u WHERE u.book_id = b.id) AS units
-            FROM {s}.books b WHERE b.id = %s
+            FROM {s}.books b WHERE b.id = ?
         """,
             (book_id,),
         )
@@ -191,7 +191,7 @@ class PostgresExports(ExportJobStore):
         suffix = " FOR UPDATE" if lock else ""
         return await base._one(
             _ExportRow,
-            f"SELECT {_COLUMNS} FROM {{s}}.export_jobs WHERE id = %s{suffix}",
+            f"SELECT {_COLUMNS} FROM {{s}}.export_jobs WHERE id = ?{suffix}",
             (export_id,),
         )
 
@@ -200,7 +200,7 @@ class PostgresExports(ExportJobStore):
             _ReceiptRow,
             """
             SELECT intent_digest, export_id FROM {s}.export_job_receipts
-            WHERE scope_id = %s AND key_digest = %s
+            WHERE scope_id = ? AND key_digest = ?
         """,
             (scope_id, key_digest),
         )
@@ -211,8 +211,8 @@ class PostgresExports(ExportJobStore):
             """
             SELECT b.project_id, b.casting_revision,
                 (SELECT count(*) FROM {s}.render_units u
-                    WHERE u.book_id = b.id AND u.id = ANY(%s::text[])) AS units
-            FROM {s}.books b WHERE b.id = %s
+                    WHERE u.book_id = b.id AND u.id = ANY(CAST(? AS text[]))) AS units
+            FROM {s}.books b WHERE b.id = ?
         """,
             (list(unit_ids), book_id),
         )
@@ -289,7 +289,7 @@ class PostgresExports(ExportJobStore):
                     id, project_id, book_id, status, export_format, manifest_revision,
                     progress_completed, progress_total, unit_ids, artifact, error,
                     created_at, updated_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, NULL, %s, %s)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
             """,
                 (
                     export.id,
@@ -310,7 +310,7 @@ class PostgresExports(ExportJobStore):
                     """
                     INSERT INTO {s}.export_job_receipts
                         (scope_id, key_digest, intent_digest, export_id, created_at)
-                    VALUES (%s, %s, %s, %s, %s)
+                    VALUES (?, ?, ?, ?, ?)
                 """,
                     (scope.project_id, digest, intent, export.id, now),
                 )
@@ -361,7 +361,7 @@ class PostgresExports(ExportJobStore):
             cancelled = current.request_cancel(now=await base.now())
             await base._execute(
                 """
-                UPDATE {s}.export_jobs SET status = %s, updated_at = %s WHERE id = %s
+                UPDATE {s}.export_jobs SET status = ?, updated_at = ? WHERE id = ?
             """,
                 (cancelled.status, cancelled.updated_at, export_id),
             )
@@ -382,9 +382,9 @@ class PostgresExports(ExportJobStore):
             advanced = move(row.domain(), await base.now())
             await base._execute(
                 """
-                UPDATE {s}.export_jobs SET status = %s, progress_completed = %s,
-                    progress_total = %s, artifact = %s, error = %s, updated_at = %s
-                WHERE id = %s
+                UPDATE {s}.export_jobs SET status = ?, progress_completed = ?,
+                    progress_total = ?, artifact = ?, error = ?, updated_at = ?
+                WHERE id = ?
             """,
                 (
                     advanced.status,
@@ -428,7 +428,7 @@ class PostgresExports(ExportJobStore):
                 f"""
                 SELECT {_COLUMNS} FROM {{s}}.export_jobs
                 WHERE status = 'queued' ORDER BY created_at, id
-                LIMIT %s
+                LIMIT ?
             """,
                 (limit,),
             )
@@ -444,7 +444,7 @@ class PostgresExports(ExportJobStore):
                 running = row.domain().start(now=await base.now())
                 await base._execute(
                     """
-                    UPDATE {s}.export_jobs SET status = %s, updated_at = %s WHERE id = %s
+                    UPDATE {s}.export_jobs SET status = ?, updated_at = ? WHERE id = ?
                 """,
                     (running.status, running.updated_at, running.id),
                 )

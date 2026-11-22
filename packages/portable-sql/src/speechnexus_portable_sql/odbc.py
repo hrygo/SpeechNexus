@@ -75,6 +75,11 @@ class _OdbcConnection:
     def cursor(self) -> Cursor:
         return _OdbcCursor(self._raw.cursor())
 
+    def execute(self, sql: str, params: Params = ()) -> Cursor:
+        cursor = self._raw.cursor()
+        cursor.execute(sql, params)
+        return _OdbcCursor(cursor)
+
     def commit(self) -> None:
         self._raw.commit()
 

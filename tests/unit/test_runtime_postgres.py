@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from typing import Any, cast
 
 import psycopg
@@ -122,7 +123,7 @@ def test_each_statement_receives_remaining_budget(monkeypatch: pytest.MonkeyPatc
             statements.append((query, parameters))
 
         def fetchall(self) -> list[dict[str, Any]]:
-            return [{"now_us": 1000}]
+            return [{"now": datetime(1970, 1, 1, 0, 0, 0, 1000, tzinfo=UTC)}]
 
     monkeypatch.setattr(
         "speechnexus_backend.speech.infrastructure.runtime_postgres.time.monotonic", lambda: now[0]

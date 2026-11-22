@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 import pytest
@@ -39,7 +40,13 @@ START = 1_000.0
 TIMEOUT = 3.0
 NOW_US = 1_700_000_000_000_000
 EXPIRED = START + TIMEOUT + 0.5
-SET_TIMEOUT = "SELECT set_config('statement_timeout', %s, true)"
+SET_TIMEOUT = "SELECT set_config('statement_timeout', ?, true)"
+
+
+def _epoch_us(microseconds: int) -> datetime:
+    """替身回答时钟时用的时间点:epoch 起算的微秒,必须是带时区的时间。"""
+
+    return datetime(1970, 1, 1, tzinfo=UTC) + timedelta(microseconds=microseconds)
 
 
 class Clock:
@@ -85,10 +92,11 @@ class AdmissionPool(Pool):
         self.cursor_failure: BaseException | None = None
 
     def execute(self, query: str, parameters: tuple[object, ...] = ()) -> Rows:
-        # ``_database_now_us`` runs on the deadline connection before admission.
-        if "EXTRACT(EPOCH FROM clock_timestamp())" in query:
+        # ``_database_now_us`` runs on the deadline connection before admission;
+        # 时钟语句来自登记的 profile,替身按同一列名回答。
+        if "clock_timestamp()" in query:
             self.calls.append((query, parameters))
-            return Rows([{"now_us": NOW_US}])
+            return Rows([{"now": _epoch_us(NOW_US)}])
         return super().execute(query, parameters)
 
     @contextmanager

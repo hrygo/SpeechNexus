@@ -38,7 +38,7 @@ STATE_CONTROLLER_WITHOUT_PROBE = "controller_without_probe"
 STATE_OPERATOR_WITHOUT_ATTESTATION = "operator_without_attestation"
 STATE_OPERATOR_ELAPSED = "operator_elapsed"
 
-_NOW_US = "floor(extract(epoch FROM clock_timestamp())*1000000)::bigint"
+_NOW_US = "CAST(floor(extract(epoch FROM clock_timestamp())*1000000) AS bigint)"
 
 
 def qualification_source_state_sql(qualifications: str, *, now_us: str = _NOW_US) -> str:

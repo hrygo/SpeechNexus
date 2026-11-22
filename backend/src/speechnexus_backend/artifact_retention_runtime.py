@@ -112,7 +112,7 @@ def _verify_retention_authority(connection: SpeechConnection, schema: str) -> No
     )
     qualified = f"{schema}.{ARTIFACTS}"
     row = connection.execute(
-        "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, 'SELECT') AS held",
+        "SELECT pg_catalog.has_table_privilege(CURRENT_USER, ?, 'SELECT') AS held",
         (qualified,),
     ).fetchone()
     if row is None or not row["held"]:
@@ -139,7 +139,7 @@ def _verify_retention_authority(connection: SpeechConnection, schema: str) -> No
     )
     for column in ARTIFACT_RETENTION_UPDATE_COLUMNS:
         held = connection.execute(
-            "SELECT pg_catalog.has_column_privilege(CURRENT_USER, %s, %s, 'UPDATE') AS held",
+            "SELECT pg_catalog.has_column_privilege(CURRENT_USER, ?, ?, 'UPDATE') AS held",
             (qualified, column),
         ).fetchone()
         if held is None or not held["held"]:
@@ -149,8 +149,8 @@ def _verify_retention_authority(connection: SpeechConnection, schema: str) -> No
             )
     stray = connection.execute(
         "SELECT count(*) AS total FROM pg_catalog.pg_attribute a "
-        "WHERE a.attrelid = %s::regclass AND a.attnum > 0 AND NOT a.attisdropped "
-        "AND NOT (a.attname = ANY(%s)) "
+        "WHERE a.attrelid = CAST(? AS regclass) AND a.attnum > 0 AND NOT a.attisdropped "
+        "AND NOT (a.attname = ANY(?)) "
         "AND pg_catalog.has_column_privilege(CURRENT_USER, a.attrelid, a.attnum, 'UPDATE')",
         (qualified, list(ARTIFACT_RETENTION_UPDATE_COLUMNS)),
     ).fetchone()

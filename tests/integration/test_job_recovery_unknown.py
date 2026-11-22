@@ -11,11 +11,11 @@ from typing import Any, cast
 import pymysql
 import pytest
 from psycopg.conninfo import make_conninfo
-from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 from tests.integration.test_production_jobs import REQUEST, FaultConnection, JobDatabase
 from tests.integration.test_production_jobs import database as database
 from tests.support.job_database import MySQLJobTransactions
+from tests.support.portable_pg import connect_kwargs as portable_connect_kwargs
 
 from speechnexus_backend.speech.application.jobs import CreateJobService, JobTransactions
 from speechnexus_backend.speech.infrastructure.jobs_postgres import (
@@ -62,7 +62,7 @@ def lose_committed_reply(db: JobDatabase, monkeypatch: pytest.MonkeyPatch) -> di
         with ConnectionPool[FaultConnection](
             make_conninfo(db.url, user=db.role, password="synthetic_job_test"),
             connection_class=FaultConnection,
-            kwargs={"row_factory": dict_row},
+            kwargs=portable_connect_kwargs(),
             configure=configure,
             min_size=1,
             max_size=1,

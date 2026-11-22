@@ -78,21 +78,21 @@ ORDER BY f.accepted_at_us, c.job_id
 """
 
 _RECORD_SETTLED = (
-    f"UPDATE {RECONCILIATION_TABLE} SET last_outcome = 'settled', settled_at_us = %s, "
-    "next_check_at_us = %s, updated_at_us = %s "
-    "WHERE job_id = %s AND settled_at_us IS NULL"
+    f"UPDATE {RECONCILIATION_TABLE} SET last_outcome = 'settled', settled_at_us = ?, "
+    "next_check_at_us = ?, updated_at_us = ? "
+    "WHERE job_id = ? AND settled_at_us IS NULL"
 )
 _RECORD_RETRY = (
-    f"UPDATE {RECONCILIATION_TABLE} SET last_outcome = %s, next_check_at_us = %s, "
-    "updated_at_us = %s WHERE job_id = %s AND settled_at_us IS NULL"
+    f"UPDATE {RECONCILIATION_TABLE} SET last_outcome = ?, next_check_at_us = ?, "
+    "updated_at_us = ? WHERE job_id = ? AND settled_at_us IS NULL"
 )
 _RECORD_EXHAUSTED = (
-    f"UPDATE {RECONCILIATION_TABLE} SET last_outcome = %s, next_check_at_us = %s, "
-    "updated_at_us = %s WHERE job_id = %s AND settled_at_us IS NULL"
+    f"UPDATE {RECONCILIATION_TABLE} SET last_outcome = ?, next_check_at_us = ?, "
+    "updated_at_us = ? WHERE job_id = ? AND settled_at_us IS NULL"
 )
 _READ = (
     f"SELECT job_id, attempts, next_check_at_us, last_outcome, settled_at_us "
-    f"FROM {RECONCILIATION_TABLE} WHERE job_id = %s"
+    f"FROM {RECONCILIATION_TABLE} WHERE job_id = ?"
 )
 
 
@@ -114,7 +114,7 @@ class PostgresCancellationReconciliationStore:
         try:
             with self._pool.connection(timeout=self._timeout) as connection:
                 connection.execute(
-                    "SELECT set_config('statement_timeout', %s, true)",
+                    "SELECT set_config('statement_timeout', ?, true)",
                     (str(max(1, int(self._timeout * 1000))),),
                 )
                 return work(connection)

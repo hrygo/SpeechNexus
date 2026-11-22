@@ -5,6 +5,7 @@ This module never creates or updates qualification evidence.
 """
 
 import logging
+from datetime import UTC, datetime
 from typing import Any, cast
 
 from speechnexus_contracts import ContractValidationError
@@ -19,6 +20,7 @@ from speechnexus_backend.speech.infrastructure.qualification_source_evidence imp
     qualification_source_state_sql,
     source_refusal_detail,
 )
+from speechnexus_portable_sql.clock import ClockReader, now_us
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,17 +42,23 @@ def require_builtin_voice(
     gateway_policy_digest: str | None = None,
     native_speaker_id: str | None = None,
 ) -> dict[str, Any]:
+    try:
+        observed_us = now_us(cast(ClockReader, cursor))
+    except (LookupError, TypeError) as error:
+        raise AdmissionRejectedError("policy_or_resource_disabled") from error
+    observed_at = datetime.fromtimestamp(observed_us / 1_000_000, tz=UTC)
     cursor.execute(
-        "SELECT a.facts, floor(extract(epoch FROM a.expires_at)*1000000)::bigint AS expiry_us, "
-        "floor(extract(epoch FROM clock_timestamp())*1000000)::bigint AS now_us, "
+        "SELECT a.facts, CAST(floor(extract(epoch FROM a.expires_at)*1000000) AS bigint) AS "
+        "expiry_us, "
+        "? AS now_us, "
         f"({qualification_source_state_sql('q')}) AS source_state "
         "FROM speech_builtin_voice_qualifications q "
         "JOIN speech_builtin_voice_approvals a ON a.approval_id=q.approval_id "
         "AND a.voice_id=q.voice_id AND a.revision=q.revision "
         "AND a.revision_id=q.revision_id AND a.binding_revision_id=q.binding_revision_id "
         "JOIN speech_builtin_voice_source_approvals s ON s.source_approval_id=a.source_approval_id "
-        "WHERE q.voice_id=%s AND q.revision=%s AND q.revision_id=%s "
-        "AND q.binding_revision_id=%s AND a.expires_at > clock_timestamp() "
+        "WHERE q.voice_id=? AND q.revision=? AND q.revision_id=? "
+        "AND q.binding_revision_id=? AND a.expires_at > ? "
         "AND q.document=a.facts->'public_document' "
         "AND q.document->>'voice_id'=q.voice_id AND q.document->>'revision'=q.revision "
         "AND a.facts->>'source_approval_id'=s.source_approval_id "
@@ -59,10 +67,10 @@ def require_builtin_voice(
         "AND s.source_revision=a.facts->>'source_revision' "
         "AND s.source_digest=a.facts->>'source_digest' "
         "AND s.native_speaker_id=a.facts->>'native_speaker_id' "
-        "AND a.facts->>'instance_id'=%s AND a.facts->>'generation'=%s "
-        "AND a.facts->>'host_node_id'=%s AND a.facts->>'gateway_id'=%s "
-        "AND a.facts->>'gateway_policy_revision_id'=%s "
-        "AND s.expires_at > clock_timestamp() "
+        "AND a.facts->>'instance_id'=? AND a.facts->>'generation'=? "
+        "AND a.facts->>'host_node_id'=? AND a.facts->>'gateway_id'=? "
+        "AND a.facts->>'gateway_policy_revision_id'=? "
+        "AND s.expires_at > ? "
         "AND NOT EXISTS (SELECT 1 FROM speech_builtin_voice_source_revocations sr "
         "WHERE sr.source_approval_id=s.source_approval_id) "
         "AND NOT EXISTS (SELECT 1 FROM speech_builtin_voice_revocations r "
@@ -74,15 +82,20 @@ def require_builtin_voice(
         "WHERE r.kind='voice' AND r.object_id=q.voice_id AND r.revision=q.revision "
         "AND r.revision_id=q.revision_id)",
         (
+            # 同一个瞬间:批准/来源的有效期判定与回给调用方的时间点共用一次读取.
+            observed_us,
             voice_id,
             str(revision),
             revision_id,
             binding_revision_id,
+            observed_at,
             instance_id,
             str(instance_generation),
             host_node_id,
             gateway_id,
             policy_revision_id,
+            # 第二个到期判定:来源批准在同一瞬间仍然有效.
+            observed_at,
         ),
     )
     rows = cursor.fetchall()

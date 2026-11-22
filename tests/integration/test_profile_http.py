@@ -20,10 +20,10 @@ import uvicorn
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 from psycopg.conninfo import make_conninfo
-from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 from tests.integration.test_production_jobs import ROOT, FaultConnection, JobDatabase
 from tests.integration.test_production_jobs import database as database
+from tests.support.portable_pg import connect_kwargs as portable_connect_kwargs
 from tests.support.profile_evidence import publication_evidence
 from tests.support.profile_examples import profile_request
 from tests.unit.backend.test_health import _settings
@@ -177,7 +177,7 @@ def fault_pool(url: str, *, schema: str, max_size: int, name: str) -> SpeechPool
         ConnectionPool[FaultConnection](
             url,
             connection_class=FaultConnection,
-            kwargs={"row_factory": dict_row},
+            kwargs=portable_connect_kwargs(),
             configure=configure,
             min_size=0,
             max_size=max_size,
@@ -521,8 +521,9 @@ def test_privileged_login_cannot_hide_behind_restricted_startup_role(
     caplog: pytest.LogCaptureFixture,
     login_kind: str,
 ) -> None:
-    import psycopg
+
     from pydantic import SecretStr
+    from tests.support.portable_pg import connect as portable_pg_connect
 
     db, profile_role = http_db.db, http_db.role
     session = db.query("SELECT SESSION_USER AS name")[0]["name"]
@@ -544,7 +545,7 @@ def test_privileged_login_cannot_hide_behind_restricted_startup_role(
         url = make_conninfo(
             url, options=f"-c role={profile_role}", application_name="synthetic_login_canary"
         )
-        with psycopg.connect(url) as probe:
+        with portable_pg_connect(url) as probe:
             assert probe.execute("SELECT SESSION_USER, CURRENT_USER").fetchone() == (
                 session,
                 profile_role,

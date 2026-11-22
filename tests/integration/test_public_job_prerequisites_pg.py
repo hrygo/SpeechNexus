@@ -23,7 +23,6 @@ import uuid
 from collections.abc import Iterator
 from typing import Any
 
-import psycopg
 import pytest
 from httpx import ASGITransport, AsyncClient
 from psycopg.conninfo import make_conninfo
@@ -37,6 +36,7 @@ from tests.integration.test_public_jobs_http import (
 from tests.integration.test_public_jobs_http import (
     jobs_db as jobs_db,
 )
+from tests.support.portable_pg import connect as portable_pg_connect
 from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app
@@ -72,7 +72,7 @@ def empty_database() -> Iterator[tuple[str, str]]:
     if not url:
         pytest.fail("Configure an isolated PostgreSQL DSN; skip is not Job evidence")
     schema = "sn_empty_" + uuid.uuid4().hex[:12]
-    admin = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+    admin = portable_pg_connect(url, autocommit=True, row_factory=dict_row)
     try:
         admin.execute(f'CREATE SCHEMA "{schema}"')
         yield url, schema

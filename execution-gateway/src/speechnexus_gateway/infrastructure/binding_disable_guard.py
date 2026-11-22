@@ -20,7 +20,7 @@ class BindingDisabledError(ExecutionRejectedError):
 
 def lock_binding(cursor: BindingCursor, revision_id: str) -> tuple[str, str]:
     cursor.execute(
-        "SELECT binding_id, revision FROM speech_binding_revisions WHERE revision_id=%s",
+        "SELECT binding_id, revision FROM speech_binding_revisions WHERE revision_id=?",
         (revision_id,),
     )
     rows = cursor.fetchall()
@@ -29,7 +29,7 @@ def lock_binding(cursor: BindingCursor, revision_id: str) -> tuple[str, str]:
     binding_id, revision = rows[0]["binding_id"], rows[0]["revision"]
     cursor.execute(
         "SELECT pg_advisory_xact_lock(hashtextextended("
-        "'speechnexus:catalog:' || current_schema() || ':binding:' || %s, 0))",
+        "'speechnexus:catalog:' || current_schema() || ':binding:' || ?, 0))",
         (binding_id,),
     )
     return binding_id, revision
@@ -38,7 +38,7 @@ def lock_binding(cursor: BindingCursor, revision_id: str) -> tuple[str, str]:
 def check_binding(cursor: BindingCursor, binding_id: str, revision: str, revision_id: str) -> None:
     cursor.execute(
         "SELECT mode FROM speech_publication_retirements "
-        "WHERE kind='binding' AND object_id=%s AND revision=%s AND revision_id=%s",
+        "WHERE kind='binding' AND object_id=? AND revision=? AND revision_id=?",
         (binding_id, revision, revision_id),
     )
     retirements = cursor.fetchall()

@@ -6,13 +6,13 @@ import os
 import uuid
 from pathlib import Path
 
-import psycopg
 import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 from tests.integration.test_binding_disable_migration_pg import seed_disable
+from tests.support.portable_pg import connect as portable_pg_connect
 
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
@@ -50,7 +50,7 @@ def test_upgrade_rejects_old_snapshot_before_locks_or_ddl(
     )
     config = Config(str(ROOT / "alembic.ini"))
     config.attributes["schema"] = schema
-    admin = psycopg.connect(url, autocommit=True)
+    admin = portable_pg_connect(url, autocommit=True)
     try:
         with engine.connect() as connection:
             config.attributes["connection"] = connection
@@ -66,7 +66,7 @@ def test_upgrade_rejects_old_snapshot_before_locks_or_ddl(
             admin.execute("DROP TABLE speech_binding_disable_intents")
             seed_disable(admin)
         before = admin.execute("SELECT * FROM speech_publications").fetchall()
-        with psycopg.connect(url) as writer:
+        with portable_pg_connect(url) as writer:
             writer.execute(f'SET search_path TO "{schema}", pg_catalog')
             writer.execute(f"LOCK TABLE {locked_table} IN ROW EXCLUSIVE MODE")
             with engine.connect().execution_options(isolation_level=isolation) as connection:

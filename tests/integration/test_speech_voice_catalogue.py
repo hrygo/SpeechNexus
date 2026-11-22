@@ -24,6 +24,7 @@ from pydantic import SecretStr
 from speechnexus_contracts.voice_catalogue_http import validate_response
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
+from tests.support.portable_pg import connect as portable_pg_connect
 from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app
@@ -132,7 +133,7 @@ def catalogue_db() -> Iterator[CatalogueDB]:
         poolclass=NullPool,
         hide_parameters=True,
     )
-    owner = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+    owner = portable_pg_connect(url, autocommit=True, row_factory=dict_row)
     config = Config(str(ROOT / "alembic.ini"))
     config.attributes["schema"] = schema
     try:
@@ -205,7 +206,7 @@ async def test_published_reads_and_unchanged_workbench_take_the_same_version(
             assert fixed.json()["revision"] == "2"
             assert fixed.json()["model_binding"] == doc["model_binding"]
 
-        with psycopg.connect(catalogue_db.reader_dsn, autocommit=True) as reader:
+        with portable_pg_connect(catalogue_db.reader_dsn, autocommit=True) as reader:
             for table in ("speech_builtin_voice_qualifications", "speech_builtin_voice_approvals"):
                 with pytest.raises(psycopg.errors.InsufficientPrivilege):
                     reader.execute(f'SELECT * FROM "{catalogue_db.schema}".{table}')

@@ -19,7 +19,8 @@ def upgrade() -> None:
     # Adopt all old rows at one stable migration-transaction timestamp.
     # This is metadata, never a dispatch or physical-observation fact.
     clock = "CAST(EXTRACT(EPOCH FROM transaction_timestamp()) * 1000000 AS BIGINT)"
-    op.execute(ADOPT_RUNTIME_DELIVERIES_SQL.replace("%s", clock))
+    # 常量已迁到 `?` 契约;迁移把唯一的占位符内联成一个稳定事务时间戳。
+    op.execute(ADOPT_RUNTIME_DELIVERIES_SQL.replace("?", clock))
 
 
 def downgrade() -> None:

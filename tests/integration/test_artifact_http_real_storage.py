@@ -25,6 +25,7 @@ from pydantic import AnyHttpUrl, SecretStr
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 from tests.fake.readiness import StaticProbe
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.app import create_app
 from speechnexus_backend.settings import Settings
@@ -151,7 +152,7 @@ def sandbox() -> Iterator[Sandbox]:
     schema, role = "sn_artifact_int_" + suffix, "sn_artifact_reader_" + suffix
     bucket = "sn-artifacts-" + suffix
     _migrate(url, schema)
-    admin = psycopg.connect(url, row_factory=dict_row, autocommit=True)
+    admin = portable_pg_connect(url, row_factory=dict_row, autocommit=True)
     admin.execute(f'SET search_path TO "{schema}", pg_catalog')
     admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{PASSWORD}'")
     for grant in artifact_reader_grants(schema, role):

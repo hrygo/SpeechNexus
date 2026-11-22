@@ -11,6 +11,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import replace
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -46,6 +47,7 @@ from speechnexus_backend.speech.domain.runtime_observations import VerifiedRunti
 from speechnexus_backend.speech.infrastructure.runtime_observation_codec import (
     readiness_to_document,
 )
+from speechnexus_portable_sql.clock import now_statement
 
 DIGEST = "sha256:" + "a" * 64
 DIMENSIONS = (
@@ -329,8 +331,9 @@ class Store:
             return []
         if "to_regclass" in sql:
             return [dict(self.present)]
-        if "clock_timestamp" in sql:
-            return [{"now_us": self.now_us}]
+        if sql == now_statement():
+            # 时钟语句由 profile 登记;替身回答一个时间点,而不是 epoch 微秒。
+            return [{"now": datetime.fromtimestamp(self.now_us / 1_000_000, tz=UTC)}]
         if sql.startswith("INSERT INTO host_nodes"):
             node = cast(str, params[0])
             self.hosts.setdefault(
@@ -384,10 +387,10 @@ class Store:
         if "FROM runtime_instance_heads" in sql:
             head = self.heads.get(cast(str, params[0]))
             return [head] if head is not None else []
-        if "SELECT instance_id FROM engine_instances" in sql:
-            return [
-                {"instance_id": key[0]} for key in self.instances if key[0] == cast(str, params[0])
-            ][:1]
+        if "EXISTS (SELECT 1 FROM engine_instances" in sql:
+            # 探针现在问的是存在性;假存储按同样口径回一行布尔。
+            present = any(key[0] == cast(str, params[0]) for key in self.instances)
+            return [{"present": present}]
         if "FROM engine_instances" in sql:
             if len(params) == 2:
                 instance = self.instances.get((cast(str, params[0]), cast(int, params[1])))

@@ -108,7 +108,7 @@ class RuntimeDeliveryRuntime:
         # privilege. Provision the documented dedicated DML role separately.
         with self._pool.connection(timeout=self.settings.storage_timeout_seconds) as connection:
             connection.execute(
-                "SELECT set_config('statement_timeout',%s,true)",
+                "SELECT set_config('statement_timeout',?,true)",
                 (str(max(1, int(self.settings.storage_timeout_seconds * 1000))),),
             )
             identities = connection.execute(
@@ -120,13 +120,14 @@ class RuntimeDeliveryRuntime:
             # that startup role; inspect both names without changing roles/grants.
             for role in dict.fromkeys((identities["login"], identities["effective"])):
                 row = connection.execute(
-                    "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(%s::name,%s,'CREATE') "
-                    "OR pg_catalog.pg_has_role(%s::name,d.datdba,'MEMBER') OR EXISTS ("
+                    "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(CAST(? AS "
+                    "name),?,'CREATE') "
+                    "OR pg_catalog.pg_has_role(CAST(? AS name),d.datdba,'MEMBER') OR EXISTS ("
                     "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
-                    "ON n.oid=c.relnamespace WHERE n.nspname=%s "
-                    "AND pg_catalog.pg_has_role(%s::name,c.relowner,'MEMBER')) AS forbidden "
+                    "ON n.oid=c.relnamespace WHERE n.nspname=? "
+                    "AND pg_catalog.pg_has_role(CAST(? AS name),c.relowner,'MEMBER')) AS forbidden "
                     "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
-                    "WHERE r.rolname=%s AND d.datname=CURRENT_DATABASE()",
+                    "WHERE r.rolname=? AND d.datname=CURRENT_DATABASE()",
                     (
                         role,
                         self.settings.database_schema,
@@ -138,7 +139,8 @@ class RuntimeDeliveryRuntime:
                 ).fetchone()
                 if row is None or row["forbidden"]:
                     raise ValueError("Delivery runtime requires a non-owner role without DDL")
-            connection.execute("SELECT event_id FROM runtime_intent_deliveries LIMIT 0")
+            # 零行探针:验证列可读即可,方言没有 `LIMIT`,这里也没有分页语义。
+            connection.execute("SELECT event_id FROM runtime_intent_deliveries WHERE 1=0")
 
     async def __aenter__(self) -> Self:
         self._pool.open()

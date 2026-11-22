@@ -41,8 +41,11 @@ def _document(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def _require_publications(cursor: PublicationCursor) -> None:
-    cursor.execute(f"SELECT 1 FROM {VOICE_READER_VIEW} LIMIT 1")
-    if not cursor.fetchall():
+    # 「视图里有没有任何一行」用标准 `EXISTS` 表达:方言没有 `LIMIT`,
+    # 而这里也不是取一页,只是存在性判定。
+    cursor.execute(f"SELECT EXISTS (SELECT 1 FROM {VOICE_READER_VIEW}) AS present")
+    rows = cursor.fetchall()
+    if len(rows) != 1 or not rows[0]["present"]:
         raise PublicationUnavailableError
 
 
@@ -58,17 +61,21 @@ class PostgresVoiceCatalogue:
             # Check publication integrity before filters or pagination can hide
             # a selected fact whose exact qualification is unavailable.
             db.execute(
-                f"SELECT 1 FROM {VOICE_READER_VIEW} WHERE selected "
+                f"SELECT EXISTS (SELECT 1 FROM {VOICE_READER_VIEW} WHERE selected "
                 "AND retired_at_us IS NULL AND (document IS NULL "
                 "OR document->>'voice_id' IS DISTINCT FROM voice_id "
-                "OR document->>'revision' IS DISTINCT FROM revision) LIMIT 1"
+                "OR document->>'revision' IS DISTINCT FROM revision)) AS stale"
             )
-            if db.fetchall():
+            stale = db.fetchall()
+            # 判定必须恰好一行;返回多行说明视图/驱动违约,不能当成「没有」。
+            if len(stale) != 1 or stale[0]["stale"]:
                 raise PublicationUnavailableError
             db.execute(
+                # 这里用的是 JSONB `?` 存在运算符,不是占位符;整条语句保持旧式 `%s`,
+                # 直到运算符改成 `@>` 形式再迁。混进 `?` 会让翻译层把运算符当占位符。
                 f"SELECT * FROM {VOICE_READER_VIEW} WHERE selected AND retired_at_us IS NULL "
-                "AND (%s::text IS NULL OR document->'capabilities'->'languages' ? %s) "
-                "AND (%s::text IS NULL OR voice_id > %s) ORDER BY voice_id LIMIT %s",
+                "AND (CAST(%s AS text) IS NULL OR document->'capabilities'->'languages' ? %s) "
+                "AND (CAST(%s AS text) IS NULL OR voice_id > %s) ORDER BY voice_id LIMIT %s",
                 (language, language, cursor, cursor, limit + 1),
             )
             rows = db.fetchall()
@@ -99,7 +106,7 @@ class PostgresVoiceCatalogue:
         def read(db: PublicationCursor) -> dict[str, Any] | None:
             _require_publications(db)
             db.execute(
-                f"SELECT * FROM {VOICE_READER_VIEW} WHERE voice_id=%s AND revision=%s",
+                f"SELECT * FROM {VOICE_READER_VIEW} WHERE voice_id=? AND revision=?",
                 (voice_id, revision),
             )
             rows = db.fetchall()

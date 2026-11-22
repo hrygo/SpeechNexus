@@ -99,7 +99,7 @@ def _verify_read_only(connection: SpeechConnection, schema: str) -> None:
     for table in _DECLARED_TABLES:
         qualified = f"{schema}.{table}"
         row = connection.execute(
-            "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, 'SELECT') AS held",
+            "SELECT pg_catalog.has_table_privilege(CURRENT_USER, ?, 'SELECT') AS held",
             (qualified,),
         ).fetchone()
         if row is None or not row["held"]:

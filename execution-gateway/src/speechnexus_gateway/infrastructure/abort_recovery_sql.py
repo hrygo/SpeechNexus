@@ -20,12 +20,12 @@ from speechnexus_gateway.infrastructure.submit_sql import SubmitCursor, to_unix_
 _DUE_FILTER = (
     "FROM gateway_abort_intents a WHERE EXISTS ("
     "SELECT 1 FROM submit_intents s JOIN admission_leases l ON l.lease_id=s.lease_id "
-    "WHERE s.submit_intent_id=a.submit_intent_id AND l.gateway_id=%s "
-    "AND l.host_node_id=%s "
+    "WHERE s.submit_intent_id=a.submit_intent_id AND l.gateway_id=? "
+    "AND l.host_node_id=? "
     "AND s.execution_state NOT IN ('succeeded','failed','aborted')) "
-    "AND (a.dispatch_outcome IS NULL OR a.dispatch_outcome=%s) "
-    "AND (a.dispatch_deadline_at_us IS NULL OR a.dispatch_deadline_at_us<=%s) "
-    "AND COALESCE(NULLIF(a.next_check_at_us,0),a.received_at_us)<=%s "
+    "AND (a.dispatch_outcome IS NULL OR a.dispatch_outcome=?) "
+    "AND (a.dispatch_deadline_at_us IS NULL OR a.dispatch_deadline_at_us<=?) "
+    "AND COALESCE(NULLIF(a.next_check_at_us,0),a.received_at_us)<=? "
 )
 
 _DUE_ORDER = "COALESCE(NULLIF(a.next_check_at_us,0),a.received_at_us), a.submit_intent_id"
@@ -52,7 +52,7 @@ def take_due_aborts(
         now_us,
     )
     cursor.execute(
-        f"SELECT a.submit_intent_id {_DUE_FILTER}ORDER BY {_DUE_ORDER} LIMIT %s FOR UPDATE",
+        f"SELECT a.submit_intent_id {_DUE_FILTER}ORDER BY {_DUE_ORDER} LIMIT ? FOR UPDATE",
         (*due, limit),
     )
     taken = [row["submit_intent_id"] for row in cursor.fetchall()]
@@ -60,7 +60,7 @@ def take_due_aborts(
         return []
     marks = ", ".join(["%s"] * len(taken))
     cursor.execute(
-        f"UPDATE gateway_abort_intents SET next_check_at_us=%s WHERE submit_intent_id IN ({marks})",
+        f"UPDATE gateway_abort_intents SET next_check_at_us=? WHERE submit_intent_id IN ({marks})",
         (now_us + 30_000_000, *taken),
     )
     cursor.execute(

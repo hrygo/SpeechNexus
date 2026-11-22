@@ -46,12 +46,12 @@ def insert_asr_settlement(cursor: SettlementCursor, request: AdmissionRequest) -
     cursor.execute(
         "INSERT INTO speech_asr_settlement "
         "(lease_id,operation_id,attempt_id,gateway_id,host_node_id,next_check_at_us) "
-        "VALUES (%s,%s,%s,%s,%s,0) ON CONFLICT (lease_id) DO NOTHING",
+        "VALUES (?,?,?,?,?,0) ON CONFLICT (lease_id) DO NOTHING",
         values,
     )
     cursor.execute(
         "SELECT lease_id,operation_id,attempt_id,gateway_id,host_node_id "
-        "FROM speech_asr_settlement WHERE lease_id=%s",
+        "FROM speech_asr_settlement WHERE lease_id=?",
         (stage.lease_id,),
     )
     rows = cursor.fetchall()
@@ -69,5 +69,5 @@ ASR_SETTLEMENT_BACKFILL = """INSERT INTO speech_asr_settlement
     WHERE l.lease_state <> 'released'
       AND o.operation_id LIKE 'operation-%'
       AND (CASE WHEN o.operation_id LIKE 'operation-%'
-                THEN o.request_document::jsonb->>'kind' END) = 'asr_file'
+                THEN CAST(o.request_document AS jsonb)->>'kind' END) = 'asr_file'
     ON CONFLICT (lease_id) DO NOTHING"""

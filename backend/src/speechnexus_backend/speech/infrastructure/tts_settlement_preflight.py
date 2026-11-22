@@ -19,10 +19,13 @@ and would otherwise hide held capacity. A future identity change fails closed
 (startup refused) instead of silently ignoring held capacity.
 """
 
+from typing import cast
+
 import psycopg
 
 from speechnexus_backend.speech.domain.job_prerequisites import MIGRATION_COMMAND
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
+from speechnexus_portable_sql.clock import ClockReader, now_us
 
 
 class SettlementPreflightUnavailableError(RuntimeError):
@@ -38,11 +41,11 @@ class SettlementPreflightUnavailableError(RuntimeError):
 
 
 _TTS_KINDS = (
-    "o.request_document::jsonb->>'kind' IN ('tts_file','builtin_voice_qualification_probe')"
+    "CAST(o.request_document AS jsonb)->>'kind' IN ('tts_file','builtin_voice_qualification_probe')"
 )
 _TTS_COMMANDS = (
-    "o.request_document::jsonb#>>'{gateway_request,command,kind}'='tts' "
-    "OR o.request_document::jsonb#>>'{gateway_request,command,task_kind}'='tts_file'"
+    "CAST(o.request_document AS jsonb)#>>'{gateway_request,command,kind}'='tts' "
+    "OR CAST(o.request_document AS jsonb)#>>'{gateway_request,command,task_kind}'='tts_file'"
 )
 # The dispatcher settles a past-deadline Job as soon as its claim is due; allow
 # one bounded window beyond the frozen deadline before treating a still-held
@@ -59,11 +62,10 @@ def require_complete_tts_roots(pool: SpeechPool, *, timeout_seconds: float = 3) 
     """Read only; an operator must reconcile the exact original identities separately."""
     if not 0 < timeout_seconds <= 30:
         raise ValueError("TTS preflight requires a bounded timeout")
+    # 「现在」是参数:同一个瞬间要用于两处判定,且语句里不再有品牌时钟函数。
     query = (
         "SELECT l.operation_id,l.attempt_id,l.lease_id FROM admission_leases l "
         "JOIN admission_operations o ON o.operation_id=l.operation_id "
-        "CROSS JOIN (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 "
-        "AS BIGINT) AS now_us) AS clock "
         "WHERE l.lease_state<>'released' AND ("
         # Historical synchronous TTS/qualification admissions own a root. A
         # public Job admission has the same kind label but is settled by the
@@ -75,7 +77,7 @@ def require_complete_tts_roots(pool: SpeechPool, *, timeout_seconds: float = 3) 
         # passed an unreleased lease is held capacity that nobody settled. The
         # `job-` prefix is the durable public identity; do not match on the
         # command kind, which a redacted public row no longer has.
-        f"l.deadline_at_us<=clock.now_us - {_PUBLIC_SETTLEMENT_GRACE_US} "
+        f"l.deadline_at_us<=? - {_PUBLIC_SETTLEMENT_GRACE_US} "
         "AND l.operation_id LIKE 'job-%' "
         f"AND {_ROOT_ABSENT}"
         ") LIMIT 1"
@@ -84,10 +86,11 @@ def require_complete_tts_roots(pool: SpeechPool, *, timeout_seconds: float = 3) 
         with pool.connection(timeout=timeout_seconds) as conn:
             conn.execute("SET TRANSACTION READ ONLY")
             conn.execute(
-                "SELECT set_config('statement_timeout',%s,true)",
+                "SELECT set_config('statement_timeout',?,true)",
                 (str(max(1, int(timeout_seconds * 1000))),),
             )
-            row = conn.execute(query).fetchone()
+            observed_us = now_us(cast(ClockReader, conn))
+            row = conn.execute(query, (observed_us,)).fetchone()
     except (psycopg.errors.InvalidSchemaName, psycopg.errors.UndefinedTable) as missing:
         reason = str(missing).strip().splitlines()[0][:300]
         raise SettlementPreflightUnavailableError(

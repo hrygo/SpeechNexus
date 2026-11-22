@@ -421,4 +421,10 @@ ContractError: statement expects 4 parameters, got 5
 需要的是「按列类型显式 CAST 的定元/变长列表」,由 `ListMarker` 携带元素类型而不是猜 —— 那是下一
 个契约变更,不在本卡内硬做。
 
-其余 6 个模块的 12 处保留:调用点都在纯 qmark 语句上,且参数与列类型一致。
+工作台另外两处(`postgres_exports`、`postgres_render_units`)随后同样判红
+(`test_workbench_runtime_export_dispatch` 报 `503`),一并撤回:workbench 的 id 列是 uuid,
+`IN (?)` 的文本参数让比较算子落到文本分支。基线 877 → 894。
+
+保留的 4 处都是「参数是文本、列也是文本」或「参数是文本、比较的是名字」的语句:
+`artifact_retention_runtime`(列名)、`job_schema_preflight`(关系名)、`assets_postgres`(asset id)。
+**workbench 的 uuid 列需要标记携带元素类型才能迁移**,这是下一个契约变更的明确边界。

@@ -963,9 +963,9 @@ f'GRANT SELECT, INSERT (authorization_id, …) ON "{schema}".speech_builtin_voic
 
 ### 8.38 剩下 12 处 `ON CONFLICT` 全是 `DO NOTHING`,可以统一走 `insert_if_absent`
 
-数完剩下的 upsert:`engine_registration` 2 处、10 个单点文件各 1 处,形态**全部**是
-`ON CONFLICT (…) DO NOTHING`(没有 `DO UPDATE` 的语义差别)。这正好是 §8.24 那个原语的用例:
-把插入包在保存点里,唯一冲突回滚到保存点,返回 `False`,事务保持可用。
+数完剩下的 upsert:`engine_registration` 2 处、10 个单点文件各 1 处。**这条结论当时写错了**:
+多数是 `DO NOTHING`,但至少两处是 `DO UPDATE`(见 §8.40 的更正),它们需要的不是「插入或忽略」
+而是「插入或就地更新」,不能用 `insert_if_absent` 顶替。
 
 本轮先转两处:
 
@@ -1000,3 +1000,28 @@ f'GRANT SELECT, INSERT (authorization_id, …) ON "{schema}".speech_builtin_voic
 
 这条也顺带说明 #1100 的一个通用风险:把「PG 免费提供的语义」换成显式原语时,要连它**在哪些事务
 状态下成立**一起搬过来,否则会在自动提交的调用点上炸。
+
+### 8.40 更正上一条:剩下的 upsert 不是同一形态
+
+§8.38 写「剩下 12 处全是 `ON CONFLICT DO NOTHING`」。那是我按文件 grep 第一条匹配得出的结论,
+**错了**。逐条看完整语句后:
+
+| 位置 | 形态 | 能否用 `insert_if_absent` |
+| --- | --- | --- |
+| `tts_settlement_sql` / `tts_settlement_postgres` / `voice_capability_evidence_postgres` / `voice_publications_postgres` | `DO NOTHING` | 可以,本轮已转 |
+| `engine_registration`(2 处) | `DO NOTHING` + 紧跟一次读回 | 可以,但同文件还有列清单拼接待处理 |
+| `job_dispatch_postgres._record_cancellation_not_submitted` | CTE 里 `DO NOTHING` | 可以,需先把 `now_us` 从 CTE 挪成参数 |
+| `job_cancellation_reconciliation_postgres` | CTE 里 `DO UPDATE … WHERE … RETURNING` | **不可以**:它是「抢占并累加尝试次数」的原子更新,语义不是插入或忽略 |
+| `workbench/postgres_teleprompter` | `DO UPDATE SET …` | **不可以**,同上 |
+| `sqlite_intent_store`(node-controller) | `DO NOTHING` | 该包不依赖 `portable_sql`,需先决定依赖方向 |
+
+这一轮转掉四处 `DO NOTHING`:`tts_settlement_sql`、`tts_settlement_postgres`、
+`voice_capability_evidence_postgres`、`voice_publications_postgres`。基线 **307 → 303**。
+
+注入即红(先 ratchet 再注入,否则会被 ledger 吸收成 `fixed`):
+在 `tts_settlement_sql` 把 `ON CONFLICT (lease_id) DO NOTHING` 加回去 →
+`findings=304` / `new=1` / `RESULT FAIL: portable SQL subset regressed`。
+
+`DO UPDATE` 那三处留给后续切片:它们要的是「冲突即更新并返回行」,而受限方言里没有
+`ON CONFLICT`、`MERGE` 或 `RETURNING`,得用「先 CAS 更新,`rowcount==0` 再插入」的两步原语 ——
+那需要一张新卡的设计,不在本轮拍脑袋实现。

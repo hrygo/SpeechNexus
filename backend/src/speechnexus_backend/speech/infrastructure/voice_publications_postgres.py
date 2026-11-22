@@ -52,7 +52,7 @@ from speechnexus_backend.speech.infrastructure.voice_publication_schema import (
     REVISION_TABLE,
 )
 from speechnexus_portable_sql.clock import ClockReader, now_us
-from speechnexus_portable_sql.transaction import is_savepoint_control
+from speechnexus_portable_sql.transaction import insert_if_absent, is_savepoint_control
 from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 _SELECT_DRAFT = (
@@ -339,12 +339,11 @@ class PostgresVoicePublications:
                 published_at_us,
             ),
         )
-        cursor.execute(
+        insert_if_absent(
+            cursor,
             "INSERT INTO speech_asset_references "
             "(reference_id, asset_id, consumer_kind, consumer_id, consumer_revision, "
-            "created_at_us) VALUES (?,?,'voice_revision',?,?,?) "
-            "ON CONFLICT (asset_id, consumer_kind, consumer_id, consumer_revision) "
-            "DO NOTHING",
+            "created_at_us) VALUES (?,?,'voice_revision',?,?,?)",
             (
                 "ref-" + revision_id,
                 material.asset_id,

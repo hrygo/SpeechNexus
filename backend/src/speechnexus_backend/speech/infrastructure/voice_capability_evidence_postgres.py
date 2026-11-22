@@ -24,7 +24,7 @@ from speechnexus_backend.speech.domain.voice_capability_evidence import (
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.voice_publication_schema import EVIDENCE_TABLE
 from speechnexus_portable_sql.clock import ClockReader, now_us
-from speechnexus_portable_sql.transaction import is_savepoint_control
+from speechnexus_portable_sql.transaction import insert_if_absent, is_savepoint_control
 from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 
@@ -363,13 +363,14 @@ class PostgresVoiceEvidenceRecorder:
             facts, report, measured_by=measured_by, measured_at_us=measured_at_us
         )
         row = evidence.as_row()
-        cursor.execute(
+        insert_if_absent(
+            cursor,
             "INSERT INTO speech_voice_capability_evidence "
             "(evidence_id, draft_id, draft_revision, validation_job_id, validation_id, "
             "binding_revision_id, report_artifact_id, report_sha256, report_receipt_id, "
             "evidence_kind, measured_by, measured_at_us, capabilities, coverage, material, "
             "evidence_digest) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,CAST(? AS jsonb),"
-            "CAST(? AS jsonb),CAST(? AS jsonb),?) ON CONFLICT (evidence_id) DO NOTHING",
+            "CAST(? AS jsonb),CAST(? AS jsonb),?)",
             (
                 row["evidence_id"],
                 row["draft_id"],

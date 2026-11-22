@@ -25,6 +25,7 @@ from speechnexus_backend.speech.infrastructure.publications_sql import (
 from speechnexus_backend.speech.interfaces.binding_release_evidence import (
     verify_binding_release_evidence,
 )
+from speechnexus_portable_sql.clock import ClockReader, now_us
 
 
 class BuiltinVoicePublicationRejectedError(Exception):
@@ -91,16 +92,17 @@ def publish_builtin_voice(
             targets[0]["installation_id"],
         ) != (database, schema, installation_id):
             raise BuiltinVoicePublicationRejectedError("target_changed")
+        observed_at = _portable_now_at(cursor)
         cursor.execute(
             "SELECT a.*, s.source_revision, s.source_digest, s.native_speaker_id AS source_speaker "
             "FROM speech_builtin_voice_approvals a JOIN speech_builtin_voice_source_approvals s "
             "ON s.source_approval_id=a.source_approval_id WHERE a.approval_id=? "
-            "AND a.expires_at > clock_timestamp() AND s.expires_at > clock_timestamp() "
+            "AND a.expires_at > ? AND s.expires_at > ? "
             "AND NOT EXISTS (SELECT 1 FROM speech_builtin_voice_revocations r "
             "WHERE r.approval_id=a.approval_id) "
             "AND NOT EXISTS (SELECT 1 FROM speech_builtin_voice_source_revocations r "
             "WHERE r.source_approval_id=s.source_approval_id)",
-            (approval_id,),
+            (approval_id, observed_at, observed_at),
         )
         rows = cursor.fetchall()
         if len(rows) != 1:
@@ -127,11 +129,7 @@ def publish_builtin_voice(
             or (d["voice_id"], d["revision"]) != (a["voice_id"], a["revision"])
         ):
             raise BuiltinVoicePublicationRejectedError("evidence_mismatch")
-        cursor.execute(
-            "SELECT CAST(floor(extract(epoch FROM clock_timestamp()) * 1000000) AS bigint) AS "
-            "now_us"
-        )
-        now_us = int(cursor.fetchall()[0]["now_us"])
+        now_us = _portable_now_us(cursor)
         if f["checked_at_us"] > now_us:
             raise BuiltinVoicePublicationRejectedError("qualification_from_future")
         source = _recorded_source(cursor, approval_id, a, f, now_us)
@@ -226,16 +224,17 @@ def publish_builtin_voice(
         ):
             raise BuiltinVoicePublicationRejectedError("binding_evidence_mismatch")
         # Recheck revocations after acquiring the same voice lock as revocation writers.
+        observed_at = _portable_now_at(cursor)
         cursor.execute(
             "SELECT 1 FROM speech_builtin_voice_approvals a "
             "JOIN speech_builtin_voice_source_approvals s "
             "ON s.source_approval_id=a.source_approval_id WHERE a.approval_id=? "
-            "AND a.expires_at > clock_timestamp() AND s.expires_at > clock_timestamp() "
+            "AND a.expires_at > ? AND s.expires_at > ? "
             "AND NOT EXISTS (SELECT 1 FROM speech_builtin_voice_revocations r "
             "WHERE r.approval_id=a.approval_id) "
             "AND NOT EXISTS (SELECT 1 FROM speech_builtin_voice_source_revocations r "
             "WHERE r.source_approval_id=s.source_approval_id)",
-            (approval_id,),
+            (approval_id, observed_at, observed_at),
         )
         if len(cursor.fetchall()) != 1:
             raise BuiltinVoicePublicationRejectedError("not_qualified")
@@ -374,3 +373,18 @@ def _recorded_source(
     return RecordedSource(
         "operator_attested", "operator_attestation", cast(str, attestation["attestation_id"]), None
     )
+
+
+def _portable_now_us(cursor: Any) -> int:
+    """「现在」只从便携时钟读一次;失败按本模块的错误语义上报."""
+
+    try:
+        return now_us(cast(ClockReader, cursor))
+    except (LookupError, TypeError) as error:
+        raise BuiltinVoicePublicationRejectedError("clock_unavailable") from error
+
+
+def _portable_now_at(cursor: Any) -> datetime:
+    """把一个时间点交给语句做到期判定;与 `_portable_now_us` 同一读取点."""
+
+    return datetime.fromtimestamp(_portable_now_us(cursor) / 1_000_000, tz=UTC)

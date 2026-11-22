@@ -57,6 +57,8 @@ from speechnexus_backend.speech.infrastructure.transcription_recipe import (
     TranscriptionRecipe,
     load_transcription_recipe,
 )
+from speechnexus_portable_sql.clock import ClockReader
+from speechnexus_portable_sql.clock import now_us as now_us_for
 from speechnexus_portable_sql.psycopg_driver import PortableConnection
 from speechnexus_portable_sql.psycopg_driver import connect as portable_connect
 
@@ -321,11 +323,13 @@ class _Cursor:
     def fetchall(self) -> list[Row]:
         return cast(list[Row], list(self._cursor.fetchall()))
 
+    def fetchone(self) -> Row | None:
+        rows = self.fetchall()
+        return rows[0] if rows else None
+
     def clock(self) -> int:
-        self.execute(
-            "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) AS now_us"
-        )
-        return int(self.fetchall()[0]["now_us"])
+        # 「现在」只从便携时钟读一次;语句里不再有品牌函数。
+        return now_us_for(cast(ClockReader, self))
 
 
 def _rows(cursor: _Cursor, query: str, parameters: tuple[object, ...] = ()) -> list[Row]:

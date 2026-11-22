@@ -7,7 +7,7 @@ import hashlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from psycopg.types.json import Jsonb
 from speechnexus_contracts.builtin_voice_qualification import parse
@@ -32,6 +32,8 @@ from speechnexus_backend.speech.infrastructure.runtime_observation_codec import 
 from speechnexus_backend.speech.interfaces.binding_release_evidence import (
     verify_binding_release_evidence,
 )
+from speechnexus_portable_sql.clock import ClockReader
+from speechnexus_portable_sql.clock import now_us as _portable_now_us
 
 
 class ProbeAuthorizationError(ValueError):
@@ -164,11 +166,16 @@ def issue_probe_authorization(
         cursor.execute(
             "SELECT s.source_approval_id FROM speech_builtin_voice_source_approvals s "
             "WHERE s.source_approval_id=? AND s.voice_id=? "
-            "AND s.native_speaker_id='Vivian' AND s.expires_at>clock_timestamp() "
+            "AND s.native_speaker_id='Vivian' AND s.expires_at > ? "
             "AND s.expires_at >= to_timestamp(? / 1000000.0) "
             "AND NOT EXISTS (SELECT 1 FROM speech_builtin_voice_source_revocations r "
             "WHERE r.source_approval_id=s.source_approval_id)",
-            (auth["source_approval_id"], auth["voice_id"], auth["expires_at_us"]),
+            (
+                auth["source_approval_id"],
+                auth["voice_id"],
+                datetime.fromtimestamp(_now_us(cursor) / 1_000_000, tz=UTC),
+                auth["expires_at_us"],
+            ),
         )
         if len(cursor.fetchall()) != 1:
             raise ProbeAuthorizationError("probe_authorization_unverified")
@@ -251,10 +258,7 @@ def issue_probe_authorization(
             auth["template_config_digest"],
         ):
             raise ProbeAuthorizationError("probe_authorization_unverified")
-        cursor.execute(
-            "SELECT CAST(floor(extract(epoch from clock_timestamp())*1000000) AS bigint) AS now_us"
-        )
-        now_us = cursor.fetchall()[0]["now_us"]
+        now_us = _now_us(cursor)
         require_native_ready(
             observed,
             ExpectedNativeRuntime(
@@ -279,3 +283,12 @@ def issue_probe_authorization(
         return "committed"
 
     return store._run(operation, preserve=(ProbeAuthorizationError,))
+
+
+def _now_us(cursor: Any) -> int:
+    """「现在」只从便携时钟读一次;失败按本模块的错误语义上报."""
+
+    try:
+        return _portable_now_us(cast(ClockReader, cursor))
+    except (LookupError, TypeError) as error:
+        raise ProbeAuthorizationError("probe_authorization_unverified") from error

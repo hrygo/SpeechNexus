@@ -6,7 +6,7 @@ import hashlib
 import json
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 from psycopg.types.json import Jsonb
 from speechnexus_contracts.voice_catalogue_http import validate_response
@@ -25,6 +25,8 @@ from speechnexus_backend.speech.infrastructure.publications_sql import find_publ
 from speechnexus_backend.speech.interfaces.binding_release_evidence import (
     verify_binding_release_evidence,
 )
+from speechnexus_portable_sql.clock import ClockReader
+from speechnexus_portable_sql.clock import now_us as _portable_now_us
 
 
 class ProbeApprovalError(ValueError):
@@ -211,10 +213,10 @@ def _commit_verified_probe(
             "FROM speech_builtin_voice_probe_authorizations a "
             "JOIN speech_builtin_voice_source_approvals s "
             "ON s.source_approval_id=a.source_approval_id AND s.voice_id=a.voice_id "
-            "WHERE a.authorization_id=? AND s.expires_at>clock_timestamp() "
+            "WHERE a.authorization_id=? AND s.expires_at > ? "
             "AND NOT EXISTS (SELECT 1 FROM speech_builtin_voice_source_revocations r "
             "WHERE r.source_approval_id=s.source_approval_id)",
-            (authorization_id,),
+            (authorization_id, _now_at(cursor)),
         )
         source = cursor.fetchall()
         if len(source) != 1 or source[0]["intent"] != auth:
@@ -262,8 +264,7 @@ def _commit_verified_probe(
         definition = find_binding_revision_document(cursor, auth["binding_id"], rev)
         if publication is None or evidence is None or definition is None:
             raise ProbeApprovalError("probe_approval_unverified")
-        cursor.execute("SELECT clock_timestamp() AS now")
-        now = cursor.fetchall()[0]["now"]
+        now = _now_at(cursor)
         release = verify_binding_release_evidence(
             publication=publication,
             recorded_evidence=evidence,
@@ -428,3 +429,14 @@ def _commit_verified_probe(
         return "committed"
 
     return store._run(operation, preserve=(ProbeApprovalError,))
+
+
+def _now_at(cursor: Any) -> datetime:
+    """「现在」只从便携时钟读一次;失败按本模块的错误语义上报."""
+
+    try:
+        return datetime.fromtimestamp(
+            _portable_now_us(cast(ClockReader, cursor)) / 1_000_000, tz=UTC
+        )
+    except (LookupError, TypeError) as error:
+        raise ProbeApprovalError("probe_approval_unverified") from error

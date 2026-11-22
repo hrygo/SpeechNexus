@@ -71,6 +71,9 @@ class Cursor:
         elif query == "SELECT clock_timestamp() AS now":
             # 时钟语句来自登记的 profile;替身按同一列名回答。
             self.rows = [{"now": datetime.fromtimestamp(1_700_000_000.000003, tz=UTC)}]
+        elif query.startswith("UPDATE speech_publication_heads"):
+            # 头指针先更新、未命中再插入;替身里头行总是存在。
+            self.head, self.rowcount = str(parameters[0]), 1
         elif query.startswith("INSERT INTO speech_publication_heads"):
             self.head, self.rowcount = str(parameters[1]), 1
         elif query.startswith("INSERT INTO speech_publication_retirements"):

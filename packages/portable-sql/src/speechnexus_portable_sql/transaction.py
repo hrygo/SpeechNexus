@@ -116,6 +116,16 @@ def _is_unique_violation(error: BaseException) -> bool:
     return len(args) > 0 and args[0] == _MYSQL_DUP_ENTRY
 
 
+def _in_autocommit(cursor: Any) -> bool:
+    """连接是否处于自动提交模式;取不到状态时按「有事务」处理.
+
+    取不到就当有事务,是因为错开保存点的代价(事务被中止)远大于多开一个保存点的代价。
+    """
+
+    connection = getattr(cursor, "connection", None)
+    return bool(getattr(connection, "autocommit", False))
+
+
 def insert_if_absent(cursor: Any, statement: str, params: Any = ()) -> bool:
     """插入一行;该行已存在时返回 `False`,事务保持可用.
 
@@ -125,8 +135,20 @@ def insert_if_absent(cursor: Any, statement: str, params: Any = ()) -> bool:
 
     返回 `True` 表示这一次真的插入了;`False` 表示已存在(并发写者先到,或自己先前插过)。
     其它异常原样抛出。
+
+    自动提交(autocommit)连接没有外层事务可保护:此时语句本身就是独立事务,唯一冲突只中止
+    这一条语句,不需要也不允许 `SAVEPOINT`(PG 会报 `SAVEPOINT can only be used in
+    transaction blocks`)。所以按连接的事务状态决定是否开保存点,而不是按调用方猜测。
     """
 
+    if _in_autocommit(cursor):
+        try:
+            cursor.execute(statement, params)
+        except Exception as error:
+            if _is_unique_violation(error):
+                return False
+            raise
+        return True
     try:
         with savepoint(cursor, name="portable_sql_insert_if_absent"):
             cursor.execute(statement, params)

@@ -982,3 +982,21 @@ f'GRANT SELECT, INSERT (authorization_id, …) ON "{schema}".speech_builtin_voic
 「语句里没有 `ON CONFLICT` + 前面有 `SAVEPOINT`」)。这类断言在 §8.29 已经踩过一次。
 
 基线 **309 → 307**。
+
+### 8.39 原语不能假设调用方有外层事务
+
+`insert_if_absent` 第一版无条件开保存点。CI 的 PG 集成分片立刻红:
+`psycopg.errors.NoActiveSqlTransaction: SAVEPOINT can only be used in transaction blocks` ——
+发布降级用例在自动提交连接上调用 `append_publication`。`ON CONFLICT` 在自动提交下能用,
+所以这是转换引入的**语义收窄**,不是测试写法问题。
+
+修法按连接的事务状态决定,而不是让每个调用方自己开事务:
+
+- 自动提交:语句本身就是独立事务,唯一冲突只中止这一条语句 → 直接执行,捕获唯一冲突返回 `False`;
+- 否则:包保存点(保持冲突后外层事务可用)。
+
+判据:`_in_autocommit` 取不到状态时**按有事务处理** —— 错开保存点的代价(事务被中止)远大于
+多开一个保存点。两条新用例覆盖自动提交下的成功与重复;注入即红(删掉该分支 → `2 failed, 3 passed`)。
+
+这条也顺带说明 #1100 的一个通用风险:把「PG 免费提供的语义」换成显式原语时,要连它**在哪些事务
+状态下成立**一起搬过来,否则会在自动提交的调用点上炸。

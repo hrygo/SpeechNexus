@@ -12,6 +12,7 @@ from speechnexus_backend.speech.domain.tts_settlement import (
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_portable_sql.clock import now_us
+from speechnexus_portable_sql.transaction import insert_if_absent
 
 
 class PostgresTtsSettlementStore:
@@ -70,10 +71,10 @@ class PostgresTtsSettlementStore:
                 "|| current_schema() || ':' || ?, 0))",
                 (operation_id,),
             )
-            conn.execute(
+            insert_if_absent(
+                conn,
                 "INSERT INTO speech_tts_cancellation (operation_id,reason,requested_at_us) "
-                "VALUES (?,?,?) "
-                "ON CONFLICT (operation_id) DO NOTHING",
+                "VALUES (?,?,?)",
                 (operation_id, reason, now_us(conn)),
             )
             conn.execute(

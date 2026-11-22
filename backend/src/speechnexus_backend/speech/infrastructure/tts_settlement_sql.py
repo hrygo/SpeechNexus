@@ -8,6 +8,7 @@ from typing import Any, Protocol, cast
 from speechnexus_contracts.execution import parse
 
 from speechnexus_backend.speech.domain.admission import AdmissionRejectedError
+from speechnexus_portable_sql.transaction import insert_if_absent
 
 
 class SettlementCursor(Protocol):
@@ -64,10 +65,11 @@ def insert_tts_settlement(cursor: SettlementCursor, request: Any, deadline_at_us
         target,
         deadline_at_us,
     )
-    cursor.execute(
+    # 受限方言没有 `ON CONFLICT`:重复租约走保存点里的插入,冲突回滚到保存点后照常读回。
+    insert_if_absent(
+        cursor,
         "INSERT INTO speech_tts_settlement (lease_id,operation_id,attempt_id,submit_intent_id,"
-        "target_document,deadline_at_us,abort_reason) VALUES (?,?,?,?,?,?,?) "
-        "ON CONFLICT (lease_id) DO NOTHING",
+        "target_document,deadline_at_us,abort_reason) VALUES (?,?,?,?,?,?,?)",
         (*values, reason),
     )
     cursor.execute(

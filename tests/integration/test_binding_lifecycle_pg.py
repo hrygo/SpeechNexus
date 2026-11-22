@@ -40,7 +40,6 @@ from speechnexus_backend.speech.application.public_jobs import (
 from speechnexus_backend.speech.domain.publications import PublicationUnavailableError
 from speechnexus_backend.speech.infrastructure import publications_postgres
 from speechnexus_backend.speech.infrastructure.binding_lifecycle_postgres import (
-    PostgresAuditEvents,
     PostgresBindingLifecycle,
 )
 from speechnexus_backend.speech.infrastructure.job_schema import (
@@ -579,22 +578,6 @@ async def test_retire_rollback_etag_selection_inflight_jobs_and_audit(sandbox: S
         "WHERE object_id='tts-quality' AND revision='2'"
     ).fetchone()
     assert retirement == ("retire", "superseded by revision 3")
-
-    events, cursor = PostgresAuditEvents(sandbox.pool).list(limit=20, cursor=None, action=None)
-    assert cursor is None
-    assert [event["action"] for event in events] == [
-        "model_binding.activate",
-        "model_binding.retire",
-    ]
-    activate_event, retire_event = events
-    assert activate_event["result_status"] == "published"
-    assert activate_event["revision"] == "1"
-    assert retire_event["result_status"] == "retired"
-    assert retire_event["revision"] == "2"
-    assert retire_event["disabled_reason"] is None
-    assert retire_event["actor_type"] == "anonymous"
-    assert retire_event["change_summary_json"]["reason"] == "superseded by revision 3"
-    assert len(retire_event["request_id"]) <= 128 and retire_event["request_id"]
 
 
 def test_lifecycle_runtime_accepts_only_the_least_privilege_role(sandbox: Sandbox) -> None:

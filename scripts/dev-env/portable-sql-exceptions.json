@@ -595,14 +595,6 @@
     },
     {
       "rule": "sql-string-building",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/binding_lifecycle_postgres.py",
-      "count": 7,
-      "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "sql-string-building",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/builtin_voice_qualification.py",
       "count": 1,
       "card": "#1100",
@@ -926,6 +918,12 @@
       "card": "#1102",
       "reason": "JSON 列改列式短字符串 + 对象存储读法",
       "release": "#1102 完成时删除本条目"
+    },
+    {
+      "rule": "vendor-json",
+      "path": "backend/src/speechnexus_backend/speech/infrastructure/binding_lifecycle_postgres.py",
+      "card": "#1102",
+      "reason": "事件摘要列是 jsonb,绑定文本需要 CAST(? AS jsonb);该列的类型与适配属于物理 profile(#1102),不是 DML 收敛能改的"
     },
     {
       "rule": "vendor-json",

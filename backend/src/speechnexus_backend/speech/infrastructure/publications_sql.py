@@ -111,7 +111,7 @@ def append_publication(
     # so a later explicit activation can select an older stored revision without
     # rewriting or republishing it.  The publication trigger already advanced
     # the catalogue version for this insert.
-    _advance_head(cursor, publication)
+    advance_publication_head(cursor, publication)
     return True
 
 
@@ -125,7 +125,7 @@ _HEAD_INSERT = (
 )
 
 
-def _advance_head(cursor: PublicationCursor, publication: Publication) -> None:
+def advance_publication_head(cursor: PublicationCursor, publication: Publication) -> None:
     """把可变头指针移到这次发布的版本.
 
     受限方言没有 `ON CONFLICT … DO UPDATE`,也没有 `RETURNING`,所以用「先更新、再插入」:

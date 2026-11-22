@@ -34,14 +34,14 @@ from speechnexus_backend.speech.infrastructure.binding_disable_barrier import lo
 from speechnexus_backend.speech.infrastructure.binding_publication_evidence_sql import (
     insert_evidence,
 )
-from speechnexus_backend.speech.infrastructure.catalog_revision_schema import RETIREMENT_TABLE
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema import (
-    DISABLE_INTENT_TABLE,
-    EVENT_TABLE,
     HEAD_TABLE,
 )
-from speechnexus_backend.speech.infrastructure.publications_sql import append_publication
+from speechnexus_backend.speech.infrastructure.publications_sql import (
+    advance_publication_head,
+    append_publication,
+)
 from speechnexus_portable_sql.clock import ClockReader, now_us
 from speechnexus_portable_sql.transaction import is_savepoint_control
 from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
@@ -162,7 +162,7 @@ class PostgresBindingLifecycle:
             raise BindingLifecycleConflictError("revision_not_current")
         occurred_at_us = self._clock(cursor)
         cursor.execute(
-            f"INSERT INTO {RETIREMENT_TABLE} "
+            "INSERT INTO speech_publication_retirements "
             "(kind, object_id, revision, revision_id, retired_at_us, mode, reason) "
             "VALUES ('binding', ?, ?, ?, ?, ?, ?)",
             (
@@ -177,7 +177,7 @@ class PostgresBindingLifecycle:
         if cursor.rowcount != 1:
             raise BindingLifecycleUnavailableError
         cursor.execute(
-            f"DELETE FROM {HEAD_TABLE} WHERE kind='binding' AND object_id=? "
+            "DELETE FROM speech_publication_heads WHERE kind='binding' AND object_id=? "
             "AND revision=? AND revision_id=?",
             (command.binding_id, command.revision, state["revision_id"]),
         )
@@ -201,7 +201,10 @@ class PostgresBindingLifecycle:
             },
         )
         if command.mode == "disable":
-            cursor.execute(f"INSERT INTO {DISABLE_INTENT_TABLE} (event_id) VALUES (?)", (event_id,))
+            cursor.execute(
+                "INSERT INTO speech_binding_disable_intents (event_id) VALUES (?)",
+                (event_id,),
+            )
             if cursor.rowcount != 1:
                 raise BindingLifecycleUnavailableError
         return self._receipt(
@@ -235,14 +238,15 @@ class PostgresBindingLifecycle:
             or head["revision_id"] != state["revision_id"]
         )
         if changed:
-            cursor.execute(
-                f"INSERT INTO {HEAD_TABLE} "
-                "(kind, object_id, revision, revision_id, updated_at_us) "
-                "VALUES ('binding', ?, ?, ?, ?) "
-                "ON CONFLICT (kind, object_id) DO UPDATE SET "
-                "revision=EXCLUDED.revision, revision_id=EXCLUDED.revision_id, "
-                "updated_at_us=EXCLUDED.updated_at_us",
-                (command.binding_id, command.revision, state["revision_id"], occurred_at_us),
+            advance_publication_head(
+                cursor,
+                Publication(
+                    "binding",
+                    command.binding_id,
+                    int(command.revision),
+                    state["revision_id"],
+                    occurred_at_us,
+                ),
             )
             self._advance_catalog(cursor, occurred_at_us)
         policy_revision = self._catalog_revision(cursor)
@@ -373,7 +377,7 @@ class PostgresBindingLifecycle:
             (command.key_digest,),
         )
         cursor.execute(
-            "SELECT * FROM " + EVENT_TABLE + " WHERE idempotency_key_digest=?",
+            "SELECT * FROM speech_publication_lifecycle_events WHERE idempotency_key_digest=?",
             (command.key_digest,),
         )
         rows = cursor.fetchall()
@@ -419,7 +423,7 @@ class PostgresBindingLifecycle:
             raise BindingLifecycleUnavailableError
         event_id = "lifecycle-" + uuid.uuid4().hex
         cursor.execute(
-            f"INSERT INTO {EVENT_TABLE} "
+            "INSERT INTO speech_publication_lifecycle_events "
             "(event_id, kind, action, binding_id, revision, revision_id, result_status, "
             " retired_at_us, disabled_reason, request_id, actor_type, credential_label, "
             " occurred_at_us, policy_revision, intent_digest, idempotency_key_digest, "
@@ -463,7 +467,7 @@ class PostgresBindingLifecycle:
             "JOIN speech_binding_publication_evidence AS e "
             "  ON e.kind=p.kind AND e.object_id=p.object_id AND e.revision=p.revision "
             " AND e.revision_id=p.revision_id "
-            f"LEFT JOIN {RETIREMENT_TABLE} AS ret "
+            "LEFT JOIN speech_publication_retirements AS ret "
             "  ON ret.kind=p.kind AND ret.object_id=p.object_id AND ret.revision=p.revision "
             " AND ret.revision_id=p.revision_id "
             "WHERE p.kind='binding' AND p.object_id=? AND p.revision=?",
@@ -541,51 +545,4 @@ class PostgresBindingLifecycle:
         )
 
 
-class PostgresAuditEvents:
-    """Read the same append-only lifecycle events exposed by the audit endpoint."""
-
-    def __init__(self, pool: SpeechPool, *, timeout_seconds: float = 3) -> None:
-        self._pool, self._timeout = pool, timeout_seconds
-
-    def list(
-        self, *, limit: int, cursor: tuple[int, str] | None, action: str | None
-    ) -> tuple[list[dict[str, Any]], tuple[int, str] | None]:
-        deadline = time.monotonic() + self._timeout
-        filters = [] if action is None else ["action=%s"]
-        parameters: list[object] = [] if action is None else [action]
-        if cursor is not None:
-            filters.append("(occurred_at_us, event_id) < (%s, %s)")
-            parameters.extend(cursor)
-        clause = "" if not filters else " WHERE " + " AND ".join(filters)
-        try:
-            with self._pool.connection(timeout=self._timeout) as connection:
-                connection.execute("SET TRANSACTION READ ONLY")
-                rows = connection.execute(
-                    "SELECT event_id, action, binding_id, revision, request_id, actor_type, "
-                    "credential_label, occurred_at_us, policy_revision, change_summary_json, "
-                    "result_status, retired_at_us, disabled_reason "
-                    f"FROM {EVENT_TABLE}{clause} "
-                    "ORDER BY occurred_at_us DESC, event_id DESC LIMIT ?",
-                    (*parameters, limit + 1),
-                ).fetchall()
-                if time.monotonic() >= deadline:
-                    raise BindingLifecycleUnavailableError
-        except (
-            psycopg.Error,
-            PoolClosed,
-            PoolTimeout,
-            TooManyRequests,
-            BindingLifecycleUnavailableError,
-            ValueError,
-            TypeError,
-        ):
-            raise BindingLifecycleUnavailableError from None
-        page = rows[:limit]
-        next_cursor = None
-        if len(rows) > limit and page:
-            last = page[-1]
-            next_cursor = (int(last["occurred_at_us"]), str(last["event_id"]))
-        return page, next_cursor
-
-
-__all__ = ["PostgresAuditEvents", "PostgresBindingLifecycle"]
+__all__ = ["PostgresBindingLifecycle"]

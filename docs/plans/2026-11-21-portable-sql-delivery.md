@@ -1143,3 +1143,46 @@ PG oracle:`test_job_dispatch_settlement_pg.py` 12 passed、`test_cancellation_ex
 基线的诚实注脚:`_CANDIDATES` 起首关键字从 `WITH` 变成 `SELECT`,守卫因此把 2 条
 `sql-string-building` 报成 `new`(表名来自 schema 模块、标识符不可绑定)。这 2 条**显式登记进
 ledger**并注明理由,而不是让 `new` 悄悄落进基线。基线 **293 → 289**。
+
+### 8.46 死代码判定:`PostgresAuditEvents` 是废除,不是迁移
+
+`binding_lifecycle_postgres.PostgresAuditEvents` 读 `speech_publication_lifecycle_events`,带动态拼接的
+`WHERE`、`LIMIT`、`%s` 与 `SET TRANSACTION READ ONLY` —— 四条被禁构造。但它**不该被迁移**,因为:
+
+- 生产装配里没有任何引用(`grep PostgresAuditEvents backend/` 只命中它自己的 `__all__`);
+- `/v1/nexus/audit-events` 路由走的是 `AuditEventService` → `audit_events_postgres`,
+  读的是**同一张** `EVENT_TABLE`、同样按 `kind = 'binding'` 过滤,是它的替代实现;
+- 唯一引用者是 `tests/integration/test_binding_lifecycle_pg.py` 的一段断言,而那一层已有
+  `tests/unit/backend/test_audit_events_postgres.py` 覆盖。
+
+按「确定不用的功能一律废除」的口径:删类、删测试段落、`__all__` 收敛。没有迁移,也没有为它写新语句。
+
+### 8.47 字面量化的代价用「schema 常量」这个独立事实源来付
+
+同一文件剩下 6 条 `{TABLE}` 插值也改成字面量,于是语句可以静态登记(#1101 的 manifest 需要)。
+代价是字面量会与 schema 常量漂移 —— 我在第一次替换时就**拼错了一个表名**
+(`speech_binding_lifecycle_events`,真实名是 `speech_publication_lifecycle_events`)。
+
+`tests/unit/backend/test_lifecycle_table_literals.py` 把这件事变成判据:扫描模块里所有
+`INSERT INTO` / `DELETE FROM` / `UPDATE` / `FROM` / `JOIN` 后面的名字,要求每个名字都出现在
+`*schema*.py` 导出的 `*_TABLE` 常量值或 DDL 模板里。注入即红:把一个表名改成 `…retirementz`
+→ `1 failed`。
+
+### 8.48 注入即红会被陈旧 `.pyc` 骗
+
+把源码改回原样、但文件大小与 mtime 落在同一秒内时,Python 仍加载旧字节码 ——
+我确实在「注入 → 还原 → 再跑」之后看到类型为 `retirementz` 的报错,而源码里早就没有这个词。
+结论:注入实验之后要么 `find . -name '*.pyc' -delete`,要么保证还原发生在不同秒。
+这本身也算「断言必须会红」的一个反面教材:红了不代表你测的是当前代码。
+
+### 8.49 头指针:两处实现并成一处
+
+`binding_lifecycle_postgres` 的激活路径原来自己写 `INSERT … ON CONFLICT DO UPDATE`(与
+`publications_sql._advance_head` 同一张表、同一语义)。字面量化让守卫看见它(`upsert` `new=1`),
+于是把 `publications_sql` 的私有函数改成公开的 `advance_publication_head` 并在此调用 ——
+**一个不变量只有一个定义点**,顺手删掉一份重复语句。
+
+同轮把事件插入里的 `CAST(? AS jsonb)` 登记为 `vendor-json`(card #1102):列类型与 JSON 适配
+属于物理 profile,不是 DML 收敛能改的;登记理由写进 ledger,不让它悄悄进基线。
+
+基线 **289 → 283**。PG oracle:`tests/integration/test_binding_lifecycle_pg.py` 13 passed。

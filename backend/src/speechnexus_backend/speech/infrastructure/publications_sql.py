@@ -10,8 +10,6 @@ from speechnexus_backend.speech.application.binding_publication import (
 )
 from speechnexus_backend.speech.domain.configuration import revision_number
 from speechnexus_backend.speech.domain.publications import Publication, PublicationKind
-from speechnexus_backend.speech.infrastructure.catalog_revision_schema import RETIREMENT_TABLE
-from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema import HEAD_TABLE
 from speechnexus_portable_sql.transaction import insert_if_absent
 
 
@@ -86,7 +84,7 @@ def append_publication(
             if state[0]["revision"] != expected_catalog_revision:
                 raise BindingHeadPreconditionError("configuration_changed")
         cursor.execute(
-            f"SELECT revision FROM {HEAD_TABLE} WHERE kind = ? AND object_id = ?",
+            "SELECT revision FROM speech_publication_heads WHERE kind = ? AND object_id = ?",
             (publication.kind, publication.object_id),
         )
         rows = cursor.fetchall()
@@ -113,13 +111,42 @@ def append_publication(
     # so a later explicit activation can select an older stored revision without
     # rewriting or republishing it.  The publication trigger already advanced
     # the catalogue version for this insert.
-    cursor.execute(
-        f"INSERT INTO {HEAD_TABLE} "
-        "(kind, object_id, revision, revision_id, updated_at_us) "
-        "VALUES (?, ?, ?, ?, ?) "
-        "ON CONFLICT (kind, object_id) DO UPDATE SET "
-        "revision = EXCLUDED.revision, revision_id = EXCLUDED.revision_id, "
-        "updated_at_us = EXCLUDED.updated_at_us",
+    _advance_head(cursor, publication)
+    return True
+
+
+_HEAD_UPDATE = (
+    "UPDATE speech_publication_heads SET revision = ?, revision_id = ?, updated_at_us = ? "
+    "WHERE kind = ? AND object_id = ?"
+)
+_HEAD_INSERT = (
+    "INSERT INTO speech_publication_heads "
+    "(kind, object_id, revision, revision_id, updated_at_us) VALUES (?, ?, ?, ?, ?)"
+)
+
+
+def _advance_head(cursor: PublicationCursor, publication: Publication) -> None:
+    """把可变头指针移到这次发布的版本.
+
+    受限方言没有 `ON CONFLICT … DO UPDATE`,也没有 `RETURNING`,所以用「先更新、再插入」:
+    更新命中说明头行已存在(绝大多数路径);未命中说明是第一次发布,插入;若插入也失败,
+    说明另一个写者刚好抢先插入,再更新一次即可。同一把 `pg_advisory_xact_lock` 在前面已经持有,
+    所以这段不会被并发穿插。
+    """
+
+    head = (
+        str(publication.revision),
+        publication.revision_id,
+        publication.published_at_us,
+        publication.kind,
+        publication.object_id,
+    )
+    cursor.execute(_HEAD_UPDATE, head)
+    if cursor.rowcount == 1:
+        return
+    inserted = insert_if_absent(
+        cursor,
+        _HEAD_INSERT,
         (
             publication.kind,
             publication.object_id,
@@ -128,7 +155,11 @@ def append_publication(
             publication.published_at_us,
         ),
     )
-    return True
+    if inserted:
+        return
+    cursor.execute(_HEAD_UPDATE, head)
+    if cursor.rowcount != 1:
+        raise ValueError("Publication head could not be advanced")
 
 
 def find_publication(
@@ -150,7 +181,7 @@ def find_retirement(
     cursor: PublicationCursor, kind: PublicationKind, object_id: str, revision: int
 ) -> dict[str, Any] | None:
     cursor.execute(
-        f"SELECT revision_id, mode, reason, retired_at_us FROM {RETIREMENT_TABLE} "
+        "SELECT revision_id, mode, reason, retired_at_us FROM speech_publication_retirements "
         "WHERE kind = ? AND object_id = ? AND revision = ?",
         (kind, object_id, str(revision)),
     )
@@ -170,9 +201,9 @@ def find_current_publication(
         "JOIN speech_publications AS p "
         "  ON p.kind = h.kind AND p.object_id = h.object_id "
         " AND p.revision = h.revision AND p.revision_id = h.revision_id "
-        f"WHERE h.kind = ? AND h.object_id = ? "
+        "WHERE h.kind = ? AND h.object_id = ? "
         "AND NOT EXISTS ("
-        f"SELECT 1 FROM {RETIREMENT_TABLE} AS retired "
+        "SELECT 1 FROM speech_publication_retirements AS retired "
         "WHERE retired.kind = h.kind AND retired.object_id = h.object_id "
         "AND retired.revision = h.revision AND retired.revision_id = h.revision_id"
         ")",
@@ -218,11 +249,11 @@ def retire_publication(
         if repeated is not None and repeated["revision_id"] == publication.revision_id:
             return False
         raise ValueError("Retirement must name the current published revision")
-    cursor.execute(
-        f"INSERT INTO {RETIREMENT_TABLE} "
+    retired = insert_if_absent(
+        cursor,
+        "INSERT INTO speech_publication_retirements "
         "(kind, object_id, revision, revision_id, retired_at_us, mode, reason) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?) "
-        "ON CONFLICT (kind, object_id, revision) DO NOTHING",
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
         (
             publication.kind,
             publication.object_id,
@@ -233,10 +264,10 @@ def retire_publication(
             reason,
         ),
     )
-    if cursor.rowcount != 1:
+    if not retired:
         return False
     cursor.execute(
-        f"DELETE FROM {HEAD_TABLE} "
+        "DELETE FROM speech_publication_heads "
         "WHERE kind = ? AND object_id = ? AND revision = ? AND revision_id = ?",
         (
             publication.kind,

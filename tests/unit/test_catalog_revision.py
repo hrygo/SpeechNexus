@@ -22,16 +22,35 @@ from speechnexus_backend.speech.infrastructure.publication_schema import (
 from speechnexus_backend.speech.infrastructure.publications_sql import retire_publication
 
 
+class DuplicateRetirementError(Exception):
+    """退休行已存在:适配器只看 sqlstate。"""
+
+    sqlstate = "23505"
+
+
 class Cursor:
-    def __init__(self, results: list[list[dict[str, Any]]], rowcounts: list[int]) -> None:
+    def __init__(
+        self,
+        results: list[list[dict[str, Any]]],
+        rowcounts: list[int],
+        *,
+        duplicate_retirement: bool = False,
+    ) -> None:
         self._results = iter(results)
         self._rowcounts = iter(rowcounts)
+        self.duplicate_retirement = duplicate_retirement
         self._current: list[dict[str, Any]] = []
         self.rowcount = 0
         self.calls: list[tuple[str, tuple[object, ...]]] = []
 
     def execute(self, query: str, parameters: tuple[object, ...] = ()) -> None:
         self.calls.append((query, parameters))
+        if self.duplicate_retirement and query.startswith("INSERT INTO speech_publication"):
+            raise DuplicateRetirementError(query)
+        if query.startswith(("SAVEPOINT ", "ROLLBACK TO SAVEPOINT", "RELEASE SAVEPOINT")):
+            # 插入走保存点(受限方言没有 `ON CONFLICT`);控制语句不消耗脚本化的结果。
+            self.rowcount = 0
+            return
         self._current = next(self._results)
         self.rowcount = next(self._rowcounts)
 
@@ -95,15 +114,18 @@ def test_retirement_of_the_current_revision_inserts_one_visible_tombstone() -> N
 
     lock_query, lock_parameters = cursor.calls[0]
     select_query, select_parameters = cursor.calls[1]
-    insert_query, insert_parameters = cursor.calls[2]
-    clear_query, clear_parameters = cursor.calls[3]
+    savepoint_query = cursor.calls[2][0]
+    insert_query, insert_parameters = cursor.calls[3]
+    clear_query, clear_parameters = cursor.calls[-1]
     assert "pg_advisory_xact_lock" in lock_query
     assert lock_parameters == ("binding", "binding-tts")
     assert "FROM speech_publication_heads AS h" in select_query
     assert "JOIN speech_publications AS p" in select_query
     assert select_parameters == ("binding", "binding-tts")
+    # 受限方言没有 `ON CONFLICT`:插入包在保存点里,冲突靠回滚到保存点处理。
+    assert savepoint_query.startswith("SAVEPOINT")
     assert f"INSERT INTO {RETIREMENT_TABLE}" in insert_query
-    assert "ON CONFLICT (kind, object_id, revision) DO NOTHING" in insert_query
+    assert "ON CONFLICT" not in insert_query
     assert insert_parameters == (
         "binding",
         "binding-tts",
@@ -119,10 +141,12 @@ def test_retirement_of_the_current_revision_inserts_one_visible_tombstone() -> N
 
 def test_repeating_a_retirement_does_not_insert_or_advance_again() -> None:
     publication = Publication("binding", "binding-tts", 1, "binding-rev-1", 1)
-    cursor = Cursor([[], [row()], []], [0, 0, 0])
+    cursor = Cursor([[], [row()], []], [0, 0, 0], duplicate_retirement=True)
 
     assert retire_publication(cursor, publication, 1_700_000_000_000_001) is False
-    assert len(cursor.calls) == 3
+    # 锁、读当前版本、保存点、插入(撞唯一索引)、回滚到保存点、释放保存点。
+    assert len(cursor.calls) == 6
+    assert cursor.calls[4][0].startswith("ROLLBACK TO SAVEPOINT")
 
 
 def test_retirement_must_name_the_current_exact_revision() -> None:

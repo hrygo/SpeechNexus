@@ -1070,3 +1070,25 @@ cursor.execute(
 
 替身又一次要改:发布/注册的假游标遇到 `SAVEPOINT` 报「unhandled」——这是 §8.39/§8.41 之后
 同一个根因的第五次出现,替身必须认可保存点控制语句。
+
+### 8.43 「先更新、再插入」:`DO UPDATE` 的便携写法
+
+`publications_sql` 里更新可变头指针原来是 `INSERT … ON CONFLICT (kind, object_id) DO UPDATE SET …`。
+它不属于「插入或忽略」,`insert_if_absent` 顶不了。便携写法是两步:
+
+1. `UPDATE … WHERE kind = ? AND object_id = ?`;`rowcount == 1` 就结束(绝大多数路径,头行已存在);
+2. 未命中说明是**第一次发布**:`insert_if_absent` 插头行。插入也失败,说明另一个写者抢先插入
+   (这一步前面已经持有 `pg_advisory_xact_lock`,所以只在加锁语义被绕过时才可能),再更新一次。
+
+原来那句 `ON CONFLICT` 只有在 f-string 里才被守卫看见 —— 把表名改成字面量之后,守卫立刻把它报成
+`upsert`(`new=1`)。也就是说**守卫此前对这条语句是漏报的**,字面量化让它显形。这是「守卫数字要当
+审计线索读」的又一例:数字变小不一定是改好了,也可能是语法形态变了。
+
+同一轮把 `publications_sql` 的 6 条 `sql-string-building` 改成字面量语句(表名常量不再参与拼接,
+由 `tests/unit/test_catalog_revision.py` 等用例继续断言表名),并把退休插入也换成 `insert_if_absent`。
+
+PG oracle:`tests/integration/test_binding_lifecycle_pg.py` 已经在真实库上连续发布两次
+(`append_publication` 的 head 推进路径),所以这条转换有真实库覆盖,不是只靠替身。
+
+注入即红:把「插入失败后再更新一次」这条兜底短路掉(插入分支永不执行)→ `3 failed, 18 passed`。
+基线 **300 → 294**。

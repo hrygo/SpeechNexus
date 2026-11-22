@@ -403,5 +403,6 @@ ContractError: statement expects 4 parameters, got 5
 (「需要纯 qmark 语句」),而不是抛一个「参数个数不符」的模糊错误 —— 后者会让人去数参数,
 而真正的原因在标记体系。
 
-`vendor-operator` 由 19 降到 7(这一处 + `ILIKE`/`FULL JOIN` 家族);基线 897 → 876 的降幅来自
-其余 12 处。
+`vendor-operator` 由 19 降到 7(这一处 + `ILIKE`/`FULL JOIN` 家族);基线 897 → 877 的降幅来自
+其余 12 处。这一处按 `--accept-new` 写回基线:它不是新引入的用法,而是「这条语句暂时留在旧写法」
+的记录。

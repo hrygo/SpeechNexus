@@ -246,6 +246,7 @@
     "vendor-json::backend/src/speechnexus_backend/workbench/infrastructure/postgres_render_units.py": 3,
     "vendor-json::backend/src/speechnexus_backend/workbench/infrastructure/postgres_versions.py": 4,
     "vendor-lock::backend/src/speechnexus_backend/speech/infrastructure/public_job_admission.py": 2,
+    "vendor-operator::backend/src/speechnexus_backend/speech/infrastructure/job_dispatch_postgres.py": 1,
     "vendor-sdk::backend/src/speechnexus_backend/admission_watch_runtime.py": 1,
     "vendor-sdk::backend/src/speechnexus_backend/approve_builtin_voice_source.py": 1,
     "vendor-sdk::backend/src/speechnexus_backend/attest_builtin_voice.py": 2,

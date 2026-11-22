@@ -147,6 +147,8 @@ class GuardScopeTests(unittest.TestCase):
                 "packages/portable-sql/src/speechnexus_portable_sql/subset.py",
                 # 驱动实现是唯一允许 import 厂商 SDK 的地方(部署期 driver 选择)。
                 "packages/portable-sql/src/speechnexus_portable_sql/psycopg_driver.py",
+                # 时钟语句按 profile 登记("现在"的写法各家不同),与驱动同属部署期选择。
+                "packages/portable-sql/src/speechnexus_portable_sql/clock.py",
             ),
         )
         self.assertEqual(

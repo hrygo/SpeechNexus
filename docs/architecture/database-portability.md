@@ -69,7 +69,9 @@ flowchart LR
 ```
 
 应用不定义“PostgreSQL adapter / MySQL adapter”。业务用例依赖 statement contract，唯一数据访问入口
-仍是共同 ODBC DB-API。`pyodbc` / `aioodbc` 一类统一 ODBC 接口可以保留。受限 SQL profile 是
+仍是共同的 DB-API 子集(`?` 标记、关闭 autocommit、显式 commit/rollback)。仓库当前只有
+`psycopg` 适配器;`odbc.py` 这个没有任何调用方、也没有声明 `pyodbc` 依赖的适配器已删除 ——
+「设计里提过」不等于「已经支持」。受限 SQL profile 是
 `infrastructure` 内的声明式静态制品，不是按品牌分叉的 repository、业务 adapter 或查询生成器。
 
 ## 3. 驱动契约

@@ -19,7 +19,6 @@ ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES: dict[str, Any] = json.loads(
     (ROOT / "tests/fixtures/coordination/transaction-examples.json").read_text()
 )
-ACTIVE_DDL = ROOT / "migrations/0001_cluster_coordination_draft.sql"
 GRANTS_SCRIPT = ROOT / "scripts/dev-env/coordination-grants.py"
 
 
@@ -111,7 +110,9 @@ def test_verified_stop_never_accepts_unconfirmed_facts(field: str) -> None:
 
 
 def test_active_ddl_has_no_replaced_pg_business_mechanisms() -> None:
-    active = (ROOT / "migrations/0001_cluster_coordination_draft.sql").read_text()
+    from tests.support.coordination_ddl import COORDINATION_DDL_TEXT
+
+    active = COORDINATION_DDL_TEXT
     legacy = (ROOT / "tests/fixtures/coordination/legacy_postgresql.sql").read_text()
     assert len(re.findall(r"^CREATE TABLE ", active, re.MULTILINE)) == 15
     for mechanism in (
@@ -152,11 +153,14 @@ def test_query_outcome_declares_the_result_kind_of_every_target() -> None:
 
 
 def _ddl_columns() -> dict[str, set[str]]:
-    ddl = ACTIVE_DDL.read_text()
-    column = re.compile(r" {4}([a-z][a-z0-9_]*) (?:VARCHAR|BIGINT|TEXT|INT|SMALLINT)\b")
+    from tests.support.coordination_ddl import COORDINATION_DDL_TEXT
+
+    ddl = COORDINATION_DDL_TEXT
+    # 缩进随生成器而变,列检测只看「标识符 + 类型」,不锁死空格数。
+    column = re.compile(r"\s+([a-z][a-z0-9_]*) (?:VARCHAR|BIGINT|TEXT|INT|SMALLINT)\b")
     return {
         table: {match.group(1) for line in body.splitlines() if (match := column.match(line))}
-        for table, body in re.findall(r"CREATE TABLE (\w+) \((.*?)\n\);", ddl, re.DOTALL)
+        for table, body in re.findall(r"CREATE TABLE (\w+) \((.*?)\n\s*\);?", ddl, re.DOTALL)
     }
 
 

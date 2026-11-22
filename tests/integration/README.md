@@ -10,8 +10,9 @@ The two suites exercise different assurance boundaries:
   `tests/fixtures/coordination/legacy_postgresql.sql`. They preserve the original
   database-enforced direct-SQL negatives and the trigger security fixes.
 - `test_coordination_transactions.py`: one shared controlled-transaction oracle
-  applies the active logical `migrations/0001_cluster_coordination_draft.sql` on PG and
-  MySQL/InnoDB. Its sole type mapping is TEXT to LONGTEXT for MySQL, including
+  applies the active logical coordination DDL on PG and MySQL/InnoDB. The DDL comes from
+  the generators (`coordination_schema.COORDINATION_DDL` + `job_schema.JOB_DDL`) through
+  `tests/support/coordination_ddl.py`; the root-level draft SQL file no longer exists. Its sole type mapping is TEXT to LONGTEXT for MySQL, including
   complete canonical requests that can legitimately exceed 64 KiB.
   No business procedures, triggers, GiST, partial indexes or
   `SKIP LOCKED` are used. Both engines execute the same application rules.

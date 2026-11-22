@@ -87,13 +87,16 @@ def database(request: pytest.FixtureRequest) -> Iterator[Database]:
                 f"CREATE DATABASE `{namespace}` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin"
             )
     try:
-        source = (ROOT / "migrations/0001_cluster_coordination_draft.sql").read_text()
-        ddl = "\n".join(line for line in source.splitlines() if not line.startswith("--"))
+        from tests.support.coordination_ddl import COORDINATION_DDL_STATEMENTS
+
+        ddl_statements = list(COORDINATION_DDL_STATEMENTS)
         if dialect == "mysql":
             # Type mapping only: ordinary MySQL TEXT cannot hold valid 1M-char commands.
-            ddl = re.sub(r"\bTEXT\b", "LONGTEXT", ddl)
+            ddl_statements = [
+                re.sub(r"\bTEXT\b", "LONGTEXT", statement) for statement in ddl_statements
+            ]
         with database.transaction() as tx:
-            for statement in ddl.split(";"):
+            for statement in ddl_statements:
                 if statement.strip():
                     tx.execute(statement)
         with database.transaction() as tx:

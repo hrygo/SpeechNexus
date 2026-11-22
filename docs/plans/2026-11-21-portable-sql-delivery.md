@@ -742,3 +742,26 @@ sqlite 的隐式事务管理**。`with connection:` 在遇到产品发出的 `SA
 这一点的用例:`insert_if_absent` 成功(保存点已 RELEASE)之后抛错,快照必须与之前完全一致。
 
 注入即红:把替身退回 `with connection:`,这条用例立刻失败(`1 failed`)。
+
+### 8.29 第一个 upsert 调用点落地:`record_intent` 换成保存点插入
+
+§8.27 记录了两处阻塞,§8.28 修掉了 sqlite 替身那条。MySQL 双 DSN 替身(`tests/support/
+profile_database.py`)**不需要改**:`pymysql` 把 `SAVEPOINT` / `ROLLBACK TO SAVEPOINT` /
+`RELEASE SAVEPOINT` 原样交给 MySQL,InnoDB 原生执行保存点;它上面那段 ` ON CONFLICT ` 改写只服务
+仍在用 `ON CONFLICT` 的另外两个模块。
+
+于是 `profile_lifecycle_intents_sql.record_intent` 改成:
+
+```python
+inserted = insert_if_absent(cursor, "INSERT INTO speech_profile_lifecycle_intents … VALUES (?,?,?,?,?,?,?)", (…,))
+if inserted:
+    return ProfileLifecycleIntentResult("recorded", recorded)
+return recover_intent(cursor, command)
+```
+
+冲突判定不再依赖 `rowcount` 的 0/1 语义:插入成功就是 `recorded`,唯一冲突就是「别人先写」,
+回滚到保存点后原事务继续读到那一行。基线 **532 → 531**,`upsert` 族剩 14 条。
+
+验证范围要说清:本机跑通了 `tests/unit`(8200 passed,含 sqlite 替身那条回归)、守卫与 mypy;
+双 DSN 的 MySQL 分区在本机没有实例,只有 CI 能给证据 —— 这一点与 §8.19 的教训一致,
+不把「PG 通过」当成「两条 DSN 都通过」。

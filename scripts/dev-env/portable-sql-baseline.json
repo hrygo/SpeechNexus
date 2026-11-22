@@ -173,7 +173,6 @@
     "upsert::backend/src/speechnexus_backend/speech/infrastructure/job_cancellation_reconciliation_postgres.py": 1,
     "upsert::backend/src/speechnexus_backend/speech/infrastructure/job_dispatch_postgres.py": 1,
     "upsert::backend/src/speechnexus_backend/speech/infrastructure/profile_drafts_sql.py": 1,
-    "upsert::backend/src/speechnexus_backend/speech/infrastructure/profile_lifecycle_intents_sql.py": 1,
     "upsert::backend/src/speechnexus_backend/speech/infrastructure/pronunciation_drafts_sql.py": 1,
     "upsert::backend/src/speechnexus_backend/speech/infrastructure/publications_sql.py": 1,
     "upsert::backend/src/speechnexus_backend/speech/infrastructure/tts_settlement_postgres.py": 1,

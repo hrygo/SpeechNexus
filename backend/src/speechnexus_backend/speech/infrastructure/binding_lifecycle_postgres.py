@@ -45,6 +45,7 @@ from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema impo
     HEAD_TABLE,
 )
 from speechnexus_backend.speech.infrastructure.publications_sql import append_publication
+from speechnexus_portable_sql.clock import ClockReader, now_us
 
 type LifecycleOperation = Literal["publish", "retire", "disable", "activate"]
 type LifecycleCommand = (
@@ -491,11 +492,12 @@ class PostgresBindingLifecycle:
         lock_binding(cursor, binding_id)
 
     def _clock(self, cursor: _Cursor) -> int:
-        cursor.execute("SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp())*1000000 AS BIGINT) AS t")
-        rows = cursor.fetchall()
-        if len(rows) != 1:
-            raise BindingLifecycleUnavailableError
-        return int(rows[0]["t"])
+        """「现在」只从便携时钟读一次;语句里不再有品牌函数."""
+
+        try:
+            return now_us(cast(ClockReader, cursor))
+        except (LookupError, TypeError) as error:
+            raise BindingLifecycleUnavailableError from error
 
     def _catalog_revision(self, cursor: _Cursor) -> int:
         cursor.execute("SELECT revision FROM speech_catalog_state WHERE singleton IS TRUE")

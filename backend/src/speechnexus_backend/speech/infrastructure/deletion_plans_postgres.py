@@ -6,7 +6,7 @@ import hashlib
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Protocol, cast
 
 import psycopg
@@ -34,6 +34,7 @@ from speechnexus_backend.speech.infrastructure.deletion_plan_schema import (
     DELETION_PLANS,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
+from speechnexus_portable_sql.clock import now_us
 
 _ACTIVE_JOB_STATES = frozenset({"pending", "running", "cancelling"})
 # The route checks only its own authority. These are not part of the process
@@ -528,9 +529,22 @@ class _Transaction:
         cursor = self._connection.execute(statement, args)
         return cursor.fetchall() if cursor.description else []
 
+    def execute(self, sql: str, args: tuple[object, ...] = ()) -> Any:
+        """便携时钟的执行入口:与 `rows` 共用预算,把游标交回去取行."""
+
+        remaining = self._deadline - time.monotonic()
+        if remaining <= 0:
+            raise _unavailable()
+        self._connection.execute(
+            "SELECT set_config('statement_timeout', ?, true)",
+            (str(max(1, int(remaining * 1000))),),
+        )
+        return self._connection.execute(sql, args)
+
     def now(self) -> datetime:
-        rows = self.rows("SELECT clock_timestamp() AS now")
-        return cast(datetime, rows[0]["now"])
+        """「现在」只从便携时钟读一次;语句里不再有品牌函数."""
+
+        return datetime.fromtimestamp(now_us(cast(Any, self)) / 1_000_000, tz=UTC)
 
     def missing_privileges(self) -> tuple[str, ...]:
         placeholders = ", ".join(["(%s, %s, %s)"] * len(_PRIVILEGES))

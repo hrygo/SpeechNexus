@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import replace
+from datetime import UTC, datetime
 from typing import Any, cast
 
 import pytest
@@ -67,8 +68,9 @@ class Cursor:
                 if self.head is None
                 else [{"revision": self.head, "revision_id": "binding-rev-" + self.head}]
             )
-        elif query.startswith("SELECT CAST(EXTRACT(EPOCH"):
-            self.rows = [{"t": 1_700_000_000_000_003}]
+        elif query == "SELECT clock_timestamp() AS now":
+            # 时钟语句来自登记的 profile;替身按同一列名回答。
+            self.rows = [{"now": datetime.fromtimestamp(1_700_000_000.000003, tz=UTC)}]
         elif query.startswith("INSERT INTO speech_publication_heads"):
             self.head, self.rowcount = str(parameters[1]), 1
         elif query.startswith("INSERT INTO speech_publication_retirements"):
@@ -115,6 +117,10 @@ class Cursor:
 
     def fetchall(self) -> list[dict[str, Any]]:
         return self.rows
+
+    def fetchone(self) -> dict[str, Any] | None:
+        # 时钟读取要一行;替身按已经算好的 rows 回答。
+        return self.rows[0] if self.rows else None
 
 
 def command(target: str, expected: str, key: str | None) -> BindingActivationCommand:

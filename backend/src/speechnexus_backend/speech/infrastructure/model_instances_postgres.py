@@ -52,13 +52,13 @@ _BASE = (
 
 _ORDER = " ORDER BY instance.instance_id, instance.instance_generation"
 
-# The presence CTE holds exactly one row, so the left join below always returns
-# exactly one row: an absent generation still reports whether its instance id has
-# any recorded generation at all.
+# 这个派生表恰好一行,所以下面的 LEFT JOIN 永远返回恰好一行:即使某个代次不存在,
+# 也仍然报告它的 instance id 有没有任何已记录的代次。用派生表而不是 CTE:受限方言
+# 里没有 `WITH`,而「一行常量表」用 `FROM (SELECT ...)` 就够了。
 _FIND = (
-    "WITH presence AS (SELECT EXISTS (SELECT 1 FROM engine_instances AS listed "
-    "WHERE listed.instance_id = ?) AS instance_exists) "
-    "SELECT presence.instance_exists, " + _COLUMNS + " FROM presence "
+    "SELECT presence.instance_exists, " + _COLUMNS + " FROM (SELECT EXISTS "
+    "(SELECT 1 FROM engine_instances AS listed WHERE listed.instance_id = ?) "
+    "AS instance_exists) AS presence "
     "LEFT JOIN engine_instances AS instance ON instance.instance_id = ? "
     "AND instance.instance_generation = ? "
     "LEFT JOIN speech_binding_revisions AS revision "

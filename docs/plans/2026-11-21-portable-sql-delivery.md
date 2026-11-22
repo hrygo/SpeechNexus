@@ -561,3 +561,35 @@ assert ('created' == 'created' and 'unknown' == 'replayed')
 
 注意第一条必须用**两个连接**:同一个事务里连插两次不会冲突,`WHERE NOT EXISTS` 看得见自己那行。
 早先我用单连接写的「oracle」是绿的但什么也没证明 —— 这是这轮第二个「绿了也不作数」的实例。
+### 8.21 剩余基线 746 的结构依赖:清零依赖另外两张卡
+
+把剩余条目按「归谁」分类之后,结论是 #1100 的「基线归零」不能靠继续迁移 DML 达到:
+
+| 规则 | 剩余 | 其中在 DDL 模块(`*_schema.py`/`*_grants.py`/`migrations/`/`.sql`) | 归谁 |
+| --- | --- | --- | --- |
+| `sql-string-building` | 327 | 199 | #1102 |
+| `runtime-ddl` | 165 | 160 | #1102 |
+| `vendor-type` | 72 | 36 | #1102 |
+| `ddl-identifier-length` | 38 | 38 | #1102 |
+| `advisory-lock` | 33 | 1 | #1095 的 claim bucket |
+| `vendor-json` | 33 | 8 | #1102 |
+| `upsert` | 15 | 0 | 需要冲突翻译(§8.20) |
+| `cte` | 12 | 0 | 逐条判断 |
+| `paging-limit` | 10 | 0 | 逐条判断 |
+| `returning` | 8 | 0 | 逐条判断 |
+
+DDL 模块合计占了 446 条。它们不是「写错了的 SQL」,而是**物理 DDL profile 的定义本身**:
+按 ADR 0016,物理 DDL 是部署期的品牌相关产物,受限方言约束的是运行期 DML。现在守卫把两者
+放在同一条基线上,所以 #1100 只有在 #1102 把 DDL 收进迁移(而不是在业务包里拼 DDL 文本)
+之后才可能归零。
+
+这解释了为什么最近的迁移收益越来越小:`vendor-sdk` 那类「替换式」条目已经清零,剩下的大头
+要么等 #1102,要么等 #1095 的 claim bucket。继续硬迁 DML 最多再动十几条,同时把
+`cte`/`paging-limit`/`returning` 的风险一点点堆起来。
+
+**本轮唯一迁移**:`model_instances_postgres._FIND` 的「一行常量表」CTE 变成派生表
+`FROM (SELECT EXISTS (...) AS instance_exists) AS presence`。同一语义、更小的方言面,
+本机真实 PG 的 10 条 oracle 通过(`tests/integration/test_admin_model_instances_pg.py`)。
+其他 11 处 `cte` 里,`model_catalog_runtime` 与 `workbench/runtime` 是 `WITH RECURSIVE`
+走 `pg_auth_members` 的权限探针,`job_cancellation_reconciliation_postgres` 是
+`WITH due ... INSERT ... ON CONFLICT ... RETURNING` 的租约领取 —— 都归各自的卡,不是迁移对象。

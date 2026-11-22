@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import importlib
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -262,3 +263,31 @@ def test_protocol_declarations_are_not_bounded_implementations(module_name: str)
         f"{module_name}._Cursor became a concrete implementation; "
         "add it to IMPLEMENTATIONS and test its deadline guard"
     )
+
+
+def test_savepoint_control_is_not_preceded_by_the_timeout_probe() -> None:
+    """事务已被唯一冲突中止时,探针自己也会失败,回滚就永远走不到.
+
+    保存点回滚是中止事务里唯一允许的语句;先发 `set_config('statement_timeout', …)`
+    会得到 `current transaction is aborted`,于是 `insert_if_absent` 抛出的不是
+    「已存在」而是可用性错误。
+    """
+
+    raw = mock.Mock()
+    raw.execute.return_value = raw
+    cursor = _profile_cursor(raw)
+    for statement in (
+        "SAVEPOINT portable_sql_insert_if_absent",
+        "ROLLBACK TO SAVEPOINT portable_sql_insert_if_absent",
+        "RELEASE SAVEPOINT portable_sql_insert_if_absent",
+    ):
+        raw.reset_mock()
+        cursor.execute(statement)
+        assert raw.execute.call_args_list == [mock.call(statement, ())]
+
+
+def _profile_cursor(raw: Any) -> Any:
+    module = importlib.import_module(
+        "speechnexus_backend.speech.infrastructure.profile_drafts_postgres"
+    )
+    return module._Cursor(raw, time.monotonic() + 5)

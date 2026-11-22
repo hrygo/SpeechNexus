@@ -33,10 +33,16 @@ class _Cursor:
     def rowcount(self) -> int:
         return self.raw.rowcount
 
+    #: 事务已被唯一冲突中止时,唯一还能执行的就是保存点回滚;探针不能插在它前面,
+    #: 否则探针自己会先报 `current transaction is aborted`,回滚永远走不到。
+    _SAVEPOINT_CONTROL = ("SAVEPOINT ", "ROLLBACK TO SAVEPOINT", "RELEASE SAVEPOINT")
+
     def execute(self, query: str, parameters: tuple[object, ...] = ()) -> object:
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
             raise ProfileUnavailableError
+        if query.startswith(self._SAVEPOINT_CONTROL):
+            return self.raw.execute(query, parameters)
         self.raw.execute(
             "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(remaining * 1000))),),

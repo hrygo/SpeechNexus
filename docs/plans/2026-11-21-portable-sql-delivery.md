@@ -765,3 +765,20 @@ return recover_intent(cursor, command)
 验证范围要说清:本机跑通了 `tests/unit`(8200 passed,含 sqlite 替身那条回归)、守卫与 mypy;
 双 DSN 的 MySQL 分区在本机没有实例,只有 CI 能给证据 —— 这一点与 §8.19 的教训一致,
 不把「PG 通过」当成「两条 DSN 都通过」。
+
+### 8.30 超时探针不能插在保存点回滚前面
+
+§8.29 的首次 CI 里,`[postgresql-…]` 的「同一命令、对方先提交」用例从 `replayed` 变成 `unknown`。
+原因不在原语,而在 `profile_drafts_postgres._Cursor.execute`:它在**每条语句前**发
+`SELECT set_config('statement_timeout', ?, true)`。
+
+事务被唯一冲突中止之后,唯一还能执行的语句是 `ROLLBACK TO SAVEPOINT`;探针偏偏抢在它前面,
+自己先报 `current transaction is aborted`,于是回滚走不到、`insert_if_absent` 抛出的是可用性错误,
+调用方看到 `unknown`。
+
+修法:保存点控制语句(`SAVEPOINT` / `ROLLBACK TO SAVEPOINT` / `RELEASE SAVEPOINT`)跳过探针、
+直接下发;其它语句照旧先装 `statement_timeout`。判据是 `tests/unit/backend/test_deadline_cursor.py`
+里的一条新用例,注入即红:删掉跳过分支,该用例立刻失败(`1 failed`)。
+
+这条也解释了为什么 §8.19 的「单连接 + 捕获异常」看不出问题:**探针把中止状态提前引爆了**,
+真正的保存点回滚根本没被执行过。

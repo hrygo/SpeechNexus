@@ -941,6 +941,9 @@ f'GRANT SELECT, INSERT (authorization_id, …) ON "{schema}".speech_builtin_voic
 它们同时导出表名、列名、列常量给业务代码。但被问的问题问错了 —— 真正的判据不是「模块是否共用」,
 而是「**DDL 文本**是否只有迁移树在消费」。常量被业务用,不等于 DDL 被执行。
 
+这里说的「文本」不只是建表:例如 `LIFECYCLE_DDL` 里还含一条一次性数据回填 `INSERT … SELECT`,
+它由迁移执行,同样是迁移树独有的制品。
+
 复算方式(`tests/ci/test_declared_ddl_is_migration_only.py`):对每个声明的模块,取出它的 `*_DDL`
 符号,在 `backend/src` 里排除迁移树后找导入点与使用点。20 个模块、37 个 `*_DDL` 符号全部为 0。
 

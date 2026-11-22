@@ -7,11 +7,13 @@ capacity, and neither statement locks a row the controlled writers take in anoth
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from speechnexus_gateway.domain.instance_drain import DrainInventory, InstanceIdentity
 from speechnexus_gateway.domain.instance_reclaim import ReclaimRecord
 from speechnexus_gateway.infrastructure.submit_sql import SubmitCursor, from_unix_micros
+from speechnexus_portable_sql.clock import ClockReader
+from speechnexus_portable_sql.clock import now_us as _portable_now_us
 
 #: The states that still hold capacity, in the contract's three drain buckets.
 _UNFINISHED_STATES = ("submitting", "executing", "stopping", "unknown_quarantined")
@@ -92,7 +94,7 @@ _SELECT_RECLAIM = (
     "SELECT i.loading_policy, i.binding_revision_id, i.last_fencing_token, i.ready_at_us, "
     "s.submit_intent_id, s.execution_state, s.terminated_at_us, s.dispatched_at_us, "
     "s.updated_at_us, l.lease_id, l.lease_state, "
-    "CAST((EXTRACT(EPOCH FROM clock_timestamp()) * 1000000) AS bigint) AS observed_at_us "
+    "CAST(? AS bigint) AS observed_at_us "
     "FROM engine_instances i "
     "LEFT JOIN admission_leases l ON l.instance_id = i.instance_id "
     "AND l.instance_generation = i.instance_generation "
@@ -113,6 +115,8 @@ def read_reclaim_record(cursor: SubmitCursor, identity: InstanceIdentity) -> Rec
     cursor.execute(
         _SELECT_RECLAIM,
         (
+            # 观察瞬间由便携时钟给出,空闲时长不依赖主机时钟。
+            _now_us(cursor),
             identity.instance_id,
             identity.instance_generation,
             identity.host_node_id,
@@ -169,3 +173,9 @@ def _observed_at(row: dict[str, Any]) -> datetime:
 
 def _optional_int(value: Any) -> int | None:
     return None if value is None else int(value)
+
+
+def _now_us(cursor: Any) -> int:
+    """「现在」只从便携时钟读一次;失败按本模块的语义上报."""
+
+    return _portable_now_us(cast(ClockReader, cursor))

@@ -99,6 +99,8 @@ from speechnexus_gateway.infrastructure.submit_sql import (
     list_unfinished_intents,
     read_submit_intent,
 )
+from speechnexus_portable_sql.clock import ClockReader
+from speechnexus_portable_sql.clock import now_us as _portable_now_us
 
 _Result = TypeVar("_Result")
 
@@ -131,11 +133,13 @@ class _DeadlineCursor:
     def fetchall(self) -> list[dict[str, Any]]:
         return self._cursor.fetchall()
 
+    def fetchone(self) -> dict[str, Any] | None:
+        rows = self.fetchall()
+        return rows[0] if rows else None
+
     def clock(self) -> datetime:
-        self.execute(
-            "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) AS now_us"
-        )
-        return from_unix_micros(self.fetchall()[0]["now_us"])
+        # 「现在」只从便携时钟读一次;语句里不再有品牌函数。
+        return from_unix_micros(_portable_now_us(cast(ClockReader, self)))
 
 
 class PostgresSubmissionLedger:

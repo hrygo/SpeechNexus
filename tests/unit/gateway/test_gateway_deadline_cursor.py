@@ -28,6 +28,8 @@ from unittest import mock
 
 import pytest
 
+from speechnexus_portable_sql.clock import now_statement
+
 GATEWAY_ROOT = Path(__file__).resolve().parents[3] / "execution-gateway"
 SOURCE_ROOT = GATEWAY_ROOT / "src"
 CURSOR_DECLARATION = re.compile(r"^\s*class _DeadlineCursor\b", re.MULTILINE)
@@ -35,7 +37,9 @@ CURSOR_DECLARATION = re.compile(r"^\s*class _DeadlineCursor\b", re.MULTILINE)
 QUERY = "SELECT payload FROM example WHERE identity = ?"
 PARAMETERS = ("row-a",)
 SET_TIMEOUT = "SELECT set_config('statement_timeout', ?, true)"
-CLOCK_QUERY = "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) AS now_us"
+#: 便携时钟语句:品牌函数只允许出现在 `speechnexus_portable_sql` 里,这里断言的是
+#: 该 profile 登记的语句,不是某条写死的品牌函数。
+CLOCK_QUERY = now_statement()
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +83,9 @@ class RecordingCursor:
 
     def fetchall(self) -> list[dict[str, Any]]:
         return self.rows
+
+    def fetchone(self) -> dict[str, Any] | None:
+        return self.rows[0] if self.rows else None
 
 
 class FakeClock:
@@ -272,7 +279,11 @@ def test_database_clock_keeps_the_timestamp_type_its_callers_expect(
     assert entry.clock_returns is datetime
     deadline, now = 200.0, 190.5
     micros = 1_700_000_000_000_000
-    cursor, recorder = build(entry, deadline=deadline, rows=[{"now_us": micros}])
+    cursor, recorder = build(
+        entry,
+        deadline=deadline,
+        rows=[{"now": datetime.fromtimestamp(micros / 1_000_000, tz=UTC)}],
+    )
 
     with mock.patch("time.monotonic", FakeClock(now)):
         value = cursor.clock()
@@ -290,7 +301,9 @@ def test_database_clock_keeps_the_timestamp_type_its_callers_expect(
 def test_database_clock_refuses_after_the_budget_expires(entry: Implementation) -> None:
     expected = error_type(entry)
     deadline, now = 100.0, 100.5
-    cursor, recorder = build(entry, deadline=deadline, rows=[{"now_us": 0}])
+    cursor, recorder = build(
+        entry, deadline=deadline, rows=[{"now": datetime(1970, 1, 1, tzinfo=UTC)}]
+    )
 
     with mock.patch("time.monotonic", FakeClock(now)), pytest.raises(expected):
         cursor.clock()

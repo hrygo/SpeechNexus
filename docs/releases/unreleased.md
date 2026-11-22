@@ -244,6 +244,9 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 | `tts_voice_admission_grants` | `admission_postgres.py` | 未变（同文件，参数标记迁移） |
 | `speech_synthesis_reader_grants` | `qualified_speech_facts_postgres.py` | 未变（参数标记迁移） |
 | `runtime_delivery_grants` | `runtime_delivery_schema.py` | 未变（参数标记迁移） |
+| `audit_reader_grants` | `publication_lifecycle_schema.py` | 未变（同文件，DDL 的 `::` 改为 `CAST`，授权列未动） |
+| `binding_lifecycle_grants` | `publication_lifecycle_schema.py` | 未变（同文件，DDL 的 `::` 改为 `CAST`） |
+| `binding_publication_grants` | `publication_lifecycle_schema.py` | 未变（同文件，DDL 的 `::` 改为 `CAST`） |
 | `settlement_worker_grants` | `settlement_worker_verifier.py` | 未变（参数标记迁移） |
 | `job_dispatch_grants` | `job_schema.py` | 未变 |
 

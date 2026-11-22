@@ -1,5 +1,5 @@
 {
-  "note": "基线里每一条都必须在这里登记归属卡与解除条件。#1100 的验收判据是「没有未登记条目」,不是「基线数字为零」;未登记、或登记了已不存在的条目,都判红。",
+  "note": "基线里每一条都必须登记归属卡与解除条件。#1100 的验收判据是「没有未登记条目」,不是「基线数字为零」。唯一消费者是 alembic 迁移的物理 DDL 制品不在此列,由 portable-sql-profiles.json 单独登记。",
   "entries": [
     {
       "rule": "advisory-lock",
@@ -395,32 +395,8 @@
     },
     {
       "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/admission_command_schema.py",
-      "count": 2,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/artifact_schema.py",
       "count": 4,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/asset_schema.py",
-      "count": 11,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/asset_storage_schema.py",
-      "count": 1,
       "card": "#1102",
       "reason": "物理 DDL 由 schema bootstrap 收编后失效",
       "release": "#1102 完成时删除本条目"
@@ -467,14 +443,6 @@
     },
     {
       "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/coordination_schema.py",
-      "count": 17,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/deletion_ledger_schema.py",
       "count": 11,
       "card": "#1102",
@@ -499,22 +467,6 @@
     },
     {
       "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/execution_result_schema.py",
-      "count": 2,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/gateway_abort_intent_schema.py",
-      "count": 14,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/job_cancellation_fence_schema.py",
       "count": 3,
       "card": "#1102",
@@ -531,72 +483,8 @@
     },
     {
       "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/profile_draft_schema.py",
-      "count": 3,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/profile_lifecycle_intent_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/profile_publication_schema.py",
-      "count": 4,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/pronunciation_draft_schema.py",
-      "count": 3,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/public_job_cancellation_schema.py",
       "count": 1,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/public_job_intent_schema.py",
-      "count": 2,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/public_job_progress_schema.py",
-      "count": 14,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/public_job_retry_schema.py",
-      "count": 3,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/public_job_schema.py",
-      "count": 3,
       "card": "#1102",
       "reason": "物理 DDL 由 schema bootstrap 收编后失效",
       "release": "#1102 完成时删除本条目"
@@ -635,40 +523,8 @@
     },
     {
       "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/runtime_delivery_schema.py",
-      "count": 2,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/runtime_intent_schema.py",
-      "count": 5,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/runtime_observation_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/voice_catalogue_schema.py",
       "count": 1,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/voice_draft_schema.py",
-      "count": 3,
       "card": "#1102",
       "reason": "物理 DDL 由 schema bootstrap 收编后失效",
       "release": "#1102 完成时删除本条目"
@@ -1011,14 +867,6 @@
     },
     {
       "rule": "sql-string-building",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/asset_schema.py",
-      "count": 1,
-      "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "sql-string-building",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/assets_postgres.py",
       "count": 1,
       "card": "#1100",
@@ -1155,14 +1003,6 @@
     },
     {
       "rule": "sql-string-building",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/gateway_abort_intent_schema.py",
-      "count": 17,
-      "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "sql-string-building",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/gateway_query_grants.py",
       "count": 2,
       "card": "#1100",
@@ -1235,38 +1075,6 @@
     },
     {
       "rule": "sql-string-building",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/profile_draft_schema.py",
-      "count": 1,
-      "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "sql-string-building",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/profile_lifecycle_intent_schema.py",
-      "count": 1,
-      "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "sql-string-building",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/profile_publication_schema.py",
-      "count": 2,
-      "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "sql-string-building",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/pronunciation_draft_schema.py",
-      "count": 3,
-      "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "sql-string-building",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/public_job_admission.py",
       "count": 4,
       "card": "#1100",
@@ -1285,38 +1093,6 @@
       "rule": "sql-string-building",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/public_job_cancellation_schema.py",
       "count": 2,
-      "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "sql-string-building",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/public_job_intent_schema.py",
-      "count": 2,
-      "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "sql-string-building",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/public_job_progress_schema.py",
-      "count": 14,
-      "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "sql-string-building",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/public_job_retry_schema.py",
-      "count": 3,
-      "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "sql-string-building",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/public_job_schema.py",
-      "count": 7,
       "card": "#1100",
       "reason": "按语句族重写成常量语句 + 派发表",
       "release": "#1100 完成时删除本条目"
@@ -1411,14 +1187,6 @@
     },
     {
       "rule": "sql-string-building",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/runtime_delivery_schema.py",
-      "count": 2,
-      "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "sql-string-building",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/runtime_sql.py",
       "count": 1,
       "card": "#1100",
@@ -1461,14 +1229,6 @@
       "rule": "sql-string-building",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/voice_catalogue_schema.py",
       "count": 2,
-      "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "sql-string-building",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/voice_draft_schema.py",
-      "count": 4,
       "card": "#1100",
       "reason": "按语句族重写成常量语句 + 派发表",
       "release": "#1100 完成时删除本条目"
@@ -1715,14 +1475,6 @@
     },
     {
       "rule": "vendor-function",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/asset_schema.py",
-      "count": 1,
-      "card": "#1100",
-      "reason": "随所属语句族重写",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-function",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/readiness.py",
       "count": 2,
       "card": "#1100",
@@ -1939,14 +1691,6 @@
     },
     {
       "rule": "vendor-time",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/asset_schema.py",
-      "count": 1,
-      "card": "#1100",
-      "reason": "时钟统一到 clock.py 后失效",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-time",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/readiness.py",
       "count": 2,
       "card": "#1100",
@@ -2027,14 +1771,6 @@
     },
     {
       "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/admission_command_schema.py",
-      "count": 2,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-type",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/asr_settlement_debt.py",
       "count": 1,
       "card": "#1102",
@@ -2075,14 +1811,6 @@
     },
     {
       "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/coordination_schema.py",
-      "count": 3,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-type",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/deletion_ledger_schema.py",
       "count": 1,
       "card": "#1102",
@@ -2093,46 +1821,6 @@
       "rule": "vendor-type",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/deletion_plan_schema.py",
       "count": 1,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/execution_result_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/profile_draft_schema.py",
-      "count": 2,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/profile_lifecycle_intent_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/profile_publication_schema.py",
-      "count": 2,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/pronunciation_draft_schema.py",
-      "count": 2,
       "card": "#1102",
       "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
       "release": "#1102 完成时删除本条目"
@@ -2165,30 +1853,6 @@
       "rule": "vendor-type",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/resource_pools_postgres.py",
       "count": 1,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/runtime_intent_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/runtime_observation_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/voice_draft_schema.py",
-      "count": 3,
       "card": "#1102",
       "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
       "release": "#1102 完成时删除本条目"

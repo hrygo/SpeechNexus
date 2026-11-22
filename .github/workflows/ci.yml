@@ -121,6 +121,7 @@ jobs:
         run: |
           python scripts/dev-env/check-portable-sql.py --selftest
           python scripts/dev-env/check-portable-sql.py --baseline scripts/dev-env/portable-sql-baseline.json \
+            --profiles scripts/dev-env/portable-sql-profiles.json \
             --exceptions scripts/dev-env/portable-sql-exceptions.json
 
       # The manifest and logical schema guards are exact checks, not ratchets: no

@@ -1,4 +1,23 @@
 {
-  "note": "已声明的物理 DDL / 静态 SQL profile 制品。条目单独计入 profile-ddl,不进业务 DML 基线;不在本清单里的文件照旧按受限方言判红。",
-  "paths": []
+  "note": "已声明的物理 DDL profile 制品。判定标准:该模块在本仓唯一消费者是 alembic 迁移(backend/src/speechnexus_backend/speech/infrastructure/migrations/versions/*),不与任何业务 DML 共用。清单内条目单独计入 profile-ddl,不进业务 DML 基线;不在清单里的文件照旧按受限方言判红。",
+  "paths": [
+    "backend/src/speechnexus_backend/speech/infrastructure/admission_command_schema.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/asset_schema.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/asset_storage_schema.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/coordination_schema.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/execution_result_schema.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/gateway_abort_intent_schema.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/profile_draft_schema.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/profile_lifecycle_intent_schema.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/profile_publication_schema.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/pronunciation_draft_schema.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/public_job_intent_schema.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/public_job_progress_schema.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/public_job_retry_schema.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/public_job_schema.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/runtime_delivery_schema.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/runtime_intent_schema.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/runtime_observation_schema.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/voice_draft_schema.py"
+  ]
 }

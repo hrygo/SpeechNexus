@@ -120,7 +120,8 @@ jobs:
       - name: Verify the portable SQL subset without installing project dependencies
         run: |
           python scripts/dev-env/check-portable-sql.py --selftest
-          python scripts/dev-env/check-portable-sql.py --baseline scripts/dev-env/portable-sql-baseline.json
+          python scripts/dev-env/check-portable-sql.py --baseline scripts/dev-env/portable-sql-baseline.json \
+            --exceptions scripts/dev-env/portable-sql-exceptions.json
 
       # The manifest and logical schema guards are exact checks, not ratchets: no
       # baseline, every drift is red.

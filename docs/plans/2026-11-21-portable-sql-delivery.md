@@ -648,3 +648,25 @@ profile-ddl=350 files=39
 **没有动的**:`pymysql_driver` 继续保留 —— MySQL/InnoDB 是协调路径的验证环境,CI 的集成分区
 正在用它,属于「在用」而不是「不用」。RBAC/租户/用户目录这类首期范围外的东西本来就不存在
 (`rbac`/`user_directory`/`megacube` 在产品代码里 0 命中),没有可删的。
+
+### 8.24 #1100 的验收判据:没有未登记条目
+
+§8 的结论是「基线归零」会让 #1100 与 #1102 互相等待。本轮把判据落成机器可检的形式:
+
+- `scripts/dev-env/portable-sql-exceptions.json`:**基线里每一条**登记 `rule`/`path`/`count`/
+  `card`/`reason`/`release`。当前 293 条(合计 705 处),归属三张卡 —— `#1102` 的物理 profile 族、
+  `#1095` 的协调原语族、`#1100` 自己的语句族。
+- 守卫 `--exceptions`:基线里有、登记表里没有 → `UNREGISTERED` 判红;登记表里有、基线里已经没有
+  → `STALE-EXCEPTION` 判红。两半都要红,自检里各有一条注入。
+- CI 同时传 `--baseline` 与 `--exceptions`,于是「静默加一条进基线」这条路也堵死了。
+
+这样 #1100 的完成条件变成可判定的两句话:**业务 DML 里没有未登记条目**;剩余条目逐条写着归属卡与
+解除条件。`profile-ddl`(§8.22 的机制)目前清单为空,物理 DDL 的收编仍归 #1102。
+
+实测:
+
+```
+exceptions=293 cards=3
+baseline=705 new=0 fixed=0
+RESULT OK: no new findings outside the portable SQL subset
+```

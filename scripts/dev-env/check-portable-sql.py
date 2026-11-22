@@ -328,6 +328,37 @@ def load_baseline(path: Path) -> Counter[str]:
     return Counter({str(key): int(value) for key, value in entries.items()})
 
 
+def load_exceptions(path: Path) -> dict[str, dict[str, str]]:
+    """读取「已归类未覆盖项」登记表:键是 `rule::path`,值是归属卡与解除条件."""
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    entries = payload.get("entries")
+    if not isinstance(entries, list):
+        raise SystemExit(f"{path}: expected an object with an 'entries' array")
+    table: dict[str, dict[str, str]] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise SystemExit(f"{path}: every entry must be an object")
+        missing = [field for field in ("rule", "path", "card", "reason") if not entry.get(field)]
+        if missing:
+            raise SystemExit(f"{path}: entry is missing {', '.join(missing)}")
+        key = f"{entry['rule']}::{entry['path']}"
+        if key in table:
+            raise SystemExit(f"{path}: duplicate entry for {key}")
+        table[key] = entry
+    return table
+
+
+def audit_exceptions(
+    counts: Counter[str], exceptions: dict[str, dict[str, str]]
+) -> tuple[list[str], list[str]]:
+    """比较基线与登记表:未登记的条目、以及已经不再存在的登记."""
+
+    unregistered = [key for key in counts if key not in exceptions]
+    stale = [key for key in exceptions if key not in counts]
+    return sorted(unregistered), sorted(stale)
+
+
 def load_profile_patterns(path: Path) -> tuple[str, ...]:
     """读取已声明的 profile 制品路径模式.
 
@@ -372,10 +403,35 @@ def _describe(key: str) -> tuple[str, str]:
     return rule, path
 
 
+def _selftest_exception_audit() -> list[str]:
+    """登记表的两半都要会红:漏登记与登记了已不存在的条目."""
+
+    problems: list[str] = []
+    counts = Counter({"cte::backend/src/a.py": 2, "upsert::backend/src/b.py": 1})
+    complete = {
+        "cte::backend/src/a.py": {"card": "#1100", "reason": "拆派生表"},
+        "upsert::backend/src/b.py": {"card": "#1100", "reason": "保存点"},
+    }
+    unregistered, stale = audit_exceptions(counts, complete)
+    if unregistered or stale:
+        problems.append("a complete exception ledger was rejected")
+    missing = dict(complete)
+    missing.pop("cte::backend/src/a.py")
+    unregistered, stale = audit_exceptions(counts, missing)
+    if unregistered != ["cte::backend/src/a.py"] or stale:
+        problems.append("an unregistered baseline entry was not detected")
+    extra = dict(complete)
+    extra["cte::backend/src/gone.py"] = {"card": "#1100", "reason": "x"}
+    unregistered, stale = audit_exceptions(counts, extra)
+    if unregistered or stale != ["cte::backend/src/gone.py"]:
+        problems.append("a stale exception entry was not detected")
+    return problems
+
+
 def selftest() -> list[str]:
     """注入式自检:每条规则都必须能红,干净样本必须绿。"""
 
-    problems: list[str] = []
+    problems: list[str] = _selftest_exception_audit()
 
     clean = "SELECT job_id FROM coordination_jobs WHERE job_id = ?"
     if scan_python("backend/src/clean.py", f'SQL = "{clean}"' + chr(10)):
@@ -480,6 +536,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--selftest", action="store_true", help="注入式自检规则是否仍会红")
     parser.add_argument(
+        "--exceptions",
+        type=Path,
+        help="已归类未覆盖项登记表(JSON);基线里没有登记的条目判红",
+    )
+    parser.add_argument(
         "--profiles",
         type=Path,
         help="已声明的物理 DDL / 静态 SQL profile 制品清单(JSON),其条目单独计数",
@@ -501,6 +562,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     baseline: Counter[str] = Counter()
     if args.baseline is not None:
         baseline = load_baseline(args.baseline)
+
+    if args.exceptions is not None:
+        exceptions = load_exceptions(args.exceptions)
+        unregistered, stale = audit_exceptions(counts, exceptions)
+        for key in unregistered:
+            rule, path = _describe(key)
+            print(f"UNREGISTERED {rule} {path}")
+        for key in stale:
+            rule, path = _describe(key)
+            print(f"STALE-EXCEPTION {rule} {path}")
+        if unregistered:
+            print("RESULT FAIL: the baseline carries entries with no owning card")
+            return 1
+        if stale:
+            print("RESULT FAIL: the exception ledger lists findings that no longer exist")
+            return 1
+        print(f"exceptions={len(exceptions)} cards={len({e['card'] for e in exceptions.values()})}")
 
     new = counts - baseline
     fixed = baseline - counts

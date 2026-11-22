@@ -88,9 +88,12 @@ def test_the_ordering_names_both_key_columns_and_no_mutable_column() -> None:
 
 
 def test_the_single_lookup_reports_presence_and_the_requested_generation_in_one_statement() -> None:
-    assert _FIND.startswith(
-        "WITH presence AS (SELECT EXISTS (SELECT 1 FROM engine_instances AS listed "
-        "WHERE listed.instance_id = ?) AS instance_exists) "
+    # 存在性由一行派生表给出,不是 CTE:受限方言里没有 `WITH`。
+    assert "WITH " not in _FIND
+    assert _FIND.startswith("SELECT presence.instance_exists, ")
+    assert (
+        "(SELECT EXISTS (SELECT 1 FROM engine_instances AS listed "
+        "WHERE listed.instance_id = ?) AS instance_exists) AS presence " in _FIND
     )
     assert (
         "LEFT JOIN engine_instances AS instance ON instance.instance_id = ? "

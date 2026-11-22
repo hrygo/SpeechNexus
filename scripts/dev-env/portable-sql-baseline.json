@@ -32,7 +32,6 @@
     "cte::backend/src/speechnexus_backend/model_catalog_runtime.py": 1,
     "cte::backend/src/speechnexus_backend/speech/infrastructure/job_cancellation_reconciliation_postgres.py": 1,
     "cte::backend/src/speechnexus_backend/speech/infrastructure/job_dispatch_postgres.py": 7,
-    "cte::backend/src/speechnexus_backend/speech/infrastructure/model_instances_postgres.py": 1,
     "cte::backend/src/speechnexus_backend/workbench/runtime.py": 1,
     "cte::execution-gateway/src/speechnexus_gateway/infrastructure/reader_authority.py": 1,
     "ddl-default::migrations/0001_cluster_coordination_draft.sql": 1,

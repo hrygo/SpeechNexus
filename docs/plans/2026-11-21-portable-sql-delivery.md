@@ -445,6 +445,15 @@ psycopg.ProgrammingError: cannot adapt type 'ListMarker' using placeholder '%s' 
 修法是把同一条规则加进异步游标,并补一条异步真实库 oracle。注入实测:把这条规则去掉,用例立刻
 打印上面那行 `cannot adapt type 'ListMarker'`;加回来即绿。
 
+**但这一修不足以救活 workbench 那 9 处**:异步游标补上展开后,CI 的 workbench 用例仍报
+`VersionStoreError` → `503`。也就是说 workbench 的存储适配器既不是同步游标,也不是
+`AsyncPortableCursor` —— 它有自己的连接/游标层,`ListMarker` 在那里仍然原样落到驱动。这一层
+尚未定位,9 处继续留在旧写法(基线 894)。
+
+**下一步要做的第一件事是让这个错误可见**,而不是再猜一次:workbench 的 `VersionStoreError`
+用 `from None` 丢掉了原始 `psycopg` 异常与 SQLSTATE,CI 日志里只剩「事务失败」。把 SQLSTATE
+记进日志(或保留 `__cause__`)应当先于任何归因。
+
 教训写在判据上:**报错被 `from None` 吃掉时,先让证据可见,再归因**。前一轮我用「撤回二分」
 代替了「拿到原始错误」,代价是两轮 CI 和一份错误的根因说明。
 

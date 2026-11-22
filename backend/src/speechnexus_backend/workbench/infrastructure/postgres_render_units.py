@@ -34,7 +34,6 @@ from speechnexus_backend.workbench.infrastructure.postgres_versions import (
     PostgresVersionUnitOfWork,
     _Session,
 )
-from speechnexus_portable_sql.contract import ListMarker
 
 # C's public casting model narrates a book with one role; recasting is versioned on the
 # book, so the role identity is stable while the voice it pins changes revisions.
@@ -297,10 +296,10 @@ class PostgresRenderUnits(RenderUnitStore):
             _UnitGenerationRow,
             """
             SELECT unit_id, id, job_id, dependencies_sha256, revision
-            FROM {s}.render_unit_generations WHERE unit_id IN (?)
+            FROM {s}.render_unit_generations WHERE unit_id = ANY(?)
             ORDER BY unit_id, revision
         """,
-            (ListMarker(list(unit_ids)),),
+            (list(unit_ids),),
         )
         grouped: dict[str, list[RenderGeneration]] = {}
         for row in rows:

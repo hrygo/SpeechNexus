@@ -35,6 +35,7 @@ from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema imp
 )
 from speechnexus_backend.speech.infrastructure.leases_postgres import PostgresLeaseTransactions
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
+from speechnexus_portable_sql.clock import now_us
 
 _JOB_SELECT = (
     "SELECT j.job_id, j.workspace_id, j.kind, j.state, j.status_version, "
@@ -144,8 +145,7 @@ class PostgresDispatchQueue:
             else ""
         )
         query = (
-            "WITH clock AS (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 "
-            "AS BIGINT) AS now_us), due AS ("
+            "WITH clock AS (SELECT CAST(? AS BIGINT) AS now_us), due AS ("
             "SELECT c.job_id FROM coordination_jobs AS c "
             "JOIN speech_jobs AS j ON j.job_id = c.job_id CROSS JOIN clock "
             + admission
@@ -177,7 +177,7 @@ class PostgresDispatchQueue:
                 )
                 rows = connection.execute(
                     query,
-                    (list(self._kinds), limit, worker_id, lease_ms * 1000),
+                    (now_us(connection), list(self._kinds), limit, worker_id, lease_ms * 1000),
                 ).fetchall()
         except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
             raise DispatchUnavailableError("Dispatch claim storage is unavailable") from None
@@ -263,8 +263,8 @@ class PostgresDispatchStateStore:
         once a pending Job records more than one.
         """
         query = (
-            "WITH clock AS (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 "
-            "AS BIGINT) AS now_us), changed AS (UPDATE speech_jobs AS j "
+            "WITH clock AS (SELECT CAST(? AS BIGINT) AS now_us), "
+            "changed AS (UPDATE speech_jobs AS j "
             "SET state = 'running', status_version = j.status_version + 1, "
             "updated_at_us = clock.now_us FROM clock "
             "WHERE j.job_id = ? AND j.status_version = ? AND j.state = 'pending' "
@@ -280,7 +280,9 @@ class PostgresDispatchStateStore:
                     "SELECT set_config('statement_timeout', ?, true)",
                     (str(max(1, int(self._timeout * 1000))),),
                 )
-                rows = connection.execute(query, (job.job_id, job.status_version)).fetchall()
+                rows = connection.execute(
+                    query, (now_us(connection), job.job_id, job.status_version)
+                ).fetchall()
         except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
             raise DispatchUnavailableError("Dispatch transition failed") from None
         if rows:
@@ -294,8 +296,7 @@ class PostgresDispatchStateStore:
 
     def _renew(self, claim: ClaimedJob, lease_ms: int) -> ClaimedJob | None:
         query = (
-            "WITH clock AS (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 "
-            "AS BIGINT) AS now_us) "
+            "WITH clock AS (SELECT CAST(? AS BIGINT) AS now_us) "
             "UPDATE coordination_jobs AS c SET claim_expires_at_us = clock.now_us + ? "
             "FROM clock WHERE c.job_id = ? AND c.claim_owner_id = ? "
             "AND c.claim_version = ? AND c.job_state = 'pending' "
@@ -309,7 +310,13 @@ class PostgresDispatchStateStore:
                 )
                 rows = connection.execute(
                     query,
-                    (lease_ms * 1000, claim.job.job_id, claim.worker_id, claim.claim_version),
+                    (
+                        now_us(connection),
+                        lease_ms * 1000,
+                        claim.job.job_id,
+                        claim.worker_id,
+                        claim.claim_version,
+                    ),
                 ).fetchall()
         except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
             raise DispatchUnavailableError("Dispatch lease renewal is unavailable") from None
@@ -329,8 +336,7 @@ class PostgresDispatchStateStore:
         """
         job = claim.job
         query = (
-            "WITH clock AS (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) "
-            "* 1000000 AS BIGINT) AS now_us) "
+            "WITH clock AS (SELECT CAST(? AS BIGINT) AS now_us) "
             "SELECT c.job_id FROM coordination_jobs AS c CROSS JOIN clock "
             "WHERE c.job_id = ? AND c.claim_owner_id = ? AND c.claim_version = ? "
             "AND c.job_state = 'pending' AND c.claim_expires_at_us > clock.now_us "
@@ -345,8 +351,9 @@ class PostgresDispatchStateStore:
                     "SELECT set_config('statement_timeout', ?, true)",
                     (str(max(1, int(self._timeout * 1000))),),
                 )
+                now = now_us(connection)
                 owned = connection.execute(
-                    query, (job.job_id, claim.worker_id, claim.claim_version)
+                    query, (now, job.job_id, claim.worker_id, claim.claim_version)
                 ).fetchone()
                 if owned is None:
                     return False
@@ -375,9 +382,8 @@ class PostgresDispatchStateStore:
                     "INSERT INTO speech_job_events "
                     "(job_id, event_seq, state, occurred_at_us, kind, progress_unit, "
                     "progress_completed, progress_total) VALUES (?, ?, 'running', "
-                    "CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT), "
-                    "'progress', ?, ?, ?)",
-                    (job.job_id, int(latest["seq"]) + 1, unit, completed, total),
+                    "CAST(? AS BIGINT), 'progress', ?, ?, ?)",
+                    (job.job_id, int(latest["seq"]) + 1, now, unit, completed, total),
                 )
             return True
         except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
@@ -385,8 +391,7 @@ class PostgresDispatchStateStore:
 
     def _record_cancellation_not_submitted(self, job_id: str, observer: str) -> None:
         query = (
-            "WITH clock AS (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 "
-            "AS BIGINT) AS now_us) "
+            "WITH clock AS (SELECT CAST(? AS BIGINT) AS now_us) "
             f"INSERT INTO {NOT_SUBMITTED_TABLE} (job_id, observed_at_us, observer) "
             "SELECT j.job_id, clock.now_us, ? FROM speech_jobs AS j CROSS JOIN clock "
             "WHERE j.job_id = ? AND j.state = 'cancelling' "
@@ -398,7 +403,7 @@ class PostgresDispatchStateStore:
                     "SELECT set_config('statement_timeout', ?, true)",
                     (str(max(1, int(self._timeout * 1000))),),
                 )
-                connection.execute(query, (observer, job_id))
+                connection.execute(query, (now_us(connection), observer, job_id))
         except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
             raise DispatchUnavailableError(
                 "Cancellation not-submitted observation is unavailable"
@@ -424,27 +429,28 @@ class PostgresDispatchStateStore:
                     "SELECT set_config('statement_timeout', ?, true)",
                     (str(max(1, int(self._timeout * 1000))),),
                 )
+                # 守卫、迁移与关闭必须是同一个时间点:否则守卫通过、关闭却按过期失败.
+                now = now_us(connection)
                 owned = connection.execute(
-                    "WITH clock AS (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) "
-                    "* 1000000 AS BIGINT) AS now_us) "
+                    "WITH clock AS (SELECT CAST(? AS BIGINT) AS now_us) "
                     "SELECT c.job_id FROM coordination_jobs AS c CROSS JOIN clock "
                     "WHERE c.job_id = ? AND c.claim_owner_id = ? "
                     "AND c.claim_version = ? AND c.job_state = 'pending' "
                     "AND c.claim_expires_at_us > clock.now_us FOR UPDATE OF c",
-                    (job.job_id, claim.worker_id, claim.claim_version),
+                    (now, job.job_id, claim.worker_id, claim.claim_version),
                 ).fetchone()
                 if owned is None:
                     # No public or event write may occur without the current lease.
                     raise _TerminalGuardLostError
                 changed = connection.execute(
-                    "WITH clock AS (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) "
-                    "* 1000000 AS BIGINT) AS now_us) "
+                    "WITH clock AS (SELECT CAST(? AS BIGINT) AS now_us) "
                     "UPDATE speech_jobs AS j SET state = ?, "
                     "status_version = j.status_version + 1, result_json = ?, "
                     "error_code = ?, updated_at_us = clock.now_us FROM clock "
                     "WHERE j.job_id = ? AND j.status_version = ? AND j.state = ? "
                     "RETURNING clock.now_us AS now_us",
                     (
+                        now,
                         target,
                         result_json,
                         error_code,
@@ -469,9 +475,8 @@ class PostgresDispatchStateStore:
                     "UPDATE coordination_jobs AS c SET job_state = ?, claim_expires_at_us = 0 "
                     "WHERE c.job_id = ? AND c.job_state = 'pending' "
                     "AND c.claim_owner_id = ? AND c.claim_version = ? "
-                    "AND c.claim_expires_at_us > CAST(EXTRACT(EPOCH FROM clock_timestamp()) "
-                    "* 1000000 AS BIGINT) RETURNING c.job_id",
-                    (target, job.job_id, claim.worker_id, claim.claim_version),
+                    "AND c.claim_expires_at_us > CAST(? AS BIGINT) RETURNING c.job_id",
+                    (target, job.job_id, claim.worker_id, claim.claim_version, now),
                 ).fetchone()
                 if closed is None:
                     # Roll back the public transition if the lease expired before close.
@@ -583,15 +588,10 @@ class PostgresLeaseSettler:
         try:
             with self._pool.connection(timeout=self._timeout) as connection:
                 connection.execute("SET TRANSACTION READ ONLY")
-                row = connection.execute(
-                    "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) "
-                    "AS now_us"
-                ).fetchone()
+                observed = now_us(connection)
         except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
             raise DispatchUnavailableError("Lease settlement storage is unavailable") from None
-        if row is None:
-            raise DispatchUnavailableError("Lease settlement storage returned no clock")
-        return int(row["now_us"])
+        return observed
 
     def isolate_sync(self, operation_id: str, *, reason_code: str) -> LeaseIsolation | None:
         """Move every lease of one Job into the quarantined bucket, or say why not.

@@ -695,3 +695,17 @@ RESULT FAIL: the baseline carries entries with no owning card
 
 注意 `job_schema.py` **不在**清单里:它的 `JOB_DDL` 虽然也被迁移消费,但同一模块还导出运行时授权语句,
 属于业务与 DDL 共用,按规则不构成「唯一消费者是迁移」。
+
+### 8.26 迁移树整体是部署期输入,不逐条进产品门禁
+
+守卫原本只排除 `migrations/versions/`,却把同一棵树里的 `env.py` 当产品 SQL 逐条基线化。
+`env.py` 是 alembic 的入口:用 SQLAlchemy 的命名绑定执行迁移互斥锁、建 schema、设 `search_path`,
+只在部署期跑一次,不在应用运行时路径上。受限方言约束的是**应用运行时 DML**,把它按运行时规则
+基线化只会让真正的违规淹在噪音里。
+
+改为整棵树排除(`MIGRATION_INPUT_PREFIXES` 指向 `migrations/`),版本文件计数改用单独的
+`MIGRATION_VERSION_PREFIX`,报告里的 `migration_input=62` 含义不变。`env.py` 的 5 条
+(`named` 2、`advisory-lock` 1、`vendor-sdk` 1 等)随之退出业务基线:**537 → 532**。
+
+同类判据:这条排除**不覆盖** `*_schema.py` —— 那些模块虽是 DDL,但被业务模块导入表名与列常量,
+不满足「只在部署期执行」,仍按 §8.25 的规则逐个判定。

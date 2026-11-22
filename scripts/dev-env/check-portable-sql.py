@@ -75,11 +75,17 @@ EXCLUDED_PREFIXES = (
     *CLOCK_PREFIXES,
 )
 
-#: Alembic 版本文件是**迁移输入**,不是目标实现:它们按 PostgreSQL 方言写 DDL,由
-#: #1100 / #1102 以单一可移植 SQL migration 取代。这里只统计数量,不逐条进门禁——
-#: 把一份即将删除的方言 DDL 逐条基线化,只会让真正的运行时违规淹没在噪音里。
+#: 整个 alembic 迁移树是**迁移输入**,不是产品运行时 SQL:版本文件按 PostgreSQL 方言写 DDL,
+#: `env.py` 是迁移工具的入口(用 SQLAlchemy 的命名绑定、迁移互斥锁与 `search_path` 设置)。
+#: 受限方言约束的是应用运行时的 DML,所以这里只统计版本文件数量,不逐条进门禁——
+#: 把一份由部署期执行的方言 SQL 逐条基线化,只会让真正的运行时违规淹没在噪音里。
 MIGRATION_INPUT_PREFIXES = (
-    "backend/src/speechnexus_backend/speech/infrastructure/migrations/versions/",
+    "backend/src/speechnexus_backend/speech/infrastructure/migrations/",
+)
+
+#: 迁移版本文件(按文件名排序执行的那一批),只用于统计 `migration_input`。
+MIGRATION_VERSION_PREFIX = (
+    "backend/src/speechnexus_backend/speech/infrastructure/migrations/versions/"
 )
 
 DDL_GLOBS = ("migrations/*.sql",)
@@ -606,8 +612,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     migration_input = (
-        sum(1 for path in (args.root / MIGRATION_INPUT_PREFIXES[0]).glob("*.py"))
-        if (args.root / MIGRATION_INPUT_PREFIXES[0]).is_dir()
+        sum(1 for path in (args.root / MIGRATION_VERSION_PREFIX).glob("*.py"))
+        if (args.root / MIGRATION_VERSION_PREFIX).is_dir()
         else 0
     )
     total = sum(counts.values())

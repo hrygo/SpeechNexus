@@ -11,9 +11,6 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, cast
 
-from psycopg.rows import class_row
-from psycopg.types.json import Jsonb
-
 from speechnexus_backend.workbench.application.deletion_ports import (
     DeletionFamily,
     DeletionReceipt,
@@ -41,6 +38,7 @@ from speechnexus_backend.workbench.infrastructure.postgres_versions import (
     PostgresVersionUnitOfWork,
     _Session,
 )
+from speechnexus_portable_sql.vendor import Jsonb, class_row
 
 
 @dataclass(frozen=True)

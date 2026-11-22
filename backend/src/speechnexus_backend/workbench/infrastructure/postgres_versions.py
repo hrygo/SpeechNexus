@@ -16,10 +16,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
-import psycopg
-from psycopg import sql
-from psycopg.rows import class_row
-
 from speechnexus_backend.workbench.application.listings import ListingPosition
 from speechnexus_backend.workbench.application.version_ports import (
     ErasedMutationReceipt,
@@ -42,6 +38,7 @@ from speechnexus_backend.workbench.domain.versions import (
 )
 from speechnexus_backend.workbench.infrastructure.version_schema import schema_identifier
 from speechnexus_portable_sql.psycopg_driver import connect_async as portable_connect_async
+from speechnexus_portable_sql.vendor import class_row, psycopg, sql
 
 
 @dataclass(frozen=True)

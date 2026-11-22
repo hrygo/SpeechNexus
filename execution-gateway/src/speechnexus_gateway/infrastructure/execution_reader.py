@@ -6,9 +6,6 @@ import time
 from datetime import datetime
 from typing import Any, cast
 
-import psycopg
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
-
 from speechnexus_gateway.domain.abort_intent import AbortExecutionRequest
 from speechnexus_gateway.domain.canonical import command_digest
 from speechnexus_gateway.domain.recovery import AbortReceipt, AbortRecovery, ExecutionSnapshot
@@ -32,6 +29,7 @@ from speechnexus_gateway.infrastructure.submit_sql import (
     from_unix_micros,
     read_submit_intent,
 )
+from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 
 class _BudgetExpiredError(Exception):

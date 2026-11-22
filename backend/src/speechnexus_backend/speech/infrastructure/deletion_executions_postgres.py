@@ -23,10 +23,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
 
-import psycopg
-from psycopg.types.json import Jsonb
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
-
 from speechnexus_backend.speech.application.deletions import AcceptedDeletion
 from speechnexus_backend.speech.domain.assets import VerifiedObject
 from speechnexus_backend.speech.domain.deletion import (
@@ -75,6 +71,7 @@ from speechnexus_backend.speech.infrastructure.deletion_plans_postgres import (
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_portable_sql.clock import ClockReader, now_us
+from speechnexus_portable_sql.vendor import Jsonb, PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 _PLAN_ROW_COLUMNS = (
     "id, workspace_id, target_owner, target_kind, target_id, target_revision, "

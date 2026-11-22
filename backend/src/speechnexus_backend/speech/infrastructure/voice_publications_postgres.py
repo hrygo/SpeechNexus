@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any
+from typing import Any, cast
 
 import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
@@ -54,6 +54,7 @@ from speechnexus_backend.speech.infrastructure.voice_publication_schema import (
     INTENT_TABLE,
     REVISION_TABLE,
 )
+from speechnexus_portable_sql.clock import ClockReader, now_us
 
 _SELECT_DRAFT = (
     "SELECT draft_id, kind, status, head_revision, display_name "
@@ -290,11 +291,10 @@ class PostgresVoicePublications:
 
         voice_id = stable_voice_id(draft_id)
         voice_revision = self._next_revision(cursor, voice_id)
-        cursor.execute("SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp())*1000000 AS BIGINT) AS t")
-        clocks = cursor.fetchall()
-        if len(clocks) != 1:
-            raise VoicePublicationUnavailableError
-        published_at_us = int(clocks[0]["t"])
+        try:
+            published_at_us = now_us(cast(ClockReader, cursor))
+        except (LookupError, TypeError) as error:
+            raise VoicePublicationUnavailableError from error
         revision_id = stable_revision_id(voice_id, voice_revision)
         display_name = request.display_name or draft["display_name"]
         document = build_voice_revision_document(
@@ -427,10 +427,9 @@ class PostgresVoicePublications:
         self, cursor: _Cursor, material: VoiceMaterial, workspace_id: str
     ) -> None:
         cursor.execute(
-            "SELECT asset_state, bytes, sha256, expires_at_us, "
-            "CAST(EXTRACT(EPOCH FROM clock_timestamp())*1000000 AS BIGINT) AS now_us "
+            "SELECT asset_state, bytes, sha256, expires_at_us, CAST(? AS BIGINT) AS now_us "
             "FROM speech_assets WHERE asset_id=? AND workspace_id=?",
-            (material.asset_id, workspace_id),
+            (now_us(cast(ClockReader, cursor)), material.asset_id, workspace_id),
         )
         rows = cursor.fetchall()
         if (

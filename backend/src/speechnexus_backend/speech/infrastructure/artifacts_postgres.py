@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from typing import Any, cast
 
 import psycopg
@@ -11,6 +12,7 @@ from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 from speechnexus_backend.speech.domain.artifacts import ArtifactError, ArtifactRecord
 from speechnexus_backend.speech.domain.assets import identifier
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
+from speechnexus_portable_sql.clock import now_us
 
 
 class PostgresArtifactMetadata:
@@ -168,7 +170,8 @@ __all__ = ["PostgresArtifactMetadata", "PostgresArtifactRetention", "PostgresArt
 
 # One database-clock expression, so the retention decision, the selection and the
 # state transition all read the same instant instead of a process clock.
-_NOW_US = "CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT)"
+# 「现在」由 `clock.now_us` 读一次后当参数传入;语句里只留 `CAST(? AS BIGINT)`.
+_NOW_US = "CAST(? AS BIGINT)"
 _ELAPSED = "expires_at_us IS NOT NULL AND expires_at_us <= " + _NOW_US
 
 
@@ -194,8 +197,8 @@ class PostgresArtifactRetention:
         return self._read(
             "SELECT " + _READ_COLUMNS + ", " + _NOW_US + " AS now_us FROM speech_artifacts "
             "WHERE artifact_state = 'ready' AND " + _ELAPSED + " "
-            "ORDER BY expires_at_us, artifact_id LIMIT ?",
-            (limit,),
+            "ORDER BY expires_at_us, artifact_id",
+            limit,
         )
 
     def mark_expired(self, artifact_id: str) -> ArtifactRecord | None:
@@ -204,7 +207,7 @@ class PostgresArtifactRetention:
             "UPDATE speech_artifacts SET artifact_state = 'expired' "
             "WHERE artifact_id = ? AND artifact_state = 'ready' AND " + _ELAPSED + " "
             "RETURNING " + _READ_COLUMNS,
-            artifact_id,
+            lambda now: (artifact_id, now),
         )
         return None if row is None else _artifact(row)
 
@@ -215,8 +218,8 @@ class PostgresArtifactRetention:
         return self._read(
             "SELECT " + _READ_COLUMNS + ", " + _NOW_US + " AS now_us FROM speech_artifacts "
             "WHERE artifact_state = 'expired' AND " + _ELAPSED + " "
-            "ORDER BY expires_at_us, artifact_id LIMIT ?",
-            (limit,),
+            "ORDER BY expires_at_us, artifact_id",
+            limit,
         )
 
     def mark_deleted(self, artifact_id: str) -> ArtifactRecord | None:
@@ -234,7 +237,7 @@ class PostgresArtifactRetention:
             + _ELAPSED
             + " RETURNING "
             + _READ_COLUMNS,
-            artifact_id,
+            lambda now: (now, artifact_id),
         )
         return None if row is None else _artifact(row)
 
@@ -257,9 +260,7 @@ class PostgresArtifactRetention:
             raise ArtifactError("artifact_storage_unavailable") from None
         return None if row is None else _artifact(row)
 
-    def _read(
-        self, statement: str, parameters: tuple[object, ...]
-    ) -> tuple[int, tuple[ArtifactRecord, ...]]:
+    def _read(self, statement: str, page_size: int) -> tuple[int, tuple[ArtifactRecord, ...]]:
         try:
             with self._pool.connection(timeout=self._timeout) as connection:
                 connection.execute("SET TRANSACTION READ ONLY")
@@ -267,28 +268,36 @@ class PostgresArtifactRetention:
                     "SELECT set_config('statement_timeout', ?, true)",
                     (str(max(1, int(self._timeout * 1000))),),
                 )
-                rows = connection.execute(statement, parameters).fetchall()
+                # 过期判定与回给调用方的时间点必须是同一个.
+                now = now_us(connection)
+                rows = connection.execute(statement, (now, now)).fetchmany(page_size)
         except ArtifactError:
             raise
         except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
             raise ArtifactError("artifact_storage_unavailable") from None
         if not rows:
-            return self._now_us(), ()
-        now_us = rows[0]["now_us"]
-        if type(now_us) is not int:
+            return now, ()
+        observed = rows[0]["now_us"]
+        if type(observed) is not int:
             raise ArtifactError("artifact_storage_unavailable")
-        return now_us, tuple(_artifact(row) for row in rows)
+        return observed, tuple(_artifact(row) for row in rows)
 
-    def _transition(self, statement: str, artifact_id: str) -> dict[str, Any] | None:
-        """Run one guarded state transition; `None` means another pass won."""
-        artifact_id = identifier(artifact_id)
+    def _transition(
+        self, statement: str, parameters: Callable[[int], tuple[object, ...]]
+    ) -> dict[str, Any] | None:
+        """Run one guarded state transition; `None` means another pass won.
+
+        `parameters` 拿到同一个 `now` 再按语句里 `?` 的真实顺序拼参数——时钟可能出现在
+        标识之前(例如 `SET deleted_at_us = CAST(? AS BIGINT) ... WHERE artifact_id = ?`),
+        猜顺序会把时钟写进标识列.
+        """
         try:
             with self._pool.connection(timeout=self._timeout) as connection:
                 connection.execute(
                     "SELECT set_config('statement_timeout', ?, true)",
                     (str(max(1, int(self._timeout * 1000))),),
                 )
-                return connection.execute(statement, (artifact_id,)).fetchone()
+                return connection.execute(statement, parameters(now_us(connection))).fetchone()
         except ArtifactError:
             raise
         except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:

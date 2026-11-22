@@ -35,6 +35,27 @@ def test_vendor_errors_become_one_portable_category(
     assert translated.__cause__ is None or isinstance(translated, StorageError)
 
 
+@pytest.mark.parametrize(
+    ("sqlstate", "reason"),
+    [
+        ("42P01", "schema_missing"),
+        ("3F000", "schema_missing"),
+        ("42501", "permission_denied"),
+        ("40001", "unavailable"),
+        (None, "unavailable"),
+    ],
+)
+def test_the_driver_turns_sqlstate_into_the_one_diagnostic_reason(
+    sqlstate: str | None, reason: str
+) -> None:
+    # SQLSTATE 只在这里被读一次。业务与领域读的是 `reason`,不认厂商码。
+    error = psycopg.errors.UndefinedTable("synthetic")
+    error.sqlstate = sqlstate
+    translated = portable_error(error)
+    assert isinstance(translated, StorageError)
+    assert translated.reason == reason
+
+
 def test_an_unrelated_error_is_not_disguised_as_storage() -> None:
     """编程错误不能被伪装成存储失败,否则「失败即回滚」的判据会失真。"""
 

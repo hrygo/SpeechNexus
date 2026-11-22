@@ -84,6 +84,7 @@ from speechnexus_backend.speech.infrastructure.public_job_admission import (
     rejection_code,
 )
 from speechnexus_portable_sql.clock import ClockReader, now_us
+from speechnexus_portable_sql.psycopg_driver import portable_error
 
 _LATEST_PROGRESS = (
     "(SELECT e.progress_{column} FROM speech_job_events AS e "
@@ -206,6 +207,15 @@ class _DeadlineConnection:
         with self.raw.cursor() as raw:
             yield _DeadlineCursor(raw, self.deadline)
 
+
+def _unavailable_detail(error: BaseException) -> str | None:
+    """把驱动失败先翻成契约类别,再取公开 detail。
+
+    领域只读 `reason`,不认 psycopg 类型也不读 SQLSTATE;翻译由适配点负责,
+    存储这里只负责在抛出自己的拒绝之前先走过那一步。
+    """
+
+    return prerequisite_detail(portable_error(error))
 
 class PostgresPublicJobs:
     """Implements the narrow Job facts and store ports with explicit deadlines."""
@@ -737,7 +747,7 @@ class PostgresPublicJobs:
                 return JobCreateResult(
                     "rejected",
                     error_code="storage_rejected",
-                    detail=prerequisite_detail(error),
+                    detail=_unavailable_detail(error),
                 )
         return JobCreateResult("unknown", error_code="outcome_unknown")
 
@@ -860,7 +870,7 @@ class PostgresPublicJobs:
             return RevisionCreateResult(
                 "rejected",
                 error_code="storage_rejected",
-                detail=prerequisite_detail(error),
+                detail=_unavailable_detail(error),
             )
 
     def cancel(
@@ -1001,7 +1011,7 @@ class PostgresPublicJobs:
                 updated = _select_job(connection, job_id)
             return None if updated is None else _job(updated)
         except (psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests) as error:
-            raise PublicJobUnavailableError(prerequisite_detail(error)) from None
+            raise PublicJobUnavailableError(_unavailable_detail(error)) from None
 
     def advance(
         self,
@@ -1045,7 +1055,7 @@ class PostgresPublicJobs:
         except PublicJobConflictError, PublicJobUnavailableError:
             raise
         except (psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests) as error:
-            raise PublicJobUnavailableError(prerequisite_detail(error)) from None
+            raise PublicJobUnavailableError(_unavailable_detail(error)) from None
 
     def _read(
         self,
@@ -1077,7 +1087,7 @@ class PostgresPublicJobs:
             KeyError,
             PublicationUnavailableError,
         ) as error:
-            raise PublicJobUnavailableError(prerequisite_detail(error)) from None
+            raise PublicJobUnavailableError(_unavailable_detail(error)) from None
 
     @contextmanager
     def _transaction(self, deadline: float) -> Iterator[_DeadlineConnection]:
@@ -1104,7 +1114,7 @@ class PostgresPublicJobs:
             _remaining(deadline)
         except psycopg.Error as error:
             if committing:
-                raise PublicJobUnavailableError(prerequisite_detail(error)) from None
+                raise PublicJobUnavailableError(_unavailable_detail(error)) from None
             raise
 
 

@@ -235,3 +235,25 @@ claim bucket 改的是准入侧的领取，**没有覆盖派发队列**。因此
 **这就是那条被守卫拦下的替换**:我先换了 `claim_purge`/`release_purge`,守卫判红,于是撤回,
 并把原因写在代码注释里 —— 列清单先冻结成字面量常量,这三处才能一起换。守卫拦住的是我制造
 新违规,不是它误报。
+
+### 8.6 错误分类:SQLSTATE 只在适配点被读一次
+
+`vendor-error-branch` 的 13 处原本分散在三层:领域(`job_prerequisites` 按 `sqlstate` 分类)、
+基础设施(`admission_postgres` 把 SQLSTATE 写进日志、`postgres_versions` 把
+`error.sqlstate` 塞进 `VersionStoreError`)、应用(`version_ports` 把它当诊断字段透传)。
+
+收敛后的形状:
+
+- `contract.StorageError` 带唯一诊断维度 `reason ∈ {unavailable, schema_missing, permission_denied}`。
+- `psycopg_driver._reason_of` 是**唯一**读 SQLSTATE 的地方(`42P01`/`3F000` → `schema_missing`,
+  `42501` → `permission_denied`,其余 `unavailable`)。
+- 领域只读 `reason`;存储实现在抛自己的拒绝之前先过一遍 `portable_error`,把驱动失败翻成契约类别。
+
+**注入即红**:`test_a_vendor_sqlstate_alone_does_not_reach_the_domain_any_more` 造一个只带
+`sqlstate="42P01"`、没有 `reason` 的异常,断言分类给不出结论。把领域改回读 `sqlstate` 时这条
+立刻变红(实测过),所以它盯的是「领域不再碰厂商码」这件事本身,不是某次分类结果。
+
+顺带修了一个真实缺陷:存储原来用 `raise ... from None` 抛出,链被切断,分类拿不到任何事实
+——这也是为什么三个 PG oracle 用例(`test_public_job_prerequisites_pg`)在改成读 `reason` 后
+一开始是红的:它们真的在未迁移库/被撤权角色上跑,暴露出翻译点没接上。
+

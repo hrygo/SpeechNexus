@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Sequence
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
 from speechnexus_portable_sql.subset import placeholder_count, validate
 
@@ -61,8 +61,22 @@ class CommitUnknownError(PortableSqlError):
     """`commit()` 抛错或结果不可确认:只允许按原业务身份查询,不得新建执行或释放预算。"""
 
 
+type StorageReason = Literal["unavailable", "schema_missing", "permission_denied"]
+
+
 class StorageError(PortableSqlError):
-    """语句在存储端失败,事务已回滚。业务只按类别处理,不读 SQLSTATE 或厂商错误码。"""
+    """语句在存储端失败,事务已回滚。业务只按类别处理,不读 SQLSTATE 或厂商错误码。
+
+    `reason` 是唯一的诊断维度:驱动把厂商的事实翻成这三个值,业务与领域只读它。
+    `schema_missing` 表示语句点名的关系/模式不存在(库没跑过迁移 profile),
+    `permission_denied` 表示关系在但当前角色没有权限(该补授权而不是重跑迁移)。
+    """
+
+    def __init__(
+        self, message: str = "statement failed", *, reason: StorageReason = "unavailable"
+    ) -> None:
+        super().__init__(message)
+        self.reason: StorageReason = reason
 
 
 class ConflictError(StorageError):

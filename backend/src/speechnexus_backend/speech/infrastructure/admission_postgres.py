@@ -46,6 +46,7 @@ from speechnexus_backend.speech.infrastructure.transcription_submit import (
     deadline_text,
 )
 from speechnexus_backend.speech.infrastructure.tts_settlement_sql import insert_tts_settlement
+from speechnexus_portable_sql.psycopg_driver import portable_error
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -357,19 +358,14 @@ class PostgresAdmissionTransactions:
             except psycopg.OperationalError, psycopg.InterfaceError:
                 return unknown(identity)
             except (psycopg.Error, ValueError, TypeError, KeyError) as error:
-                sqlstate = getattr(error, "sqlstate", None)
-                if (
-                    not isinstance(sqlstate, str)
-                    or len(sqlstate) != 5
-                    or any(char not in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ" for char in sqlstate)
-                ):
-                    sqlstate = None
+                # 只记契约的诊断维度,不记 SQLSTATE:厂商码属于适配点,不该出现在业务日志里。
+                reason = getattr(portable_error(error), "reason", None)
                 # Exception text, SQL and parameters can contain private commands or DSNs.
                 _LOGGER.warning(
-                    "Admission storage failure: operation=%s error=%s sqlstate=%s",
+                    "Admission storage failure: operation=%s error=%s reason=%s",
                     identity.operation_id,
                     type(error).__name__,
-                    sqlstate,
+                    reason,
                 )
                 if ready_to_commit:
                     return unknown(identity)

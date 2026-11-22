@@ -1092,3 +1092,23 @@ PG oracle:`tests/integration/test_binding_lifecycle_pg.py` 已经在真实库上
 
 注入即红:把「插入失败后再更新一次」这条兜底短路掉(插入分支永不执行)→ `3 failed, 18 passed`。
 基线 **300 → 294**。
+
+### 8.44 第二步:行锁让「先更新、再插入」不需要保存点
+
+`workbench` 的遥提示状态写入原来也是 `INSERT … ON CONFLICT (project_id) DO UPDATE SET …`。
+改成两步:先 `UPDATE`,命中即结束;未命中再 `INSERT`。
+
+与 §8.43 的发布头指针相比,这里**不需要**「插入失败再更新一次」的兜底,原因是调用方在更早处
+已经对该 project 加了行锁(`_project(..., lock=True)`):锁在事务里,同一 project 的并发插入
+不可能插到「更新未命中」与「插入」之间。**兜底的必要性取决于锁的覆盖范围,不取决于语句长相** ——
+这一点如果只照抄 §8.43 会看不出来。
+
+`_Session` 原来只暴露 `_execute`(无返回值),这里补一个 `_execute_changed` 返回 `rowcount`,
+因为两步法必须靠受影响行数判断。写入被抽成 `_write_state(base, project_id, state)`,好让判据落在
+代码上而不是靠集成链路:
+
+- 用例:`test_an_existing_row_is_updated_and_never_inserted`(只发 UPDATE)、
+  `test_a_missing_row_falls_through_to_one_insert`(UPDATE → INSERT,且语句里没有 `ON CONFLICT`);
+- 注入即红:把 `if changed: return` 短路成 `if False:` → `1 failed, 1 passed`。
+
+基线 **294 → 293**。

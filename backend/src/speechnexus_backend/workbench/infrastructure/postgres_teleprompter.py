@@ -61,6 +61,45 @@ def _digest(value: object) -> str:
     ).hexdigest()
 
 
+async def _write_state(base: _Session, project_id: str, state: TeleprompterState) -> None:
+    """写入行走「先更新、未命中再插入」.
+
+    受限方言没有 `ON CONFLICT … DO UPDATE`,也没有 `RETURNING`;两步法靠 `rowcount` 判断。
+    调用方已经对该 project 加了行锁,所以「更新未命中」之后不可能有并发插入抢在前面。
+    """
+
+    changed = await base._execute_changed(
+        """
+        UPDATE {s}.teleprompter_states
+        SET script_revision = ?, visible_position = ?, manual_hold = ?, updated_at = ?
+        WHERE project_id = ?
+    """,
+        (
+            state.script_revision,
+            state.visible_position,
+            state.manual_hold,
+            state.updated_at,
+            project_id,
+        ),
+    )
+    if changed:
+        return
+    await base._execute(
+        """
+        INSERT INTO {s}.teleprompter_states
+            (project_id, script_revision, visible_position, manual_hold, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+    """,
+        (
+            project_id,
+            state.script_revision,
+            state.visible_position,
+            state.manual_hold,
+            state.updated_at,
+        ),
+    )
+
+
 class PostgresTeleprompter:
     """One project lock serializes read-modify-write; no advisory lock or retry is added."""
 
@@ -149,25 +188,7 @@ class PostgresTeleprompter:
                     updated_at=now,
                 )
             )
-            await base._execute(
-                """
-                INSERT INTO {s}.teleprompter_states
-                    (project_id, script_revision, visible_position, manual_hold, updated_at)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT (project_id) DO UPDATE SET
-                    script_revision = EXCLUDED.script_revision,
-                    visible_position = EXCLUDED.visible_position,
-                    manual_hold = EXCLUDED.manual_hold,
-                    updated_at = EXCLUDED.updated_at
-            """,
-                (
-                    project_id,
-                    state.script_revision,
-                    state.visible_position,
-                    state.manual_hold,
-                    state.updated_at,
-                ),
-            )
+            await _write_state(base, project_id, state)
             if digest is not None:
                 assert intent_digest is not None
                 await base._execute(

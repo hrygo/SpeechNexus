@@ -883,14 +883,6 @@
     },
     {
       "rule": "upsert",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/postgres_teleprompter.py",
-      "count": 1,
-      "card": "#1100",
-      "reason": "需要保存点式冲突翻译;见计划 §8.19/§8.20",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "upsert",
       "path": "node-controller/src/speechnexus_node_controller/infrastructure/sqlite_intent_store.py",
       "count": 1,
       "card": "#1100",

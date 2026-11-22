@@ -460,3 +460,19 @@ psycopg.ProgrammingError: cannot adapt type 'ListMarker' using placeholder '%s' 
 本机现在可用的真实库:`PostgreSQL 18.6`,端口 55432,库 `speechnexus_test`。workbench 集成
 harness 另有更严的 DSN 守卫(Unix socket + `workbench_test_owner` + `sslmode=on`),本机未满足,
 所以 workbench 路径的真实库证据仍只来自 CI。
+
+### 8.17 第三层找到了:workbench 的语句是 `Composed`
+
+上一节留下了「workbench 走第三层,尚未定位」。它就在 driver 的 `_translate_composed` 旁边:
+workbench 用 `sql.SQL(query).format(s=schema)` 拼语句,得到的是 `psycopg.sql.Composed`,而
+`expand_lists` 只处理 `str`。展开在 `Composed` 上从未发生,标记原样落到驱动。
+
+展开规则:标记只出现在 `SQL` 片段里,`Identifier`/`Literal` 是叶子且不含占位符,所以按片段顺序
+消耗参数、逐片段替换即可,片段边界与标识符引用规则都不动。同步与异步游标共用一个
+`_expanded(query, params)`,按语句形状分派。
+
+注入实测:`test_a_list_marker_expands_inside_a_composed_statement` 在撤掉分支后立刻打印
+`cannot adapt type 'ListMarker'`;恢复即绿。本机 PostgreSQL 18.6 上四条 oracle 全绿(纯文本、
+空批次、异步、`Composed`)。
+
+workbench 那 9 处因此恢复,基线 894 → 877。

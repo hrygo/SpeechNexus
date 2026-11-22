@@ -72,3 +72,24 @@ async def test_a_list_marker_expands_on_the_async_path_too() -> None:
             assert [row["name"] for row in await cursor.fetchall()] == ["b"]
     finally:
         await connection.close()
+
+
+async def test_a_list_marker_expands_inside_a_composed_statement() -> None:
+    # workbench 的语句是 `sql.SQL(...).format(s=schema)` 拼出来的 `Composed`:
+    # 标记只出现在 SQL 片段里,展开必须按片段顺序消耗参数,标识符片段保持原样。
+    from psycopg import sql
+
+    from speechnexus_portable_sql.psycopg_driver import connect_async
+
+    connection = await connect_async(_dsn(), row_factory=dict_row)
+    try:
+        async with connection.cursor() as cursor:
+            await cursor.execute(
+                sql.SQL("SELECT name FROM ({}) AS t WHERE name IN (?) ORDER BY name").format(
+                    sql.SQL(_NAMES)
+                ),
+                ("a", "b", "c", ListMarker(["a", "c"])),
+            )
+            assert [row["name"] for row in await cursor.fetchall()] == ["a", "c"]
+    finally:
+        await connection.close()

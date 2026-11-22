@@ -121,3 +121,13 @@
 ### 当前阻塞
 
 GitHub 凭据在本轮失效：`gh auth status` 报 `The token in default is invalid`，`~/.config/gh/hosts.yml` 无 `oauth_token`，keychain 取不到凭据，`git push` 报 `could not read Username`，日志下载接口返 403。合表、推送、issue 同步都需要先 `gh auth login -h github.com` 恢复。恢复前本地已完成但未推送的提交见 `git log origin/feat/portable-sql-casts..HEAD`。
+
+### 时钟收敛的界外项：`readiness.py`
+
+两次尝试给 `readiness.py` 的债务探针换掉内联时钟都撤回了,原因不是行为,而是**它还在用 `%(name)s` 参数标记**:
+
+- 时钟可以直接换(`now_statement()`),但「现在」要进语句就得作为参数,而该模块的参数风格是 `%(name)s`。每加一个 `%(now_us)s` 就是一处新的 `pyformat` 命中;
+- 守卫按 (规则, 文件) 计数比较,`new=1` 立刻判红:基线从 954 变成「新增 pyformat」。这不是可以写进基线的变化,基线的意义就是不让标记漂移;
+- 把 `LIMIT %(limit)s` 一起改成分页还要动 `fetchmany`,而这属于异步驱动的标记迁移(见 §6)。
+
+结论:`readiness.py` 的时钟、标记与分页必须在**同一次**迁移里改完,单独换时钟会让守卫指标退步。在异步驱动迁移落地前,这两个 `vendor-time` 命中保留在基线里,属于已知的、有归类的未覆盖项,不是「已经支持」。

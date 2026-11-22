@@ -1,5 +1,5 @@
 {
-  "revision": "0003",
+  "revision": "0004",
   "statements": [
     {
       "id": "authority.probe",
@@ -159,6 +159,375 @@
       "idempotency": "retry_on_zero_rows",
       "error_semantics": "rollback_and_backoff",
       "sql": "UPDATE coordination_claim_buckets SET claim_owner_id = ?, lease_until = ?, version = ? WHERE bucket_no = ? AND version = ? AND claim_owner_id = ?"
+    },
+    {
+      "id": "budget.hold",
+      "version": 1,
+      "params": [
+        {
+          "name": "units",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "host_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "meter_kind",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "expected_version",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "units_bound",
+          "kind": "decimal",
+          "nullable": false
+        }
+      ],
+      "result": [],
+      "transaction": "cas",
+      "lock_order": [
+        "workspace_quotas",
+        "host_capacity_budgets"
+      ],
+      "idempotency": "retry_on_zero_rows",
+      "error_semantics": "rollback_and_rescan",
+      "sql": "UPDATE host_capacity_budgets SET held_units = held_units + ?, version = version + 1 WHERE host_id = ? AND meter_kind = ? AND version = ? AND held_units + ? <= limit_units"
+    },
+    {
+      "id": "budget.lock",
+      "version": 1,
+      "params": [
+        {
+          "name": "host_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "meter_kind",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "result": [
+        {
+          "name": "limit_units",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "held_units",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "kind": "decimal",
+          "nullable": false
+        }
+      ],
+      "transaction": "write",
+      "lock_order": [
+        "workspace_quotas",
+        "host_capacity_budgets"
+      ],
+      "idempotency": "read_again",
+      "error_semantics": "rollback_and_rescan",
+      "sql": "SELECT limit_units, held_units, version FROM host_capacity_budgets WHERE host_id = ? AND meter_kind = ? FOR UPDATE"
+    },
+    {
+      "id": "budget.release",
+      "version": 1,
+      "params": [
+        {
+          "name": "units",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "host_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "meter_kind",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "expected_version",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "units_bound",
+          "kind": "decimal",
+          "nullable": false
+        }
+      ],
+      "result": [],
+      "transaction": "cas",
+      "lock_order": [
+        "workspace_quotas",
+        "host_capacity_budgets"
+      ],
+      "idempotency": "retry_on_zero_rows",
+      "error_semantics": "rollback_and_rescan",
+      "sql": "UPDATE host_capacity_budgets SET held_units = held_units - ?, version = version + 1 WHERE host_id = ? AND meter_kind = ? AND version = ? AND held_units >= ?"
+    },
+    {
+      "id": "grant.insert",
+      "version": 1,
+      "params": [
+        {
+          "name": "grant_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "session_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "lease_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "meter_kind",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "authority_epoch",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "renew_seq",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "granted_units",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "consumed_units",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "returned_units",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "grant_state",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "expires_at",
+          "kind": "timestamp",
+          "nullable": false
+        }
+      ],
+      "result": [],
+      "transaction": "write",
+      "lock_order": [
+        "workspace_quotas",
+        "host_capacity_budgets"
+      ],
+      "idempotency": "unique_grant_identity",
+      "error_semantics": "rollback_and_query_identity",
+      "sql": "INSERT INTO admission_budget_grants (grant_id, session_id, lease_id, meter_kind, authority_epoch, renew_seq, granted_units, consumed_units, returned_units, version, grant_state, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    },
+    {
+      "id": "grant.read",
+      "version": 1,
+      "params": [
+        {
+          "name": "grant_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "result": [
+        {
+          "name": "grant_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "session_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "lease_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "meter_kind",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "authority_epoch",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "renew_seq",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "granted_units",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "consumed_units",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "returned_units",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "grant_state",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "expires_at",
+          "kind": "timestamp",
+          "nullable": false
+        }
+      ],
+      "transaction": "read_only",
+      "lock_order": [],
+      "idempotency": "read_only_replay",
+      "error_semantics": "rollback_and_rescan",
+      "sql": "SELECT grant_id, session_id, lease_id, meter_kind, authority_epoch, renew_seq, granted_units, consumed_units, returned_units, version, grant_state, expires_at FROM admission_budget_grants WHERE grant_id = ?"
+    },
+    {
+      "id": "grant.reclaim",
+      "version": 1,
+      "params": [
+        {
+          "name": "consumed_units",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "returned_units",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "next_state",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "grant_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "expected_version",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "expected_state",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "result": [],
+      "transaction": "cas",
+      "lock_order": [
+        "workspace_quotas",
+        "host_capacity_budgets"
+      ],
+      "idempotency": "retry_on_zero_rows",
+      "error_semantics": "rollback_and_read_original_grant",
+      "sql": "UPDATE admission_budget_grants SET consumed_units = ?, returned_units = ?, grant_state = ?, version = version + 1 WHERE grant_id = ? AND version = ? AND grant_state = ?"
+    },
+    {
+      "id": "grant.renew",
+      "version": 1,
+      "params": [
+        {
+          "name": "additional_units",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "renew_seq",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "expires_at",
+          "kind": "timestamp",
+          "nullable": false
+        },
+        {
+          "name": "grant_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "expected_version",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "expected_epoch",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "expected_state",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "result": [],
+      "transaction": "cas",
+      "lock_order": [
+        "workspace_quotas",
+        "host_capacity_budgets"
+      ],
+      "idempotency": "retry_on_zero_rows",
+      "error_semantics": "rollback_and_read_original_grant",
+      "sql": "UPDATE admission_budget_grants SET granted_units = granted_units + ?, renew_seq = ?, version = version + 1, expires_at = ? WHERE grant_id = ? AND version = ? AND authority_epoch = ? AND grant_state = ?"
     },
     {
       "id": "job.candidates",
@@ -491,6 +860,129 @@
       "idempotency": "read_only_replay",
       "error_semantics": "rollback_and_rescan",
       "sql": "SELECT event_id, job_id FROM coordination_outbox WHERE delivered_at IS NULL AND event_id > ? ORDER BY event_id"
+    },
+    {
+      "id": "quota.hold",
+      "version": 1,
+      "params": [
+        {
+          "name": "units",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "workspace_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "meter_kind",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "expected_version",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "units_bound",
+          "kind": "decimal",
+          "nullable": false
+        }
+      ],
+      "result": [],
+      "transaction": "cas",
+      "lock_order": [
+        "workspace_quotas"
+      ],
+      "idempotency": "retry_on_zero_rows",
+      "error_semantics": "rollback_and_rescan",
+      "sql": "UPDATE workspace_quotas SET held_units = held_units + ?, version = version + 1 WHERE workspace_id = ? AND meter_kind = ? AND version = ? AND held_units + ? <= limit_units"
+    },
+    {
+      "id": "quota.lock",
+      "version": 1,
+      "params": [
+        {
+          "name": "workspace_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "meter_kind",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "result": [
+        {
+          "name": "limit_units",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "held_units",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "committed_units",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "kind": "decimal",
+          "nullable": false
+        }
+      ],
+      "transaction": "write",
+      "lock_order": [
+        "workspace_quotas"
+      ],
+      "idempotency": "read_again",
+      "error_semantics": "rollback_and_rescan",
+      "sql": "SELECT limit_units, held_units, committed_units, version FROM workspace_quotas WHERE workspace_id = ? AND meter_kind = ? FOR UPDATE"
+    },
+    {
+      "id": "quota.release",
+      "version": 1,
+      "params": [
+        {
+          "name": "units",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "workspace_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "meter_kind",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "expected_version",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "units_bound",
+          "kind": "decimal",
+          "nullable": false
+        }
+      ],
+      "result": [],
+      "transaction": "cas",
+      "lock_order": [
+        "workspace_quotas"
+      ],
+      "idempotency": "retry_on_zero_rows",
+      "error_semantics": "rollback_and_rescan",
+      "sql": "UPDATE workspace_quotas SET held_units = held_units - ?, version = version + 1 WHERE workspace_id = ? AND meter_kind = ? AND version = ? AND held_units >= ?"
     }
   ],
   "profiles": []

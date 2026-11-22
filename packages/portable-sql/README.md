@@ -12,13 +12,14 @@ PostgreSQL；本包不含任何数据库品牌分支，也不按品牌加载业�
 | `contract.py` | PEP 249 的 qmark 子集：`Connection` / `Cursor` 协议、`Row`、参数与语句校验、异常类型。 |
 | `schema.py` / `transaction.py` / `types.py` / `paging.py` | 权威时间探针与专用探针池、显式提交 / 回滚与 `commit_unknown`、文本与十进制边界、keyset 分页。 |
 | `manifest.py` / `logical_schema.py` | statement manifest 与逻辑 schema 的定义、摘要和指纹；部署作业与 CI guard 共用同一实现。 |
+| `budget.py` | 持久 grant、按 `quota → budget → grant` 锁序的准入预留、`version`/`epoch` CAS 续租、终态一次回收,以及「先取探针连接、锁后读权威值、再复核」的 `guarded_reserve`。 |
 | `odbc.py` | `pyodbc` 驱动的实现（延迟导入）。没有装驱动时导入不失败，`connect()` 给出明确错误。 |
 
 声明式制品：
 
 | 路径 | 含义 |
 | --- | --- |
-| `schema/logical.json` | canonical 逻辑 schema（当前 revision `0003`）；指纹输入，物理 DDL 必须与它等价。 |
+| `schema/logical.json` | canonical 逻辑 schema（当前 revision `0004`）；指纹输入，物理 DDL 必须与它等价。 |
 | `statements/manifest.json` | canonical statement manifest；`statements/manifest.digest` 固定其摘要。 |
 | `statements/profiles.json` | 已登记 profile 的唯一来源；未登记的 profile 不得出现在 manifest 或部署配置中。 |
 

@@ -43,11 +43,16 @@ def insert_asr_settlement(cursor: SettlementCursor, request: AdmissionRequest) -
         stage.gateway_id,
         stage.host_node_id,
     )
+    # 方言没有 `ON CONFLICT`:`WHERE NOT EXISTS` 表达同一件事。这里不捕获唯一约束冲突,
+    # 因为同一 lease 的两次准入在本事务里已经串行化 —— 既有操作在 `admission_operations`
+    # 上取 `FOR UPDATE`,新操作要先撞操作主键;两次并发插同一根不可达。真出现冲突就是
+    # 协调坏了,应当以错误暴露,而不是被静默吞掉。
     cursor.execute(
         "INSERT INTO speech_asr_settlement "
         "(lease_id,operation_id,attempt_id,gateway_id,host_node_id,next_check_at_us) "
-        "VALUES (?,?,?,?,?,0) ON CONFLICT (lease_id) DO NOTHING",
-        values,
+        "SELECT ?,?,?,?,?,0 WHERE NOT EXISTS ("
+        "SELECT 1 FROM speech_asr_settlement s WHERE s.lease_id = ?)",
+        (*values, stage.lease_id),
     )
     cursor.execute(
         "SELECT lease_id,operation_id,attempt_id,gateway_id,host_node_id "
@@ -70,4 +75,5 @@ ASR_SETTLEMENT_BACKFILL = """INSERT INTO speech_asr_settlement
       AND o.operation_id LIKE 'operation-%'
       AND (CASE WHEN o.operation_id LIKE 'operation-%'
                 THEN CAST(o.request_document AS jsonb)->>'kind' END) = 'asr_file'
-    ON CONFLICT (lease_id) DO NOTHING"""
+      AND NOT EXISTS (
+        SELECT 1 FROM speech_asr_settlement s WHERE s.lease_id = l.lease_id)"""

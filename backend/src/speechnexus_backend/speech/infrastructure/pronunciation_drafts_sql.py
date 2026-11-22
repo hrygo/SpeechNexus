@@ -227,10 +227,12 @@ def create_draft(
         return _result(cursor, command, rows[0])
     pronunciation_id = command.pronunciation_id or allocate_id()
     identifier(pronunciation_id)
+    # 命令行已经选出唯一赢家,只有赢家走到这里;`WHERE NOT EXISTS` 替代 `ON CONFLICT`。
     cursor.execute(
-        "INSERT INTO speech_pronunciation_families (pronunciation_id) VALUES (?) "
-        "ON CONFLICT (pronunciation_id) DO NOTHING",
-        (pronunciation_id,),
+        "INSERT INTO speech_pronunciation_families (pronunciation_id) "
+        "SELECT ? WHERE NOT EXISTS ("
+        "SELECT 1 FROM speech_pronunciation_families f WHERE f.pronunciation_id = ?)",
+        (pronunciation_id, pronunciation_id),
     )
     families = _rows(
         cursor,

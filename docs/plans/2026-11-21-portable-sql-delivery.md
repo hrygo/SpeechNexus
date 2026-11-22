@@ -194,3 +194,23 @@ claim bucket 改的是准入侧的领取，**没有覆盖派发队列**。因此
 因此本地判据的固定顺序是:先 `ruff format`,再 `ruff check --fix`,最后**必须**跑
 `ruff check .` 与 `ruff format --check .` 并读取其输出。只有 `--fix` 跑过不算通过。
 
+### 8.4 `upsert` 不能一律替换:两种形态只解了一种
+
+`ON CONFLICT` 的 21 处只有两种形态,而它们的可移植写法不同。
+
+**锁锚点/家族根**(可以替换)。命令行已经选出唯一赢家,只有赢家会写入家族根,所以「已存在就跳过」
+不需要处理竞争。`asr_settlement` 的根也一样:同一 lease 的两次准入在本事务里已经串行化
+(既有操作在 `admission_operations` 上取 `FOR UPDATE`,新操作先撞操作主键)。这些改成
+`INSERT ... SELECT ... WHERE NOT EXISTS` 是等价的,已替换 5 处,守卫 949 → 944。
+
+**唯一赢家**(还不能替换)。`speech_binding_commands`、`speech_profile_commands`、
+`speech_pronunciation_commands` 这类先 `INSERT ... ON CONFLICT (key_digest) DO NOTHING`
+再用 `rowcount` 判「我是不是赢家」的写法,是幂等重放的**仲裁原语**:N 个并发同命令里恰好一个
+拿到 `rowcount=1`,其余读到已存在行并返回原结果。换成 `WHERE NOT EXISTS` 后两个事务可以同时
+通过谓词,唯一索引拒掉后到的那个 —— 如果不捕获,落败者拿到的是硬错误而不是「重放」,
+幂等语义就丢了。
+
+捕获需要驱动把唯一约束冲突翻译成契约错误(`portable_error` / `ConflictError` 已有,但
+`ContractCursor` 还没接到这些模块)。在驱动接入前替换这 5 处,等于把一次可容忍的竞争
+变成用户可见的 500。因此它们保留在基线里,解除条件写明:驱动适配点接入后一并替换。
+

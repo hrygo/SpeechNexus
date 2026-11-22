@@ -909,28 +909,25 @@ class PostgresPublicJobs:
                     )
                 accepted = job.state in ("pending", "running", "cancelling")
                 target = {"pending": "cancelled", "running": "cancelling"}.get(job.state)
-                changed = None
                 # 整条取消路径共用一个时间点:状态迁移、事件与回执的时戳必须一致.
                 now = _database_now_us(connection)
                 if target is not None:
-                    changed = connection.execute(
-                        "WITH clock AS (SELECT CAST(? AS BIGINT) AS now_us) "
-                        "UPDATE speech_jobs AS j SET state = ?, "
-                        "status_version = j.status_version + 1, updated_at_us = clock.now_us "
-                        "FROM clock WHERE j.job_id = ? AND j.status_version = ? AND j.state = ? "
-                        "RETURNING clock.now_us AS now_us",
-                        (now, target, job.job_id, job.status_version, job.state),
-                    ).fetchone()
-                    if changed is None:
+                    guarded = connection.execute(
+                        "UPDATE speech_jobs SET state = ?, "
+                        "status_version = status_version + 1, updated_at_us = ? "
+                        "WHERE job_id = ? AND status_version = ? AND state = ?",
+                        (target, now, job.job_id, job.status_version, job.state),
+                    )
+                    if guarded.rowcount != 1:
                         raise PublicJobConflictError("Public Job cancellation lost its guard")
                     connection.execute(
                         "INSERT INTO speech_job_events "
                         "(job_id, event_seq, state, occurred_at_us) "
                         "SELECT ?, COALESCE(MAX(event_seq), -1) + 1, ?, ? "
                         "FROM speech_job_events WHERE job_id = ?",
-                        (job.job_id, target, int(changed["now_us"]), job.job_id),
+                        (job.job_id, target, now, job.job_id),
                     )
-                requested_at_us = int(changed["now_us"]) if changed is not None else now
+                requested_at_us = now
                 connection.execute(
                     "INSERT INTO speech_job_cancellations "
                     "(job_id, workspace_id, operation_id, attempt_id, request_id, "
@@ -985,22 +982,21 @@ class PostgresPublicJobs:
         deadline = time.monotonic() + self._timeout
         try:
             with self._transaction(deadline) as connection:
-                changed = connection.execute(
-                    "WITH clock AS (SELECT CAST(? AS BIGINT) AS now_us) "
-                    "UPDATE speech_jobs AS j SET state = 'cancelled', "
-                    "status_version = j.status_version + 1, updated_at_us = clock.now_us "
-                    "FROM clock WHERE j.job_id = ? AND j.state = 'cancelling' "
-                    "AND j.status_version = ? RETURNING clock.now_us AS now_us",
-                    (_database_now_us(connection), job_id, expected_version),
-                ).fetchone()
-                if changed is None:
+                cancelled_at_us = _database_now_us(connection)
+                guarded = connection.execute(
+                    "UPDATE speech_jobs SET state = 'cancelled', "
+                    "status_version = status_version + 1, updated_at_us = ? "
+                    "WHERE job_id = ? AND state = 'cancelling' AND status_version = ?",
+                    (cancelled_at_us, job_id, expected_version),
+                )
+                if guarded.rowcount != 1:
                     return None
                 connection.execute(
                     "INSERT INTO speech_job_events "
                     "(job_id, event_seq, state, occurred_at_us) "
                     "SELECT ?, COALESCE(MAX(event_seq), -1) + 1, 'cancelled', ? "
                     "FROM speech_job_events WHERE job_id = ?",
-                    (job_id, int(changed["now_us"]), job_id),
+                    (job_id, cancelled_at_us, job_id),
                 )
                 updated = _select_job(connection, job_id)
             return None if updated is None else _job(updated)

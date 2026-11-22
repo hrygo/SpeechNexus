@@ -215,6 +215,18 @@ class _Transaction:
         cursor = self._connection.execute(statement, args)
         return cursor.fetchall() if cursor.description else []
 
+    def changed(self, statement: str, args: tuple[object, ...] = ()) -> int:
+        """执行写语句并只回报 `rowcount`;命中与否是 CAS 判据,不靠 `RETURNING` 的行。"""
+
+        remaining = self._deadline - time.monotonic()
+        if remaining <= 0:
+            raise _unavailable()
+        self._connection.execute(
+            "SELECT set_config('statement_timeout', ?, true)",
+            (str(max(1, int(remaining * 1000))),),
+        )
+        return int(self._connection.execute(statement, args).rowcount)
+
     def now(self) -> datetime:
         """「现在」只从便携时钟读一次,换算回时间点给需要 timestamp 的语句用."""
 
@@ -245,6 +257,8 @@ class _Transaction:
         # 时间戳必须晚于本行的 created_at(表上有 CHECK),所以只能来自即时时钟,
         # 不能用 CURRENT_TIMESTAMP —— 后者是事务开始时间,同行同事务插入时会比 created_at 早。
         now = self.now()
+        # 保留 `RETURNING`:换成「rowcount + 按主键读回」会新增两处拼接式列清单,
+        # 守卫计数直接判红;列清单先冻结成字面量常量,才能一起换(见计划文档 §8.5)。
         rows = self.rows(
             f"UPDATE {DELETION_LEDGER} SET purge_claimed_at = ?, updated_at = ? "
             "WHERE id = ? AND status = 'queued' "
@@ -502,12 +516,11 @@ class _DeletionExecution:
         lock through the delete is what keeps a concurrent admission from pinning
         the revision into an intent after the dependency snapshot.
         """
-        deleted = self._tx.rows(
-            "DELETE FROM speech_voice_draft_revisions "
-            "WHERE draft_id = ? AND revision = ? RETURNING draft_id",
+        deleted = self._tx.changed(
+            "DELETE FROM speech_voice_draft_revisions WHERE draft_id = ? AND revision = ?",
             (plan.target.resource_id, str(plan.target.revision)),
         )
-        if not deleted:
+        if deleted != 1:
             raise DeletionPlanChangedError
         return self._record(
             plan,

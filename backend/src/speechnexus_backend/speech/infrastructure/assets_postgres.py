@@ -120,12 +120,28 @@ class AssetCursor:
     def event(self, asset: AssetRecord, kind: str, now: int) -> None:
         # A fact kind occurs at most once for this immutable asset. Reconciliation
         # may encounter it again, but never rewrites its original timestamp.
-        self.rows(
-            "INSERT INTO speech_asset_events "
-            "(event_id,asset_id,event_kind,asset_version,occurred_at_us) VALUES (?,?,?,?,?) "
-            "ON CONFLICT (asset_id,event_kind) DO NOTHING",
-            ("event-" + uuid.uuid4().hex, asset.asset_id, kind, asset.version, now),
-        )
+        # 方言没有 `ON CONFLICT`:用「不存在才插入」表达同一件事。并发下两个事务都可能
+        # 通过 NOT EXISTS,唯一约束会拒掉后到的那个 —— 那正说明事实已经记过,不是失败。
+        try:
+            self.rows(
+                "INSERT INTO speech_asset_events "
+                "(event_id,asset_id,event_kind,asset_version,occurred_at_us) "
+                "SELECT ?,?,?,?,? WHERE NOT EXISTS ("
+                "SELECT 1 FROM speech_asset_events e "
+                "WHERE e.asset_id = ? AND e.event_kind = ?)",
+                (
+                    "event-" + uuid.uuid4().hex,
+                    asset.asset_id,
+                    kind,
+                    asset.version,
+                    now,
+                    asset.asset_id,
+                    kind,
+                ),
+            )
+        except psycopg.errors.UniqueViolation:
+            # 另一个事务先写了同一事实;本事实「最多一次」,读回原行即可。
+            pass
 
 
 def _has_unreleased_references(cursor: AssetCursor, asset_id: str) -> bool:

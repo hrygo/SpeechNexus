@@ -217,7 +217,6 @@
     "sql-string-building::node-controller/src/speechnexus_node_controller/infrastructure/sqlite_intent_store.py": 1,
     "upsert::backend/src/speechnexus_backend/engine_registration.py": 2,
     "upsert::backend/src/speechnexus_backend/speech/infrastructure/asr_settlement_sql.py": 2,
-    "upsert::backend/src/speechnexus_backend/speech/infrastructure/assets_postgres.py": 1,
     "upsert::backend/src/speechnexus_backend/speech/infrastructure/binding_drafts_sql.py": 1,
     "upsert::backend/src/speechnexus_backend/speech/infrastructure/binding_publication_evidence_sql.py": 1,
     "upsert::backend/src/speechnexus_backend/speech/infrastructure/job_cancellation_reconciliation_postgres.py": 1,

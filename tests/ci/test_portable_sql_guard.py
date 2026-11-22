@@ -153,7 +153,11 @@ class GuardScopeTests(unittest.TestCase):
         )
         self.assertEqual(
             GUARD.MIGRATION_INPUT_PREFIXES,
-            ("backend/src/speechnexus_backend/speech/infrastructure/migrations/versions/",),
+            ("backend/src/speechnexus_backend/speech/infrastructure/migrations/",),
+        )
+        self.assertEqual(
+            GUARD.MIGRATION_VERSION_PREFIX,
+            "backend/src/speechnexus_backend/speech/infrastructure/migrations/versions/",
         )
 
     def test_committed_baseline_matches_the_tree(self) -> None:

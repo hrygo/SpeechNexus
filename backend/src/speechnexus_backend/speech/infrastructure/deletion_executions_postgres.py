@@ -20,7 +20,7 @@ import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, cast
 
 import psycopg
@@ -74,6 +74,7 @@ from speechnexus_backend.speech.infrastructure.deletion_plans_postgres import (
     snapshot_target,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
+from speechnexus_portable_sql.clock import ClockReader, now_us
 
 _PLAN_ROW_COLUMNS = (
     "id, workspace_id, target_owner, target_kind, target_id, target_revision, "
@@ -215,15 +216,24 @@ class _Transaction:
         return cursor.fetchall() if cursor.description else []
 
     def now(self) -> datetime:
-        return cast(datetime, self.rows("SELECT clock_timestamp() AS now")[0]["now"])
+        """「现在」只从便携时钟读一次,换算回时间点给需要 timestamp 的语句用."""
+
+        return datetime.fromtimestamp(self.now_us() / 1_000_000, tz=UTC)
 
     def now_us(self) -> int:
-        return cast(
-            int,
-            self.rows(
-                "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) AS t"
-            )[0]["t"],
+        return now_us(cast(ClockReader, self))
+
+    def execute(self, statement: str, args: tuple[object, ...] = ()) -> Any:
+        """便携时钟的执行入口:与 `rows` 共用同一预算,把游标交回去取行."""
+
+        remaining = self._deadline - time.monotonic()
+        if remaining <= 0:
+            raise _unavailable()
+        self._connection.execute(
+            "SELECT set_config('statement_timeout', ?, true)",
+            (str(max(1, int(remaining * 1000))),),
         )
+        return self._connection.execute(statement, args)
 
     @contextmanager
     def asset_cursor(self) -> Iterator[AssetCursor]:
@@ -232,12 +242,15 @@ class _Transaction:
 
     def claim_purge(self, ledger_id: str) -> dict[str, Any] | None:
         """CAS: exactly one executor owns the object purge of this row."""
+        # 时间戳必须晚于本行的 created_at(表上有 CHECK),所以只能来自即时时钟,
+        # 不能用 CURRENT_TIMESTAMP —— 后者是事务开始时间,同行同事务插入时会比 created_at 早。
+        now = self.now()
         rows = self.rows(
-            f"UPDATE {DELETION_LEDGER} SET purge_claimed_at = clock_timestamp(), "
-            "updated_at = clock_timestamp() WHERE id = ? AND status = 'queued' "
+            f"UPDATE {DELETION_LEDGER} SET purge_claimed_at = ?, updated_at = ? "
+            "WHERE id = ? AND status = 'queued' "
             "AND (purge_claimed_at IS NULL OR purge_claimed_at <= "
-            "clock_timestamp() - make_interval(secs => ?)) RETURNING " + _LEDGER_ROW_COLUMNS,
-            (ledger_id, PURGE_CLAIM_LEASE_SECONDS),
+            "? - make_interval(secs => ?)) RETURNING " + _LEDGER_ROW_COLUMNS,
+            (now, now, ledger_id, now, PURGE_CLAIM_LEASE_SECONDS),
         )
         return rows[0] if rows else None
 
@@ -245,9 +258,9 @@ class _Transaction:
         """Give the claim back after this attempt ended without a completion."""
         rows = self.rows(
             f"UPDATE {DELETION_LEDGER} SET purge_claimed_at = NULL, "
-            "updated_at = clock_timestamp() WHERE id = ? AND status = 'queued' "
+            "updated_at = ? WHERE id = ? AND status = 'queued' "
             "RETURNING " + _LEDGER_ROW_COLUMNS,
-            (ledger_id,),
+            (self.now(), ledger_id),
         )
         return rows[0] if rows else None
 
@@ -973,9 +986,9 @@ class PostgresDeletionExecutions:
                     rows = transaction.rows(
                         "SELECT " + _LEDGER_ROW_COLUMNS + ", "
                         "(purge_claimed_at IS NOT NULL AND purge_claimed_at > "
-                        "clock_timestamp() - make_interval(secs => ?)) AS claim_live "
+                        "? - make_interval(secs => ?)) AS claim_live "
                         f"FROM {DELETION_LEDGER} WHERE id = ?",
-                        (PURGE_CLAIM_LEASE_SECONDS, deletion_id),
+                        (transaction.now(), PURGE_CLAIM_LEASE_SECONDS, deletion_id),
                     )
                     if not rows or rows[0]["idempotency_key_digest"] != key_digest:
                         raise _unavailable()

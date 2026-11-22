@@ -8,6 +8,7 @@ from speechnexus_backend.speech.domain.binding_evidence import RecordedEvidenceI
 from speechnexus_backend.speech.domain.binding_publication_evidence import (
     BindingPublicationEvidence,
 )
+from speechnexus_portable_sql.transaction import insert_if_absent
 
 
 class EvidenceCursor(Protocol):
@@ -96,14 +97,18 @@ def find_recorded_identity(
 
 
 def insert_evidence(cursor: EvidenceCursor, evidence: BindingPublicationEvidence) -> bool:
-    """Return whether this call inserted the row; a race resolves to no insert."""
-    cursor.execute(
+    """Return whether this call inserted the row; a race resolves to no insert.
+
+    受限方言没有 `ON CONFLICT`:插入走 `insert_if_absent`,唯一冲突在保存点里回滚,
+    事务保持可用,调用方还能接着读已有行。
+    """
+    return insert_if_absent(
+        cursor,
         "INSERT INTO speech_binding_publication_evidence "
         "(kind, object_id, revision, revision_id, capacity_manifest_id, "
         "qualification_report_id, evidence_source, recorded_at_us, "
         "capacity_manifest_digest, qualification_report_digest) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-        "ON CONFLICT (kind, object_id, revision) DO NOTHING",
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             evidence.kind,
             evidence.object_id,
@@ -117,7 +122,6 @@ def insert_evidence(cursor: EvidenceCursor, evidence: BindingPublicationEvidence
             evidence.qualification_report_digest,
         ),
     )
-    return cursor.rowcount == 1
 
 
 def find_binding_revision_document(

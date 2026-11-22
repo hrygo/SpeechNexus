@@ -16,14 +16,29 @@ from speechnexus_backend.speech.infrastructure.publications_sql import (
 )
 
 
+class DuplicateKeyError(Exception):
+    """唯一冲突的最小替身:适配器只看落在这个异常上的约束信息。"""
+
+    sqlstate = "23505"
+
+
 class Cursor:
-    def __init__(self, rows: list[dict[str, Any]] | None = None, rowcount: int = 0) -> None:
+    def __init__(
+        self,
+        rows: list[dict[str, Any]] | None = None,
+        rowcount: int = 0,
+        *,
+        duplicate: bool = False,
+    ) -> None:
         self.rows = rows or []
         self.rowcount = rowcount
+        self.duplicate = duplicate
         self.calls: list[tuple[str, tuple[object, ...]]] = []
 
     def execute(self, query: str, parameters: tuple[object, ...] = ()) -> None:
         self.calls.append((query, parameters))
+        if self.duplicate and query.lstrip().startswith("INSERT INTO speech_publications"):
+            raise DuplicateKeyError(self.duplicate)
 
     def fetchall(self) -> list[dict[str, Any]]:
         return self.rows
@@ -39,21 +54,24 @@ def row(revision: int = 1, revision_id: str = "binding-rev-1") -> dict[str, Any]
     }
 
 
-def test_append_uses_an_insert_only_conflict_and_reports_rowcount() -> None:
+def test_append_uses_insert_if_absent_and_reports_whether_it_inserted() -> None:
     publication = Publication("voice", "binding-tts", 1, "binding-rev-1", 1)
     cursor = Cursor(rowcount=1)
 
     assert append_publication(cursor, publication) is True
     lock_query, lock_parameters = cursor.calls[0]
-    insert_query, insert_parameters = cursor.calls[1]
+    savepoint_query, _ = cursor.calls[1]
+    insert_query, insert_parameters = cursor.calls[2]
     assert "pg_advisory_xact_lock" in lock_query
     assert lock_parameters == ("voice", "binding-tts")
+    # 受限方言没有 `ON CONFLICT`:插入包在保存点里,冲突靠回滚到保存点处理。
+    assert savepoint_query.startswith("SAVEPOINT")
     assert insert_query.count("INSERT INTO speech_publications") == 1
-    assert "ON CONFLICT (kind, object_id, revision) DO NOTHING" in insert_query
+    assert "ON CONFLICT" not in insert_query
     assert insert_parameters[2] == "1"
 
-    cursor.rowcount = 0
-    assert append_publication(cursor, publication) is False
+    duplicate = Cursor(duplicate=True)
+    assert append_publication(duplicate, publication) is False
 
 
 def test_new_binding_requires_observed_head_and_rejects_stale_before_writes() -> None:

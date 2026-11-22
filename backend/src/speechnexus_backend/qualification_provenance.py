@@ -28,7 +28,7 @@ from typing import Any, TextIO, cast
 
 from psycopg.rows import dict_row
 
-from speechnexus_portable_sql.clock import ClockReader, now_us
+from speechnexus_portable_sql.clock import ClockReader, now_us, to_epoch_us
 from speechnexus_portable_sql.psycopg_driver import connect as portable_connect
 
 SOURCE_CONTROLLER = "controller_observed"
@@ -57,7 +57,7 @@ REPORT_SQL = (
     "a.probe_authorization_id AS approval_probe_authorization_id, "
     "a.facts->>'instance_id' AS instance_id, a.facts->>'generation' AS instance_generation, "
     "a.facts->'attestation'->>'fencing_token' AS fencing_token, "
-    "CAST(floor(extract(epoch FROM a.expires_at)*1000000) AS bigint) AS approval_expires_at_us, "
+    "a.expires_at AS approval_expires_at, "
     "t.declared_by, t.declaration_digest, t.image_digest, t.template_digest, "
     "t.declared_lifecycle_digest, t.observed_at_us, t.expires_at_us "
     "FROM speech_builtin_voice_qualifications q "
@@ -140,7 +140,11 @@ def _entry(row: Row, *, now_us: int) -> Row:
         "evidence": EVIDENCE_RECORDED if provenance_recorded else EVIDENCE_LEGACY,
         "instance_id": row.get("instance_id"),
         "declared_instance_generation": row.get("instance_generation"),
-        "approval_expires_at_us": row.get("approval_expires_at_us"),
+        "approval_expires_at_us": (
+            None
+            if row.get("approval_expires_at") is None
+            else to_epoch_us(row["approval_expires_at"])
+        ),
     }
     if note is not None:
         entry["note"] = note

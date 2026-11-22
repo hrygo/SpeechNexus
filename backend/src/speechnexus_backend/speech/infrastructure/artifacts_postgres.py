@@ -56,7 +56,6 @@ class PostgresArtifactMetadata:
         return _artifact(rows[0]), cast(int, rows[0]["now_us"])
 
 
-
 # Writable columns, in insert order: exactly `ARTIFACT_INSERT_COLUMNS`, so the
 # publisher's grant and this statement cannot drift apart.
 _COLUMNS = (

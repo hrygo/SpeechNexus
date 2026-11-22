@@ -90,11 +90,11 @@ JOB = {
 }
 
 
-
 def _epoch_us(microseconds: int) -> datetime:
     """替身回答时钟时用的时间点:epoch 起算的微秒,必须是带时区的时间。"""
 
     return datetime(1970, 1, 1, tzinfo=UTC) + timedelta(microseconds=microseconds)
+
 
 class _Cursor:
     def __init__(self, results: list[list[dict[str, Any]]], rowcount: int = 1) -> None:

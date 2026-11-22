@@ -487,7 +487,7 @@ workbench 那 9 处因此恢复,基线 894 → 877。
 import 行,调用点一字不动:
 
 ```python
-from speechnexus_portable_sql.vendor import psycopg   # 替代 import psycopg
+from speechnexus_portable_sql.vendor import psycopg  # 替代 import psycopg
 from speechnexus_portable_sql.vendor import dict_row  # 替代 from psycopg.rows import dict_row
 ```
 

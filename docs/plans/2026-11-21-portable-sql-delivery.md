@@ -406,3 +406,19 @@ ContractError: statement expects 4 parameters, got 5
 `vendor-operator` 由 19 降到 7(这一处 + `ILIKE`/`FULL JOIN` 家族);基线 897 → 877 的降幅来自
 其余 12 处。这一处按 `--accept-new` 写回基线:它不是新引入的用法,而是「这条语句暂时留在旧写法」
 的记录。
+
+### 8.15 删除清理的 7 处撤回:`IN (?)` 在这一路径上语义不等价
+
+`postgres_deletion_cleanup` 的 7 处 `id = ANY(CAST(? AS text[]))` 改成 `IN (?)` 后,真实库上
+`test_workbench_deletion_cleanup` 与 `test_workbench_http_management` 判红,对外表现为
+`503 store_unavailable`。
+
+这一处不是标记语法的问题,而是**类型推断**:`= ANY(CAST(? AS text[]))` 明确告诉规划器参数是
+`text[]`,比较发生在数组元素与列之间;`IN (?)` 的每个参数单独推断,遇到 uuid/文本混排的列时
+比较算子可能落到不同分支。批次为空时还要额外哨兵值才能构造标记。
+
+结论:这 7 处撤回,基线 877 → 891(`--accept-new` 记录原样保留的 7+7 处)。要真正收敛这一路径,
+需要的是「按列类型显式 CAST 的定元/变长列表」,由 `ListMarker` 携带元素类型而不是猜 —— 那是下一
+个契约变更,不在本卡内硬做。
+
+其余 6 个模块的 12 处保留:调用点都在纯 qmark 语句上,且参数与列类型一致。

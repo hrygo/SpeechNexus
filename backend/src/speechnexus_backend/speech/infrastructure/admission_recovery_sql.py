@@ -161,10 +161,13 @@ def read_original(
     request = _original_request(attempt, envelope, operation, max_command_bytes=max_command_bytes)
     if request.identity != identity:
         raise AdmissionRejectedError("reconciliation_required")
+    # 受限方言没有 `LIMIT`。原来那句 `LIMIT 65` 是冗余的:准入契约保证阶段数 1..64,
+    # 而下面「行数与阶段数必须完全一致」的判定已经逐步失败闭合 —— 真出现第 65 行,它自己就会
+    # 报 reconciliation。去掉 `LIMIT` 不改变任何判定结果,只去掉了一个方言依赖。
     leases = rows(
         cursor,
         "SELECT * FROM admission_leases WHERE operation_id = ? AND attempt_id = ? "
-        "ORDER BY stage_id LIMIT 65",
+        "ORDER BY stage_id",
         key,
     )
     by_stage = {stage.stage_id: stage for stage in request.stages}

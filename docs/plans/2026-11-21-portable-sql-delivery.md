@@ -670,3 +670,28 @@ exceptions=293 cards=3
 baseline=705 new=0 fixed=0
 RESULT OK: no new findings outside the portable SQL subset
 ```
+
+### 8.25 18 个「只被 alembic 消费」的 DDL 模块登记为物理 profile 制品
+
+§8.22 的机制空了很久,因为「哪些文件算 profile 制品」需要证据。本轮把判定写成可复核的规则:
+
+> 该模块在本仓的**唯一消费者**是 `speech/infrastructure/migrations/versions/*`,不与任何业务 DML 共用。
+
+按这条规则逐个核对 147 个基线文件,命中 18 个(`coordination_schema`、`asset_schema`、
+`gateway_abort_intent_schema`、`public_job_progress_schema` 等),合计 **168 处**。它们进
+`scripts/dev-env/portable-sql-profiles.json`,守卫报 `profile-ddl=168 files=18`,业务 DML 基线
+**705 → 537**。
+
+声明的另一半同样是判据:**去掉任何一条声明,守卫立刻变红**。实测把 `coordination_schema.py`
+从清单里删掉:
+
+```
+UNREGISTERED runtime-ddl .../coordination_schema.py
+UNREGISTERED vendor-type .../coordination_schema.py
+RESULT FAIL: the baseline carries entries with no owning card
+```
+
+也就是说,一个文件不能悄悄从「物理 profile」退回业务基线,也不能悄悄离开业务基线 —— 两边都有账。
+
+注意 `job_schema.py` **不在**清单里:它的 `JOB_DDL` 虽然也被迁移消费,但同一模块还导出运行时授权语句,
+属于业务与 DDL 共用,按规则不构成「唯一消费者是迁移」。

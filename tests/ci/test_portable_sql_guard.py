@@ -157,7 +157,15 @@ class GuardScopeTests(unittest.TestCase):
         )
 
     def test_committed_baseline_matches_the_tree(self) -> None:
-        result = run_guard("--baseline", str(BASELINE))
+        # 已声明的物理 DDL profile 与登记表必须与基线一起读,否则声明过的文件会被当成 NEW。
+        result = run_guard(
+            "--baseline",
+            str(BASELINE),
+            "--profiles",
+            str(ROOT / "scripts/dev-env/portable-sql-profiles.json"),
+            "--exceptions",
+            str(ROOT / "scripts/dev-env/portable-sql-exceptions.json"),
+        )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("new=0", result.stdout)
 
@@ -168,6 +176,8 @@ class GuardScopeTests(unittest.TestCase):
             "check-portable-sql.py --baseline scripts/dev-env/portable-sql-baseline.json",
             workflow,
         )
+        self.assertIn("--profiles scripts/dev-env/portable-sql-profiles.json", workflow)
+        self.assertIn("--exceptions scripts/dev-env/portable-sql-exceptions.json", workflow)
 
 
 if __name__ == "__main__":

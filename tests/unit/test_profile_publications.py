@@ -15,6 +15,7 @@ from speechnexus_backend.speech.infrastructure.profile_publication_schema import
     PROFILE_PUBLICATION_DDL,
 )
 from speechnexus_backend.speech.infrastructure.profile_publications_postgres import PostgresProfiles
+from speechnexus_portable_sql.transaction import insert_if_absent
 from tests.integration.test_profile_publications import (
     Sandbox,
     SyntheticVerifier,
@@ -59,13 +60,24 @@ class SyntheticProfiles(PostgresProfiles):
         self.connection = connection
 
     def _run[T](self, operation: Callable[[Any], T], *, read_only: bool = False) -> T:
-        with self.connection:
-            return operation(Cursor(self.connection))
+        # 显式 BEGIN/COMMIT/ROLLBACK:sqlite 的隐式事务管理会与产品里的
+        # `SAVEPOINT` / `RELEASE SAVEPOINT` 抢事务边界,`RELEASE` 之后 `with connection`
+        # 不再回滚,于是「失败即整体回滚」的断言会看到残留行。
+        self.connection.execute("BEGIN")
+        try:
+            result = operation(Cursor(self.connection))
+        except BaseException:
+            self.connection.execute("ROLLBACK")
+            raise
+        else:
+            self.connection.execute("COMMIT")
+            return result
 
 
 @pytest.fixture
 def sandbox() -> Iterator[Sandbox]:
-    connection = sqlite3.connect(":memory:", check_same_thread=False)
+    # isolation_level=None:让上面的 BEGIN/COMMIT/ROLLBACK 成为唯一的事务控制点。
+    connection = sqlite3.connect(":memory:", isolation_level=None, check_same_thread=False)
     connection.row_factory = sqlite3.Row
     connection.create_function("OCTET_LENGTH", 1, lambda s: len(s.encode()))
     for ddl in (*PROFILE_DRAFT_DDL, *PROFILE_LIFECYCLE_INTENT_DDL, *PROFILE_PUBLICATION_DDL):
@@ -83,6 +95,32 @@ def sandbox() -> Iterator[Sandbox]:
         "",
     )
     connection.close()
+
+
+def test_a_savepoint_does_not_survive_a_rolled_back_operation(sandbox: Sandbox) -> None:
+    """保存点之后失败,整笔仍然必须回滚 —— 这是替身最容易骗过自己的地方.
+
+    产品里的 `insert_if_absent` 会先 `SAVEPOINT …` 再插入,成功时 `RELEASE`。如果替身用
+    sqlite 的隐式事务,`RELEASE` 会让 `with connection` 失去回滚能力,于是「失败即回滚」的
+    断言看似通过,其实什么都没证明。这条用例直接压这一点。
+    """
+
+    s = sandbox
+    s.draft()
+    before = s.snapshot()
+    with pytest.raises(RuntimeError, match="injected"):
+        s.port._run(_expand_once)
+    assert s.snapshot() == before
+
+
+def _expand_once(cursor: Any) -> None:
+    insert_if_absent(
+        cursor,
+        "INSERT INTO speech_profile_lifecycle_intents (key_digest,operation,profile_id,"
+        "revision,intent_json,request_digest,recorded_at_us) VALUES (?,?,?,?,?,?,?)",
+        ("sha256:" + "0" * 64, "publish", "caption-draft", "1", "{}", "sha256:" + "0" * 64, 1),
+    )
+    raise RuntimeError("injected failure after the savepoint was released")
 
 
 def test_original_replay_and_cas_rejections(sandbox: Sandbox) -> None:

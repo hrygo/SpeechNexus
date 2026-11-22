@@ -184,3 +184,13 @@ claim bucket 改的是准入侧的领取，**没有覆盖派发队列**。因此
    `node_ids` 改成写入期定界字符串。这三条都会动协调语义或读模型，超出「收敛存量 SQL」的范围，
    没有授权我不做。
 
+### 8.3 判据自检：`ruff check --fix` 不能替代末次 `ruff check`
+
+`assets_postgres` 的 `try/except/pass` 在本地全绿、在 CI 判红(SIM105 → `contextlib.suppress`)。
+事由不是版本差异:本地与 CI 都是 ruff 0.17.2。真正的原因是本地的判据顺序用了
+`ruff check --fix .` 之后只读 mypy / pytest / 守卫的输出,**没有再跑一次不带 `--fix` 的
+`ruff check .`**;SIM105 的修复被标为 unsafe fix,`--fix` 不应用它,而它的告警又被我跳过了。
+
+因此本地判据的固定顺序是:先 `ruff format`,再 `ruff check --fix`,最后**必须**跑
+`ruff check .` 与 `ruff format --check .` 并读取其输出。只有 `--fix` 跑过不算通过。
+

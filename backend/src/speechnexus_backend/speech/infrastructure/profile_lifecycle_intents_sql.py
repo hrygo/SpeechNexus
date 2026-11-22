@@ -10,6 +10,7 @@ from speechnexus_backend.speech.domain.profile_lifecycle_intents import (
     ProfileLifecycleIntentResult,
 )
 from speechnexus_backend.speech.infrastructure.profile_drafts_sql import ProfileCursor
+from speechnexus_portable_sql.transaction import insert_if_absent
 
 
 def recover_intent(
@@ -52,10 +53,13 @@ def record_intent(
     if original.outcome != "unknown":
         return original
     recorded = ProfileLifecycleIntent(command, clock())
-    cursor.execute(
+    # 受限方言没有 `ON CONFLICT`:插入包在保存点里,唯一冲突回滚到保存点后事务仍可用,
+    # 再按同一身份读回已有意图 —— 这正是并发写者先到时唯一允许的结果。
+    inserted = insert_if_absent(
+        cursor,
         "INSERT INTO speech_profile_lifecycle_intents "
         "(key_digest,operation,profile_id,revision,intent_json,request_digest,recorded_at_us) "
-        "VALUES (?,?,?,?,?,?,?) ON CONFLICT (key_digest) DO NOTHING",
+        "VALUES (?,?,?,?,?,?,?)",
         (
             command.key_digest,
             command.operation,
@@ -66,8 +70,6 @@ def record_intent(
             recorded.recorded_at_us,
         ),
     )
-    if cursor.rowcount == 1:
+    if inserted:
         return ProfileLifecycleIntentResult("recorded", recorded)
-    if cursor.rowcount != 0:
-        raise ProfileUnavailableError
     return recover_intent(cursor, command)

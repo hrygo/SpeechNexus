@@ -131,3 +131,29 @@ GitHub 凭据在本轮失效：`gh auth status` 报 `The token in default is inv
 - 把 `LIMIT %(limit)s` 一起改成分页还要动 `fetchmany`,而这属于异步驱动的标记迁移(见 §6)。
 
 结论:`readiness.py` 的时钟、标记与分页必须在**同一次**迁移里改完,单独换时钟会让守卫指标退步。在异步驱动迁移落地前,这两个 `vendor-time` 命中保留在基线里,属于已知的、有归类的未覆盖项,不是「已经支持」。
+
+## 8. 剩余基线的归类与依赖（基线 950 处 / 405 个 (规则,文件) 对）
+
+逐族核对后的结论：**残余基线不再是「机械替换」的形状**，每一族都卡在一个具体决定或一次协调重构上。按依赖归类如下。
+
+| 规则 | 处数 | 卡在哪里 |
+| --- | ---: | --- |
+| `sql-string-building` | 327 | 语句选择与文本拼装。需要按语句族重写成常量语句 + 派发表，不能逐文件替换 |
+| `runtime-ddl` | 165 | schema bootstrap 的运行时建表；归 #1102 的 bootstrap 设计 |
+| `vendor-sdk` | 132 | 品牌驱动导入；仓库边界（`ContractCursor`/`Pool`）已就绪但只接了 2 个消费者，需要仓库边界重构 |
+| `vendor-type` | 88 | `TIMESTAMPTZ`/`INTERVAL`/`TEXT`/`BOOLEAN`/`UUID`/`ARRAY`；逻辑类型映射归 #1102 的物理 profile |
+| `ddl-identifier-length` | 38 | 标识符长度与命名规则，随物理 profile |
+| `advisory-lock` | 33 | 需要协调原语替代方案（与 #1095 bucket fencing 同一族决定） |
+| `vendor-json` | 33 | `->`/`->>`；列式短字符串 + 对象存储的读法，随 #1102 |
+| `upsert` | 21 | `ON CONFLICT` → 显式「先读后写 + CAS」，需按语句确认幂等语义 |
+| `vendor-operator` | 19 | `||`、`@@` 等；随语句族重写 |
+| `paging-limit` | 16 | 全是 `LIMIT 1` 的探测/取值，但**多重性未定**：`coordination_jobs` 只保证 `UNIQUE(operation_id, attempt_id)`，`WHERE operation_id = ?` 可能命中多次重试。去掉 `LIMIT` 前必须先定「取哪一次」的确定性排序 |
+| `returning` | 15 | `RETURNING` → 写后按主键读回，同一事务内 |
+| `cte` | 14 | `WITH` → 拆成多条语句或派生表 |
+| `vendor-error-branch` | 13 | 按厂商 SQLSTATE 分支；需标准化的错误分类点（`contract.portable_error` 已存在） |
+| `vendor-function` / `vendor-cast` / `vendor-time` / `pyformat` | 21 | 各自剩余个位数；`readiness.py` 的 4 处必须与标记、分页同批迁移（见 §7） |
+| `session-tuning` / `vendor-lock` / `ddl-type` / `ddl-default` / `aggregate-filter` / `distinct-on` / `format` / `skip-locked` / `named` | 15 | 零星构造，随所属语句族一起改 |
+
+**可核验的结论**：#1100 的「基线归零」在本轮证据下不可能只靠替换完成——`runtime-ddl`(165)、`vendor-type`(88)、`vendor-json`(33)、`ddl-identifier-length`(38)、`ddl-type`/`ddl-default`(3) 共 327 处直接依赖 #1102 的物理 profile 与逻辑类型映射；`vendor-sdk`(132) 依赖仓库边界重构；`advisory-lock`(33) 与 #1095 的协调原语决定同族。这三块合计 492 处，占基线的一半以上。
+
+因此 #1100 的验收判据应表述为：**可在 #1101/#1102 之前收敛的部分归零，剩余部分逐条登记为「已归类的未覆盖项」，并给出归属卡与解除条件**；把「基线归零」写成 #1100 单独的完成条件会让这张卡与 #1102 互相等待，永远不能先绿。

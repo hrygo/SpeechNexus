@@ -186,3 +186,24 @@ class GuardScopeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+PROFILES = ROOT / "scripts/dev-env/portable-sql-profiles.json"
+
+
+def test_declared_profiles_cover_both_artifact_categories() -> None:
+    """声明文件的两类制品都必须真的生效.
+
+    `paths` 是「唯一消费者是 alembic 迁移树」的 schema/DDL;`deploy` 是 GRANT/REVOKE 这类
+    标识符无法参数化的部署期特权制品。只读其中一类,另一类就会掉回业务 DML 基线。
+    """
+
+    import json
+
+    payload = json.loads(PROFILES.read_text(encoding="utf-8"))
+    assert payload["paths"], "migration-only schema artifacts are not declared"
+    assert payload["deploy"], "deploy-time privilege artifacts are not declared"
+    for field in ("paths", "deploy"):
+        for entry in payload[field]:
+            assert (ROOT / entry).is_file(), f"{field} declares a missing file: {entry}"
+    assert not (set(payload["paths"]) & set(payload["deploy"])), "a file is declared twice"

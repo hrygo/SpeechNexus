@@ -819,14 +819,6 @@
     },
     {
       "rule": "sql-string-building",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/builtin_voice_grants.py",
-      "count": 8,
-      "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "sql-string-building",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/builtin_voice_qualification.py",
       "count": 1,
       "card": "#1100",
@@ -837,14 +829,6 @@
       "rule": "sql-string-building",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/catalog_revision_schema.py",
       "count": 4,
-      "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "sql-string-building",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/coordination_grants.py",
-      "count": 1,
       "card": "#1100",
       "reason": "按语句族重写成常量语句 + 派发表",
       "release": "#1100 完成时删除本条目"
@@ -868,14 +852,6 @@
     {
       "rule": "sql-string-building",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/execution_release_schema.py",
-      "count": 2,
-      "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "sql-string-building",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/gateway_query_grants.py",
       "count": 2,
       "card": "#1100",
       "reason": "按语句族重写成常量语句 + 派发表",
@@ -955,14 +931,6 @@
     },
     {
       "rule": "sql-string-building",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/public_job_admission_grants.py",
-      "count": 1,
-      "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "sql-string-building",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/public_job_cancellation_schema.py",
       "count": 2,
       "card": "#1100",
@@ -1005,14 +973,6 @@
       "rule": "sql-string-building",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/publications_sql.py",
       "count": 6,
-      "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "sql-string-building",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/qualification_admission_grants.py",
-      "count": 12,
       "card": "#1100",
       "reason": "按语句族重写成常量语句 + 派发表",
       "release": "#1100 完成时删除本条目"

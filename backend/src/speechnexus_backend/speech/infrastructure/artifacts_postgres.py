@@ -237,7 +237,8 @@ class PostgresArtifactRetention:
             + _ELAPSED
             + " RETURNING "
             + _READ_COLUMNS,
-            lambda now: (now, artifact_id),
+            # `?` 顺序是「删除时间、标识、过期判定」:删除时间在 SET 里,过期判定在 WHERE 里。
+            lambda now: (now, artifact_id, now),
         )
         return None if row is None else _artifact(row)
 

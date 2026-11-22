@@ -12,10 +12,11 @@ import threading
 import time
 from collections.abc import Iterator
 
+import psycopg
 import pytest
 from psycopg.rows import dict_row
 
-from speechnexus_portable_sql.contract import ConflictError, StorageError
+from speechnexus_portable_sql.contract import ConflictError
 from speechnexus_portable_sql.psycopg_driver import connect
 from speechnexus_portable_sql.transaction import insert_if_absent, savepoint
 
@@ -91,8 +92,8 @@ def test_without_a_savepoint_the_same_conflict_poisons_the_transaction(schema: s
         cursor = conn.cursor()
         with pytest.raises(ConflictError):
             cursor.execute(_INSERT, ("k", 2, "k"))
-        # 事务被中止:后续语句不再是「查不到」,而是直接失败(25P02),驱动翻成存储错误。
-        with pytest.raises(StorageError):
+        # 事务被中止:后续语句不再是「查不到」,而是直接失败(25P02)。
+        with pytest.raises(psycopg.errors.InFailedSqlTransaction):
             cursor.execute(f"SELECT payload FROM {_TABLE} WHERE key_digest = ?", ("k",))
     holder.join(5.0)
 

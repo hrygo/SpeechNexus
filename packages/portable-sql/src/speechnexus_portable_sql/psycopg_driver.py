@@ -170,9 +170,10 @@ class PortableCursor:
             query, params = _expanded(query, params)
         try:
             self._cursor.execute(_translated(query, params), params, prepare=prepare, binary=binary)
-        except psycopg.Error as error:
-            # 唯一冲突在这里翻成 `ConflictError`:业务层只认类别,不读 SQLSTATE。
-            # 事务仍处于中止状态,要继续用它必须回滚到自己的保存点。
+        except psycopg.errors.UniqueViolation as error:
+            # 只翻译唯一冲突:其余异常(检查约束、外键、语法)保持原样,它们是编程或
+            # schema 错误,调用方与测试都按原类别断言。事务仍处于中止状态,要继续用它
+            # 必须回滚到自己的保存点。
             raise portable_error(error) from error
         return self
 

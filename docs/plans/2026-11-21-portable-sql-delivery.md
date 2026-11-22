@@ -544,8 +544,12 @@ assert ('created' == 'created' and 'unknown' == 'replayed')
 `INSERT ... WHERE NOT EXISTS`,唯一冲突读成「未插入」并返回 `False`,事务保持可用。
 
 同时补上驱动侧翻译缺口:`PortableCursor.execute` 以前直接抛 `psycopg.errors.UniqueViolation`,
-业务层拿不到契约类别。现在统一走既有的 `portable_error`,唯一冲突变成 `ConflictError`。
-这也是「SQLSTATE 只读一次」这条规则的补齐 —— 之前只覆盖了连接与提交路径。
+业务层拿不到契约类别。现在唯一冲突走既有的 `portable_error` 变成 `ConflictError`。
+
+**只翻译唯一冲突**。第一版把 `execute` 里所有 `psycopg.Error` 都翻成契约类别,集成分区立刻红了
+一堆:`CheckViolation` 变成 `StorageError`、`ForeignKeyViolation` 变成 `ConflictError`,而检查约束
+与外键违反是编程/schema 错误,调用方和测试都按原类别断言。错误翻译的范围要跟着「业务需要处理
+哪一种」走,不是「能翻就翻」。
 
 真实 PG oracle(`tests/integration/test_portable_savepoint_pg.py`,3 条,本机通过):
 

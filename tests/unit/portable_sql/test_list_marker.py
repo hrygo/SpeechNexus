@@ -64,3 +64,16 @@ def test_a_statement_without_parameters_keeps_none_so_percent_stays_literal() ->
 
     ddl = "CREATE TABLE t (note TEXT CHECK (note <> '100%'))"
     assert _translated(ddl, None) == ddl
+
+
+def test_named_parameters_keep_their_mapping() -> None:
+    # 具名标记配映射:转成元组会把键当参数值 —— 真实库上表现为「具名占位符需要映射」
+    # 与「占位符数与参数数不符」两种报错。
+    sql, params = expand_lists("SELECT a FROM t WHERE a = %(value)s", {"value": 3})
+    assert sql == "SELECT a FROM t WHERE a = %(value)s"
+    assert params == {"value": 3}
+
+
+def test_a_list_inside_named_parameters_is_refused() -> None:
+    with pytest.raises(ContractError, match="positional markers"):
+        expand_lists("SELECT a FROM t WHERE a = %(value)s", {"value": ListMarker([1, 2])})

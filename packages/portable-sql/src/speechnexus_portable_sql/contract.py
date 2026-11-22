@@ -13,7 +13,7 @@ fake 上执行的是同一份代码。
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Literal, Protocol, runtime_checkable
@@ -253,13 +253,21 @@ def check_parameters(params: Sequence[object]) -> tuple[Binding, ...]:
 type Binding = Param | ListMarker
 
 
-def expand_lists(sql: str, params: Sequence[object]) -> tuple[str, tuple[object, ...]]:
+def expand_lists(
+    sql: str, params: Sequence[object] | Mapping[str, object]
+) -> tuple[str, tuple[object, ...] | Mapping[str, object]]:
     """把 `ListMarker` 占着的那个 `?` 展开成够用的占位符序列,参数按同一顺序摊平.
 
     位置由词法扫描给出,所以字符串字面量里的 `?` 不参与;两个列表变量在同一句里也能按出现
     顺序各自展开。
     """
 
+    if isinstance(params, Mapping):
+        # 具名标记配的是映射;把它转成元组会把键当成参数值(真实库上表现为
+        # 「具名占位符需要映射」与「占位符数不符」两种报错)。
+        if any(isinstance(value, ListMarker) for value in params.values()):
+            raise ContractError("a named marker cannot hold a list; use positional markers")
+        return sql, params
     if not any(isinstance(value, ListMarker) for value in params):
         return sql, tuple(params)
     positions = placeholder_positions(sql)
@@ -285,7 +293,7 @@ def check_statement(sql: str, params: Sequence[object]) -> Params:
     """在发送前校验语句子集、参数风格与参数个数。"""
 
     validate(sql)
-    sql, params = expand_lists(sql, params)
+    sql, params = expand_lists(sql, params)  # type: ignore[assignment]
     expected = placeholder_count(sql)
     if expected != len(params):
         raise ContractError(f"statement expects {expected} parameters, got {len(params)}")

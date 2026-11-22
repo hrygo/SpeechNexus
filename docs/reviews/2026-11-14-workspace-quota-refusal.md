@@ -144,7 +144,7 @@ PROBE same-key-after-prov.  202 job=job-538eafc28e6e4cbd8bb0a33031f24482 workspa
 ### A2：多行配额歧义——构造不出来，是防御代码
 
 `workspace_quotas.workspace_id` 是主键（`coordination_schema.py:20-28`、
-`migrations/0001_cluster_coordination_draft.sql:21-29`），`speech_workspaces.workspace_id` 也是主键
+协调 DDL 草案中 `workspace_quotas` 那一节(文件已删除,现由 `coordination_schema` 生成)），`speech_workspaces.workspace_id` 也是主键
 （`asset_schema.py:6-13`），JOIN 条件就是这两个主键等值，因此**最多一行**。我实测：
 
 ```text

@@ -241,8 +241,8 @@ binding 发布与配额/容量核对的命令在[异步 Job 手册 §7.1–§7.3
   本构建的（当前 `SCHEMA_REVISION = 11`，
   `backend/src/speechnexus_backend/workbench/infrastructure/runtime_schema.py:59`），从
   repair drift。所以工作台 schema 只能前向。
-- **根目录 `migrations/` 只有一个 SQL 草案**（`0001_cluster_coordination_draft.sql`），不参与
-  产品迁移链。
+- **根目录 `migrations/` 曾有的一份 SQL 草案**不参与产品迁移链，已于后续清理中删除；
+  生产 DDL 只由 `coordination_schema` 与 `job_schema` 的生成器给出。
 
 因此实际后果是：
 

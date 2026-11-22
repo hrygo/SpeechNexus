@@ -89,7 +89,8 @@ def append_interval_in_transaction(
         cursor.execute(
             "SELECT interval_id FROM output_sample_intervals WHERE operation_id = ? "
             "AND attempt_id = ? AND output_stream_id = ? AND meter_kind = ? "
-            "AND sample_start < ? AND sample_end > ? LIMIT 1",
+            # 只问「有没有重叠」:方言没有 `LIMIT`,用 `fetchall()` 判空即可。
+            "AND sample_start < ? AND sample_end > ?",
             (
                 *record.stream_key,
                 interval.meter_kind.value,

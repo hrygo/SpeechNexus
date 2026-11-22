@@ -243,7 +243,8 @@ class ModelCatalogRuntime:
             "pg_catalog.pg_proc AS p "
             "JOIN pg_catalog.pg_namespace AS n ON n.oid=p.pronamespace "
             "WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema' AND p.prosecdef "
-            "AND pg_catalog.has_function_privilege(CAST(? AS name),p.oid,'EXECUTE') LIMIT 1",
+            # 存在性探针:方言没有 `LIMIT`,由 `fetchone()` 只取一行。
+            "AND pg_catalog.has_function_privilege(CAST(? AS name),p.oid,'EXECUTE')",
             (role,),
         ).fetchone()
         if definer is not None:

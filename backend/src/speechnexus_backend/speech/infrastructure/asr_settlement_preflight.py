@@ -36,7 +36,7 @@ def require_complete_asr_roots(pool: SpeechPool, *, timeout_seconds: float = 3) 
         # release; it is a defect, not a completed settlement.
         "l.lease_state<>'released' AND EXISTS (SELECT 1 FROM speech_asr_settlement s "
         "WHERE s.lease_id=l.lease_id AND s.settled_at_us IS NOT NULL)"
-        ") LIMIT 1"
+        ")"
     )
     try:
         with pool.connection(timeout=timeout_seconds) as conn:

@@ -55,3 +55,12 @@ def test_expansion_without_a_list_returns_the_statement_untouched() -> None:
     sql, params = expand_lists("SELECT a FROM t WHERE a = ?", (5,))
     assert sql == "SELECT a FROM t WHERE a = ?"
     assert params == (5,)
+
+
+def test_a_statement_without_parameters_keeps_none_so_percent_stays_literal() -> None:
+    # psycopg 只在 params 为 None 时跳过 `%` 解析。驱动若把 None 换成空序列,
+    # DDL 里的字面量 `%` 就会被当成占位符 —— 这是真实库上发现的回归。
+    from speechnexus_portable_sql.psycopg_driver import _translated
+
+    ddl = "CREATE TABLE t (note TEXT CHECK (note <> '100%'))"
+    assert _translated(ddl, None) == ddl

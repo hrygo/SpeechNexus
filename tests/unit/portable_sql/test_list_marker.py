@@ -77,3 +77,9 @@ def test_named_parameters_keep_their_mapping() -> None:
 def test_a_list_inside_named_parameters_is_refused() -> None:
     with pytest.raises(ContractError, match="positional markers"):
         expand_lists("SELECT a FROM t WHERE a = %(value)s", {"value": ListMarker([1, 2])})
+
+
+def test_a_list_marker_in_a_mixed_statement_is_refused_with_the_reason() -> None:
+    # 混合标记语句里 `?` 的个数永远不等于参数个数(还有 `%s`),展开无从对齐。
+    with pytest.raises(ContractError, match="pure qmark statement"):
+        expand_lists("SELECT a FROM t WHERE a IN (?) LIMIT %s", (ListMarker([1, 2]), 5))

@@ -32,6 +32,7 @@ from speechnexus_backend.speech.domain.assets import (
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_portable_sql.clock import ClockReader, now_us
+from speechnexus_portable_sql.contract import ListMarker
 
 
 class AssetCursor:
@@ -552,13 +553,13 @@ class PostgresAssetMetadata:
                 # Lock only the selected hint rows, in canonical identity order.
                 # No workspace/pool/resource locks or object I/O occur here.
                 cursor.rows(
-                    "SELECT asset_id FROM speech_assets WHERE asset_id = ANY(?) "
+                    "SELECT asset_id FROM speech_assets WHERE asset_id IN (?) "
                     "ORDER BY asset_id FOR UPDATE",
-                    (identities,),
+                    (ListMarker(identities),),
                 )
                 cursor.rows(
-                    f"UPDATE speech_assets SET {polled} = ? WHERE asset_id = ANY(?)",
-                    (cursor.clock(), identities),
+                    f"UPDATE speech_assets SET {polled} = ? WHERE asset_id IN (?)",
+                    (cursor.clock(), ListMarker(identities)),
                 )
             return identities
 

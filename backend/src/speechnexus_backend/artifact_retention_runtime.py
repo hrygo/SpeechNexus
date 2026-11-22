@@ -34,6 +34,7 @@ from speechnexus_backend.startup_privileges import (
     refuse_table_privileges,
     require_schema_usage,
 )
+from speechnexus_portable_sql.contract import ListMarker
 
 _DECLARED_TABLES = (ARTIFACTS,)
 _SUBJECT = "Artifact retention"
@@ -150,9 +151,9 @@ def _verify_retention_authority(connection: SpeechConnection, schema: str) -> No
     stray = connection.execute(
         "SELECT count(*) AS total FROM pg_catalog.pg_attribute a "
         "WHERE a.attrelid = CAST(? AS regclass) AND a.attnum > 0 AND NOT a.attisdropped "
-        "AND NOT (a.attname = ANY(?)) "
+        "AND NOT (a.attname IN (?)) "
         "AND pg_catalog.has_column_privilege(CURRENT_USER, a.attrelid, a.attnum, 'UPDATE')",
-        (qualified, list(ARTIFACT_RETENTION_UPDATE_COLUMNS)),
+        (qualified, ListMarker(list(ARTIFACT_RETENTION_UPDATE_COLUMNS))),
     ).fetchone()
     if stray is None or int(stray["total"]):
         raise ValueError(

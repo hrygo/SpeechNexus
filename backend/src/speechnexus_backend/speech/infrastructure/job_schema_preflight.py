@@ -20,6 +20,7 @@ from collections.abc import Sequence
 
 from speechnexus_backend.speech.domain.job_prerequisites import SCHEMA_NOT_MIGRATED
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechConnection
+from speechnexus_portable_sql.contract import ListMarker
 
 # The relation whose absence is checked first: the migration ledger itself, so a
 # database that never ran any revision is reported before the relations it would
@@ -51,8 +52,8 @@ def require_migrated_schema(
     rows = connection.execute(
         "SELECT r.relname AS name FROM pg_catalog.pg_class AS r "
         "JOIN pg_catalog.pg_namespace AS n ON n.oid = r.relnamespace "
-        "WHERE n.nspname = ? AND r.relname = ANY(?)",
-        (schema, list(wanted)),
+        "WHERE n.nspname = ? AND r.relname IN (?)",
+        (schema, ListMarker(list(wanted))),
     ).fetchall()
     present = {str(row["name"]) for row in rows}
     missing = tuple(name for name in wanted if name not in present)

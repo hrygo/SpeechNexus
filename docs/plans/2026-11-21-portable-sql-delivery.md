@@ -363,3 +363,68 @@ cursor.execute("... WHERE id IN (?) AND state = ?", (ListMarker(ids), "ok"))
 与「空批次在语句发出前被拒绝」两条。
 
 调用点迁移是下一步:13 处 `= ANY(数组)` 分别改成 `IN (?)` + `ListMarker`,不再有定元元数问题。
+
+### 8.13 `= ANY(数组)` 的 13 处调用点迁到 `IN (?)` + `ListMarker`
+
+七个模块,13 处,全部是「运行期才知道大小的集合」:
+
+| 模块 | 处数 | 集合是什么 |
+| --- | --- | --- |
+| `postgres_deletion_cleanup` | 7 | 本次删除涉及的 transcript / meeting id |
+| `assets_postgres` | 2 | 本轮要锁定的 asset id |
+| `artifact_retention_runtime` | 1 | 允许 UPDATE 的列名 |
+| `job_dispatch_postgres` | 1 | 车道允许的 Job kind |
+| `job_schema_preflight` | 1 | 期望存在的关系名 |
+| `postgres_exports` | 1 | 一本书里的 render unit id |
+| `postgres_render_units` | 1 | 要读的 generation unit id |
+
+`vendor-operator` 由 19 降到 6(`ILIKE`/`FULL JOIN` 家族),`vendor-type` 同时再降 10(所有
+`CAST(? AS text[])` 一并消失),基线 897 → 876。
+
+**这次的心脏是「元数不再写死」**:上一轮 §8.11 的定元 `IN` 在运行期集合上写不出来,写出来也
+会在集合大小变化时静默错位。迁移后 SQL 里始终是一个 `?`,元数只在展开时决定。
+
+一处测试随之改变:`test_claim_uses_the_instance_lane_not_the_module_default` 原来断言参数等于
+一个 list,现在参数是 `ListMarker`,断言改成「是标记且内容等于车道 kinds」——断言落在语义上,
+而不是落在某个容器类型上。
+
+### 8.14 一条语句不能混用两种标记:派发领取的 `ANY(?)` 保持原样
+
+迁移 13 处时,`job_dispatch_postgres` 的领取语句判红:
+
+```
+ContractError: statement expects 4 parameters, got 5
+```
+
+原因是这条语句是**混合标记**:`?` 是便携标记,`LIMIT %s` 还是旧式标记。`?` 的个数永远不等于
+参数个数(差的就是那个 `%s` 的位置),展开时无从对齐位置。这不是能靠猜补上的偏差。
+
+因此这一处撤回,保持 `= ANY(?)`;`expand_lists` 遇到混合标记语句时直接给出原因
+(「需要纯 qmark 语句」),而不是抛一个「参数个数不符」的模糊错误 —— 后者会让人去数参数,
+而真正的原因在标记体系。
+
+`vendor-operator` 由 19 降到 7(这一处 + `ILIKE`/`FULL JOIN` 家族);基线 897 → 877 的降幅来自
+其余 12 处。这一处按 `--accept-new` 写回基线:它不是新引入的用法,而是「这条语句暂时留在旧写法」
+的记录。
+
+### 8.15 删除清理的 7 处撤回:`IN (?)` 在这一路径上语义不等价
+
+`postgres_deletion_cleanup` 的 7 处 `id = ANY(CAST(? AS text[]))` 改成 `IN (?)` 后,真实库上
+`test_workbench_deletion_cleanup` 与 `test_workbench_http_management` 判红,对外表现为
+`503 store_unavailable`。
+
+这一处不是标记语法的问题,而是**类型推断**:`= ANY(CAST(? AS text[]))` 明确告诉规划器参数是
+`text[]`,比较发生在数组元素与列之间;`IN (?)` 的每个参数单独推断,遇到 uuid/文本混排的列时
+比较算子可能落到不同分支。批次为空时还要额外哨兵值才能构造标记。
+
+结论:这 7 处撤回,基线 877 → 891(`--accept-new` 记录原样保留的 7+7 处)。要真正收敛这一路径,
+需要的是「按列类型显式 CAST 的定元/变长列表」,由 `ListMarker` 携带元素类型而不是猜 —— 那是下一
+个契约变更,不在本卡内硬做。
+
+工作台另外两处(`postgres_exports`、`postgres_render_units`)随后同样判红
+(`test_workbench_runtime_export_dispatch` 报 `503`),一并撤回:workbench 的 id 列是 uuid,
+`IN (?)` 的文本参数让比较算子落到文本分支。基线 877 → 894。
+
+保留的 4 处都是「参数是文本、列也是文本」或「参数是文本、比较的是名字」的语句:
+`artifact_retention_runtime`(列名)、`job_schema_preflight`(关系名)、`assets_postgres`(asset id)。
+**workbench 的 uuid 列需要标记携带元素类型才能迁移**,这是下一个契约变更的明确边界。

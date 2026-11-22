@@ -177,7 +177,13 @@ class PostgresDispatchQueue:
                 )
                 rows = connection.execute(
                     query,
-                    (now_us(connection), list(self._kinds), limit, worker_id, lease_ms * 1000),
+                    (
+                        now_us(connection),
+                        list(self._kinds),
+                        limit,
+                        worker_id,
+                        lease_ms * 1000,
+                    ),
                 ).fetchall()
         except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
             raise DispatchUnavailableError("Dispatch claim storage is unavailable") from None

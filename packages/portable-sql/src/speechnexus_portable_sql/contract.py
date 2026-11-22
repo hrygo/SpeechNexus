@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Literal, Protocol, runtime_checkable
 
-from speechnexus_portable_sql.markers import placeholder_positions
+from speechnexus_portable_sql.markers import PYFORMAT, placeholder_positions
 from speechnexus_portable_sql.subset import placeholder_count, validate
 
 __all__ = [
@@ -272,6 +272,12 @@ def expand_lists(
         return sql, tuple(params)
     positions = placeholder_positions(sql)
     if len(positions) != len(params):
+        legacy = bool(PYFORMAT.search(sql)) or "%s" in sql
+        if legacy:
+            raise ContractError(
+                "a list marker needs a pure qmark statement: the legacy markers in this "
+                f"statement do not count against {len(params)} parameters"
+            )
         raise ContractError(f"statement expects {len(positions)} parameters, got {len(params)}")
     pieces: list[str] = []
     expanded: list[object] = []

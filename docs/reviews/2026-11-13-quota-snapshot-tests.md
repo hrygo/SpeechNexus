@@ -41,7 +41,7 @@ date: 2026-11-14
 | 时点 | 动作 | 结果 |
 | --- | --- | --- |
 | T0 | `git fetch`、`git worktree add /private/tmp/sn713 -b review/713-quota 62564255`、读 `tests/integration/AGENTS.md` | head 只有 1 个提交，`git diff --name-status 7147f306..HEAD` 只有目标测试文件 |
-| T1 | 读迁移与 schema：当时的协调 DDL 草案(文件已删除,现由 `coordination_schema` 生成)、`asset_schema.py` | `workspace_quotas` 6 列（PK + 5）；`speech_workspaces` 6 列（PK + 5，其中 `display_name` 可写） |
+| T1 | 读迁移与 schema：`migrations/0001_cluster_coordination_draft.sql`、`asset_schema.py` | `workspace_quotas` 6 列（PK + 5）；`speech_workspaces` 6 列（PK + 5，其中 `display_name` 可写） |
 | T2 | 读准入实现：`public_job_admission.py`、`admission_sql.py`、`public_job_admission_grants.py` | 配额 CAS 在 `admission_sql.py:314`；同事务还写 `host_nodes:323`、`engine_instances:333`；角色 UPDATE 授权正好覆盖这些列 |
 | T3 | 建隔离库（本机 PG 18.6）+ 复用隔离 MySQL 8.4.8，跑目标文件 | **5 passed**（作者基线一致） |
 | T4 | 跑相邻公开 Job 套件（原子准入 / public jobs http / list / retry sse / pin http） | **64 passed**（作者基线一致） |
@@ -57,7 +57,7 @@ date: 2026-11-14
 
 ### 1.1 `workspace_quotas`：够
 
-协调 DDL 草案中 `workspace_quotas` 那一节(文件已删除,现由 `coordination_schema` 生成) 定义 6 列：`workspace_id`（PK）、`max_attempts`、`held_attempts`、`quarantined_attempts`、`policy_revision`、`version`。快照采集 5 个非主键列，主键进 key（`test_public_job_admission_http_pg.py:122-128`、`:135-142`）。没有遗漏列。表级 CHECK `held_attempts <= max_attempts - quarantined_attempts` 的三个变量也都在快照里。
+`migrations/0001_cluster_coordination_draft.sql:21-29` 定义 6 列：`workspace_id`（PK）、`max_attempts`、`held_attempts`、`quarantined_attempts`、`policy_revision`、`version`。快照采集 5 个非主键列，主键进 key（`test_public_job_admission_http_pg.py:122-128`、`:135-142`）。没有遗漏列。表级 CHECK `held_attempts <= max_attempts - quarantined_attempts` 的三个变量也都在快照里。
 
 准入对这张表的就地写只有一处：`admission_sql.py:314` 的 `held_attempts = %s, version = version + 1`，且执行该写的角色只被授予 `held_attempts`、`version` 两列的 UPDATE（`public_job_admission_grants.py:87`）。也就是说：**这张表上拒绝路径唯一可能偷写的两列，恰好都被采到了**。这一点作者的说法准确。
 
@@ -249,7 +249,7 @@ PROBE_OTHER_WS_AFTER  [{'workspace_id': 'workspace-default', 'held_attempts': 1,
 - 快照列定义：`tests/integration/test_public_job_admission_http_pg.py:122-132`
 - `_table_state` / `_snapshot`：`test_public_job_admission_http_pg.py:135-158`
 - `_expect_reservation`：`test_public_job_admission_http_pg.py:176-195`
-- 配额 DDL：协调 DDL 草案中 `workspace_quotas` 那一节(文件已删除,现由 `coordination_schema` 生成)
+- 配额 DDL：`migrations/0001_cluster_coordination_draft.sql:21-29`
 - 工作区 DDL：`backend/src/speechnexus_backend/speech/infrastructure/asset_schema.py:6-13`
 - 准入就地写：`backend/src/speechnexus_backend/speech/infrastructure/admission_sql.py:314`、`:323`、`:333`
 - 准入角色授权：`backend/src/speechnexus_backend/speech/infrastructure/public_job_admission_grants.py:86-90`

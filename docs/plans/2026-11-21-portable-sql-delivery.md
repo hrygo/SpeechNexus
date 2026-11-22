@@ -503,3 +503,31 @@ from speechnexus_portable_sql.vendor import dict_row  # 替代 from psycopg.rows
 
 注入实测:往 `backend/src` 放一个 `import psycopg` 的探针文件,`lint-imports` 立刻
 `9 kept, 1 broken`;删掉即恢复 `10 kept`。
+
+### 8.19 负结果:`WHERE NOT EXISTS` 不能替代 `ON CONFLICT DO NOTHING`
+
+15 处 `upsert` 全是「同 key 只写一次」的幂等插入,第一反应是把
+`ON CONFLICT (key_digest) DO NOTHING` 改写成 `INSERT ... SELECT ... WHERE NOT EXISTS`。
+**这个等价关系不成立,已经用真实 PG 推翻,不要再试。**
+
+改写后三处(profile 草稿、profile 生命周期意图、发音集合草稿)在集成测试上红了:
+
+```
+tests/integration/test_profile_drafts.py::test_same_key_blocks_on_original_transaction_then_replays_its_committed_revision
+assert ('created' == 'created' and 'unknown' == 'replayed')
+```
+
+原因不是行数判断写错,而是事务语义:
+
+- `ON CONFLICT DO NOTHING` 让**语句**在唯一索引上等待并安静返回 0 行,事务继续可用;
+- `WHERE NOT EXISTS` 只是少了一个读,竞争下第二个写者仍然执行 INSERT,撞唯一索引后 PG
+  **中止整个事务**;在 Python 里捕获异常不会让事务恢复,后续 `SELECT ... FOR UPDATE` 直接
+  落到「事务已中止」,调用方于是走了错误分支。
+
+真正的等价写法要 `SAVEPOINT`:`SAVEPOINT s` → INSERT → 冲突则 `ROLLBACK TO SAVEPOINT s`。
+`packages/portable-sql` 目前**没有 savepoint 原语**(全仓 `grep SAVEPOINT` 为空),补它是一份
+契约变更:事务端口要能表达嵌套恢复点,MySQL/InnoDB 侧同样支持,但两侧的失败边界、与 `commit_unknown`
+的关系都要一起定义。
+
+在此之前,这 15 处 `upsert` 是**有理由的例外**,不是待办:它们靠的正是 `ON CONFLICT` 的语句级
+静默语义。把它们从基线上抹掉需要先有 savepoint 原语,这属于 #1100 之后的契约工作,不在本轮。

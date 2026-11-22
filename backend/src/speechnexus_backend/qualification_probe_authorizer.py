@@ -9,7 +9,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
-from psycopg.types.json import Jsonb
 from speechnexus_contracts.builtin_voice_qualification import parse
 
 from speechnexus_backend.qualification_probe_artifacts import verify_local_tts_artifacts
@@ -34,6 +33,7 @@ from speechnexus_backend.speech.interfaces.binding_release_evidence import (
 )
 from speechnexus_portable_sql.clock import ClockReader
 from speechnexus_portable_sql.clock import now_us as _portable_now_us
+from speechnexus_portable_sql.vendor import Jsonb
 
 
 class ProbeAuthorizationError(ValueError):

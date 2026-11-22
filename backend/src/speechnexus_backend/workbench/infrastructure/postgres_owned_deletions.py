@@ -10,14 +10,13 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
-from psycopg.rows import dict_row
-
 from speechnexus_backend.workbench.domain.deletion import DeletionDependency, DeletionTarget
 from speechnexus_backend.workbench.domain.saved_assets import project_object_prefix
 from speechnexus_backend.workbench.infrastructure.postgres_content_writes import (
     pending_content_write,
 )
 from speechnexus_backend.workbench.infrastructure.postgres_versions import _Session
+from speechnexus_portable_sql.vendor import dict_row
 
 
 @dataclass(frozen=True)

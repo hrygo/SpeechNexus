@@ -21,11 +21,10 @@ and would otherwise hide held capacity. A future identity change fails closed
 
 from typing import cast
 
-import psycopg
-
 from speechnexus_backend.speech.domain.job_prerequisites import MIGRATION_COMMAND
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_portable_sql.clock import ClockReader, now_us
+from speechnexus_portable_sql.vendor import psycopg
 
 
 class SettlementPreflightUnavailableError(RuntimeError):

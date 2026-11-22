@@ -26,10 +26,9 @@ import sys
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, TextIO, cast
 
-from psycopg.rows import dict_row
-
 from speechnexus_portable_sql.clock import ClockReader, now_us, to_epoch_us
 from speechnexus_portable_sql.psycopg_driver import connect as portable_connect
+from speechnexus_portable_sql.vendor import dict_row
 
 SOURCE_CONTROLLER = "controller_observed"
 SOURCE_OPERATOR = "operator_attested"

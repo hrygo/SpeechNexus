@@ -6,9 +6,8 @@ using the sealing adapter. Missing/renamed constraints fail; this is neither an
 idempotent runner nor a runtime auto-upgrade. v1 remains an immutable baseline.
 """
 
-from psycopg import sql
-
 from speechnexus_backend.workbench.infrastructure.version_schema import schema_identifier
+from speechnexus_portable_sql.vendor import sql
 
 
 def sealing_migration_sql(schema: str) -> sql.Composed:

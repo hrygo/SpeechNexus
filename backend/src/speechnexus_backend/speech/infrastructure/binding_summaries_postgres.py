@@ -22,9 +22,6 @@ from __future__ import annotations
 import time
 from typing import Any
 
-import psycopg
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
-
 from speechnexus_backend.speech.application.binding_documents import decode_document
 from speechnexus_backend.speech.domain.binding_drafts import DOCUMENT_VERSION
 from speechnexus_backend.speech.domain.binding_summaries import (
@@ -35,6 +32,7 @@ from speechnexus_backend.speech.domain.binding_summaries import (
 )
 from speechnexus_backend.speech.domain.configuration import document_digest
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
+from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 _COLUMNS = (
     "family.binding_id, family.latest_revision, revision.document_version, "

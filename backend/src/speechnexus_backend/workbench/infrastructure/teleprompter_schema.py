@@ -5,9 +5,8 @@ no hypothesis and no stream epoch. Project deletion cascades both tables so a to
 project never leaves a readable position behind.
 """
 
-from psycopg import sql
-
 from speechnexus_backend.workbench.infrastructure.version_schema import schema_identifier
+from speechnexus_portable_sql.vendor import sql
 
 
 def teleprompter_migration_sql(schema: str) -> sql.Composed:

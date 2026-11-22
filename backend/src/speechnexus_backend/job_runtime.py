@@ -6,9 +6,6 @@ import logging
 import threading
 import uuid
 
-import psycopg
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
-
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.deletions import SpeechDeletions
 from speechnexus_backend.speech.application.job_cancellation import CancellationCapacity
@@ -57,6 +54,7 @@ from speechnexus_backend.startup_privileges import (
     refuse_table_privileges,
     require_schema_usage,
 )
+from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 _LOG = logging.getLogger(__name__)
 

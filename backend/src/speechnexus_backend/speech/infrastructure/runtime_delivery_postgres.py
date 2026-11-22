@@ -7,9 +7,6 @@ import time
 from collections.abc import Callable
 from typing import cast
 
-import psycopg
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
-
 from speechnexus_backend.speech.domain.runtime_delivery import (
     DeliveryClaim,
     DeliveryClaimRequest,
@@ -31,6 +28,7 @@ from speechnexus_backend.speech.infrastructure.runtime_delivery_sql import (
     defer_in_transaction,
     start_in_transaction,
 )
+from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 
 class PostgresRuntimeDelivery:

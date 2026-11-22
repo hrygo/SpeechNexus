@@ -7,9 +7,6 @@ import time
 from collections.abc import Callable
 from typing import Any, cast
 
-import psycopg
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
-
 from speechnexus_backend.speech.application.completed_releases import (
     CompletedLeaseSnapshot,
 )
@@ -37,6 +34,7 @@ from speechnexus_backend.speech.infrastructure.quarantine_release_sql import (
     read_ledger,
 )
 from speechnexus_portable_sql.clock import ClockReader, now_us
+from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 #: A missing relation, column or schema object means the migration chain did not
 #: reach 0052 in this database; the fix is `speechnexus-job-migrate`, not new

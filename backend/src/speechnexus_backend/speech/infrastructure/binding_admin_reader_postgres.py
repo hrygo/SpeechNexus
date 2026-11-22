@@ -11,9 +11,6 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-import psycopg
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
-
 from speechnexus_backend.speech.application.binding_documents import decode_document
 from speechnexus_backend.speech.application.binding_evidence import EvidenceKind
 from speechnexus_backend.speech.application.binding_publication import PublishedBinding
@@ -34,6 +31,7 @@ from speechnexus_backend.speech.infrastructure.publications_sql import (
     find_publication,
     find_retirement,
 )
+from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 
 class _Cursor:

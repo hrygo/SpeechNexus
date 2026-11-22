@@ -6,9 +6,6 @@ import random
 import time
 from typing import Any, cast
 
-import psycopg
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
-
 from speechnexus_backend.speech.domain.runtime_intents import (
     CreateRuntimeIntent,
     RuntimeIdentity,
@@ -28,6 +25,7 @@ from speechnexus_backend.speech.infrastructure.runtime_sql import (
     query_in_transaction,
 )
 from speechnexus_portable_sql.clock import ClockReader, now_us
+from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 
 class _BudgetExpiredError(Exception):

@@ -39,9 +39,6 @@ import sys
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, TextIO, cast
 
-import psycopg
-from psycopg.rows import dict_row
-
 from speechnexus_backend.engine_registration import EXIT_INVALID, EXIT_UNAVAILABLE
 from speechnexus_backend.speech.domain.runtime_observations import (
     READINESS_EXPIRED,
@@ -55,6 +52,7 @@ from speechnexus_backend.speech.infrastructure.runtime_observation_codec import 
 from speechnexus_portable_sql.clock import ClockReader
 from speechnexus_portable_sql.clock import now_us as now_us_for
 from speechnexus_portable_sql.psycopg_driver import connect as portable_connect
+from speechnexus_portable_sql.vendor import dict_row, psycopg
 
 READINESS_MISSING = "missing"
 """The ready instance has no prepare intent or no stored receipt at all."""

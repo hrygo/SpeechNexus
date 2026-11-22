@@ -27,9 +27,6 @@ from __future__ import annotations
 import time
 from typing import Any
 
-import psycopg
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
-
 from speechnexus_backend.speech.domain.model_instances import (
     ModelInstance,
     ModelInstanceLookup,
@@ -37,6 +34,7 @@ from speechnexus_backend.speech.domain.model_instances import (
     ModelInstanceUnavailableError,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
+from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 _COLUMNS = (
     "instance.instance_id, instance.instance_generation, instance.host_node_id, "

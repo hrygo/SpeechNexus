@@ -7,9 +7,6 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-import psycopg
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
-
 from speechnexus_backend.speech.application.binding_documents import decode_document
 from speechnexus_backend.speech.domain.binding_publication_evidence import (
     BindingCapacityManifestMismatchError,
@@ -27,6 +24,7 @@ from speechnexus_backend.speech.infrastructure.binding_publication_evidence_sql 
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.publications_sql import find_publication
+from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 
 class BackfillIncompleteError(RuntimeError):

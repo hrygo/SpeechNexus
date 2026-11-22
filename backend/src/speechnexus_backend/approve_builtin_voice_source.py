@@ -10,7 +10,6 @@ import uuid
 from collections.abc import Sequence
 from datetime import datetime
 
-from psycopg.conninfo import conninfo_to_dict
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -20,6 +19,7 @@ from speechnexus_backend.builtin_voice_source_approval import (
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
 from speechnexus_backend.speech.infrastructure.publications_postgres import PostgresPublications
+from speechnexus_portable_sql.vendor import conninfo_to_dict
 
 _TIMESTAMP = re.compile(
     r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"

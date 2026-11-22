@@ -5,8 +5,6 @@ import json
 from dataclasses import dataclass
 from uuid import uuid4
 
-from psycopg.types.json import Jsonb
-
 from speechnexus_backend.workbench.application.content_writes import ContentWrite
 from speechnexus_backend.workbench.application.export_worker import ExportCancelledError
 from speechnexus_backend.workbench.application.versions import (
@@ -18,6 +16,7 @@ from speechnexus_backend.workbench.infrastructure.postgres_versions import (
     VersionStoreError,
     _Session,
 )
+from speechnexus_portable_sql.vendor import Jsonb
 
 
 @dataclass(frozen=True)

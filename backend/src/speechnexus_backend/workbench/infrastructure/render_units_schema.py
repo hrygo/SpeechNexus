@@ -8,9 +8,8 @@ and their receipts, a unit position is unique inside its chapter, and the receip
 composite key binds the key that was accepted to the chapter that accepted it.
 """
 
-from psycopg import sql
-
 from speechnexus_backend.workbench.infrastructure.version_schema import schema_identifier
+from speechnexus_portable_sql.vendor import sql
 
 
 def render_units_migration_sql(schema: str) -> sql.Composed:

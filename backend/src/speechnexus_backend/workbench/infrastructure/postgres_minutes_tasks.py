@@ -12,8 +12,6 @@ from hashlib import sha256
 from typing import Any
 from uuid import uuid4
 
-from psycopg.types.json import Jsonb
-
 from speechnexus_backend.workbench.application.llm import (
     LlmCompletion,
     LlmError,
@@ -43,6 +41,7 @@ from speechnexus_backend.workbench.infrastructure.postgres_versions import (
     PostgresVersionUnitOfWork,
     _Session,
 )
+from speechnexus_portable_sql.vendor import Jsonb
 
 
 @dataclass(frozen=True)

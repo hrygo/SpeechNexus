@@ -20,7 +20,6 @@ import contextlib
 import logging
 import uuid
 
-import psycopg
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -34,6 +33,7 @@ from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool, 
 from speechnexus_backend.speech.infrastructure.public_jobs_postgres import (
     PostgresPublicJobs,
 )
+from speechnexus_portable_sql.vendor import psycopg
 
 logger = logging.getLogger(__name__)
 

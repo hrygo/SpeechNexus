@@ -6,9 +6,6 @@ import random
 import time
 from typing import Any, cast
 
-import psycopg
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
-
 from speechnexus_backend.speech.domain.owners import (
     POOLS,
     AcquireOwner,
@@ -26,6 +23,7 @@ from speechnexus_backend.speech.infrastructure.owners_sql import (
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_portable_sql.clock import ClockReader, now_us
+from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 
 class _BudgetExpiredError(Exception):

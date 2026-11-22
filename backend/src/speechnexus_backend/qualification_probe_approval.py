@@ -8,7 +8,6 @@ from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from psycopg.types.json import Jsonb
 from speechnexus_contracts.voice_catalogue_http import validate_response
 
 from speechnexus_backend.qualification_probe_artifacts import VerifiedLocalArtifacts
@@ -27,6 +26,7 @@ from speechnexus_backend.speech.interfaces.binding_release_evidence import (
 )
 from speechnexus_portable_sql.clock import ClockReader
 from speechnexus_portable_sql.clock import now_us as _portable_now_us
+from speechnexus_portable_sql.vendor import Jsonb
 
 
 class ProbeApprovalError(ValueError):

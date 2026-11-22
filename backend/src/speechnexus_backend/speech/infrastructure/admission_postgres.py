@@ -9,8 +9,6 @@ import time
 from collections.abc import Callable
 from typing import cast
 
-import psycopg
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 from speechnexus_contracts.execution import parse
 
 from speechnexus_backend.speech.domain.admission import (
@@ -47,6 +45,7 @@ from speechnexus_backend.speech.infrastructure.transcription_submit import (
 )
 from speechnexus_backend.speech.infrastructure.tts_settlement_sql import insert_tts_settlement
 from speechnexus_portable_sql.psycopg_driver import portable_error
+from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 _LOGGER = logging.getLogger(__name__)
 

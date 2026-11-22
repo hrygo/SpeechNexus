@@ -7,9 +7,6 @@ from collections.abc import Iterable
 from dataclasses import replace
 from typing import Any, cast
 
-import psycopg
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
-
 from speechnexus_backend.speech.application.leases import (
     LeaseIsolation,
     LeaseIsolationGap,
@@ -36,6 +33,7 @@ from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema imp
 from speechnexus_backend.speech.infrastructure.leases_postgres import PostgresLeaseTransactions
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_portable_sql.clock import now_us
+from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 _JOB_SELECT = (
     "SELECT j.job_id, j.workspace_id, j.kind, j.state, j.status_version, "

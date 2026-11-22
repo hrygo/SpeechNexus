@@ -1,8 +1,7 @@
 """Owner-only task fragment, after workbench versions/deletion/sealing fragments."""
 
-from psycopg import sql
-
 from speechnexus_backend.workbench.infrastructure.version_schema import schema_identifier
+from speechnexus_portable_sql.vendor import sql
 
 
 def minutes_tasks_migration_sql(schema: str) -> sql.Composed:

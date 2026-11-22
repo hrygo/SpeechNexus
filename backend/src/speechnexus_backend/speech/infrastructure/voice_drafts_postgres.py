@@ -6,9 +6,6 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-import psycopg
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
-
 from speechnexus_backend.speech.application.public_jobs import resolve_voice_previews
 from speechnexus_backend.speech.application.voice_drafts import (
     VoiceDraftConflictError,
@@ -24,6 +21,7 @@ from speechnexus_backend.speech.domain.public_jobs import (
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechConnection, SpeechPool
 from speechnexus_portable_sql.clock import ClockReader, now_us
+from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 _SELECT_BASE = (
     "SELECT d.draft_id, d.kind, d.status, d.head_revision, d.metadata_revision, "

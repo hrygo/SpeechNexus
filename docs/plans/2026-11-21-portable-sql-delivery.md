@@ -319,3 +319,21 @@ instance_generation)` 排序取第一行」,既保持确定性,又不再把正�
 
 `vendor-function` 余 4 处:`readiness.py` 的 3 处是时钟(与标记、分页同批),`asset_schema.py`
 的 1 处是 DDL 的 `DEFAULT`,属于物理 DDL profile,不随 DML 一起迁。
+
+### 8.11 `= ANY(array)` 在固定小集合上换成定元 `IN`
+
+`pronunciation_runtime` 的 6 处权限探针用 `c.relname = ANY(CAST(? AS text[]))` 传一个表名数组。
+可移植写法是定元 `IN (?, ?, ?, ...)`,前提是集合大小是常量 —— 这里三个元组都是模块常量:
+
+| 集合 | 元数 | 语句 |
+| --- | --- | --- |
+| `_READER_TABLES` | 3 | 读身份:非本集合有 SELECT、本集合有写权限都算越权 |
+| `_WRITER_TABLES` | 3 | 写身份:本集合的列写权限逐列比对 |
+| `_PUBLISHER_TABLES` | 6 | 发布身份:读身份的表 + 追加 + 选定的头 |
+
+元数与 SQL 里的占位符个数是同一件事,所以每个语句执行前过 `_require_arity(names, size)`。
+
+**这个断言当轮就抓到我一次错**:我先按「三个元组都是 3 个名字」把 `IN (?, ?, ?)` 套给了全部
+6 处,`_PUBLISHER_TABLES` 实际是 **6** 个名字。测试先红(`the fixed IN list ... holds exactly
+three names`),随后真实 PG 用例 21 条全红 —— 参数个数与占位符不匹配,探针把「参数错位」读成了
+「越权」。定元 `IN` 的代价就是这个:元数写死在 SQL 里,必须有一处断言盯着。

@@ -934,3 +934,29 @@ f'GRANT SELECT, INSERT (authorization_id, …) ON "{schema}".speech_builtin_voic
   存在、同一条目不会被两类重复声明。
 
 基线 **509 → 485**(24 条),`profile-ddl` 从 168/18 变成 192/23。
+
+### 8.37 声明改成可复算的主张:DDL 文本必须真的只有迁移树在消费
+
+前面 18 个 `*_schema.py` 之所以没声明,是因为「唯一消费者是迁移树」这条判据按**模块**看并不成立:
+它们同时导出表名、列名、列常量给业务代码。但被问的问题问错了 —— 真正的判据不是「模块是否共用」,
+而是「**DDL 文本**是否只有迁移树在消费」。常量被业务用,不等于 DDL 被执行。
+
+这里说的「文本」不只是建表:例如 `LIFECYCLE_DDL` 里还含一条一次性数据回填 `INSERT … SELECT`,
+它由迁移执行,同样是迁移树独有的制品。
+
+复算方式(`tests/ci/test_declared_ddl_is_migration_only.py`):对每个声明的模块,取出它的 `*_DDL`
+符号,在 `backend/src` 里排除迁移树后找导入点与使用点。20 个模块、37 个 `*_DDL` 符号全部为 0。
+
+于是这一轮把 20 个 schema 模块纳入 `paths` 声明(`bindings_disable_targets_schema` 与
+`gateway_abort_intent_schema` 都各自持有一个同名 `ABORT_INTENT_DDL`,但指向**不同的表**,
+不是重复定义 —— 它们的表名分别是 `speech_binding_disable_abort_intents` 与 `gateway_abort_intents`)。
+
+关键是这条声明现在**不是一句话,而是一个测试**:
+
+- 注入即红:新建 `backend/src/.../__probe_consumer.py` 导入 `JOB_DDL` 并执行,对应参数项立刻
+  失败(`1 failed, 36 passed`);删除后恢复全绿。
+
+影响:基线 **485 → 309**(−176),`profile-ddl` 192/23 → 368/42。这个数字变化要说清口径:
+它**不是**「176 条方言问题被修好了」,而是「176 条从来不是业务 DML 的 DDL 文本回到了它该在的
+计数里」。业务 DML 基线剩下 309 条,`sql-string-building` 从 252 降到 69 —— 剩下的那些才是
+真正的语句拼接。

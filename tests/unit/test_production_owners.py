@@ -6,6 +6,7 @@ import copy
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 import psycopg
@@ -43,6 +44,12 @@ AUTHORITY = OwnerAuthority("tts-realtime", "scheduler-test", 1)
 INITIAL = PoolOwnership("tts-realtime", None, 0, 0, "reconciling_takeover", 1)
 CURRENT = PoolOwnership("tts-realtime", "scheduler-test", 1, 100000, "reconciling_takeover", 2)
 DIGEST = "sha256:" + "a" * 64
+
+
+def _epoch_us(microseconds: int) -> datetime:
+    """替身回答时钟时用的时间点:epoch 起算的微秒,必须是带时区的时间。"""
+
+    return datetime(1970, 1, 1, tzinfo=UTC) + timedelta(microseconds=microseconds)
 
 
 def test_owner_acquisition_renewal_and_activation_keep_budget_and_epoch_separate() -> None:
@@ -307,7 +314,8 @@ def test_each_statement_timeout_uses_remaining_budget(monkeypatch: pytest.Monkey
             self.queries.append((query, parameters))
 
         def fetchall(self) -> list[dict[str, Any]]:
-            return [{"now_us": 1234}]
+            # 时钟语句是登记的 profile 语句;替身按同一列名回答。
+            return [{"now": _epoch_us(1234)}]
 
     now = [2.0]
     monkeypatch.setattr(

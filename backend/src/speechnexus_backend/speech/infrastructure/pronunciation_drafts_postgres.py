@@ -28,6 +28,7 @@ from speechnexus_backend.speech.infrastructure.pronunciation_drafts_sql import (
     read_published_draft,
     recover_draft,
 )
+from speechnexus_portable_sql.clock import ClockReader, now_us
 
 
 class _Cursor:
@@ -54,9 +55,14 @@ class _Cursor:
     def fetchmany(self, size: int) -> list[dict[str, Any]]:
         return self.raw.fetchmany(size)
 
+    def fetchone(self) -> dict[str, Any] | None:
+        rows = self.fetchall()
+        return rows[0] if rows else None
+
     def clock(self) -> int:
-        self.execute("SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp())*1000000 AS BIGINT) AS t")
-        return cast(int, self.fetchall()[0]["t"])
+        # 「现在」只从便携时钟读一次;语句里不再有品牌函数。
+        now: int = now_us(cast(ClockReader, self))
+        return now
 
 
 class PostgresPronunciationDrafts:

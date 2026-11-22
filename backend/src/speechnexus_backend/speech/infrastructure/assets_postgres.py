@@ -30,6 +30,7 @@ from speechnexus_backend.speech.domain.assets import (
     reserve_asset,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
+from speechnexus_portable_sql.clock import ClockReader, now_us
 
 
 class AssetCursor:
@@ -48,13 +49,28 @@ class AssetCursor:
         self.raw.execute(sql, args)
         return self.raw.fetchall() if self.raw.description else []
 
-    def clock(self) -> int:
-        return cast(
-            int,
-            self.rows(
-                "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) AS t"
-            )[0]["t"],
+    def execute(self, sql: str, args: tuple[object, ...] = ()) -> AssetCursor:
+        """便携时钟的执行入口:与 `rows` 共用预算,但把游标自己交回去取行。"""
+
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise AssetError("asset_metadata_deadline")
+        self.raw.execute(
+            "SELECT set_config('statement_timeout', ?, true)",
+            (str(max(1, int(remaining * 1000))),),
         )
+        self.raw.execute(sql, args)
+        return self
+
+    def fetchone(self) -> dict[str, Any] | None:
+        rows = self.raw.fetchall() if self.raw.description else []
+        return rows[0] if rows else None
+
+    def clock(self) -> int:
+        """「现在」只从便携时钟读一次;语句里不再有品牌函数。"""
+
+        now: int = now_us(cast(ClockReader, self))
+        return now
 
     def asset(self, asset_id: str, *, lock: bool = False) -> AssetRecord | None:
         rows = self.rows(

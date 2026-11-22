@@ -1,0 +1,4 @@
+{
+  "note": "已声明的物理 DDL / 静态 SQL profile 制品。条目单独计入 profile-ddl,不进业务 DML 基线;不在本清单里的文件照旧按受限方言判红。",
+  "paths": []
+}

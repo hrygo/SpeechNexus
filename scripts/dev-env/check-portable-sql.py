@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import fnmatch
 import json
 import re
 import sys
@@ -327,6 +328,37 @@ def load_baseline(path: Path) -> Counter[str]:
     return Counter({str(key): int(value) for key, value in entries.items()})
 
 
+def load_profile_patterns(path: Path) -> tuple[str, ...]:
+    """读取已声明的 profile 制品路径模式.
+
+    架构文档允许「受控的物理 DDL profile」与「已登记的静态 SQL profile variant」:这些是
+    部署期品牌相关的制品,不是业务 DML。守卫把它们单独计数,不和业务 DML 混在同一条基线里,
+    但**必须逐条声明**——没声明的文件照旧按受限方言判红。
+    """
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    patterns = payload.get("paths")
+    if not isinstance(patterns, list) or not all(isinstance(item, str) for item in patterns):
+        raise SystemExit(f"{path}: expected an object with a 'paths' string array")
+    return tuple(patterns)
+
+
+def split_declared(
+    counts: Counter[str], patterns: Sequence[str]
+) -> tuple[Counter[str], Counter[str]]:
+    """按声明把问题拆成「profile 制品」与「业务 DML」两份计数."""
+
+    declared: Counter[str] = Counter()
+    remaining: Counter[str] = Counter()
+    for key, count in counts.items():
+        _, path = _describe(key)
+        if any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns):
+            declared[key] += count
+        else:
+            remaining[key] += count
+    return remaining, declared
+
+
 def baseline_payload(counts: Counter[str]) -> dict[str, object]:
     return {
         "version": 1,
@@ -417,6 +449,19 @@ def selftest() -> list[str]:
         "INSERT INTO schema_meta (meta_id, schema_rev, schema_fingerprint)\n"
         f"    VALUES ('portable', '0005', '{sample_fingerprint}');\n"
     )
+    declared_sample = Counter(
+        {
+            "sql-string-building::backend/src/"
+            "speechnexus_backend/speech/infrastructure/x_schema.py": 2,
+            "paging-limit::backend/src/speechnexus_backend/speech/infrastructure/app.py": 1,
+        }
+    )
+    remaining, declared = split_declared(declared_sample, ("backend/src/**/*_schema.py",))
+    if sum(declared.values()) != 2:
+        problems.append("a declared profile artifact was not split out")
+    if sum(remaining.values()) != 1:
+        problems.append("an undeclared module was wrongly treated as a profile artifact")
+
     if scan_ddl("migrations/0002_clean.sql", clean_ddl):
         problems.append("clean DDL was rejected")
 
@@ -434,6 +479,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="与 --write-baseline 一起使用时显式接受基线外的新问题",
     )
     parser.add_argument("--selftest", action="store_true", help="注入式自检规则是否仍会红")
+    parser.add_argument(
+        "--profiles",
+        type=Path,
+        help="已声明的物理 DDL / 静态 SQL profile 制品清单(JSON),其条目单独计数",
+    )
     args = parser.parse_args(argv)
 
     if args.selftest:
@@ -444,6 +494,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1 if problems else 0
 
     counts = _counts(scan_tree(args.root))
+    profile_counts: Counter[str] = Counter()
+    if args.profiles is not None:
+        counts, profile_counts = split_declared(counts, load_profile_patterns(args.profiles))
 
     baseline: Counter[str] = Counter()
     if args.baseline is not None:
@@ -487,6 +540,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.baseline is not None:
         print(
             f"baseline={sum(baseline.values())} new={sum(new.values())} fixed={sum(fixed.values())}"
+        )
+    if args.profiles is not None:
+        print(
+            f"profile-ddl={sum(profile_counts.values())} "
+            f"files={len({_describe(key)[1] for key in profile_counts})}"
         )
     if new:
         print("RESULT FAIL: portable SQL subset regressed")

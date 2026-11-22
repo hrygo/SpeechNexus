@@ -878,3 +878,23 @@ f"configured but SPEECHNEXUS_ASSET_INSPECTOR=text; select audio or unset every �
 
 用例 `test_more_leases_than_the_contract_allows_is_a_reconciliation_failure` 钉住的是
 「65 行不会被当成一致」——它说明 `LIMIT` 的结论由等值判定给出,**不**声称它单独证明了这次删除。
+
+### 8.35 派发角色守卫改用便携标记,并把「重复几次」收成一处
+
+`DISPATCH_ROLE_GUARD_SQL` 原来用 psycopg 的命名标记 `%(role)s` / `%(schema)s`。便携标记是 `?`,
+但 `?` 没有名字 —— 角色名在同一句里出现四次、schema 三次,谁在哪个位置全靠调用方数。
+
+改法:
+
+- 语句换成 `?`,新增 `role_guard_parameters(role, schema)`,把「按位置重复」这件事收成**唯一
+  一处定义**,两个调用点都用它;
+- 三个消费方各按自己的驱动处理:运行时(便携游标)直接 `?`;`deploy/job-startup-gate.py`
+  是原生 psycopg,用 `qmark_to_pyformat` 现译;`scripts/dev-env/check-async-job-prereqs.py`
+  用 psql,没有绑定参数,按同一顺序换成字面量。
+
+判据:`test_role_guard_parameters_follow_the_placeholder_order` 钉住顺序与占位符数量一致
+(`DISPATCH_ROLE_GUARD_SQL.count("?") == len(params)`)。注入即红:把参数顺序改成
+`(schema, role, …)`,该用例立刻失败(`1 failed`)。
+
+原有的漂移守护(`check-async-job-prereqs.py` 的副本必须等于运行时声明)继续生效,所以三处
+不会悄悄分叉。基线 **510 → 509**。

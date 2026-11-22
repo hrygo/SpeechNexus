@@ -42,7 +42,6 @@
     "paging-limit::backend/src/speechnexus_backend/workbench/infrastructure/postgres_meetings.py": 1,
     "paging-limit::backend/src/speechnexus_backend/workbench/infrastructure/postgres_render_units.py": 2,
     "paging-limit::backend/src/speechnexus_backend/workbench/infrastructure/postgres_versions.py": 1,
-    "pyformat::backend/src/speechnexus_backend/job_dispatch_runtime.py": 1,
     "pyformat::backend/src/speechnexus_backend/speech/infrastructure/job_cancellation_reconciliation_postgres.py": 3,
     "pyformat::backend/src/speechnexus_backend/speech/infrastructure/readiness.py": 1,
     "returning::backend/src/speechnexus_backend/speech/infrastructure/deletion_executions_postgres.py": 2,

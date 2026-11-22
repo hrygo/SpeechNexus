@@ -332,15 +332,23 @@ def build_dispatch_dependencies(settings: JobDispatchSettings) -> DispatchDepend
 # inside the pool's ``search_path``; a preflight running psql must set the same
 # search_path. Order is the startup order.
 DISPATCH_ROLE_GUARD_SQL = (
-    "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(CAST(%(role)s AS "
-    "name),%(schema)s,'CREATE') "
-    "OR pg_catalog.pg_has_role(CAST(%(role)s AS name),d.datdba,'MEMBER') OR EXISTS ("
+    "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(CAST(? AS "
+    "name),?,'CREATE') "
+    "OR pg_catalog.pg_has_role(CAST(? AS name),d.datdba,'MEMBER') OR EXISTS ("
     "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
-    "ON n.oid=c.relnamespace WHERE n.nspname=%(schema)s "
-    "AND pg_catalog.pg_has_role(CAST(%(role)s AS name),c.relowner,'MEMBER')) AS forbidden "
+    "ON n.oid=c.relnamespace WHERE n.nspname=? "
+    "AND pg_catalog.pg_has_role(CAST(? AS name),c.relowner,'MEMBER')) AS forbidden "
     "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
-    "WHERE r.rolname=%(role)s AND d.datname=CURRENT_DATABASE()"
+    "WHERE r.rolname=? AND d.datname=CURRENT_DATABASE()"
 )
+
+
+#: 角色名的出现次数。`?` 标记没有名字,所以调用方按位置重复同一个值;
+#: 这个函数是唯一一处说明「重复几次」的地方,避免两个调用点各数一遍。
+def role_guard_parameters(role: str, schema: str) -> tuple[str, str, str, str, str, str]:
+    return (role, schema, role, schema, role, role)
+
+
 # 零行探针:只验证语句可解析、这些列对该角色可读(列级授权),不取任何行。
 # 受限方言没有 `LIMIT`,而这里也没有分页语义(keyset + fetchmany 规则因此不适用),
 # 所以用一个恒假谓词;规划器在计划阶段就剪掉扫描。
@@ -460,7 +468,7 @@ class JobDispatchRuntime:
             for role in dict.fromkeys((identities["login"], identities["effective"])):
                 row = connection.execute(
                     DISPATCH_ROLE_GUARD_SQL,
-                    {"role": role, "schema": self.settings.database_schema},
+                    role_guard_parameters(role, self.settings.database_schema),
                 ).fetchone()
                 if row is None or row["forbidden"]:
                     raise ValueError("Dispatch requires a non-owner role without DDL")
@@ -485,4 +493,5 @@ __all__ = [
     "JobDispatchSettings",
     "build_dispatch_dependencies",
     "build_result_publisher",
+    "role_guard_parameters",
 ]

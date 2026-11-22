@@ -75,11 +75,13 @@ from speechnexus_backend.job_dispatch_runtime import (
     DISPATCH_ROLE_GUARD_SQL,
     DISPATCH_STARTUP_PROBES,
     DISPATCH_VOICE_VALIDATION_PROBES,
+    role_guard_parameters,
 )
 from speechnexus_backend.speech.domain.job_dispatch import DISPATCHABLE_JOB_KIND_UNION
 from speechnexus_backend.speech.domain.lane_selection import resident_tts_variant_findings
 from speechnexus_backend.speech.infrastructure.artifact_schema import ARTIFACT_INSERT_COLUMNS
 from speechnexus_backend.speech.infrastructure.coordination_grants import SPEECH_UPDATES
+from speechnexus_portable_sql.markers import qmark_to_pyformat
 
 DSN_ENV = "SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL"
 RUNTIME_DSN_ENV = "SPEECHNEXUS_DATABASE_URL"
@@ -240,8 +242,12 @@ def role_guard_findings(connection: Any, schema: str, login: str, effective: str
         ]
     findings: list[str] = []
     for role in dict.fromkeys((login, effective)):
+        # 声明用便携标记 `?`;psql 这条路径是原生 psycopg,按驱动的 `%s` 现译一次。
         row = connection.execute(
-            DISPATCH_ROLE_GUARD_SQL, {"role": role, "schema": _identifier(schema)}
+            qmark_to_pyformat(
+                DISPATCH_ROLE_GUARD_SQL, role_guard_parameters(role, _identifier(schema))
+            ),
+            role_guard_parameters(role, _identifier(schema)),
         ).fetchone()
         if row is None or row[0]:
             findings.append(

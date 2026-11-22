@@ -121,14 +121,22 @@ VOICE_VALIDATION_PROBES: tuple[tuple[str, str], ...] = (
 # 复制自 job_dispatch_runtime.DISPATCH_ROLE_GUARD_SQL;为真即拒绝启动。
 DISPATCH_ROLE_GUARD = (
     "SELECT r.rolsuper OR "
-    "pg_catalog.has_schema_privilege(CAST(%(role)s AS name),%(schema)s,'CREATE') "
-    "OR pg_catalog.pg_has_role(CAST(%(role)s AS name),d.datdba,'MEMBER') OR EXISTS ("
+    "pg_catalog.has_schema_privilege(CAST(? AS name),?,'CREATE') "
+    "OR pg_catalog.pg_has_role(CAST(? AS name),d.datdba,'MEMBER') OR EXISTS ("
     "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
-    "ON n.oid=c.relnamespace WHERE n.nspname=%(schema)s "
-    "AND pg_catalog.pg_has_role(CAST(%(role)s AS name),c.relowner,'MEMBER')) AS forbidden "
+    "ON n.oid=c.relnamespace WHERE n.nspname=? "
+    "AND pg_catalog.pg_has_role(CAST(? AS name),c.relowner,'MEMBER')) AS forbidden "
     "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
-    "WHERE r.rolname=%(role)s AND d.datname=CURRENT_DATABASE()"
+    "WHERE r.rolname=? AND d.datname=CURRENT_DATABASE()"
 )
+
+
+def _role_guard_literal(role: str) -> str:
+    """把便携标记 `?` 按位置换成字面量;psql 这条路径没有绑定参数。"""
+
+    values = iter([f"'{role}'", "'speech'", f"'{role}'", "'speech'", f"'{role}'", f"'{role}'"])
+    return re.sub(r"\?", lambda _match: next(values), DISPATCH_ROLE_GUARD)
+
 
 # worker 在领取租约前只探测 SELECT,写权限靠部署授权;这里补上它认领后实际写入的
 # 每一列,否则 REVOKE INSERT ON speech.speech_artifacts 或撤销终止释放列之后仍会
@@ -1272,7 +1280,7 @@ def check_dispatch_role(
         guard = psql_select(
             dsn,
             env,
-            DISPATCH_ROLE_GUARD.replace("%(role)s", f"'{role}'").replace("%(schema)s", "'speech'"),
+            _role_guard_literal(role),
         )
         if not guard.ok:
             check.fail(f"角色守卫查询失败:{guard.error}")

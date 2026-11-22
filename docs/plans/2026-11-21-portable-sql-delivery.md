@@ -782,3 +782,26 @@ return recover_intent(cursor, command)
 
 这条也解释了为什么 §8.19 的「单连接 + 捕获异常」看不出问题:**探针把中止状态提前引爆了**,
 真正的保存点回滚根本没被执行过。
+
+### 8.31 剩下两个 upsert 调用点,以及替身里那段改写的退场
+
+`profile_drafts_sql.create_draft` 与 `pronunciation_drafts_sql.create_draft` 都改成
+`insert_if_absent`:
+
+```python
+inserted = insert_if_absent(cursor, "INSERT INTO speech_profile_commands … VALUES (?,?,?,?,'pending')", (…))
+rows = _rows(cursor, "SELECT * FROM speech_profile_commands WHERE key_digest=? FOR UPDATE", (…,))
+```
+
+原来的 `inserted = cursor.rowcount == 1` 随之删除:插入是否真的发生由保存点结果直接给出,
+不再借 `rowcount` 反推。
+
+这两个模块是 `tests/support/profile_database.py` 里 ` ON CONFLICT ` 改写的**最后两个消费者**。
+改完之后那段识别 SQL 文本、改写成 `INSERT IGNORE`、再读 `SHOW WARNINGS` 判 1062 的逻辑就没有
+任何输入了,按「确定不使用即废除」直接删除 —— 替身的 `execute` 只剩原样转发,保存点由 InnoDB
+原生处理。
+
+基线 **531 → 529**(`upsert` 族剩 12)。
+
+验证范围:`tests/unit` 3991 passed(backend)+ 全量 unit;守卫、mypy、`lint-imports` 全绿。
+`create_draft` 的并发/重放语义由双 DSN 集成用例覆盖,本机没有 MySQL 实例,证据只能来自 CI。

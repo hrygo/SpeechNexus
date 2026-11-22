@@ -15,6 +15,7 @@ from speechnexus_backend.speech.domain.profile_drafts import (
     document_digest,
     revision_number,
 )
+from speechnexus_portable_sql.transaction import insert_if_absent
 
 
 class ProfileCursor(Protocol):
@@ -91,13 +92,15 @@ def create_draft(
     cursor: ProfileCursor, command: CreateProfileDraft, clock: Callable[[], int]
 ) -> ProfileDraftResult:
     check_command(command)
-    cursor.execute(
+    # 受限方言没有 `ON CONFLICT`:插入包在保存点里,唯一冲突回滚到保存点后事务仍可用,
+    # 下面的 `FOR UPDATE` 读回同一行即可判定「别人先写」。
+    inserted = insert_if_absent(
+        cursor,
         "INSERT INTO speech_profile_commands "
         "(key_digest,profile_id,intent_json,request_digest,command_state) "
-        "VALUES (?,?,?,?,'pending') ON CONFLICT (key_digest) DO NOTHING",
+        "VALUES (?,?,?,?,'pending')",
         (command.key_digest, command.profile_id, command.intent.decode(), command.request_digest),
     )
-    inserted = cursor.rowcount == 1
     rows = _rows(
         cursor,
         "SELECT * FROM speech_profile_commands WHERE key_digest=? FOR UPDATE",

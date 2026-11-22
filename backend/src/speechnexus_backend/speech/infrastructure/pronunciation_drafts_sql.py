@@ -31,6 +31,7 @@ from speechnexus_backend.speech.domain.pronunciation_drafts import (
 )
 from speechnexus_backend.speech.domain.publications import Publication
 from speechnexus_backend.speech.infrastructure.publications_sql import append_publication
+from speechnexus_portable_sql.transaction import insert_if_absent
 
 
 class PronunciationCursor(Protocol):
@@ -209,13 +210,14 @@ def create_draft(
     allocate_id: Callable[[], str] = new_pronunciation_id,
 ) -> PronunciationDraftResult:
     check_command(command)
-    cursor.execute(
+    # 受限方言没有 `ON CONFLICT`:插入包在保存点里,唯一冲突回滚到保存点后事务仍可用。
+    inserted = insert_if_absent(
+        cursor,
         "INSERT INTO speech_pronunciation_commands "
         "(key_digest,intent_json,request_digest,command_state) "
-        "VALUES (?,?,?,'pending') ON CONFLICT (key_digest) DO NOTHING",
+        "VALUES (?,?,?,'pending')",
         (command.key_digest, command.intent.decode(), command.request_digest),
     )
-    inserted = cursor.rowcount == 1
     rows = _rows(
         cursor,
         "SELECT * FROM speech_pronunciation_commands WHERE key_digest=? FOR UPDATE",

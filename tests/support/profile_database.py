@@ -26,15 +26,10 @@ class ProfileCursor:
         self.raw, self.rowcount = raw, -1
 
     def execute(self, query: str, parameters: tuple[object, ...] = ()) -> object:
-        conflict = " ON CONFLICT " in query
-        if conflict:
-            query = query.split(" ON CONFLICT ")[0].replace("INSERT INTO", "INSERT IGNORE INTO", 1)
+        # 产品已不再发 `ON CONFLICT`:去重交给保存点(`insert_if_absent`)。
+        # 这条替身只需照原样执行,保存点控语句由 InnoDB 原生处理。
         self.raw.execute(query, parameters)
         self.rowcount = self.raw.rowcount
-        if conflict:
-            self.raw.execute("SHOW WARNINGS")
-            if any(row["Code"] != 1062 for row in self.raw.fetchall()):
-                raise ProfileUnavailableError
         return None
 
     def fetchall(self) -> list[dict[str, Any]]:

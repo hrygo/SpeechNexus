@@ -1025,3 +1025,16 @@ f'GRANT SELECT, INSERT (authorization_id, …) ON "{schema}".speech_builtin_voic
 `DO UPDATE` 那三处留给后续切片:它们要的是「冲突即更新并返回行」,而受限方言里没有
 `ON CONFLICT`、`MERGE` 或 `RETURNING`,得用「先 CAS 更新,`rowcount==0` 再插入」的两步原语 ——
 那需要一张新卡的设计,不在本轮拍脑袋实现。
+
+### 8.41 `insert_if_absent` 会改写 `rowcount` —— 判定只能用返回值
+
+`voice_capability_evidence_postgres` 原来靠 `cursor.rowcount == 1` 判断「这次是新插入还是重放」。
+换成 `insert_if_absent` 之后,保存点路径的最后一条语句是 `RELEASE SAVEPOINT`,**它把 `rowcount`
+改掉了**,于是每次新插入都被判成「已存在」:PG 集成用例报
+`EvidenceRecordingBatch(... recorded=0, existing=1)` —— 期望 `recorded`,实际 `existing`。
+
+修法:用 `insert_if_absent` 的布尔返回。原语的 docstring 现在显式写明这条(不要用 `rowcount` 判断),
+替身也从「设 `rowcount=0` 表示重复」改成「插入时抛 23505」——替身表达的是语义,不是驱动的计数行为。
+
+这是同一个根因的第四次:把「驱动免费给的判定」换成显式原语时,顺手把它的**副作用**也换了。
+前三次是替身认 SQL 文本(§8.29/§8.31/§8.39),这次是 `rowcount` 被保存点覆盖。

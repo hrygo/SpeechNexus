@@ -96,12 +96,25 @@ def _epoch_us(microseconds: int) -> datetime:
     return datetime(1970, 1, 1, tzinfo=UTC) + timedelta(microseconds=microseconds)
 
 
+class _DuplicateKeyError(Exception):
+    """插入撞唯一索引:适配器只看 sqlstate。"""
+
+    sqlstate = "23505"
+
+
 class _Cursor:
-    def __init__(self, results: list[list[dict[str, Any]]], rowcount: int = 1) -> None:
+    def __init__(
+        self, results: list[list[dict[str, Any]]], rowcount: int = 1, *, duplicate: bool = False
+    ) -> None:
         self.results = list(results)
         self.rowcount = rowcount
+        self.duplicate = duplicate
 
     def execute(self, query: str, parameters: tuple[object, ...] = ()) -> object:
+        if self.duplicate and query.lstrip().startswith(
+            "INSERT INTO speech_voice_capability_evidence"
+        ):
+            raise _DuplicateKeyError(query)
         return None
 
     def fetchall(self) -> list[dict[str, Any]]:
@@ -181,7 +194,7 @@ def test_record_inserts_then_replays() -> None:
     row = evidence.as_row()
     results = _results()
     results.append([row])
-    replayed, created = _record(_Cursor(results, rowcount=0))
+    replayed, created = _record(_Cursor(results, duplicate=True))
     assert created is False and replayed.evidence_digest == evidence.evidence_digest
 
 

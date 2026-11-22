@@ -136,6 +136,9 @@ def insert_if_absent(cursor: Any, statement: str, params: Any = ()) -> bool:
     返回 `True` 表示这一次真的插入了;`False` 表示已存在(并发写者先到,或自己先前插过)。
     其它异常原样抛出。
 
+    **不要用 `cursor.rowcount` 判断结果**:保存点路径的最后一条语句是 `RELEASE SAVEPOINT`,
+    它会改写 `rowcount`,所以插入成功后 `rowcount` 可能不是 1。判定只看返回值。
+
     自动提交(autocommit)连接没有外层事务可保护:此时语句本身就是独立事务,唯一冲突只中止
     这一条语句,不需要也不允许 `SAVEPOINT`(PG 会报 `SAVEPOINT can only be used in
     transaction blocks`)。所以按连接的事务状态决定是否开保存点,而不是按调用方猜测。

@@ -363,7 +363,7 @@ class PostgresVoiceEvidenceRecorder:
             facts, report, measured_by=measured_by, measured_at_us=measured_at_us
         )
         row = evidence.as_row()
-        insert_if_absent(
+        inserted = insert_if_absent(
             cursor,
             "INSERT INTO speech_voice_capability_evidence "
             "(evidence_id, draft_id, draft_revision, validation_job_id, validation_id, "
@@ -390,7 +390,9 @@ class PostgresVoiceEvidenceRecorder:
                 row["evidence_digest"],
             ),
         )
-        if cursor.rowcount == 1:
+        # `insert_if_absent` 最后一步是 `RELEASE SAVEPOINT`,会改写 `rowcount`,所以必须用
+        # 它的布尔返回判断是否真的插入了。
+        if inserted:
             return evidence, True
         cursor.execute(
             "SELECT draft_id, draft_revision, validation_job_id, validation_id, "

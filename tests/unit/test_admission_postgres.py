@@ -98,7 +98,9 @@ def test_storage_failure_diagnostic_excludes_exception_content(
     assert len(records) == 1
     message = records[0].getMessage()
     assert COMMAND.request.identity.operation_id in message
-    assert "42501" in message
+    # 日志只带契约的诊断维度,不带 SQLSTATE:厂商码属于适配点,不进业务日志。
+    assert "reason=permission_denied" in message
+    assert "42501" not in message
     assert "InsufficientPrivilege" in message
     assert secret not in caplog.text
 

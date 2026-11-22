@@ -21,9 +21,9 @@ operator runs*:
 The rows are plain literals so ``tests/ci/test_job_prerequisite_map.py`` can read
 them under the system interpreter (that suite never imports the backend) and prove
 ``docs/operations/compose-minimal.md`` quotes exactly this table, row for row. The
-domain also keeps no vendor import: a driver error carries PostgreSQL's SQLSTATE as
-the protocol fact, so the classification reads ``sqlstate`` instead of a psycopg
-type.
+domain also keeps no vendor import and no vendor code: the driver翻好 ``reason``
+(``schema_missing`` / ``permission_denied`` / ``unavailable``)再往上抛,分类只读这一个字段,
+不读 SQLSTATE 也不认 psycopg 类型。
 """
 
 from __future__ import annotations
@@ -106,14 +106,6 @@ SCHEMA_NOT_MIGRATED = prerequisite("schema_not_migrated")
 ROLE_PRIVILEGES_MISSING = prerequisite("role_privileges_missing")
 STORE_UNAVAILABLE = prerequisite("store_unavailable")
 
-# PostgreSQL SQLSTATE classes that mean "the relation this statement names does not
-# exist / the schema does not exist". A database that never ran the migration profile
-# answers the first statement of any Job read or write this way.
-_NOT_MIGRATED_SQLSTATES = frozenset({"42P01", "3F000"})
-# `insufficient_privilege`: the relation exists but this role may not touch it, which
-# is a grant repair rather than a migration one.
-_MISSING_GRANT_SQLSTATES = frozenset({"42501"})
-
 
 def prerequisite_of_error(error: BaseException | None) -> JobPrerequisite | None:
     """Classify one refusal into the table above, or return ``None``.
@@ -128,12 +120,11 @@ def prerequisite_of_error(error: BaseException | None) -> JobPrerequisite | None
     frame = error
     while frame is not None and id(frame) not in seen:
         seen.add(id(frame))
-        sqlstate = getattr(frame, "sqlstate", None)
-        if isinstance(sqlstate, str):
-            if sqlstate in _NOT_MIGRATED_SQLSTATES:
-                return SCHEMA_NOT_MIGRATED
-            if sqlstate in _MISSING_GRANT_SQLSTATES:
-                return ROLE_PRIVILEGES_MISSING
+        reason = getattr(frame, "reason", None)
+        if reason == "schema_missing":
+            return SCHEMA_NOT_MIGRATED
+        if reason == "permission_denied":
+            return ROLE_PRIVILEGES_MISSING
         frame = frame.__cause__ or frame.__context__
     return None
 

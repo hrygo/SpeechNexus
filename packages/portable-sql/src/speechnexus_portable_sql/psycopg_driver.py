@@ -19,7 +19,7 @@ from typing import Any, cast
 
 import psycopg
 
-from .contract import ConflictError, ConnectionLostError, Row, StorageError
+from .contract import ConflictError, ConnectionLostError, Row, StorageError, StorageReason
 from .markers import PYFORMAT, qmark_to_pyformat
 
 __all__ = [
@@ -70,8 +70,24 @@ def portable_error(error: BaseException) -> BaseException:
     if isinstance(error, psycopg.OperationalError | psycopg.InterfaceError):
         return ConnectionLostError("connection unavailable")
     if isinstance(error, psycopg.Error):
-        return StorageError("statement failed")
+        # SQLSTATE 只在这里被读一次,翻成契约的 `reason`;业务与领域不再碰它。
+        return StorageError("statement failed", reason=_reason_of(error))
     return error
+
+
+def _reason_of(error: psycopg.Error) -> StorageReason:
+    sqlstate = getattr(error, "sqlstate", None)
+    if sqlstate in _SCHEMA_MISSING_SQLSTATES:
+        return "schema_missing"
+    if sqlstate in _MISSING_GRANT_SQLSTATES:
+        return "permission_denied"
+    return "unavailable"
+
+
+# 关系/模式不存在:库从未跑过迁移 profile。
+_SCHEMA_MISSING_SQLSTATES = frozenset({"42P01", "3F000"})
+# 关系存在但角色无权限:该补授权,不是重跑迁移。
+_MISSING_GRANT_SQLSTATES = frozenset({"42501"})
 
 
 class PortableCursor:

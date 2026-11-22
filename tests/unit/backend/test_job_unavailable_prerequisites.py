@@ -45,6 +45,7 @@ from speechnexus_backend.speech.domain.job_prerequisites import (
 from speechnexus_backend.speech.domain.public_jobs import PublicJobUnavailableError
 from speechnexus_backend.speech.interfaces.http import jobs as jobs_routes
 from speechnexus_backend.speech.interfaces.http.job_errors import _ERRORS, job_storage_error
+from speechnexus_portable_sql.contract import StorageError
 from tests.unit.backend.test_health import _settings
 from tests.unit.backend.test_public_jobs import _body
 
@@ -129,8 +130,8 @@ def test_the_declared_storage_message_is_the_table_row() -> None:
 
 @pytest.mark.parametrize("sqlstate", ["42P01", "3F000"])
 def test_a_missing_relation_or_schema_is_the_migration_row(sqlstate: str) -> None:
-    error = psycopg.errors.UndefinedTable('relation "admission_leases" does not exist')
-    error.sqlstate = sqlstate
+    # 领域不再读 SQLSTATE:厂商事实由驱动翻成 `reason` 再往上抛。
+    error = StorageError("statement failed", reason="schema_missing")
     assert prerequisite_of_error(error) is SCHEMA_NOT_MIGRATED
     message = _message(job_storage_error("req-migration", error))
     assert message == SCHEMA_NOT_MIGRATED.detail
@@ -143,8 +144,8 @@ def test_a_wrapped_missing_relation_keeps_its_classification() -> None:
     # SQLSTATE is still readable on the chain, so the answer stays the migration one.
     try:
         try:
-            raise psycopg.errors.UndefinedTable('relation "speech_jobs" does not exist')
-        except psycopg.errors.UndefinedTable:
+            raise StorageError("statement failed", reason="schema_missing")
+        except StorageError:
             raise PublicJobUnavailableError from None
     except PublicJobUnavailableError as wrapped:
         assert prerequisite_detail(wrapped) == SCHEMA_NOT_MIGRATED.detail
@@ -152,10 +153,18 @@ def test_a_wrapped_missing_relation_keeps_its_classification() -> None:
 
 
 def test_a_missing_grant_is_classified_apart_from_a_missing_migration() -> None:
-    grant = psycopg.errors.InsufficientPrivilege("permission denied for table speech_jobs")
+    grant = StorageError("statement failed", reason="permission_denied")
     assert prerequisite_of_error(grant) is ROLE_PRIVILEGES_MISSING
     assert _message(job_storage_error("req-grant", grant)) == ROLE_PRIVILEGES_MISSING.detail
     assert ROLE_PRIVILEGES_MISSING.detail != SCHEMA_NOT_MIGRATED.detail
+
+
+def test_a_vendor_sqlstate_alone_does_not_reach_the_domain_any_more() -> None:
+    # 注入即红:造一个只带 `sqlstate`、没有 `reason` 的异常。分类必须给不出结论 ——
+    # 领域一旦回头去读 SQLSTATE,这条断言就会变红,而那正是要禁止的耦合。
+    vendor_only = psycopg.errors.UndefinedTable('relation "speech_jobs" does not exist')
+    vendor_only.sqlstate = "42P01"
+    assert prerequisite_of_error(vendor_only) is None
 
 
 def test_an_unclassified_failure_keeps_the_declared_storage_answer() -> None:

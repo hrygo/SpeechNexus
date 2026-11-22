@@ -1,5 +1,7 @@
 """Admission must reject missing, expired, revoked or mismatched qualifications."""
 
+from datetime import UTC, datetime
+
 import pytest
 
 from speechnexus_backend.speech.domain.admission import AdmissionRejectedError
@@ -24,6 +26,10 @@ class Cursor:
     def fetchall(self) -> list[dict[str, object]]:
         return self.rows
 
+    def fetchone(self) -> dict[str, object] | None:
+        # 时钟读取用 fetchone;替身回答一个固定时间点。
+        return {"now": datetime(2026, 11, 22, tzinfo=UTC)}
+
 
 def test_admission_fails_closed_on_missing_qualification() -> None:
     cursor = Cursor([])
@@ -40,16 +46,22 @@ def test_admission_fails_closed_on_missing_qualification() -> None:
             gateway_id="gateway-1",
             policy_revision_id="policy-1",
         )
+    # 参数顺序必须与语句里 `?` 的真实顺序一致:微秒「现在」在首位,
+    # 两处到期判定各用一个「现在」时间点(批准、来源批准),夹在条件之间。
+    moment = datetime(2026, 11, 22, tzinfo=UTC)
     assert cursor.parameters == (
+        1_795_305_600_000_000,
         "voice-demo",
         "1",
         "voice-rev",
         "binding-rev",
+        moment,
         "instance-1",
         "1",
         "host-1",
         "gateway-1",
         "policy-1",
+        moment,
     )
     assert "speech_builtin_voice_source_revocations" in cursor.query
     assert "speech_builtin_voice_revocations" in cursor.query

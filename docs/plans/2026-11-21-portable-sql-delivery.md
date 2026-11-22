@@ -99,3 +99,25 @@
 - 异常按 `StorageError` / `ConflictError` / `ConnectionLostError` / `PoolUnavailableError` 分类；
   任何「按厂商错误码分支」的地方改成重读状态。
 - 该模块的单测替身与集成用例同时更新，基线 `new=0` 且该文件从基线消失。
+
+## 7. 合并顺序（合并已获授权）
+
+用户明确授权按仓库规则合并（「draft 太多了，允许按照规则合并」）。以下顺序按「一张卡一个边界清晰的 PR」执行，前一张合入后再动后一张：
+
+| 顺序 | PR | 卡 | 合入判断 |
+| --- | --- | --- | --- |
+| 1 | #1103 `feat/portable-sql-contract` | #1094 契约冻结 | CI 全绿 + issue 正文同步 |
+| 2 | #1104 `feat/claim-bucket-event-seq` | #1095 claim bucket + event_seq | 同上 |
+| 3 | #1105 `feat/admission-budget-grant` | #1096 持久 grant + 锁后探针 | 同上 |
+| 4 | #1106 `feat/realtime-credit-usage` | #1097 credit + usage 区间 | 同上 |
+
+#1100 的收敛 PR（#1108 driver foundation、#1109 marker pilot、#1110 lexer、#1111 mixed-marker guard、#1112 bulk migration、#1113 casts/paging/pool）**不逐个合并**：它们是同一张卡的分段推进，逐个合入只会把 6 个 draft 变成 6 次主干提交。前四张合入后，把这六个分支压成一个 `#1100 收敛存量 PG 专用 SQL` 的 PR 再合。
+
+合并后动作：
+1. 以 `origin/main` 为基重建 #1100 分支（`git rebase --onto origin/main <#1106 head> <#1100 head>`），避免把已合入的四个分支再带一遍；
+2. 重跑 `check-portable-sql.py --baseline` 与集成 shard，确认基线数字对应新主干；
+3. 关闭对应的 draft PR 并删除远端分支（删除远端分支需单独授权）。
+
+### 当前阻塞
+
+GitHub 凭据在本轮失效：`gh auth status` 报 `The token in default is invalid`，`~/.config/gh/hosts.yml` 无 `oauth_token`，keychain 取不到凭据，`git push` 报 `could not read Username`，日志下载接口返 403。合表、推送、issue 同步都需要先 `gh auth login -h github.com` 恢复。恢复前本地已完成但未推送的提交见 `git log origin/feat/portable-sql-casts..HEAD`。

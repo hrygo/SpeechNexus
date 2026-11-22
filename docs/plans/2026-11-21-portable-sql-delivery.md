@@ -623,3 +623,28 @@ profile-ddl=350 files=39
 
 即:全量 747 里 350 条落在这批 schema 模块上,剩下 397 条才是真正需要迁移或单独豁免的业务 DML。
 这个数字是「声明之后基线会变成多少」的直接依据,但**清单保持为空**,直到有人明确接受这份划分。
+
+### 8.23 按「废除优先」口径清理:草案 DDL 与无人调用的 ODBC 适配器
+
+用户 2026-11-22 的口径:本项目确定不使用的功能一律**废除**,不做迁移。核实后本轮删除两项。
+
+**1. `migrations/0001_cluster_coordination_draft.sql`(41 条)**
+发布说明写明它「不参与产品迁移链」,生产 DDL 由 `coordination_schema.COORDINATION_DDL`(13 表)
+与 `job_schema.JOB_DDL`(2 表)生成;它只是这两处的文本副本,被三个测试模块当参考件读取。
+删除后测试改经 `tests/support/coordination_ddl.py` 读生成器,15 张表的列集合、索引与授权断言
+不变(263 条契约测试通过)。基线 746 → 705。
+
+**2. `packages/portable-sql/src/speechnexus_portable_sql/odbc.py`(127 行)**
+证据三条,合起来是「不可能运行」而不只是「暂时没人调用」:
+
+- 全仓没有任何 `import odbc` / `from ...odbc import`;
+- `pyodbc` 不在任何 `pyproject.toml`、`uv.lock`、CI 工作流里,`speechnexus-portable-sql[odbc]`
+  这个 extra 也不存在 —— 模块即使被导入也只能报「驱动不可用」;
+- 产品真实路径是 `psycopg_driver` + `vendor` façade(§8.18)。
+
+架构文档里「`pyodbc`/`aioodbc` 一类统一 ODBC 接口可以保留」这句话已改成事实表述:
+仓库当前只有 `psycopg` 适配器,并注明「设计里提过」不等于「已经支持」。
+
+**没有动的**:`pymysql_driver` 继续保留 —— MySQL/InnoDB 是协调路径的验证环境,CI 的集成分区
+正在用它,属于「在用」而不是「不用」。RBAC/租户/用户目录这类首期范围外的东西本来就不存在
+(`rbac`/`user_directory`/`megacube` 在产品代码里 0 命中),没有可删的。

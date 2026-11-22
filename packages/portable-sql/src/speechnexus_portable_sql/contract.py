@@ -1,6 +1,6 @@
 """统一 DB-API 契约:PEP 249 的 qmark 子集、行形状与异常分类。
 
-业务只依赖本模块的 `Connection` / `Cursor` 协议与 `transaction()`。驱动实现(`odbc.py`)
+业务只依赖本模块的 `Connection` / `Cursor` 协议与 `transaction()`。驱动实现
 与测试替身(`tests/support/portable_sql_fake.py`)都实现同一协议,因此业务用例在真驱动和
 fake 上执行的是同一份代码。
 

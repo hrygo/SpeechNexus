@@ -546,12 +546,16 @@ class Transaction:
                 raise RejectedError("idempotency_conflict")
             return "replayed"
         self.execute(
-            """INSERT INTO coordination_jobs (job_id, operation_id, attempt_id, request_digest)
-               VALUES (%s, %s, %s, %s)""",
+            """INSERT INTO coordination_jobs
+                   (job_id, operation_id, attempt_id, initial_event_id,
+                    initial_event_digest, request_digest)
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (
                 job["job_id"],
                 identity["operation_id"],
                 identity["attempt_id"],
+                job["event_id"],
+                job["event_digest"],
                 request["request_digest"],
             ),
         )

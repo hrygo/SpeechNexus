@@ -36,7 +36,7 @@ DSN 时会静默跳过另一个引擎，仍以成功结束。另有两类属于�
 ## 2. 审查范围
 
 读取范围：`contracts/`（内部协调事务契约、执行 / 运行时控制 OpenAPI、共享域）、
-`migrations/0001_cluster_coordination_draft.sql`、`docs/architecture/`（coordination-transactions、
+当时的根目录协调 DDL 草案、`docs/architecture/`（coordination-transactions、
 distributed-coordination-schema、technical-blueprint、repository-layout）、
 `docs/plans/2026-10-23-cluster-coordination-refactor.md`、`scripts/dev-env/`、
 `tests/{contract,integration,support,fixtures}` 与 `Makefile`。

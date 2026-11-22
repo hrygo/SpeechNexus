@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import Any, cast
 
 from speechnexus_contracts.builtin_voice_qualification import parse as parse_authorization
@@ -63,6 +64,9 @@ class PostgresQualificationAdmission(PostgresAdmissionTransactions):
         """Recheck the locked probe authority after budget and settlement waits."""
         request = prepared.command.request
         stage = request.stages[0]
+        # 整次复核共用一个时间点:批准是否过期与 intent 里写的截止必须基于同一瞬间.
+        observed_us = cursor.clock()
+        observed_at = datetime.fromtimestamp(observed_us / 1_000_000, tz=UTC)
         cursor.execute(
             "SELECT 1 FROM speech_builtin_voice_probe_authorizations a "
             "JOIN speech_builtin_voice_probe_admissions p USING (authorization_id) "
@@ -79,9 +83,8 @@ class PostgresQualificationAdmission(PostgresAdmissionTransactions):
             "AND CAST((a.intent->>'instance_generation') AS bigint)=? "
             "AND a.intent->>'operation_id'=p.operation_id AND a.intent->>'attempt_id'=p.attempt_id "
             "AND a.intent->>'admission_request_digest'=p.request_digest "
-            "AND s.expires_at>clock_timestamp() "
-            "AND CAST((a.intent->>'expires_at_us') AS bigint) > "
-            "CAST(floor(extract(epoch FROM clock_timestamp())*1000000) AS bigint) "
+            "AND s.expires_at > ? "
+            "AND CAST((a.intent->>'expires_at_us') AS bigint) > ? "
             "AND NOT EXISTS (SELECT 1 FROM speech_builtin_voice_source_revocations r "
             "WHERE r.source_approval_id=s.source_approval_id)",
             (
@@ -96,6 +99,8 @@ class PostgresQualificationAdmission(PostgresAdmissionTransactions):
                 stage.gateway_id,
                 stage.instance_id,
                 stage.instance_generation,
+                observed_at,
+                observed_us,
             ),
         )
         if len(cursor.fetchall()) != 1:
@@ -293,6 +298,9 @@ class PostgresQualificationAdmission(PostgresAdmissionTransactions):
             return self._admit(cursor, prepared)
         if revision_is_disabled(cursor, auth["binding_id"], request.binding_revision_id):
             raise AdmissionRejectedError("policy_or_resource_disabled")
+        # 批准过期与 intent 截止用同一个瞬间判定.
+        observed_us = cursor.clock()
+        observed_at = datetime.fromtimestamp(observed_us / 1_000_000, tz=UTC)
         cursor.execute(
             "SELECT 1 FROM speech_builtin_voice_probe_authorizations a "
             "JOIN speech_builtin_voice_source_approvals s "
@@ -303,7 +311,7 @@ class PostgresQualificationAdmission(PostgresAdmissionTransactions):
             "JOIN speech_publications p ON p.kind='binding' AND p.object_id=b.binding_id "
             "AND p.revision=b.revision AND p.revision_id=b.revision_id "
             "WHERE a.authorization_id=? AND a.voice_id=? AND a.source_approval_id=? "
-            "AND s.expires_at > clock_timestamp() AND s.native_speaker_id='Vivian' "
+            "AND s.expires_at > ? AND s.native_speaker_id='Vivian' "
             "AND NOT EXISTS (SELECT 1 FROM speech_builtin_voice_source_revocations r "
             "WHERE r.source_approval_id=s.source_approval_id) "
             "AND e.capacity_manifest_id=? AND e.qualification_report_id=? "
@@ -312,13 +320,14 @@ class PostgresQualificationAdmission(PostgresAdmissionTransactions):
             "AND i.gateway_id=? AND i.instance_id=? AND i.instance_generation=? "
             "AND i.binding_revision_id=? AND i.manifest_id=? AND i.approved_template_id=? "
             "AND i.config_digest=?) "
-            "AND CAST(floor(extract(epoch FROM clock_timestamp())*1000000) AS bigint) < ?",
+            "AND ? < ?",
             (
                 auth["binding_id"],
                 request.binding_revision_id,
                 self._authorization_id,
                 auth["voice_id"],
                 auth["source_approval_id"],
+                observed_at,
                 auth["manifest_id"],
                 auth["report_id"],
                 auth["manifest_digest"],
@@ -331,6 +340,7 @@ class PostgresQualificationAdmission(PostgresAdmissionTransactions):
                 auth["manifest_id"],
                 auth["template_id"],
                 auth["template_config_digest"],
+                observed_us,
                 auth["expires_at_us"],
             ),
         )

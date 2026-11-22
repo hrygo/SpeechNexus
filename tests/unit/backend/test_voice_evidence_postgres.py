@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 import pytest
@@ -89,6 +90,12 @@ JOB = {
 }
 
 
+
+def _epoch_us(microseconds: int) -> datetime:
+    """替身回答时钟时用的时间点:epoch 起算的微秒,必须是带时区的时间。"""
+
+    return datetime(1970, 1, 1, tzinfo=UTC) + timedelta(microseconds=microseconds)
+
 class _Cursor:
     def __init__(self, results: list[list[dict[str, Any]]], rowcount: int = 1) -> None:
         self.results = list(results)
@@ -99,6 +106,11 @@ class _Cursor:
 
     def fetchall(self) -> list[dict[str, Any]]:
         return self.results.pop(0)
+
+    def fetchone(self) -> dict[str, Any] | None:
+        # 时钟读取用 fetchone;替身按同一队列取第一行。
+        rows = self.results.pop(0)
+        return rows[0] if rows else None
 
 
 def _artifact() -> dict[str, Any]:
@@ -140,7 +152,7 @@ def _results() -> list[list[dict[str, Any]]]:
             }
         ],
         [{"proof": 1}],
-        [{"t": 10}],
+        [{"now": _epoch_us(10)}],
     ]
 
 

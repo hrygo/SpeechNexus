@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
@@ -26,6 +26,7 @@ from speechnexus_backend.speech.domain.voice_capability_evidence import (
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.voice_publication_schema import EVIDENCE_TABLE
+from speechnexus_portable_sql.clock import ClockReader, now_us
 
 
 class _Cursor:
@@ -331,11 +332,11 @@ class PostgresVoiceEvidenceRecorder:
             if not cursor.fetchall():
                 raise VoiceEvidenceNotEligibleError("clone_material_unproven")
 
-        cursor.execute("SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp())*1000000 AS BIGINT) AS t")
-        clocks = cursor.fetchall()
-        if len(clocks) != 1:
-            raise VoiceEvidenceUnavailableError
-        measured_at_us = int(clocks[0]["t"])
+        try:
+            evidence_observed_us = now_us(cast(ClockReader, cursor))
+        except (LookupError, TypeError) as error:
+            raise VoiceEvidenceUnavailableError from error
+        measured_at_us = evidence_observed_us
 
         facts = ValidationRunFacts(
             validation_job_id=validation_job_id,

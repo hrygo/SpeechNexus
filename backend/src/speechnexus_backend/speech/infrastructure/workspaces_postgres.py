@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
@@ -28,6 +28,7 @@ from speechnexus_backend.speech.domain.workspaces import (
     WorkspaceWriteReceipt,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
+from speechnexus_portable_sql.clock import ClockReader, now_us
 
 _COLUMNS = (
     "workspace_id, display_name, workspace_state, metadata_revision, policy_revision, created_at_us"
@@ -108,13 +109,25 @@ class _Cursor:
         self.raw.execute(query, parameters)
         return self.raw.fetchall() if self.raw.description else []
 
-    def clock(self) -> int:
-        rows = self.rows(
-            "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) AS now_us"
-        )
-        if len(rows) != 1:
+    def execute(self, sql: str, parameters: tuple[object, ...] = ()) -> Any:
+        """便携时钟的执行入口:与 `rows` 共用同一预算,把游标交回去取行."""
+
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
             raise WorkspaceUnavailableError
-        return int(rows[0]["now_us"])
+        self.raw.execute(
+            "SELECT set_config('statement_timeout', ?, true)",
+            (str(max(1, int(remaining * 1000))),),
+        )
+        return self.raw.execute(sql, parameters)
+
+    def clock(self) -> int:
+        """「现在」只从便携时钟读一次;语句里不再有品牌函数."""
+
+        try:
+            return now_us(cast(ClockReader, self))
+        except (LookupError, TypeError) as error:
+            raise WorkspaceUnavailableError from error
 
 
 class PostgresWorkspaceWrites:

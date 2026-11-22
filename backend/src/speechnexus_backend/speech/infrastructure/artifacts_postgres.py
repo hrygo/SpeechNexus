@@ -33,31 +33,28 @@ class PostgresArtifactMetadata:
                     "SELECT set_config('statement_timeout', ?, true)",
                     (str(max(1, int(remaining * 1000))),),
                 )
+                observed = now_us(connection)
                 rows = connection.execute(
                     "SELECT a.artifact_id, a.workspace_id, a.artifact_kind, a.artifact_state, "
                     "a.media_type, a.bytes, a.sha256, a.receipt_id, a.source_operation_id, "
                     "a.created_at_us, a.expires_at_us, a.object_key, a.storage_version_id, "
-                    "a.deleted_at_us, "
-                    "CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) AS now_us "
+                    "a.deleted_at_us, CAST(? AS BIGINT) AS now_us "
                     "FROM speech_artifacts AS a JOIN speech_workspaces AS w "
                     "ON w.workspace_id = a.workspace_id "
                     "WHERE a.artifact_id = ? AND a.workspace_id = ? "
                     "AND w.workspace_state = 'active'",
-                    (identifier(artifact_id), identifier(workspace_id)),
+                    (observed, identifier(artifact_id), identifier(workspace_id)),
                 ).fetchall()
         except ArtifactError:
             raise
         except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
             raise ArtifactError("artifact_storage_unavailable") from None
         if not rows:
-            return None, self._now_us()
+            return None, observed
         if len(rows) != 1:
             raise ArtifactError("artifact_storage_unavailable")
         return _artifact(rows[0]), cast(int, rows[0]["now_us"])
 
-    @staticmethod
-    def _now_us() -> int:
-        return time.time_ns() // 1_000
 
 
 # Writable columns, in insert order: exactly `ARTIFACT_INSERT_COLUMNS`, so the
@@ -304,6 +301,3 @@ class PostgresArtifactRetention:
         except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
             raise ArtifactError("artifact_storage_unavailable") from None
 
-    @staticmethod
-    def _now_us() -> int:
-        return time.time_ns() // 1_000

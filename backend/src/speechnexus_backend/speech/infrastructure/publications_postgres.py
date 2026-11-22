@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
@@ -46,6 +46,7 @@ from speechnexus_backend.speech.infrastructure.publications_sql import (
     list_publications,
     retire_publication,
 )
+from speechnexus_portable_sql.clock import ClockReader, now_us
 
 
 class _Cursor:
@@ -403,13 +404,10 @@ class PostgresPublications:
         """Read the database clock so a tombstone never invents a local time."""
 
         def operation(cursor: _Cursor) -> int:
-            cursor.execute(
-                "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp())*1000000 AS BIGINT) AS t"
-            )
-            rows = cursor.fetchall()
-            if len(rows) != 1:
-                raise PublicationUnavailableError
-            return int(rows[0]["t"])
+            try:
+                return now_us(cast(ClockReader, cursor))
+            except (LookupError, TypeError) as error:
+                raise PublicationUnavailableError from error
 
         return self._run(operation, read_only=True)
 

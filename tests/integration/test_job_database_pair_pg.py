@@ -30,6 +30,7 @@ from psycopg.rows import dict_row
 from pydantic import SecretStr
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
+from tests.support.portable_pg import connect as portable_pg_connect
 from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.job_runtime import JobRuntime
@@ -132,7 +133,7 @@ def pair_db() -> Iterator[PairSandbox]:
     publisher_role = "sn_pair_pub_" + suffix
     admission_role = "sn_pair_adm_" + suffix
     second_database = "sn_pair_db_" + suffix
-    admin = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+    admin = portable_pg_connect(url, autocommit=True, row_factory=dict_row)
     admin.execute(f'SET search_path TO "{schema}", pg_catalog')
     second_admin: psycopg.Connection[dict[str, Any]] | None = None
     created = False
@@ -150,7 +151,7 @@ def pair_db() -> Iterator[PairSandbox]:
         # success and cross-database refusal then differ only in the DSN.
         for grant in voice_publication_grants(schema, publisher_role):
             admin.execute(grant)
-        second_admin = psycopg.connect(second_url, autocommit=True, row_factory=dict_row)
+        second_admin = portable_pg_connect(second_url, autocommit=True, row_factory=dict_row)
         second_admin.execute(f'SET search_path TO "{schema}", pg_catalog')
         for grant in (
             *voice_publication_grants(schema, publisher_role),

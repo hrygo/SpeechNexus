@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
@@ -46,6 +46,7 @@ from speechnexus_backend.speech.infrastructure.publications_sql import (
     list_publications,
     retire_publication,
 )
+from speechnexus_portable_sql.clock import ClockReader, now_us
 
 
 class _Cursor:
@@ -61,7 +62,7 @@ class _Cursor:
         if remaining <= 0:
             raise PublicationUnavailableError
         self.raw.execute(
-            "SELECT set_config('statement_timeout', %s, true)",
+            "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(remaining * 1000))),),
         )
         return self.raw.execute(query, parameters)
@@ -145,7 +146,8 @@ class PostgresPublications:
             # Bound estimates on fresh databases while retaining duplicate detection.
             cursor.execute(
                 "SELECT current_database() AS database_name, current_schema() AS schema_name, "
-                "i.installation_id::text AS installation_id, s.revision AS catalog_revision, "
+                "CAST(i.installation_id AS text) AS installation_id, s.revision AS "
+                "catalog_revision, "
                 "h.revision AS current_revision, EXISTS ("
                 "SELECT 1 FROM speech_publication_retirements r "
                 "WHERE r.kind=h.kind AND r.object_id=h.object_id AND r.revision=h.revision "
@@ -156,7 +158,7 @@ class PostgresPublications:
                 "WHERE singleton IS TRUE LIMIT 2) s "
                 "LEFT JOIN speech_publication_heads h ON h.kind='binding' "
                 "AND h.object_id=f.binding_id "
-                "WHERE f.binding_id=%s",
+                "WHERE f.binding_id=?",
                 (binding_id,),
             )
             rows = cursor.fetchall()
@@ -199,7 +201,7 @@ class PostgresPublications:
         ) -> tuple[Publication, BindingPublicationEvidence, bool]:
             cursor.execute(
                 "SELECT pg_advisory_xact_lock(hashtextextended("
-                "'speechnexus:catalog:' || current_schema() || ':' || %s || ':' || %s, 0))",
+                "'speechnexus:catalog:' || current_schema() || ':' || ? || ':' || ?, 0))",
                 (publication.kind, publication.object_id),
             )
             existing = find_publication(
@@ -308,12 +310,13 @@ class PostgresPublications:
                 raise BindingHeadPreconditionError("observation_mismatch")
             cursor.execute(
                 "SELECT pg_advisory_xact_lock(hashtextextended("
-                "'speechnexus:publish-intent:' || current_schema() || ':' || %s, 0))",
+                "'speechnexus:publish-intent:' || current_schema() || ':' || ?, 0))",
                 (intent.key_digest,),
             )
             cursor.execute(
                 "SELECT current_database() AS database_name, current_schema() AS schema_name, "
-                "installation_id::text AS installation_id FROM speech_publication_installation "
+                "CAST(installation_id AS text) AS installation_id FROM "
+                "speech_publication_installation "
                 "WHERE singleton IS TRUE"
             )
             targets = cursor.fetchall()
@@ -340,7 +343,7 @@ class PostgresPublications:
             }
             cursor.execute(
                 "SELECT intent, original_created FROM speech_binding_publish_intents "
-                "WHERE key_digest=%s",
+                "WHERE key_digest=?",
                 (intent.key_digest,),
             )
             rows = cursor.fetchall()
@@ -360,7 +363,7 @@ class PostgresPublications:
             cursor.execute(
                 "INSERT INTO speech_binding_publish_intents "
                 "(key_digest, intent, binding_id, revision, original_created) "
-                "VALUES (%s, %s::jsonb, %s, %s, %s)",
+                "VALUES (?, CAST(? AS jsonb), ?, ?, ?)",
                 (
                     intent.key_digest,
                     json.dumps(payload),
@@ -401,13 +404,10 @@ class PostgresPublications:
         """Read the database clock so a tombstone never invents a local time."""
 
         def operation(cursor: _Cursor) -> int:
-            cursor.execute(
-                "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp())*1000000 AS BIGINT) AS t"
-            )
-            rows = cursor.fetchall()
-            if len(rows) != 1:
-                raise PublicationUnavailableError
-            return int(rows[0]["t"])
+            try:
+                return now_us(cast(ClockReader, cursor))
+            except (LookupError, TypeError) as error:
+                raise PublicationUnavailableError from error
 
         return self._run(operation, read_only=True)
 

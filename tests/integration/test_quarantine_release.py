@@ -33,6 +33,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 from tests.fake.readiness import StaticProbe
 from tests.support.migrations import HEAD
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.app import create_app
 from speechnexus_backend.quarantine_release_runtime import (
@@ -329,7 +330,7 @@ def sandbox() -> Iterator[Sandbox]:
     suffix = uuid.uuid4().hex[:8]
     schema = f"qr_{suffix}"
     roles = (f"qr_rel_{suffix}", f"qr_sp_{suffix}", f"qr_gw_{suffix}")
-    admin = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+    admin = portable_pg_connect(url, autocommit=True, row_factory=dict_row)
     engine = create_engine(
         url.replace("postgresql://", "postgresql+psycopg://", 1), poolclass=NullPool
     )
@@ -961,7 +962,7 @@ def test_appended_ledger_row_cannot_be_rewritten(db: Sandbox) -> None:
 def test_replay_is_not_blocked_by_a_lease_lock_holder(db: Sandbox) -> None:
     evidence = db.evidence()
     db.release(evidence)
-    holder = psycopg.connect(db.url, autocommit=False)
+    holder = portable_pg_connect(db.url, autocommit=False)
     try:
         holder.execute(f'SET search_path TO "{db.schema}",pg_catalog')
         holder.execute("SELECT 1 FROM admission_leases WHERE lease_id = %s FOR UPDATE", (LEASE,))
@@ -995,7 +996,7 @@ def test_terminated_backend_leaves_no_partial_release(db: Sandbox) -> None:
         f'CREATE TRIGGER qr_park AFTER UPDATE ON "{db.schema}".workspace_quotas '
         f'FOR EACH ROW EXECUTE FUNCTION "{db.schema}".qr_park()'
     )
-    blocker = psycopg.connect(db.url, autocommit=False)
+    blocker = portable_pg_connect(db.url, autocommit=False)
     outcome: list[BaseException] = []
 
     def run() -> None:
@@ -1095,7 +1096,7 @@ def test_concurrent_same_key_and_evidence_releases_once(db: Sandbox) -> None:
 
 def test_two_requests_that_both_miss_the_ledger_still_release_once(db: Sandbox) -> None:
     evidence = db.evidence()
-    blocker = psycopg.connect(db.url, autocommit=False)
+    blocker = portable_pg_connect(db.url, autocommit=False)
     barrier = threading.Barrier(2)
     try:
         blocker.execute(f'SET search_path TO "{db.schema}",pg_catalog')
@@ -1249,7 +1250,7 @@ def test_a_release_waits_for_the_pool_lock_before_any_submit_intent_lock(db: San
     pool row, it must hold **no** lock on ``submit_intents``.
     """
     evidence = db.evidence()
-    holder = psycopg.connect(db.url, autocommit=False)
+    holder = portable_pg_connect(db.url, autocommit=False)
     completed: list[ReleaseOutcome] = []
     failures: list[BaseException] = []
 

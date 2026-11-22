@@ -70,7 +70,7 @@ class Transaction:
             return Rows([{"revision": reference["revision"]}])
         if "AS is_current" in query:
             return Rows(pool.binding_rows)
-        if "j.idempotency_key_digest = %s" in query:
+        if "j.idempotency_key_digest = ?" in query:
             assert self.key_held, "key lookup must follow writer coordination"
             return Rows(pool.rows)
         if query.startswith("INSERT INTO speech_jobs "):
@@ -81,7 +81,7 @@ class Transaction:
                 raise psycopg.errors.CheckViolation("synthetic rollback before insert")
             pool.inserts += 1
             self.staged = True
-        if "WHERE j.job_id = %s" in query:
+        if "WHERE j.job_id = ?" in query:
             return Rows([_public_row(pool.request)] if self.staged else [])
         return Rows([])
 

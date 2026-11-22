@@ -30,6 +30,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 from tests.integration.test_coordination_foundation import seed
 from tests.integration.test_gateway_submit_ledger import seed_second_attempt
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.speech.application.job_cancellation_reconciliation import (
     Confirmation,
@@ -96,7 +97,7 @@ class FenceSandbox:
             return list(cursor.fetchall()) if cursor.description else []
 
     def speech_connection(self) -> psycopg.Connection[dict[str, Any]]:
-        connection = psycopg.connect(
+        connection = portable_pg_connect(
             make_conninfo(self.url, user=self.speech_role, password=PASSWORD),
             row_factory=dict_row,
         )
@@ -160,7 +161,7 @@ def fence_db() -> Iterator[FenceSandbox]:
             command.upgrade(config, "head")
     finally:
         engine.dispose()
-    admin = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+    admin = portable_pg_connect(url, autocommit=True, row_factory=dict_row)
     admin.execute(f'SET search_path TO "{schema}", pg_catalog')
     speech_pool_handle = gateway_pool_handle = None
     try:

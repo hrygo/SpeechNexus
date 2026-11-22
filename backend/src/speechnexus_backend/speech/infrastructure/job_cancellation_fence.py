@@ -73,14 +73,14 @@ def lock_cancellation_fence(cursor: FenceCursor, job_id: str) -> None:
     The gateway derives the same key, so a submit either observes the committed
     fence or completes before acceptance. The lock is released by commit/rollback.
     """
-    cursor.execute("SELECT pg_advisory_xact_lock(%s)", (job_cancellation_fence_lock_key(job_id),))
+    cursor.execute("SELECT pg_advisory_xact_lock(?)", (job_cancellation_fence_lock_key(job_id),))
 
 
 def read_cancellation_fence(cursor: FenceCursor, job_id: str) -> CancellationFence | None:
     """Read an existing fence without taking the advisory lock (read-only callers)."""
     _check(job_id, "read", 0)
     rows = cursor.execute(
-        f"SELECT job_id, accepted_at_us, request_id FROM {TABLE} WHERE job_id = %s",
+        f"SELECT job_id, accepted_at_us, request_id FROM {TABLE} WHERE job_id = ?",
         (job_id,),
     ).fetchall()
     if not rows:
@@ -110,7 +110,7 @@ def write_cancellation_fence(
     lock_cancellation_fence(cursor, job_id)
     cursor.execute(
         f"INSERT INTO {TABLE} (job_id, accepted_at_us, request_id) "
-        "VALUES (%s, %s, %s) ON CONFLICT (job_id) DO NOTHING",
+        "VALUES (?, ?, ?) ON CONFLICT (job_id) DO NOTHING",
         (job_id, accepted_at_us, request_id),
     )
     fence = read_cancellation_fence(cursor, job_id)

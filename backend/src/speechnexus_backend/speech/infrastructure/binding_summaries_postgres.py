@@ -57,7 +57,7 @@ _BASE = (
     "LEFT JOIN speech_publication_retirements AS retired "
     "ON retired.kind = 'binding' AND retired.object_id = family.binding_id "
     "AND retired.revision = family.latest_revision "
-    "WHERE family.binding_id > %s"
+    "WHERE family.binding_id > ?"
 )
 
 # The predicate must select exactly the rows ``publication_status`` derives;
@@ -68,10 +68,10 @@ _STATUS_PREDICATES = {
     "retired": " AND retired.mode = 'retire'",
     "disabled": " AND retired.mode = 'disable'",
 }
-_ORDER = " ORDER BY family.binding_id LIMIT %s"
+_ORDER = " ORDER BY family.binding_id"
 
 
-def statement(query: BindingSummaryQuery) -> tuple[str, tuple[str, int]]:
+def statement(query: BindingSummaryQuery) -> tuple[str, tuple[str, ...], int]:
     """Compose the single statement this reader may run for one page.
 
     The returned text is the whole query surface: the selected relations, the
@@ -82,7 +82,8 @@ def statement(query: BindingSummaryQuery) -> tuple[str, tuple[str, int]]:
     if not isinstance(query, BindingSummaryQuery):
         raise BindingSummaryUnavailableError
     predicate = "" if query.status is None else _STATUS_PREDICATES[query.status]
-    return _BASE + predicate + _ORDER, (query.after_id or "", query.limit + 1)
+    # 页大小不进 SQL:受限方言没有 `LIMIT`,多取的那一行由 fetchmany 决定。
+    return _BASE + predicate + _ORDER, (query.after_id or "",), query.limit + 1
 
 
 class PostgresBindingSummaryReads:
@@ -92,7 +93,7 @@ class PostgresBindingSummaryReads:
         self._pool, self._timeout = pool, timeout_seconds
 
     def scan(self, query: BindingSummaryQuery) -> tuple[ModelBindingSummary, ...]:
-        text, parameters = statement(query)
+        text, parameters, page_size = statement(query)
         deadline = time.monotonic() + self._timeout
         try:
             with self._pool.connection(timeout=self._timeout) as connection:
@@ -101,10 +102,10 @@ class PostgresBindingSummaryReads:
                     raise BindingSummaryUnavailableError
                 connection.execute("SET TRANSACTION READ ONLY")
                 connection.execute(
-                    "SELECT set_config('statement_timeout', %s, true)",
+                    "SELECT set_config('statement_timeout', ?, true)",
                     (str(max(1, int(remaining * 1000))),),
                 )
-                records = connection.execute(text, parameters).fetchall()
+                records = connection.execute(text, parameters).fetchmany(page_size)
                 result = tuple(_summary(row) for row in records)
                 if time.monotonic() >= deadline:
                     raise BindingSummaryUnavailableError

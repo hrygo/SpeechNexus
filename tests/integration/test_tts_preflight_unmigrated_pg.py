@@ -23,6 +23,7 @@ from typing import Any
 
 import psycopg
 import pytest
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.speech.domain.job_prerequisites import MIGRATION_COMMAND
 from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
@@ -42,7 +43,7 @@ def unmigrated_schema() -> Iterator[tuple[str, str]]:
     if not url:
         pytest.fail("Configure an isolated PostgreSQL DSN; skip is not migration evidence")
     schema = "sn_tts_preflight_" + uuid.uuid4().hex[:12]
-    admin = psycopg.connect(url, autocommit=True)
+    admin = portable_pg_connect(url, autocommit=True)
     try:
         admin.execute(f'CREATE SCHEMA "{schema}"')
         yield url, schema

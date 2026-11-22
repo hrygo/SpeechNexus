@@ -257,7 +257,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 connection.execute("SET TRANSACTION READ ONLY")
                 rows = connection.execute(
                     "SELECT intent FROM speech_builtin_voice_probe_authorizations "
-                    "WHERE authorization_id=%s",
+                    "WHERE authorization_id=?",
                     (options.authorization_id,),
                 ).fetchall()
             if len(rows) != 1:

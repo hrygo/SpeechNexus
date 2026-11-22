@@ -30,7 +30,7 @@ def read_output_interval(cursor: SubmitCursor, interval_id: str) -> OutputInterv
         "i.output_stream_id, h.sample_rate_hz, i.meter_kind, i.sample_start, i.sample_end "
         "FROM output_sample_intervals AS i JOIN output_stream_heads AS h "
         "ON h.operation_id = i.operation_id AND h.attempt_id = i.attempt_id "
-        "AND h.output_stream_id = i.output_stream_id WHERE i.interval_id = %s",
+        "AND h.output_stream_id = i.output_stream_id WHERE i.interval_id = ?",
         (interval_id,),
     )
     rows = cursor.fetchall()
@@ -76,8 +76,8 @@ def append_interval_in_transaction(
     current = lock_submit_intent(cursor, interval.submit_intent_id)
     record.validate_execution(current)
     cursor.execute(
-        "SELECT sample_rate_hz FROM output_stream_heads WHERE operation_id = %s "
-        "AND attempt_id = %s AND output_stream_id = %s FOR UPDATE",
+        "SELECT sample_rate_hz FROM output_stream_heads WHERE operation_id = ? "
+        "AND attempt_id = ? AND output_stream_id = ? FOR UPDATE",
         record.stream_key,
     )
     heads = cursor.fetchall()
@@ -87,9 +87,9 @@ def append_interval_in_transaction(
     overlaps = False
     if previous is None:
         cursor.execute(
-            "SELECT interval_id FROM output_sample_intervals WHERE operation_id = %s "
-            "AND attempt_id = %s AND output_stream_id = %s AND meter_kind = %s "
-            "AND sample_start < %s AND sample_end > %s LIMIT 1",
+            "SELECT interval_id FROM output_sample_intervals WHERE operation_id = ? "
+            "AND attempt_id = ? AND output_stream_id = ? AND meter_kind = ? "
+            "AND sample_start < ? AND sample_end > ? LIMIT 1",
             (
                 *record.stream_key,
                 interval.meter_kind.value,
@@ -110,7 +110,7 @@ def append_interval_in_transaction(
     cursor.execute(
         "INSERT INTO output_sample_intervals (interval_id, submit_intent_id, operation_id, "
         "attempt_id, output_stream_id, meter_kind, sample_start, sample_end) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (
             interval.interval_id,
             interval.submit_intent_id,
@@ -122,8 +122,8 @@ def append_interval_in_transaction(
     )
     if interval.meter_kind is MeterKind.GENERATED:
         cursor.execute(
-            "UPDATE submit_intents SET generated_pcm_samples = %s, updated_at_us = %s, "
-            "version = version + 1 WHERE submit_intent_id = %s AND version = %s",
+            "UPDATE submit_intents SET generated_pcm_samples = ?, updated_at_us = ?, "
+            "version = version + 1 WHERE submit_intent_id = ? AND version = ?",
             (
                 result.intent.generated_pcm_samples,
                 to_unix_micros(result.intent.updated_at),

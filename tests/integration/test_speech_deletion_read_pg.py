@@ -24,7 +24,6 @@ import uuid
 from typing import Any
 
 import httpx
-import psycopg
 import pytest
 from psycopg import sql
 from psycopg.conninfo import make_conninfo
@@ -49,6 +48,7 @@ from tests.integration.test_speech_deletion_execute_pg import (
 from tests.integration.test_speech_deletion_execute_pg import (
     sandbox as sandbox,
 )
+from tests.support.portable_pg import connect as portable_pg_connect
 from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app
@@ -370,7 +370,7 @@ async def test_the_provisioned_writer_role_can_read_the_deletion(sandbox: Sandbo
     role, admin = _provision_writer(sandbox, include_execution=True)
     pool: Any = None
     try:
-        with psycopg.connect(
+        with portable_pg_connect(
             make_conninfo(sandbox.url, user=role, password=ROLE_PASSWORD),
             row_factory=dict_row,
         ) as connection:

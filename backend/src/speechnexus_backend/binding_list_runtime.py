@@ -131,7 +131,7 @@ class BindingListRuntime:
                 connection, None, qualified, table, COLUMN_WRITE_PRIVILEGES, subject=SUBJECT
             )
             held = connection.execute(
-                "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, 'SELECT') AS held",
+                "SELECT pg_catalog.has_table_privilege(CURRENT_USER, ?, 'SELECT') AS held",
                 (qualified,),
             ).fetchone()
             if held is None or not held["held"]:

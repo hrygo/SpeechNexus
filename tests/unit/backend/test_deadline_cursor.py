@@ -36,9 +36,9 @@ BACKEND_ROOT = Path(__file__).resolve().parents[3] / "backend"
 SOURCE_ROOT = BACKEND_ROOT / "src"
 CURSOR_DECLARATION = re.compile(r"^\s*class _Cursor\b", re.MULTILINE)
 
-QUERY = "SELECT payload FROM example WHERE identity = %s"
+QUERY = "SELECT payload FROM example WHERE identity = ?"
 PARAMETERS = ("row-a",)
-SET_TIMEOUT = "SELECT set_config('statement_timeout', %s, true)"
+SET_TIMEOUT = "SELECT set_config('statement_timeout', ?, true)"
 
 
 @dataclass(frozen=True, slots=True)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
@@ -26,6 +26,7 @@ from speechnexus_backend.speech.domain.voice_capability_evidence import (
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.voice_publication_schema import EVIDENCE_TABLE
+from speechnexus_portable_sql.clock import ClockReader, now_us
 
 
 class _Cursor:
@@ -41,13 +42,16 @@ class _Cursor:
         if remaining <= 0:
             raise VoiceEvidenceUnavailableError
         self.raw.execute(
-            "SELECT set_config('statement_timeout', %s, true)",
+            "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(remaining * 1000))),),
         )
         return self.raw.execute(query, parameters)
 
     def fetchall(self) -> list[dict[str, Any]]:
         return self.raw.fetchall()
+
+    def fetchmany(self, size: int) -> list[dict[str, Any]]:
+        return self.raw.fetchmany(size)
 
 
 def _json_object(raw: str | None) -> dict[str, Any] | None:
@@ -204,11 +208,12 @@ class PostgresVoiceEvidenceRecorder:
             "WHERE j.kind = 'voice_validation' AND j.state = 'succeeded' "
             "AND NOT EXISTS (SELECT 1 FROM speech_voice_capability_evidence AS e "
             "WHERE e.validation_job_id = j.job_id) "
-            "AND (%s::bigint IS NULL OR (j.updated_at_us, j.job_id) > (%s::bigint, %s::varchar)) "
-            "ORDER BY j.updated_at_us, j.job_id LIMIT %s",
-            (after_us, after_us, after_id, limit),
+            "AND (CAST(? AS bigint) IS NULL OR (j.updated_at_us, j.job_id) > (CAST(? AS bigint), "
+            "CAST(? AS varchar))) "
+            "ORDER BY j.updated_at_us, j.job_id",
+            (after_us, after_us, after_id),
         )
-        return [(int(row["updated_at_us"]), str(row["job_id"])) for row in cursor.fetchall()]
+        return [(int(row["updated_at_us"]), str(row["job_id"])) for row in cursor.fetchmany(limit)]
 
     def _report(self, cursor: _Cursor, validation_job_id: str) -> ArtifactRecord:
         job, artifact = self._job_and_artifact(cursor, validation_job_id)
@@ -218,8 +223,7 @@ class PostgresVoiceEvidenceRecorder:
         self, cursor: _Cursor, validation_job_id: str
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         cursor.execute(
-            "SELECT job_id, kind, state, result_json, workspace_id FROM speech_jobs "
-            "WHERE job_id=%s",
+            "SELECT job_id, kind, state, result_json, workspace_id FROM speech_jobs WHERE job_id=?",
             (validation_job_id,),
         )
         jobs = cursor.fetchall()
@@ -245,7 +249,7 @@ class PostgresVoiceEvidenceRecorder:
         cursor.execute(
             "SELECT artifact_id, artifact_state, artifact_kind, media_type, bytes, sha256, "
             "receipt_id, source_operation_id, object_key, storage_version_id, created_at_us, "
-            "expires_at_us FROM speech_artifacts WHERE workspace_id=%s AND artifact_id=%s",
+            "expires_at_us FROM speech_artifacts WHERE workspace_id=? AND artifact_id=?",
             (job["workspace_id"], artifact_id),
         )
         artifacts = cursor.fetchall()
@@ -285,7 +289,7 @@ class PostgresVoiceEvidenceRecorder:
 
         cursor.execute(
             "SELECT kind, input_json, binding_json FROM speech_voice_draft_revisions "
-            "WHERE draft_id=%s AND revision=%s",
+            "WHERE draft_id=? AND revision=?",
             (draft_id, draft_revision),
         )
         revisions = cursor.fetchall()
@@ -298,7 +302,7 @@ class PostgresVoiceEvidenceRecorder:
             raise VoiceEvidenceNotEligibleError("draft_revision_invalid")
 
         cursor.execute(
-            "SELECT revision_id FROM speech_binding_revisions WHERE binding_id=%s AND revision=%s",
+            "SELECT revision_id FROM speech_binding_revisions WHERE binding_id=? AND revision=?",
             (binding["id"], binding["revision"]),
         )
         bindings = cursor.fetchall()
@@ -313,7 +317,7 @@ class PostgresVoiceEvidenceRecorder:
                 raise VoiceEvidenceNotEligibleError("clone_material_missing")
             cursor.execute(
                 "SELECT asset_id, asset_state, bytes, sha256, media_type FROM speech_assets "
-                "WHERE asset_id=%s AND workspace_id=%s",
+                "WHERE asset_id=? AND workspace_id=?",
                 (asset_id, job["workspace_id"]),
             )
             assets = cursor.fetchall()
@@ -322,17 +326,17 @@ class PostgresVoiceEvidenceRecorder:
             source_asset = _material(assets[0])
             cursor.execute(
                 "SELECT 1 AS proof FROM speech_asset_objects "
-                "WHERE asset_id=%s AND bytes=%s AND sha256=%s",
+                "WHERE asset_id=? AND bytes=? AND sha256=?",
                 (source_asset.asset_id, source_asset.bytes, source_asset.sha256),
             )
             if not cursor.fetchall():
                 raise VoiceEvidenceNotEligibleError("clone_material_unproven")
 
-        cursor.execute("SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp())*1000000 AS BIGINT) AS t")
-        clocks = cursor.fetchall()
-        if len(clocks) != 1:
-            raise VoiceEvidenceUnavailableError
-        measured_at_us = int(clocks[0]["t"])
+        try:
+            evidence_observed_us = now_us(cast(ClockReader, cursor))
+        except (LookupError, TypeError) as error:
+            raise VoiceEvidenceUnavailableError from error
+        measured_at_us = evidence_observed_us
 
         facts = ValidationRunFacts(
             validation_job_id=validation_job_id,
@@ -363,8 +367,8 @@ class PostgresVoiceEvidenceRecorder:
             "(evidence_id, draft_id, draft_revision, validation_job_id, validation_id, "
             "binding_revision_id, report_artifact_id, report_sha256, report_receipt_id, "
             "evidence_kind, measured_by, measured_at_us, capabilities, coverage, material, "
-            "evidence_digest) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,"
-            "%s::jsonb,%s::jsonb,%s) ON CONFLICT (evidence_id) DO NOTHING",
+            "evidence_digest) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,CAST(? AS jsonb),"
+            "CAST(? AS jsonb),CAST(? AS jsonb),?) ON CONFLICT (evidence_id) DO NOTHING",
             (
                 row["evidence_id"],
                 row["draft_id"],
@@ -390,7 +394,7 @@ class PostgresVoiceEvidenceRecorder:
             "SELECT draft_id, draft_revision, validation_job_id, validation_id, "
             "binding_revision_id, report_artifact_id, report_sha256, report_receipt_id, "
             "evidence_kind, measured_by, measured_at_us, capabilities, coverage, material, "
-            f"evidence_digest FROM {EVIDENCE_TABLE} WHERE evidence_id=%s",
+            f"evidence_digest FROM {EVIDENCE_TABLE} WHERE evidence_id=?",
             (evidence.evidence_id,),
         )
         stored = cursor.fetchall()

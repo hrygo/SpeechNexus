@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, cast
 
 import psycopg
@@ -17,6 +18,7 @@ from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.tts_settlement_preflight import (
     require_complete_tts_roots,
 )
+from speechnexus_portable_sql.clock import now_statement
 
 OPERATION = "job-" + "1" * 32
 LEASE = "lease-" + "2" * 32
@@ -203,6 +205,9 @@ class _PreflightConnection:
 
     def execute(self, statement: str, parameters: object = None) -> _PreflightResult:
         self.statements.append(statement)
+        if statement == now_statement():
+            # 时钟读取:替身回答一个固定时间点,而不是「没有行」。
+            return _PreflightResult({"now": datetime(2026, 11, 22, tzinfo=UTC)})
         return _PreflightResult(self._row if "FROM admission_leases" in statement else None)
 
 
@@ -224,7 +229,8 @@ def test_preflight_passes_when_every_lease_is_settled() -> None:
 
     statements = pool.connections[0].statements
     assert statements[0] == "SET TRANSACTION READ ONLY"
-    assert "l.operation_id LIKE 'job-%'" in statements[2]
+    assert statements[2] == now_statement()
+    assert "l.operation_id LIKE 'job-%'" in statements[3]
 
 
 def test_preflight_refuses_a_public_lease_on_its_identity() -> None:

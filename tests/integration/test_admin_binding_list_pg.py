@@ -33,6 +33,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 from tests.fake.readiness import StaticProbe
 from tests.support.binding_examples import binding_request
+from tests.support.portable_pg import connect as portable_pg_connect
 from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app
@@ -106,7 +107,7 @@ def sandbox() -> Iterator[Sandbox]:
             command.upgrade(config, "head")
     finally:
         engine.dispose()
-    admin: psycopg.Connection[dict[str, Any]] = psycopg.connect(
+    admin: psycopg.Connection[dict[str, Any]] = portable_pg_connect(
         base, row_factory=dict_row, autocommit=True
     )
     admin.execute(f'SET search_path TO "{schema}", pg_catalog')
@@ -482,7 +483,7 @@ def test_the_list_reader_identity_cannot_write(sandbox: Sandbox) -> None:
         connection.execute("SET TRANSACTION READ ONLY")
         for table in READABLE:
             connection.execute(f'SELECT count(*) FROM "{sandbox.schema}"."{table}"').fetchone()
-    connection = psycopg.connect(sandbox.urls["list"], autocommit=True)
+    connection = portable_pg_connect(sandbox.urls["list"], autocommit=True)
     connection.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
     try:
         for statement in (

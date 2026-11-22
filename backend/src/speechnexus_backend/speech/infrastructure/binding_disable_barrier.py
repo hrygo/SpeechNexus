@@ -21,7 +21,7 @@ def lock_binding(executor: BindingLockExecutor, binding_id: str) -> None:
     identifier(binding_id)
     executor.execute(
         "SELECT pg_advisory_xact_lock(hashtextextended("
-        "'speechnexus:catalog:' || current_schema() || ':binding:' || %s, 0))",
+        "'speechnexus:catalog:' || current_schema() || ':binding:' || ?, 0))",
         (binding_id,),
     )
 
@@ -32,7 +32,7 @@ def revision_is_disabled(cursor: BindingBarrierCursor, binding_id: str, revision
     identifier(revision_id)
     cursor.execute(
         f"SELECT 1 AS disabled FROM {RETIREMENT_TABLE} "
-        "WHERE kind='binding' AND object_id=%s AND revision_id=%s AND mode='disable'",
+        "WHERE kind='binding' AND object_id=? AND revision_id=? AND mode='disable'",
         (binding_id, revision_id),
     )
     return bool(cursor.fetchall())

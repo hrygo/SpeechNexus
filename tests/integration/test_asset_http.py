@@ -221,8 +221,8 @@ def test_asset_login_authority_cannot_hide_behind_restricted_startup_role(
     caplog: pytest.LogCaptureFixture,
     login_kind: str,
 ) -> None:
-    import psycopg
     from psycopg import sql
+    from tests.support.portable_pg import connect as portable_pg_connect
 
     db = assets.db
     original_owner = db.admin.info.user
@@ -249,7 +249,7 @@ def test_asset_login_authority_cannot_hide_behind_restricted_startup_role(
         url = make_conninfo(
             url, options=f"-c role={db.role}", application_name="synthetic_asset_login_canary"
         )
-        with psycopg.connect(url) as probe:
+        with portable_pg_connect(url) as probe:
             assert probe.execute("SELECT SESSION_USER, CURRENT_USER").fetchone() == (
                 session,
                 db.role,

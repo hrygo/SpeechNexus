@@ -36,11 +36,11 @@ _COLUMNS = (
     "occurred_at_us, policy_revision, change_summary_json"
 )
 _BASE = f"SELECT {_COLUMNS} FROM {EVENT_TABLE} WHERE kind = 'binding'"
-_ORDER = " ORDER BY occurred_at_us DESC, event_id DESC LIMIT %s"
+_ORDER = " ORDER BY occurred_at_us DESC, event_id DESC"
 _SUMMARY_KEYS = frozenset({"changed_fields", "reason"})
 
 
-def statement(query: AuditEventQuery) -> tuple[str, tuple[object, ...]]:
+def statement(query: AuditEventQuery) -> tuple[str, tuple[object, ...], int]:
     """Compose the single statement this reader may run for one page.
 
     The returned text carries the resource predicate, the keyset frontier, the
@@ -53,14 +53,13 @@ def statement(query: AuditEventQuery) -> tuple[str, tuple[object, ...]]:
     text = _BASE
     parameters: list[object] = []
     if query.after is not None:
-        text += " AND (occurred_at_us, event_id) < (%s, %s)"
+        text += " AND (occurred_at_us, event_id) < (?, ?)"
         parameters.extend((query.after.occurred_at_us, query.after.event_id))
     if query.action is not None:
-        text += " AND action = %s"
+        text += " AND action = ?"
         parameters.append(query.action)
-    text += _ORDER
-    parameters.append(query.limit + 1)
-    return text, tuple(parameters)
+    # 页大小不进 SQL:受限方言没有 `LIMIT`,多取的那一行由 fetchmany 决定。
+    return text + _ORDER, tuple(parameters), query.limit + 1
 
 
 class PostgresAuditEventReads:
@@ -70,7 +69,7 @@ class PostgresAuditEventReads:
         self._pool, self._timeout = pool, timeout_seconds
 
     def scan(self, query: AuditEventQuery) -> tuple[AuditEvent, ...]:
-        text, parameters = statement(query)
+        text, parameters, page_size = statement(query)
         deadline = time.monotonic() + self._timeout
         try:
             with self._pool.connection(timeout=self._timeout) as connection:
@@ -79,10 +78,10 @@ class PostgresAuditEventReads:
                     raise AuditEventUnavailableError
                 connection.execute("SET TRANSACTION READ ONLY")
                 connection.execute(
-                    "SELECT set_config('statement_timeout', %s, true)",
+                    "SELECT set_config('statement_timeout', ?, true)",
                     (str(max(1, int(remaining * 1000))),),
                 )
-                records = connection.execute(text, parameters).fetchall()
+                records = connection.execute(text, parameters).fetchmany(page_size)
                 result = tuple(_event(row) for row in records)
                 if time.monotonic() >= deadline:
                     raise AuditEventUnavailableError

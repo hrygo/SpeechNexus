@@ -13,7 +13,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
-import psycopg
 import pytest
 import uvicorn
 from fastapi.testclient import TestClient
@@ -26,6 +25,7 @@ from tests.integration.test_binding_http import http_db as http_db
 from tests.integration.test_production_jobs import ROOT
 from tests.integration.test_production_jobs import database as database
 from tests.support.binding_examples import binding_request
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend import binding_runtime as runtime_module
 from speechnexus_backend.app import create_app
@@ -310,7 +310,7 @@ def test_privileged_session_cannot_hide_with_restricted_producer_startup_role(
             options=f"-c role={producer_db.role}",
             application_name="producer-login-canary",
         )
-        with psycopg.connect(url) as probe:
+        with portable_pg_connect(url) as probe:
             identities = probe.execute("SELECT SESSION_USER,CURRENT_USER").fetchone()
             assert identities is not None
             session, current = identities

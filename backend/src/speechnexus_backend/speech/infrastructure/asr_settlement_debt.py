@@ -10,10 +10,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-import psycopg
 from psycopg.rows import dict_row
 
-_NOW = "CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT)"
+from speechnexus_portable_sql.clock import now_us
+from speechnexus_portable_sql.psycopg_driver import connect as portable_connect
+
+_NOW = "CAST(? AS BIGINT)"
 _LIMIT = 200
 _SAMPLES = 3
 _DETAIL_LIMIT = 512
@@ -112,35 +114,38 @@ def read_asr_settlement_debt(
         "ORDER BY observed_at_us DESC LIMIT 1) e ON TRUE "
         "WHERE l.lease_state<>'released' "
         f"AND (s.settled_at_us IS NOT NULL OR s.next_check_at_us<=({_NOW})) "
-        "ORDER BY s.next_check_at_us, s.lease_id LIMIT %s"
+        "ORDER BY s.next_check_at_us, s.lease_id"
     )
     # A redacted document has no readable kind, so neither the backfill nor the
     # preflight can attribute it. It has no root and would otherwise be silent.
     redacted = (
-        "SELECT l.operation_id, l.lease_id, NULL::text AS gateway_id, "
-        "NULL::text AS host_node_id, NULL::bigint AS settled_at_us, "
-        "NULL::text AS execution_state, NULL::text AS cleanup_state, "
-        "NULL::text AS evidence_kind, NULL::int AS execution_stopped, "
-        "NULL::int AS resources_released, "
+        "SELECT l.operation_id, l.lease_id, CAST(NULL AS text) AS gateway_id, "
+        "CAST(NULL AS text) AS host_node_id, CAST(NULL AS bigint) AS settled_at_us, "
+        "CAST(NULL AS text) AS execution_state, CAST(NULL AS text) AS cleanup_state, "
+        "CAST(NULL AS text) AS evidence_kind, CAST(NULL AS int) AS execution_stopped, "
+        "CAST(NULL AS int) AS resources_released, "
         f"({_NOW}) - l.deadline_at_us AS overdue_us, 'redacted' AS source "
         "FROM admission_leases l "
         "JOIN admission_operations o ON o.operation_id=l.operation_id "
-        "WHERE l.lease_state<>'released' AND o.operation_id LIKE 'operation-%%' "
+        "WHERE l.lease_state<>'released' AND o.operation_id LIKE 'operation-%' "
         "AND o.request_document IS NULL "
         "AND NOT EXISTS (SELECT 1 FROM speech_asr_settlement s WHERE s.lease_id=l.lease_id) "
-        "ORDER BY l.lease_id LIMIT %s"
+        "ORDER BY l.lease_id"
     )
-    with psycopg.connect(
+    with portable_connect(
         dsn, connect_timeout=int(timeout_seconds), row_factory=dict_row
     ) as connection:
         connection.execute("SET TRANSACTION READ ONLY")
-        connection.execute("SELECT set_config('search_path', %s, true)", (schema + ",pg_catalog",))
+        connection.execute("SELECT set_config('search_path', ?, true)", (schema + ",pg_catalog",))
         connection.execute(
-            "SELECT set_config('statement_timeout', %s, true)",
+            "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(timeout_seconds * 1000))),),
         )
+        # 「现在」只读一次,两条语句共用同一个时间点,互相比较才有意义。
+        now = now_us(connection)
+        # 受限方言没有 LIMIT:按 keyset 排序后由 fetchmany 取上界,行数在客户端截断。
         rows = [
-            *connection.execute(rooted, (_LIMIT,)).fetchall(),
-            *connection.execute(redacted, (_LIMIT,)).fetchall(),
+            *connection.execute(rooted, (now, now)).fetchmany(_LIMIT),
+            *connection.execute(redacted, (now,)).fetchmany(_LIMIT),
         ]
     return summarize(rows, route)

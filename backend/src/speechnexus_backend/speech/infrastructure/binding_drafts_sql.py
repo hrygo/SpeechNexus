@@ -46,7 +46,7 @@ def _version(row: dict[str, Any]) -> None:
 def read_draft(cursor: BindingCursor, binding_id: str, revision: str) -> BindingDraft | None:
     rows = _rows(
         cursor,
-        "SELECT * FROM speech_binding_revisions WHERE binding_id=%s AND revision=%s",
+        "SELECT * FROM speech_binding_revisions WHERE binding_id=? AND revision=?",
         (binding_id, revision),
     )
     if not rows:
@@ -64,7 +64,7 @@ def read_draft(cursor: BindingCursor, binding_id: str, revision: str) -> Binding
     ):
         raise BindingUnavailableError
     commands = _rows(
-        cursor, "SELECT * FROM speech_binding_commands WHERE key_digest=%s", (row["key_digest"],)
+        cursor, "SELECT * FROM speech_binding_commands WHERE key_digest=?", (row["key_digest"],)
     )
     if len(commands) != 1:
         raise BindingUnavailableError
@@ -105,7 +105,7 @@ def _result(
     if original != command.intent:
         return BindingDraftResult("conflict", error_code="idempotency_conflict")
     revisions = _rows(
-        cursor, "SELECT * FROM speech_binding_revisions WHERE key_digest=%s", (command.key_digest,)
+        cursor, "SELECT * FROM speech_binding_revisions WHERE key_digest=?", (command.key_digest,)
     )
     if not revisions:
         # Only a bypassed/corrupt journal can commit without its revision. It is
@@ -132,7 +132,7 @@ def _result(
 def recover_draft(cursor: BindingCursor, command: CreateBindingDraft) -> BindingDraftResult:
     check_command(command)
     rows = _rows(
-        cursor, "SELECT * FROM speech_binding_commands WHERE key_digest=%s", (command.key_digest,)
+        cursor, "SELECT * FROM speech_binding_commands WHERE key_digest=?", (command.key_digest,)
     )
     if len(rows) > 1:
         raise BindingUnavailableError
@@ -179,7 +179,7 @@ def create_draft(
     inserted = cursor.rowcount == 1
     rows = _rows(
         cursor,
-        "SELECT * FROM speech_binding_commands WHERE key_digest=%s",
+        "SELECT * FROM speech_binding_commands WHERE key_digest=?",
         (command.key_digest,),
     )
     if len(rows) != 1:
@@ -187,13 +187,13 @@ def create_draft(
     if not inserted:
         return _result(cursor, command, rows[0])
     cursor.execute(
-        "INSERT INTO speech_binding_families (binding_id) VALUES (%s) "
+        "INSERT INTO speech_binding_families (binding_id) VALUES (?) "
         "ON CONFLICT (binding_id) DO NOTHING",
         (command.binding_id,),
     )
     families = _rows(
         cursor,
-        "SELECT latest_revision FROM speech_binding_families WHERE binding_id=%s FOR UPDATE",
+        "SELECT latest_revision FROM speech_binding_families WHERE binding_id=? FOR UPDATE",
         (command.binding_id,),
     )
     if len(families) != 1:
@@ -214,7 +214,7 @@ def create_draft(
         "INSERT INTO speech_binding_revisions "
         "(binding_id,revision,revision_id,key_digest,document_version,definition_json,"
         "definition_digest,request_digest,created_at_us) "
-        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+        "VALUES (?,?,?,?,?,?,?,?,?)",
         (
             draft.binding_id,
             draft.revision,
@@ -229,7 +229,7 @@ def create_draft(
     )
     _update(
         cursor,
-        "UPDATE speech_binding_families SET latest_revision=%s WHERE binding_id=%s",
+        "UPDATE speech_binding_families SET latest_revision=? WHERE binding_id=?",
         (draft.revision, command.binding_id),
     )
     return BindingDraftResult("created", draft)

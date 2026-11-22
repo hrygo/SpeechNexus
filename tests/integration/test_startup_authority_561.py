@@ -28,6 +28,7 @@ from tests.integration.test_public_jobs_http import (
     _seed_binding,
 )
 from tests.support.binding_examples import binding_request
+from tests.support.portable_pg import connect as portable_pg_connect
 from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app
@@ -101,7 +102,7 @@ def jobs_db() -> Iterator[JobSandbox]:
             command.upgrade(config, "head")
     finally:
         engine.dispose()
-    admin = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+    admin = portable_pg_connect(url, autocommit=True, row_factory=dict_row)
     admin.execute(f'SET search_path TO "{schema}", pg_catalog')
     pool = None
     try:
@@ -155,7 +156,7 @@ def _drop_role(db: JobSandbox | WorkbenchSandbox, role: str) -> None:
 
 
 def _connect(db: JobSandbox, role: str) -> psycopg.Connection[dict[str, Any]]:
-    return psycopg.connect(
+    return portable_pg_connect(
         make_conninfo(db.url, user=role, password=ROLE_PASSWORD), row_factory=dict_row
     )
 

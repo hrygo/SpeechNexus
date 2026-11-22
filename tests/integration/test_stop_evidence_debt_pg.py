@@ -32,6 +32,7 @@ from tests.integration.test_cancel_failure_slot_pg import (
     _seed_execution,
     _seed_foundation,
 )
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
     cancellation_debt_reader_grants,
@@ -81,7 +82,7 @@ def _sandbox(
     schema, role = "sn_gate_" + suffix, "sn_gate_role_" + suffix
     job_id = "job-" + uuid.uuid4().hex
     _migrate(url, schema)
-    admin = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+    admin = portable_pg_connect(url, autocommit=True, row_factory=dict_row)
     admin.execute(f'SET search_path TO "{schema}", pg_catalog')
     try:
         admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{PASSWORD}'")

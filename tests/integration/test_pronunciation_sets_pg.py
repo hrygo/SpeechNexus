@@ -40,6 +40,7 @@ from tests.integration.test_coordination_foundation import (
     upgrade_sandbox as upgrade_sandbox,
 )
 from tests.integration.test_production_jobs import database as database
+from tests.support.portable_pg import connect as portable_pg_connect
 from tests.support.pronunciation_examples import pronunciation_request
 from tests.unit.backend.test_health import _settings
 
@@ -142,7 +143,7 @@ def sandbox() -> Iterator[Sandbox]:
             command.upgrade(config, "head")
     finally:
         engine.dispose()
-    admin = psycopg.connect(url, row_factory=dict_row, autocommit=True)
+    admin = portable_pg_connect(url, row_factory=dict_row, autocommit=True)
     admin.execute(f'SET search_path TO "{schema}",pg_catalog')
     try:
         admin.execute(f"CREATE ROLE \"{reader}\" LOGIN PASSWORD '{reader_password}'")
@@ -547,7 +548,7 @@ def test_publisher_role_is_append_only_and_cannot_delete_or_write_catalogue(
     sandbox: Sandbox,
 ) -> None:
     db = sandbox
-    with psycopg.connect(
+    with portable_pg_connect(
         dsn(db.url, db.publisher, "synthetic-sets-publisher"), autocommit=True
     ) as connection:
         connection.execute(f'SET search_path TO "{db.schema}",pg_catalog')

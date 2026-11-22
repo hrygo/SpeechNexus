@@ -21,6 +21,8 @@ from speechnexus_backend.speech.infrastructure.jobs_sql import (
     create_in_transaction,
     recover_in_transaction,
 )
+from speechnexus_portable_sql.pymysql_driver import PortableConnection as PortableMysqlConnection
+from speechnexus_portable_sql.pymysql_driver import connect as portable_mysql_connect
 
 
 @dataclass(frozen=True)
@@ -30,9 +32,9 @@ class MySQLJobTransactions:
     user: str | None = None
     password: str | None = field(default=None, repr=False)
 
-    def connect(self) -> pymysql.Connection[DictCursor]:
+    def connect(self) -> PortableMysqlConnection:
         parsed = urlparse(self.url)
-        connection = pymysql.connect(
+        connection = portable_mysql_connect(
             host=parsed.hostname or "127.0.0.1",
             port=parsed.port or 3306,
             user=self.user or unquote(parsed.username or ""),

@@ -170,7 +170,7 @@ def _role_problem(connection: psycopg.Connection[Any], role: str) -> str | None:
     """A migrated role must exist and must not be a cluster-wide authority."""
     row = connection.execute(
         "SELECT rolsuper OR rolcreatedb OR rolcreaterole OR rolbypassrls AS unsafe "
-        "FROM pg_catalog.pg_roles WHERE rolname=%s",
+        "FROM pg_catalog.pg_roles WHERE rolname=?",
         (role,),
     ).fetchone()
     if row is None:
@@ -194,7 +194,7 @@ def _granted(
     connection: psycopg.Connection[Any], role: str, schema: str, table: str, privilege: str
 ) -> bool:
     row = connection.execute(
-        "SELECT pg_catalog.has_table_privilege(%s, %s, %s)",
+        "SELECT pg_catalog.has_table_privilege(?, ?, ?)",
         (role, f"{schema}.{table}", privilege),
     ).fetchone()
     return bool(row is not None and row[0])
@@ -214,7 +214,7 @@ def run(value: Plan, out: TextIO) -> None:
             if problem is not None:
                 raise ValueError(problem)
         namespace = connection.execute(
-            "SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname=%s", (value.schema,)
+            "SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname=?", (value.schema,)
         ).fetchone()
         if namespace is None:
             connection.execute(bootstrap_sql(value.schema))

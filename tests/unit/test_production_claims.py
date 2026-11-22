@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 import psycopg
@@ -36,6 +37,12 @@ from speechnexus_backend.speech.interfaces.claim_transactions import ClaimTransa
 INITIAL = JobClaim("job-test", None, 0, 0, "pending")
 REQUEST = ClaimJob("job-test", "worker-test", 0, 100)
 CURRENT = claimed(INITIAL, REQUEST, 1000)
+
+
+def _epoch_us(microseconds: int) -> datetime:
+    """替身回答时钟时用的时间点:epoch 起算的微秒,必须是带时区的时间。"""
+
+    return datetime(1970, 1, 1, tzinfo=UTC) + timedelta(microseconds=microseconds)
 
 
 def test_current_version_and_expiry_fence_reclaims_even_for_same_worker() -> None:
@@ -288,14 +295,17 @@ def test_each_statement_uses_remaining_budget_and_expiry_prevents_sql(
             queries.append((query, parameters))
 
         def fetchall(self) -> list[dict[str, Any]]:
-            return [{"now_us": 1000}]
+            # 时钟语句是登记的 profile 语句;替身按同一列名回答。
+            return [{"now": _epoch_us(1000)}]
 
     monkeypatch.setattr(
         "speechnexus_backend.speech.infrastructure.claims_postgres.time.monotonic", lambda: now[0]
     )
     cursor = _DeadlineCursor(RawCursor(), 2.0)
     assert cursor.clock() == 1000 and cursor.rowcount == 1
+    # 时钟读是一条语句:先按剩余毫秒设预算,再执行时钟语句本身。
     assert queries[0][1] == ("1000",)
+    assert "clock_timestamp()" in queries[1][0]
     now[0] = 1.75
     cursor.execute("SELECT 1")
     assert queries[2][1] == ("250",)

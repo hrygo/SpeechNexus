@@ -18,6 +18,7 @@ from psycopg import sql
 from psycopg.conninfo import make_conninfo
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.builtin_voice_source_approval import (
     BuiltinSourceApprovalError,
@@ -62,7 +63,7 @@ def test_source_writer_authority_replay_and_narrow_grants(
         with engine.connect() as migration_connection:
             config.attributes["connection"] = migration_connection
             command.upgrade(config, "head")
-        with psycopg.connect(url, autocommit=True) as admin:
+        with portable_pg_connect(url, autocommit=True) as admin:
             admin.execute(f"CREATE ROLE \"{writer}\" LOGIN PASSWORD 'synthetic_source_password'")
             admin.execute(f"CREATE ROLE \"{business}\" LOGIN PASSWORD 'synthetic_source_password'")
             admin.execute(f'CREATE ROLE "{qualification_role}" NOLOGIN')
@@ -115,7 +116,7 @@ def test_source_writer_authority_replay_and_narrow_grants(
         ):
             with pytest.raises(BuiltinSourceApprovalError, match="intent_conflict"):
                 approve_builtin_voice_source(store, **(args | changed))
-        with psycopg.connect(url, autocommit=True) as admin:
+        with portable_pg_connect(url, autocommit=True) as admin:
             admin.execute(f'SET search_path TO "{schema}",pg_catalog')
             row = admin.execute(
                 "SELECT approved_by,approved_at FROM speech_builtin_voice_source_approvals"
@@ -144,7 +145,7 @@ def test_source_writer_authority_replay_and_narrow_grants(
             "source_approval_id": "source-waiting",
             "expires_at": datetime.now(UTC) + timedelta(seconds=3),
         }
-        with psycopg.connect(url) as blocker:
+        with portable_pg_connect(url) as blocker:
             blocker.execute(f'SET search_path TO "{schema}",pg_catalog')
             blocker.execute(
                 "SELECT pg_advisory_xact_lock(hashtextextended("
@@ -154,7 +155,7 @@ def test_source_writer_authority_replay_and_narrow_grants(
             with ThreadPoolExecutor(max_workers=1) as executor:
                 pending = executor.submit(approve_builtin_voice_source, store, **waiting)
                 deadline = time.monotonic() + 8
-                with psycopg.connect(url, autocommit=True) as observer:
+                with portable_pg_connect(url, autocommit=True) as observer:
                     while not observer.execute(
                         "SELECT 1 FROM pg_stat_activity WHERE %s=ANY(pg_blocking_pids(pid))",
                         (blocker.info.backend_pid,),
@@ -179,14 +180,14 @@ def test_source_writer_authority_replay_and_narrow_grants(
             "source_approval_id": "source-relation-wait",
             "expires_at": datetime.now(UTC) + timedelta(seconds=3),
         }
-        with psycopg.connect(url) as blocker:
+        with portable_pg_connect(url) as blocker:
             blocker.execute(
                 f'LOCK TABLE "{schema}".speech_builtin_voice_source_approvals IN SHARE MODE'
             )
             with ThreadPoolExecutor(max_workers=1) as executor:
                 pending = executor.submit(approve_builtin_voice_source, store, **relation_wait)
                 deadline = time.monotonic() + 8
-                with psycopg.connect(url, autocommit=True) as observer:
+                with portable_pg_connect(url, autocommit=True) as observer:
                     while not observer.execute(
                         "SELECT 1 FROM pg_stat_activity WHERE %s=ANY(pg_blocking_pids(pid))",
                         (blocker.info.backend_pid,),
@@ -208,7 +209,7 @@ def test_source_writer_authority_replay_and_narrow_grants(
                 blocker.commit()
                 with pytest.raises(BuiltinSourceApprovalError, match="approval_expired"):
                     pending.result(timeout=10)
-        with psycopg.connect(url, autocommit=True) as admin:
+        with portable_pg_connect(url, autocommit=True) as admin:
             row = admin.execute(
                 f'SELECT 1 FROM "{schema}".speech_builtin_voice_source_approvals '
                 "WHERE source_approval_id='source-relation-wait'"
@@ -240,18 +241,18 @@ def test_source_writer_authority_replay_and_narrow_grants(
             (business, "speech_builtin_voice_source_approvals"),
         ):
             with (
-                psycopg.connect(make_conninfo(url, user=role, password=password)) as restricted,
+                portable_pg_connect(make_conninfo(url, user=role, password=password)) as restricted,
                 pytest.raises(psycopg.errors.InsufficientPrivilege),
             ):
                 restricted.execute(f'INSERT INTO "{schema}"."{table}" DEFAULT VALUES')
         for privilege in ("UPDATE (facts)", "INSERT (facts)"):
-            with psycopg.connect(url, autocommit=True) as admin:
+            with portable_pg_connect(url, autocommit=True) as admin:
                 admin.execute(
                     f'GRANT {privilege} ON "{schema}".speech_builtin_voice_approvals TO "{writer}"'
                 )
             with pytest.raises(BuiltinSourceApprovalError, match="writer_identity_forbidden"):
                 approve_builtin_voice_source(store, **args)
-            with psycopg.connect(url, autocommit=True) as admin:
+            with portable_pg_connect(url, autocommit=True) as admin:
                 admin.execute(
                     f'REVOKE {privilege} ON "{schema}".speech_builtin_voice_approvals '
                     f'FROM "{writer}"'
@@ -265,13 +266,13 @@ def test_source_writer_authority_replay_and_narrow_grants(
             ("TRIGGER", "speech_builtin_voice_qualifications"),
             ("REFERENCES (source_approval_id)", "speech_builtin_voice_source_approvals"),
         ):
-            with psycopg.connect(url, autocommit=True) as admin:
+            with portable_pg_connect(url, autocommit=True) as admin:
                 admin.execute(f'GRANT {privilege} ON "{schema}"."{table}" TO "{writer}"')
             with pytest.raises(BuiltinSourceApprovalError, match="writer_identity_forbidden"):
                 approve_builtin_voice_source(store, **args)
-            with psycopg.connect(url, autocommit=True) as admin:
+            with portable_pg_connect(url, autocommit=True) as admin:
                 admin.execute(f'REVOKE {privilege} ON "{schema}"."{table}" FROM "{writer}"')
-        with psycopg.connect(url, autocommit=True) as admin:
+        with portable_pg_connect(url, autocommit=True) as admin:
             admin.execute(
                 f'GRANT UPDATE (facts) ON "{schema}".speech_builtin_voice_approvals '
                 f'TO "{qualification_role}"'
@@ -281,7 +282,7 @@ def test_source_writer_authority_replay_and_narrow_grants(
             )
         with pytest.raises(BuiltinSourceApprovalError, match="writer_identity_forbidden"):
             approve_builtin_voice_source(store, **args)
-        with psycopg.connect(url, autocommit=True) as admin:
+        with portable_pg_connect(url, autocommit=True) as admin:
             admin.execute(f'REVOKE "{qualification_role}" FROM "{writer}"')
             admin.execute(
                 f'REVOKE UPDATE (facts) ON "{schema}".speech_builtin_voice_approvals '
@@ -293,29 +294,29 @@ def test_source_writer_authority_replay_and_narrow_grants(
             )
         with pytest.raises(BuiltinSourceApprovalError, match="writer_identity_forbidden"):
             approve_builtin_voice_source(store, **args)
-        with psycopg.connect(url, autocommit=True) as admin:
+        with portable_pg_connect(url, autocommit=True) as admin:
             admin.execute(f'REVOKE "{qualification_role}" FROM "{writer}"')
             admin.execute(f'REVOKE CREATE ON SCHEMA "{schema}" FROM "{qualification_role}"')
         for predefined in ("pg_write_server_files", "pg_execute_server_program"):
-            with psycopg.connect(url, autocommit=True) as admin:
+            with portable_pg_connect(url, autocommit=True) as admin:
                 admin.execute(f'GRANT "{predefined}" TO "{writer}" WITH INHERIT FALSE, SET TRUE')
             with pytest.raises(BuiltinSourceApprovalError, match="writer_identity_forbidden"):
                 approve_builtin_voice_source(store, **args)
-            with psycopg.connect(url, autocommit=True) as admin:
+            with portable_pg_connect(url, autocommit=True) as admin:
                 admin.execute(f'REVOKE "{predefined}" FROM "{writer}"')
-        with psycopg.connect(url, autocommit=True) as admin:
+        with portable_pg_connect(url, autocommit=True) as admin:
             admin.execute(f'GRANT pg_read_all_data TO "{writer}" WITH INHERIT TRUE, SET FALSE')
         with pytest.raises(BuiltinSourceApprovalError, match="writer_identity_forbidden"):
             approve_builtin_voice_source(store, **args)
-        with psycopg.connect(url, autocommit=True) as admin:
+        with portable_pg_connect(url, autocommit=True) as admin:
             admin.execute(f'REVOKE pg_read_all_data FROM "{writer}"')
-        with psycopg.connect(url, autocommit=True) as admin:
+        with portable_pg_connect(url, autocommit=True) as admin:
             admin.execute(
                 f'GRANT INSERT ON "{schema}".speech_builtin_voice_approvals TO "{writer}"'
             )
         with pytest.raises(BuiltinSourceApprovalError, match="writer_identity_forbidden"):
             approve_builtin_voice_source(store, **args)
-        with psycopg.connect(url, autocommit=True) as admin:
+        with portable_pg_connect(url, autocommit=True) as admin:
             admin.execute(
                 f'REVOKE INSERT ON "{schema}".speech_builtin_voice_approvals FROM "{writer}"'
             )

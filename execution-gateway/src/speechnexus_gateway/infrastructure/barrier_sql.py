@@ -29,7 +29,7 @@ def barrier_inventory(
     cursor.execute(
         "SELECT s.submit_intent_id, s.execution_state FROM submit_intents s "
         "JOIN admission_leases l ON l.lease_id = s.lease_id "
-        "WHERE l.gateway_id = %s AND l.pool_id = %s "
+        "WHERE l.gateway_id = ? AND l.pool_id = ? "
         "AND s.execution_state IN ('submitting', 'executing', 'stopping', 'unknown_quarantined') "
         "ORDER BY s.submit_intent_id",
         (gateway_id, pool_id),
@@ -53,7 +53,7 @@ def read_barrier(
     """
     cursor.execute(
         "SELECT min_fencing_token, sealed_evidence_digest, version FROM gateway_fencing_barriers "
-        "WHERE gateway_id = %s AND pool_id = %s",
+        "WHERE gateway_id = ? AND pool_id = ?",
         (gateway_id, pool_id),
     )
     rows = cursor.fetchall()
@@ -82,7 +82,7 @@ def seal_barrier_in_transaction(
     request = fence.request
     cursor.execute(
         "SELECT owner_id, fencing_token, owner_expires_at_us FROM resource_pools "
-        "WHERE pool_id = %s FOR UPDATE",
+        "WHERE pool_id = ? FOR UPDATE",
         (request.pool_id,),
     )
     pools = cursor.fetchall()
@@ -90,7 +90,7 @@ def seal_barrier_in_transaction(
         raise InvalidExecutionRequestError("barrier references an unknown pool")
     cursor.execute(
         "SELECT min_fencing_token, sealed_evidence_digest, version FROM gateway_fencing_barriers "
-        "WHERE gateway_id = %s AND pool_id = %s FOR UPDATE",
+        "WHERE gateway_id = ? AND pool_id = ? FOR UPDATE",
         (fence.gateway_id, request.pool_id),
     )
     barriers = cursor.fetchall()
@@ -103,8 +103,8 @@ def seal_barrier_in_transaction(
         now_us=now_us,
     )
     cursor.execute(
-        "SELECT DISTINCT host_node_id FROM engine_instances WHERE gateway_id = %s "
-        "AND pool_id = %s AND instance_state <> 'stopped'",
+        "SELECT DISTINCT host_node_id FROM engine_instances WHERE gateway_id = ? "
+        "AND pool_id = ? AND instance_state <> 'stopped'",
         (fence.gateway_id, request.pool_id),
     )
     if any(row["host_node_id"] != fence.host_node_id for row in cursor.fetchall()):
@@ -122,9 +122,9 @@ def seal_barrier_in_transaction(
             if version >= 2**63 - 1:
                 raise SubmissionStoreError("barrier version is exhausted")
             cursor.execute(
-                "UPDATE gateway_fencing_barriers SET min_fencing_token = %s, "
-                "sealed_evidence_digest = %s, version = version + 1 "
-                "WHERE gateway_id = %s AND pool_id = %s AND version = %s",
+                "UPDATE gateway_fencing_barriers SET min_fencing_token = ?, "
+                "sealed_evidence_digest = ?, version = version + 1 "
+                "WHERE gateway_id = ? AND pool_id = ? AND version = ?",
                 (
                     request.min_accepted_fencing_token,
                     digest,
@@ -140,7 +140,7 @@ def seal_barrier_in_transaction(
         cursor.execute(
             "INSERT INTO gateway_fencing_barriers "
             "(gateway_id, pool_id, min_fencing_token, sealed_evidence_digest) "
-            "VALUES (%s, %s, %s, %s)",
+            "VALUES (?, ?, ?, ?)",
             (fence.gateway_id, request.pool_id, request.min_accepted_fencing_token, digest),
         )
         version = 1

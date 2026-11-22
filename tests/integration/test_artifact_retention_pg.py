@@ -41,6 +41,7 @@ from psycopg.rows import dict_row
 from pydantic import AnyHttpUrl, SecretStr
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.artifact_retention_runtime import ArtifactRetentionRuntime
 from speechnexus_backend.settings import Settings
@@ -180,7 +181,7 @@ def sandbox() -> Iterator[Sandbox]:
     bucket = "sn-artifact-retention-" + suffix
     password, reader_password = "synthetic_retention", "synthetic_retention_reader"
     _migrate(url, schema)
-    admin = psycopg.connect(url, row_factory=dict_row, autocommit=True)
+    admin = portable_pg_connect(url, row_factory=dict_row, autocommit=True)
     admin.execute(f'SET search_path TO "{schema}", pg_catalog')
     admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{password}'")
     admin.execute(f"CREATE ROLE \"{reader_role}\" LOGIN PASSWORD '{reader_password}'")
@@ -396,7 +397,7 @@ def test_a_row_deleted_before_the_ledger_migration_is_not_given_a_fake_time() ->
     url, _, _, _ = _required_environment()
     suffix = uuid.uuid4().hex[:12]
     schema = "sn_artifact_ledger_" + suffix
-    admin = psycopg.connect(url, row_factory=dict_row, autocommit=True)
+    admin = portable_pg_connect(url, row_factory=dict_row, autocommit=True)
     try:
         admin.execute(f'CREATE SCHEMA "{schema}"')
         _migrate(url, schema, "0053_voice_draft_publication")

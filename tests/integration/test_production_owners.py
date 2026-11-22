@@ -11,7 +11,6 @@ from typing import Any, cast
 import psycopg
 import pytest
 from psycopg.conninfo import make_conninfo
-from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 from tests.integration.test_coordination_foundation import Foundation
 from tests.integration.test_coordination_foundation import foundation as foundation
@@ -20,6 +19,7 @@ from tests.integration.test_production_leases import LeaseDatabase
 from tests.integration.test_production_leases import lease_database as lease_database
 from tests.support.job_database import MySQLJobTransactions
 from tests.support.owner_database import MySQLOwnerTransactions
+from tests.support.portable_pg import connect_kwargs as portable_connect_kwargs
 
 from speechnexus_backend.speech.application.owners import OwnerService, OwnerTransactions
 from speechnexus_backend.speech.domain.owners import (
@@ -361,7 +361,7 @@ def test_unknown_commit_only_allows_current_authority_query(
             db.url, user=owner_database.foundation.speech_role, password="synthetic_foundation_test"
         ),
         connection_class=FaultConnection,
-        kwargs={"row_factory": dict_row},
+        kwargs=portable_connect_kwargs(),
         configure=configure,
         min_size=1,
         max_size=1,

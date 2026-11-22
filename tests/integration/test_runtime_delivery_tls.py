@@ -9,7 +9,6 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-import psycopg
 import pytest
 from psycopg.conninfo import make_conninfo
 from pydantic import SecretStr
@@ -31,6 +30,7 @@ from tests.integration.test_runtime_controller_client import (
     tls_runtime as tls_runtime,
 )
 from tests.integration.test_runtime_delivery import CLAIM, prepared_delivery
+from tests.support.portable_pg import connect as portable_pg_connect
 from tests.support.runtime_controller_tls import TLSFiles, controller_server
 
 from speechnexus_backend.runtime_delivery_worker import (
@@ -303,7 +303,7 @@ async def test_startup_role_does_not_hide_the_delivery_login_identity(
                 ),
                 application_name="synthetic_delivery_login_canary",
             )
-            with psycopg.connect(url) as probe:
+            with portable_pg_connect(url) as probe:
                 # PG resets session_authorization during authenticated startup;
                 # this remains a rejection control, not a claimed bypass.
                 observed_effective = (

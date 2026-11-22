@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from typing import cast
 
 import pymysql
-from pymysql.cursors import DictCursor
 
 from speechnexus_backend.speech.domain.admission import (
     AdmissionIdentity,
@@ -23,6 +22,7 @@ from speechnexus_backend.speech.infrastructure.admission_recovery_sql import (
     read_original,
 )
 from speechnexus_backend.speech.infrastructure.admission_sql import admit_in_transaction
+from speechnexus_portable_sql.pymysql_driver import PortableConnection as PortableMysqlConnection
 from tests.support.job_database import MySQLJobTransactions
 
 
@@ -40,7 +40,7 @@ class MySQLAdmissionTransactions:
         recover_prepared: PreparedAdmission | None = None,
         conflict_if_absent: bool = False,
     ) -> AdmissionResult:
-        connection: pymysql.Connection[DictCursor] | None = None
+        connection: PortableMysqlConnection | None = None
         ready_to_commit = False
         try:
             connection = self.driver.connect()

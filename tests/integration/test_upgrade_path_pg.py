@@ -66,6 +66,7 @@ from tests.integration.test_cancel_failure_slot_pg import (
     _debt_probe,
     _sandbox,
 )
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.speech.application.readiness import (
     ProbeResult,
@@ -227,7 +228,7 @@ def _denied_statement(box: CancelSandbox) -> str:
     the page quotes; that the probe itself degrades is asserted separately, above.
     """
     dsn = _probe_url(os.environ["SPEECHNEXUS_TEST_DATABASE_URL"], box.role)
-    with psycopg.connect(dsn) as connection:
+    with portable_pg_connect(dsn) as connection:
         connection.execute(f'SET search_path TO "{box.schema}", pg_catalog')
         with pytest.raises(psycopg.errors.InsufficientPrivilege) as denied:
             connection.execute(

@@ -26,6 +26,7 @@ from psycopg.rows import dict_row
 from pydantic import SecretStr
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
+from tests.support.portable_pg import connect as portable_pg_connect
 from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app
@@ -90,7 +91,7 @@ def sandbox() -> Iterator[Sandbox]:
         poolclass=NullPool,
         hide_parameters=True,
     )
-    owner = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+    owner = portable_pg_connect(url, autocommit=True, row_factory=dict_row)
     config = Config(str(ROOT / "alembic.ini"))
     config.attributes["schema"] = schema
     try:

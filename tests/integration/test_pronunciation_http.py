@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-import psycopg
 import pytest
 import uvicorn
 from alembic import command
@@ -29,6 +28,7 @@ from pydantic import SecretStr
 from speechnexus_contracts.pronunciation_read_http import validate_response
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
+from tests.support.portable_pg import connect as portable_pg_connect
 from tests.support.pronunciation_examples import pronunciation_request
 from tests.unit.backend.test_health import _settings
 
@@ -102,7 +102,7 @@ def read_db() -> Iterator[ReadDatabase]:
             command.upgrade(config, "head")
     finally:
         engine.dispose()
-    admin = psycopg.connect(url, row_factory=dict_row, autocommit=True)
+    admin = portable_pg_connect(url, row_factory=dict_row, autocommit=True)
     admin.execute(f'SET search_path TO "{schema}",pg_catalog')
     admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD 'synthetic_pron_reader'")
     try:
@@ -276,7 +276,7 @@ def test_sql_read_deadline_retains_history_and_recovers_same_revision(
     # 503 is forced by the lock, not by machine speed.
     with (
         TestClient(db.app(pronunciation_read_timeout_seconds=0.05)) as client,
-        psycopg.connect(db.url) as blocker,
+        portable_pg_connect(db.url) as blocker,
     ):
         blocker.execute(
             f'LOCK TABLE "{db.schema}".speech_pronunciation_revisions IN ACCESS EXCLUSIVE MODE'
@@ -331,7 +331,7 @@ async def test_cancel_real_blocked_select_retains_capacity_and_original_facts(
         app.router.lifespan_context(app),
         AsyncClient(transport=ASGITransport(app), base_url="http://test") as client,
     ):
-        blocker = psycopg.connect(db.url)
+        blocker = portable_pg_connect(db.url)
         blocker.execute(
             f'LOCK TABLE "{db.schema}".speech_pronunciation_revisions IN ACCESS EXCLUSIVE MODE'
         )

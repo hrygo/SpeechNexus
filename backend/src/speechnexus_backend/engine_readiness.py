@@ -52,6 +52,9 @@ from speechnexus_backend.speech.domain.runtime_observations import (
 from speechnexus_backend.speech.infrastructure.runtime_observation_codec import (
     readiness_from_document,
 )
+from speechnexus_portable_sql.clock import ClockReader
+from speechnexus_portable_sql.clock import now_us as now_us_for
+from speechnexus_portable_sql.psycopg_driver import connect as portable_connect
 
 READINESS_MISSING = "missing"
 """The ready instance has no prepare intent or no stored receipt at all."""
@@ -170,7 +173,7 @@ _QUERY = (
 
 
 def _queried_rows(database_url: str, schema: str, *, connect_timeout_seconds: int) -> list[Row]:
-    connection = psycopg.connect(
+    connection = portable_connect(
         database_url,
         row_factory=dict_row,
         connect_timeout=connect_timeout_seconds,
@@ -180,11 +183,9 @@ def _queried_rows(database_url: str, schema: str, *, connect_timeout_seconds: in
         # makes that a database-enforced property rather than a promise.
         connection.read_only = True
         with connection.cursor() as cursor:
-            cursor.execute("SELECT set_config('search_path', %s, true)", (schema + ",pg_catalog",))
-            cursor.execute(
-                "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) AS now_us"
-            )
-            now_us = int((cursor.fetchall())[0]["now_us"])
+            cursor.execute("SELECT set_config('search_path', ?, true)", (schema + ",pg_catalog",))
+            # 「现在」只从便携时钟读一次;语句由 profile 登记。
+            now_us = now_us_for(cast(ClockReader, cursor))
             cursor.execute(_QUERY)
             rows = [dict(row) for row in cursor.fetchall()]
         return [{**row, "database_now_us": now_us} for row in rows]

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -98,7 +97,7 @@ def install(monkeypatch: pytest.MonkeyPatch, failure: str) -> Resources:
 
     monkeypatch.setenv(lifecycle.VARIABLE, "postgresql://synthetic.invalid/never-connect")
     monkeypatch.setattr(lifecycle, "create_engine", lambda *a, **kw: Engine())
-    monkeypatch.setattr(lifecycle, "psycopg", SimpleNamespace(connect=connect))
+    monkeypatch.setattr(lifecycle, "portable_pg_connect", connect)
     monkeypatch.setattr(migration, "upgrade", upgrade)
     monkeypatch.setattr(lifecycle, "speech_pool", pool)
     return state

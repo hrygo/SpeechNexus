@@ -6,6 +6,7 @@ import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 import pytest
@@ -172,6 +173,10 @@ class _Cursor:
     def fetchall(self) -> list[dict[str, Any]]:
         return []
 
+    def fetchone(self) -> dict[str, Any] | None:
+        # 只有时钟读取用 fetchone;替身按登记的列名回答一个固定时间点。
+        return {"now": datetime(1970, 1, 1, tzinfo=UTC) + timedelta(seconds=1)}
+
 
 @dataclass
 class _Connection:
@@ -238,7 +243,9 @@ def test_claim_uses_the_instance_lane_not_the_module_default() -> None:
     assert queue._claim("worker-synthetic", 30_000, 4) == []
     claim_parameters = pool.connection_log.parameters[-1]
 
-    assert claim_parameters[0] == list(VOICE_GENERATION_JOB_KINDS)
+    # 第一个参数是这次领取共用的「现在」,第二个才是车道过滤。
+    assert claim_parameters[0] == 1_000_000
+    assert claim_parameters[1] == list(VOICE_GENERATION_JOB_KINDS)
 
 
 @dataclass

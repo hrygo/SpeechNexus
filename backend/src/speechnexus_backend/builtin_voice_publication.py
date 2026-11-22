@@ -25,6 +25,7 @@ from speechnexus_backend.speech.infrastructure.publications_sql import (
 from speechnexus_backend.speech.interfaces.binding_release_evidence import (
     verify_binding_release_evidence,
 )
+from speechnexus_portable_sql.clock import ClockReader, now_us
 
 
 class BuiltinVoicePublicationRejectedError(Exception):
@@ -62,11 +63,11 @@ def publish_builtin_voice(
     def operation(cursor: Any) -> dict[str, Any]:
         cursor.execute(
             "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:builtin-voice-intent:' || current_schema() || ':' || %s, 0))",
+            "'speechnexus:builtin-voice-intent:' || current_schema() || ':' || ?, 0))",
             (key_digest,),
         )
         cursor.execute(
-            "SELECT intent FROM speech_builtin_voice_publish_intents WHERE key_digest=%s",
+            "SELECT intent FROM speech_builtin_voice_publish_intents WHERE key_digest=?",
             (key_digest,),
         )
         existing = cursor.fetchall()
@@ -81,7 +82,7 @@ def publish_builtin_voice(
             }
         cursor.execute(
             "SELECT current_database() AS db, current_schema() AS schema, "
-            "installation_id::text AS installation_id FROM speech_publication_installation "
+            "CAST(installation_id AS text) AS installation_id FROM speech_publication_installation "
             "WHERE singleton IS TRUE"
         )
         targets = cursor.fetchall()
@@ -91,16 +92,17 @@ def publish_builtin_voice(
             targets[0]["installation_id"],
         ) != (database, schema, installation_id):
             raise BuiltinVoicePublicationRejectedError("target_changed")
+        observed_at = _portable_now_at(cursor)
         cursor.execute(
             "SELECT a.*, s.source_revision, s.source_digest, s.native_speaker_id AS source_speaker "
             "FROM speech_builtin_voice_approvals a JOIN speech_builtin_voice_source_approvals s "
-            "ON s.source_approval_id=a.source_approval_id WHERE a.approval_id=%s "
-            "AND a.expires_at > clock_timestamp() AND s.expires_at > clock_timestamp() "
+            "ON s.source_approval_id=a.source_approval_id WHERE a.approval_id=? "
+            "AND a.expires_at > ? AND s.expires_at > ? "
             "AND NOT EXISTS (SELECT 1 FROM speech_builtin_voice_revocations r "
             "WHERE r.approval_id=a.approval_id) "
             "AND NOT EXISTS (SELECT 1 FROM speech_builtin_voice_source_revocations r "
             "WHERE r.source_approval_id=s.source_approval_id)",
-            (approval_id,),
+            (approval_id, observed_at, observed_at),
         )
         rows = cursor.fetchall()
         if len(rows) != 1:
@@ -127,10 +129,7 @@ def publish_builtin_voice(
             or (d["voice_id"], d["revision"]) != (a["voice_id"], a["revision"])
         ):
             raise BuiltinVoicePublicationRejectedError("evidence_mismatch")
-        cursor.execute(
-            "SELECT floor(extract(epoch FROM clock_timestamp()) * 1000000)::bigint AS now_us"
-        )
-        now_us = int(cursor.fetchall()[0]["now_us"])
+        now_us = _portable_now_us(cursor)
         if f["checked_at_us"] > now_us:
             raise BuiltinVoicePublicationRejectedError("qualification_from_future")
         source = _recorded_source(cursor, approval_id, a, f, now_us)
@@ -143,17 +142,17 @@ def publish_builtin_voice(
             raise BuiltinVoicePublicationRejectedError("expiry_mismatch")
         cursor.execute(
             "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:' || current_schema() || ':binding:' || %s, 0))",
+            "'speechnexus:catalog:' || current_schema() || ':binding:' || ?, 0))",
             (f["binding_id"],),
         )
         cursor.execute(
             "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:' || current_schema() || ':voice:' || %s, 0))",
+            "'speechnexus:catalog:' || current_schema() || ':voice:' || ?, 0))",
             (a["voice_id"],),
         )
         cursor.execute(
             "SELECT 1 FROM speech_publication_heads WHERE kind='binding' "
-            "AND object_id=%s AND revision=%s AND revision_id=%s",
+            "AND object_id=? AND revision=? AND revision_id=?",
             (f["binding_id"], f["binding_revision"], f["binding_revision_id"]),
         )
         if len(cursor.fetchall()) != 1:
@@ -225,21 +224,22 @@ def publish_builtin_voice(
         ):
             raise BuiltinVoicePublicationRejectedError("binding_evidence_mismatch")
         # Recheck revocations after acquiring the same voice lock as revocation writers.
+        observed_at = _portable_now_at(cursor)
         cursor.execute(
             "SELECT 1 FROM speech_builtin_voice_approvals a "
             "JOIN speech_builtin_voice_source_approvals s "
-            "ON s.source_approval_id=a.source_approval_id WHERE a.approval_id=%s "
-            "AND a.expires_at > clock_timestamp() AND s.expires_at > clock_timestamp() "
+            "ON s.source_approval_id=a.source_approval_id WHERE a.approval_id=? "
+            "AND a.expires_at > ? AND s.expires_at > ? "
             "AND NOT EXISTS (SELECT 1 FROM speech_builtin_voice_revocations r "
             "WHERE r.approval_id=a.approval_id) "
             "AND NOT EXISTS (SELECT 1 FROM speech_builtin_voice_source_revocations r "
             "WHERE r.source_approval_id=s.source_approval_id)",
-            (approval_id,),
+            (approval_id, observed_at, observed_at),
         )
         if len(cursor.fetchall()) != 1:
             raise BuiltinVoicePublicationRejectedError("not_qualified")
         cursor.execute(
-            "SELECT revision FROM speech_publication_heads WHERE kind='voice' AND object_id=%s",
+            "SELECT revision FROM speech_publication_heads WHERE kind='voice' AND object_id=?",
             (a["voice_id"],),
         )
         heads = cursor.fetchall()
@@ -261,7 +261,7 @@ def publish_builtin_voice(
         cursor.execute(
             "INSERT INTO speech_builtin_voice_qualifications "
             "(voice_id, revision, revision_id, binding_revision_id, approval_id, document, "
-            "native_speaker_id) VALUES (%s,%s,%s,%s,%s,%s::jsonb,%s)",
+            "native_speaker_id) VALUES (?,?,?,?,?,CAST(? AS jsonb),?)",
             (
                 a["voice_id"],
                 a["revision"],
@@ -282,7 +282,7 @@ def publish_builtin_voice(
         cursor.execute(
             "INSERT INTO speech_builtin_voice_qualification_provenance "
             "(voice_id,revision,source_kind,evidence_kind,attestation_id,"
-            "probe_authorization_id) VALUES (%s,%s,%s,%s,%s,%s)",
+            "probe_authorization_id) VALUES (?,?,?,?,?,?)",
             (
                 a["voice_id"],
                 a["revision"],
@@ -294,7 +294,7 @@ def publish_builtin_voice(
         )
         cursor.execute(
             "INSERT INTO speech_builtin_voice_publish_intents "
-            "(key_digest,intent,voice_id,revision) VALUES (%s,%s::jsonb,%s,%s)",
+            "(key_digest,intent,voice_id,revision) VALUES (?,CAST(? AS jsonb),?,?)",
             (key_digest, json.dumps(saved), a["voice_id"], a["revision"]),
         )
         return {"status": "created", "voice_id": a["voice_id"], "revision": a["revision"]}
@@ -332,7 +332,7 @@ def _recorded_source(
         "source_approval_id,instance_id,instance_generation,fencing_token,image_digest,"
         "template_digest,declared_lifecycle_digest,model_artifact_digest,observed_at_us,"
         "expires_at_us,declaration_digest "
-        "FROM speech_builtin_voice_operator_attestations WHERE approval_id=%s",
+        "FROM speech_builtin_voice_operator_attestations WHERE approval_id=?",
         (approval_id,),
     )
     rows = cursor.fetchall()
@@ -373,3 +373,18 @@ def _recorded_source(
     return RecordedSource(
         "operator_attested", "operator_attestation", cast(str, attestation["attestation_id"]), None
     )
+
+
+def _portable_now_us(cursor: Any) -> int:
+    """「现在」只从便携时钟读一次;失败按本模块的错误语义上报."""
+
+    try:
+        return now_us(cast(ClockReader, cursor))
+    except (LookupError, TypeError) as error:
+        raise BuiltinVoicePublicationRejectedError("clock_unavailable") from error
+
+
+def _portable_now_at(cursor: Any) -> datetime:
+    """把一个时间点交给语句做到期判定;与 `_portable_now_us` 同一读取点."""
+
+    return datetime.fromtimestamp(_portable_now_us(cursor) / 1_000_000, tz=UTC)

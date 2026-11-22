@@ -41,6 +41,7 @@ from psycopg.types.json import Jsonb
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 from tests.contract.test_architecture_repairs import _deletion_validator
+from tests.support.portable_pg import connect as portable_pg_connect
 from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app
@@ -147,13 +148,13 @@ class FakeArtifactPurge:
 
 
 def _admin(url: str) -> psycopg.Connection[dict[str, Any]]:
-    connection = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+    connection = portable_pg_connect(url, autocommit=True, row_factory=dict_row)
     connection.execute("SET TIME ZONE 'UTC'")
     return connection
 
 
 def _read(sandbox: Sandbox, statement: str, args: tuple[object, ...] = ()) -> list[dict[str, Any]]:
-    with psycopg.connect(sandbox.url, row_factory=dict_row) as connection:
+    with portable_pg_connect(sandbox.url, row_factory=dict_row) as connection:
         connection.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
         connection.execute("SET TIME ZONE 'UTC'")
         return connection.execute(statement, args).fetchall()
@@ -361,7 +362,7 @@ def _app(
 
 def _seed_unreferenced_revision(sandbox: Sandbox, revision: str = "2") -> None:
     """One draft revision that is not the head and nothing references yet."""
-    with psycopg.connect(sandbox.url, autocommit=True, row_factory=dict_row) as admin:
+    with portable_pg_connect(sandbox.url, autocommit=True, row_factory=dict_row) as admin:
         admin.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
         admin.execute("SET TIME ZONE 'UTC'")
         admin.execute(
@@ -386,7 +387,7 @@ def _seed_job_intent_referencing(sandbox: Sandbox, revision: str = "2") -> None:
         '{"model":"tts-synthetic","input":{"voice_draft_id":"' + DRAFT + '",'
         '"draft_revision":"' + revision + '"}}'
     )
-    with psycopg.connect(sandbox.url, autocommit=True, row_factory=dict_row) as admin:
+    with portable_pg_connect(sandbox.url, autocommit=True, row_factory=dict_row) as admin:
         admin.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
         admin.execute(
             """INSERT INTO speech_job_intents (job_id, request_digest, request_document,
@@ -397,7 +398,7 @@ def _seed_job_intent_referencing(sandbox: Sandbox, revision: str = "2") -> None:
 
 def _seed_evidence_reporting_the_artifact(sandbox: Sandbox) -> None:
     """Real execution evidence whose report Artifact is the deletion target."""
-    with psycopg.connect(sandbox.url, autocommit=True, row_factory=dict_row) as admin:
+    with portable_pg_connect(sandbox.url, autocommit=True, row_factory=dict_row) as admin:
         admin.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
         admin.execute(
             """INSERT INTO speech_voice_capability_evidence (
@@ -881,7 +882,7 @@ async def test_a_live_purge_claim_answers_503_until_the_crash_lease_expires(
             (accepted.record.id,),
         ) == [{"n": 1}]
 
-        with psycopg.connect(sandbox.url, autocommit=True, row_factory=dict_row) as admin:
+        with portable_pg_connect(sandbox.url, autocommit=True, row_factory=dict_row) as admin:
             admin.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
             admin.execute(
                 "UPDATE speech_deletion_ledger "
@@ -1177,7 +1178,7 @@ async def test_execution_and_the_asset_writer_do_not_deadlock(sandbox: Sandbox) 
 
     def writer() -> None:
         try:
-            with psycopg.connect(sandbox.url, row_factory=dict_row) as connection:
+            with portable_pg_connect(sandbox.url, row_factory=dict_row) as connection:
                 connection.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
                 connection.execute(
                     "SELECT 1 FROM speech_workspaces WHERE workspace_id = %s FOR UPDATE",
@@ -1247,7 +1248,7 @@ async def test_the_provisioned_writer_role_can_execute_both_targets(sandbox: San
     role, admin = _provision_writer(sandbox, include_execution=True)
     pool = None
     try:
-        with psycopg.connect(
+        with portable_pg_connect(
             make_conninfo(sandbox.url, user=role, password=ROLE_PASSWORD), row_factory=dict_row
         ) as connection:
             connection.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
@@ -1305,7 +1306,7 @@ async def test_missing_execution_grants_fail_the_route_not_the_process(sandbox: 
     role, admin = _provision_writer(sandbox, include_execution=False)
     pool = None
     try:
-        with psycopg.connect(
+        with portable_pg_connect(
             make_conninfo(sandbox.url, user=role, password=ROLE_PASSWORD), row_factory=dict_row
         ) as connection:
             connection.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
@@ -1491,7 +1492,7 @@ async def test_voice_revision_deletion_serializes_with_a_concurrent_intent(
     """
     _seed_unreferenced_revision(sandbox)
     app, pool, _objects, _artifacts = _app(sandbox)
-    admission = psycopg.connect(sandbox.url, row_factory=dict_row)
+    admission = portable_pg_connect(sandbox.url, row_factory=dict_row)
     responses: list[httpx.Response] = []
     try:
         plan = await _preview(app, "voice_revision", DRAFT, 2, "key-race-plan")
@@ -1560,7 +1561,7 @@ async def test_a_voice_revision_content_change_is_refused(sandbox: Sandbox) -> N
     app, pool, _objects, _artifacts = _app(sandbox)
     try:
         plan = await _preview(app, "voice_revision", DRAFT, 2, "key-content-plan")
-        with psycopg.connect(sandbox.url, autocommit=True, row_factory=dict_row) as admin:
+        with portable_pg_connect(sandbox.url, autocommit=True, row_factory=dict_row) as admin:
             admin.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
             admin.execute(
                 "UPDATE speech_voice_draft_revisions SET input_json = %s "
@@ -1609,7 +1610,7 @@ async def test_the_draft_head_revision_is_blocked_and_replays_idempotently(
         # Resolving the dependency queued a new preview; the old key stays blocked
         # and the new plan deletes the now-unreferenced revision.
         _seed_unreferenced_revision(sandbox)
-        with psycopg.connect(sandbox.url, autocommit=True, row_factory=dict_row) as admin:
+        with portable_pg_connect(sandbox.url, autocommit=True, row_factory=dict_row) as admin:
             admin.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
             admin.execute(
                 "UPDATE speech_voice_drafts SET head_revision = '2' WHERE draft_id = %s",
@@ -1639,7 +1640,7 @@ async def test_a_voice_revision_moved_between_preview_and_execution_is_refused(
     try:
         plan = await _preview(app, "voice_revision", DRAFT, 2, "key-moved-plan")
         assert plan["eligible"] is True
-        with psycopg.connect(sandbox.url, autocommit=True, row_factory=dict_row) as admin:
+        with portable_pg_connect(sandbox.url, autocommit=True, row_factory=dict_row) as admin:
             admin.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
             admin.execute(
                 "UPDATE speech_voice_drafts SET head_revision = '2' WHERE draft_id = %s",

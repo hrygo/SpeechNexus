@@ -21,6 +21,7 @@ from pathlib import Path
 
 import psycopg
 import pytest
+from tests.support.portable_pg import connect as portable_pg_connect
 from tests.support.portable_sql_pg import QmarkConnection
 
 from speechnexus_portable_sql import (
@@ -61,7 +62,7 @@ def database_url() -> str:
 @pytest.fixture
 def namespace(database_url: str) -> Iterator[tuple[str, str, str]]:
     name = "sn_budget_" + uuid.uuid4().hex[:12]
-    admin = psycopg.connect(database_url, autocommit=True)
+    admin = portable_pg_connect(database_url, autocommit=True)
     try:
         admin.execute(f'CREATE SCHEMA "{name}"')
         admin.execute(f'SET search_path TO "{name}", pg_catalog')
@@ -87,7 +88,7 @@ def fingerprint(admin: psycopg.Connection) -> str:
 
 
 def _connect(url: str, namespace: str) -> QmarkConnection:
-    connection = psycopg.connect(url)
+    connection = portable_pg_connect(url)
     connection.execute(f'SET search_path TO "{namespace}", pg_catalog')
     connection.commit()
     return QmarkConnection(connection)

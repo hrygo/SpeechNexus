@@ -36,6 +36,7 @@ from speechnexus_backend.speech.infrastructure.quarantine_release_sql import (
     quarantine_release_in_transaction,
     read_ledger,
 )
+from speechnexus_portable_sql.clock import ClockReader, now_us
 
 #: A missing relation, column or schema object means the migration chain did not
 #: reach 0052 in this database; the fix is `speechnexus-job-migrate`, not new
@@ -83,7 +84,7 @@ class _DeadlineCursor:
         if remaining <= 0:
             raise _BudgetExpiredError
         self._cursor.execute(
-            "SELECT set_config('statement_timeout', %s, true)",
+            "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(remaining * 1000))),),
         )
         return self._cursor.execute(query, parameters)
@@ -91,11 +92,14 @@ class _DeadlineCursor:
     def fetchall(self) -> list[dict[str, Any]]:
         return self._cursor.fetchall()
 
+    def fetchone(self) -> dict[str, Any] | None:
+        rows = self.fetchall()
+        return rows[0] if rows else None
+
     def clock(self) -> int:
-        self.execute(
-            "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) AS now_us"
-        )
-        return cast(int, self.fetchall()[0]["now_us"])
+        # 「现在」只从便携时钟读一次;语句里不再有品牌函数。
+        now: int = now_us(cast(ClockReader, self))
+        return now
 
 
 _SNAPSHOT = (
@@ -117,7 +121,7 @@ _SNAPSHOT = (
     "LEFT JOIN speech_jobs AS j ON j.job_id = l.operation_id "
     "LEFT JOIN speech_job_cancellation_fences AS f ON f.job_id = l.operation_id "
     "LEFT JOIN speech_job_cancellation_reconciliations AS r ON r.job_id = l.operation_id "
-    "WHERE l.lease_id = %s"
+    "WHERE l.lease_id = ?"
 )
 
 

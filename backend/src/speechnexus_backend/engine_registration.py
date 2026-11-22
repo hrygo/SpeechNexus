@@ -57,6 +57,10 @@ from speechnexus_backend.speech.infrastructure.transcription_recipe import (
     TranscriptionRecipe,
     load_transcription_recipe,
 )
+from speechnexus_portable_sql.clock import ClockReader
+from speechnexus_portable_sql.clock import now_us as now_us_for
+from speechnexus_portable_sql.psycopg_driver import PortableConnection
+from speechnexus_portable_sql.psycopg_driver import connect as portable_connect
 
 EXIT_INVALID = 2
 EXIT_CONFLICT = 4
@@ -311,7 +315,7 @@ class _Cursor:
                 EXIT_UNAVAILABLE,
             )
         self._cursor.execute(
-            "SELECT set_config('statement_timeout', %s, true)",
+            "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(remaining * 1000))),),
         )
         return self._cursor.execute(query, parameters)
@@ -319,11 +323,13 @@ class _Cursor:
     def fetchall(self) -> list[Row]:
         return cast(list[Row], list(self._cursor.fetchall()))
 
+    def fetchone(self) -> Row | None:
+        rows = self.fetchall()
+        return rows[0] if rows else None
+
     def clock(self) -> int:
-        self.execute(
-            "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) AS now_us"
-        )
-        return int(self.fetchall()[0]["now_us"])
+        # 「现在」只从便携时钟读一次;语句里不再有品牌函数。
+        return now_us_for(cast(ClockReader, self))
 
 
 def _rows(cursor: _Cursor, query: str, parameters: tuple[object, ...] = ()) -> list[Row]:
@@ -370,7 +376,7 @@ def _ensure_host(cursor: _Cursor, spec: RegistrationSpec) -> Row:
         "INSERT INTO host_nodes (host_node_id, memory_architecture, node_state, "
         "topology_digest, "
         + names
-        + ") VALUES (%s, %s, 'active', %s, "
+        + ") VALUES (?, ?, 'active', ?, "
         + placeholders
         + ") ON CONFLICT (host_node_id) DO NOTHING",
         (
@@ -382,7 +388,7 @@ def _ensure_host(cursor: _Cursor, spec: RegistrationSpec) -> Row:
     )
     row = _one(
         cursor,
-        "SELECT * FROM host_nodes WHERE host_node_id = %s FOR UPDATE",
+        "SELECT * FROM host_nodes WHERE host_node_id = ? FOR UPDATE",
         (binding.target_node_id,),
     )
     if row["memory_architecture"] != plan.memory_architecture:
@@ -400,7 +406,7 @@ def _ensure_host(cursor: _Cursor, spec: RegistrationSpec) -> Row:
     if row["node_state"] != "active":
         cursor.execute(
             "UPDATE host_nodes SET node_state = 'active', version = version + 1 "
-            "WHERE host_node_id = %s AND version = %s",
+            "WHERE host_node_id = ? AND version = ?",
             (binding.target_node_id, row["version"]),
         )
         if cursor.rowcount != 1:
@@ -421,13 +427,13 @@ def _ensure_pool(
     cursor.execute(
         "INSERT INTO resource_pools "
         "(pool_id, service_class, pool_state, owner_id, fencing_token, "
-        "owner_expires_at_us, owner_state) VALUES (%s, %s, 'active', NULL, 0, 0, "
+        "owner_expires_at_us, owner_state) VALUES (?, ?, 'active', NULL, 0, 0, "
         "'reconciling_takeover') ON CONFLICT (pool_id) DO NOTHING",
         (binding.pool_id, spec.plan.service_class),
     )
     row = _one(
         cursor,
-        "SELECT * FROM resource_pools WHERE pool_id = %s FOR UPDATE",
+        "SELECT * FROM resource_pools WHERE pool_id = ? FOR UPDATE",
         (binding.pool_id,),
     )
     if row["service_class"] != spec.plan.service_class:
@@ -470,9 +476,9 @@ def _ensure_pool(
     )
     if not unchanged:
         cursor.execute(
-            "UPDATE resource_pools SET owner_id = %s, fencing_token = %s, "
-            "owner_expires_at_us = %s, owner_state = 'active', pool_state = 'active', "
-            "version = version + 1 WHERE pool_id = %s AND version = %s",
+            "UPDATE resource_pools SET owner_id = ?, fencing_token = ?, "
+            "owner_expires_at_us = ?, owner_state = 'active', pool_state = 'active', "
+            "version = version + 1 WHERE pool_id = ? AND version = ?",
             (owner_id, token, expires, binding.pool_id, row["version"]),
         )
         if cursor.rowcount != 1:
@@ -489,12 +495,12 @@ def _ensure_quota(cursor: _Cursor, spec: RegistrationSpec) -> Row:
     cursor.execute(
         "INSERT INTO workspace_quotas "
         "(workspace_id, max_attempts, held_attempts, quarantined_attempts, "
-        "policy_revision) VALUES (%s, %s, 0, 0, %s) ON CONFLICT (workspace_id) DO NOTHING",
+        "policy_revision) VALUES (?, ?, 0, 0, ?) ON CONFLICT (workspace_id) DO NOTHING",
         (spec.workspace_id, spec.max_attempts, spec.policy_revision_id),
     )
     row = _one(
         cursor,
-        "SELECT * FROM workspace_quotas WHERE workspace_id = %s FOR UPDATE",
+        "SELECT * FROM workspace_quotas WHERE workspace_id = ? FOR UPDATE",
         (spec.workspace_id,),
     )
     if row["policy_revision"] != spec.policy_revision_id:
@@ -513,7 +519,7 @@ def _ensure_quota(cursor: _Cursor, spec: RegistrationSpec) -> Row:
 def _require_capacity(cursor: _Cursor, spec: RegistrationSpec) -> None:
     row = _one(
         cursor,
-        "SELECT * FROM host_nodes WHERE host_node_id = %s FOR UPDATE",
+        "SELECT * FROM host_nodes WHERE host_node_id = ? FOR UPDATE",
         (spec.plan.binding.target_node_id,),
     )
     capacity = _vector_from(row, "allocatable_")
@@ -606,15 +612,16 @@ def _existing_result(
 ) -> RegistrationResult | None:
     heads = _rows(
         cursor,
-        "SELECT * FROM runtime_instance_heads WHERE instance_id = %s FOR UPDATE",
+        "SELECT * FROM runtime_instance_heads WHERE instance_id = ? FOR UPDATE",
         (spec.instance_id,),
     )
     if not heads:
-        if _rows(
+        existing = _rows(
             cursor,
-            "SELECT instance_id FROM engine_instances WHERE instance_id = %s LIMIT 1",
+            "SELECT EXISTS (SELECT 1 FROM engine_instances WHERE instance_id = ?) AS present",
             (spec.instance_id,),
-        ):
+        )
+        if existing and existing[0]["present"]:
             raise RegistrationError(
                 "reconciliation_required",
                 "engine rows exist without a runtime head",
@@ -631,8 +638,8 @@ def _existing_result(
     if spec.generation == current:
         instance = _one(
             cursor,
-            "SELECT * FROM engine_instances WHERE instance_id = %s "
-            "AND instance_generation = %s FOR UPDATE",
+            "SELECT * FROM engine_instances WHERE instance_id = ? "
+            "AND instance_generation = ? FOR UPDATE",
             (spec.instance_id, spec.generation),
         )
         if instance["instance_state"] != "ready":
@@ -658,8 +665,8 @@ def _existing_result(
             )
         intent = _one(
             cursor,
-            "SELECT * FROM runtime_instance_intents WHERE target_node_id = %s "
-            "AND intent_id = %s FOR UPDATE",
+            "SELECT * FROM runtime_instance_intents WHERE target_node_id = ? "
+            "AND intent_id = ? FOR UPDATE",
             (instance["host_node_id"], prepare_id),
         )
         if head["current_stop_intent_id"] is not None:
@@ -704,9 +711,9 @@ def _existing_result(
                 now_us + readiness_ttl_us,
             )
             cursor.execute(
-                "UPDATE runtime_instance_intents SET readiness_document = %s, "
-                "updated_at_us = %s, version = version + 1 WHERE target_node_id = %s "
-                "AND intent_id = %s AND version = %s",
+                "UPDATE runtime_instance_intents SET readiness_document = ?, "
+                "updated_at_us = ?, version = version + 1 WHERE target_node_id = ? "
+                "AND intent_id = ? AND version = ?",
                 (
                     readiness_to_document(refreshed),
                     now_us,
@@ -721,8 +728,8 @@ def _existing_result(
                     "prepare intent changed while refreshing readiness",
                 )
             cursor.execute(
-                "UPDATE engine_instances SET ready_at_us = %s, version = version + 1 "
-                "WHERE instance_id = %s AND instance_generation = %s AND version = %s",
+                "UPDATE engine_instances SET ready_at_us = ?, version = version + 1 "
+                "WHERE instance_id = ? AND instance_generation = ? AND version = ?",
                 (now_us, spec.instance_id, spec.generation, instance["version"]),
             )
             if cursor.rowcount != 1:
@@ -755,7 +762,7 @@ def _existing_result(
         )
     previous = _one(
         cursor,
-        "SELECT * FROM engine_instances WHERE instance_id = %s AND instance_generation = %s "
+        "SELECT * FROM engine_instances WHERE instance_id = ? AND instance_generation = ? "
         "FOR UPDATE",
         (spec.instance_id, current),
     )
@@ -771,12 +778,12 @@ def _existing_result(
 def _snapshot(cursor: _Cursor, spec: RegistrationSpec) -> Row:
     instance = _one(
         cursor,
-        "SELECT * FROM engine_instances WHERE instance_id = %s AND instance_generation = %s",
+        "SELECT * FROM engine_instances WHERE instance_id = ? AND instance_generation = ?",
         (spec.instance_id, spec.generation),
     )
     head = _one(
         cursor,
-        "SELECT * FROM runtime_instance_heads WHERE instance_id = %s",
+        "SELECT * FROM runtime_instance_heads WHERE instance_id = ?",
         (spec.instance_id,),
     )
     intent = _one(
@@ -785,19 +792,19 @@ def _snapshot(cursor: _Cursor, spec: RegistrationSpec) -> Row:
         "intent_state, request_digest, version, "
         "observation_document IS NOT NULL AS has_observation, "
         "readiness_document IS NOT NULL AS has_readiness "
-        "FROM runtime_instance_intents WHERE target_node_id = %s AND intent_id = %s",
+        "FROM runtime_instance_intents WHERE target_node_id = ? AND intent_id = ?",
         (instance["host_node_id"], head["current_prepare_intent_id"]),
     )
     pool = _one(
         cursor,
         "SELECT pool_id, service_class, pool_state, owner_id, fencing_token, "
-        "owner_expires_at_us, owner_state, version FROM resource_pools WHERE pool_id = %s",
+        "owner_expires_at_us, owner_state, version FROM resource_pools WHERE pool_id = ?",
         (instance["pool_id"],),
     )
     quota = _one(
         cursor,
         "SELECT workspace_id, max_attempts, held_attempts, quarantined_attempts, "
-        "policy_revision, version FROM workspace_quotas WHERE workspace_id = %s",
+        "policy_revision, version FROM workspace_quotas WHERE workspace_id = ?",
         (spec.workspace_id,),
     )
     return {
@@ -810,7 +817,7 @@ def _snapshot(cursor: _Cursor, spec: RegistrationSpec) -> Row:
 
 
 def _register_in_transaction(
-    connection: psycopg.Connection[Row],
+    connection: PortableConnection,
     spec: RegistrationSpec,
     *,
     schema: str,
@@ -829,7 +836,7 @@ def _register_in_transaction(
     deadline = time.monotonic() + timeout_seconds
     with connection.cursor() as raw:
         cursor = _Cursor(raw, deadline)
-        cursor.execute("SELECT set_config('search_path', %s, true)", (schema + ",pg_catalog",))
+        cursor.execute("SELECT set_config('search_path', ?, true)", (schema + ",pg_catalog",))
         cursor.execute("SELECT set_config('TimeZone', 'UTC', true)")
         _require_schema(cursor)
         _ensure_host(cursor, spec)
@@ -870,7 +877,7 @@ def _register_in_transaction(
         prepared = prepare_request(request)
         heads = _rows(
             cursor,
-            "SELECT version FROM runtime_instance_heads WHERE instance_id = %s FOR UPDATE",
+            "SELECT version FROM runtime_instance_heads WHERE instance_id = ? FOR UPDATE",
             (spec.instance_id,),
         )
         expected_head = int(heads[0]["version"]) if heads else None
@@ -943,8 +950,8 @@ def _register_in_transaction(
         # Operator attestation has no node-controller delivery to perform.
         cursor.execute(
             "UPDATE runtime_intent_deliveries SET delivery_phase = 'blocked', "
-            "last_failure_code = 'operator_attested', updated_at_us = %s, "
-            "version = version + 1 WHERE event_id = %s AND delivery_phase = 'unsent'",
+            "last_failure_code = 'operator_attested', updated_at_us = ?, "
+            "version = version + 1 WHERE event_id = ? AND delivery_phase = 'unsent'",
             (cursor.clock(), prepared.event_id),
         )
         rows = _snapshot(cursor, spec)
@@ -954,7 +961,7 @@ def _register_in_transaction(
         # so using it would miss the shortfall this warning exists to report.
         host = _one(
             cursor,
-            "SELECT * FROM host_nodes WHERE host_node_id = %s FOR UPDATE",
+            "SELECT * FROM host_nodes WHERE host_node_id = ? FOR UPDATE",
             (spec.plan.binding.target_node_id,),
         )
         return RegistrationResult(
@@ -1039,9 +1046,9 @@ def register_engine(
     owner_ttl_us = owner_ttl_seconds * 1_000_000
     readiness_ttl_us = readiness_ttl_seconds * 1_000_000
     intent_deadline_us = intent_deadline_seconds * 1_000_000
-    connection: psycopg.Connection[Row] | None = None
+    connection: PortableConnection | None = None
     try:
-        connection = psycopg.connect(
+        connection = portable_connect(
             database_url,
             row_factory=dict_row,
             connect_timeout=connect_timeout_seconds,

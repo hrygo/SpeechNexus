@@ -28,6 +28,8 @@ from sqlalchemy.pool import NullPool
 from tests.support.cancellation_fence_schema import ensure_cancellation_fence_schema
 from tests.support.job_database import MySQLJobTransactions
 from tests.support.migrations import DELETION_LEDGER_REVISION
+from tests.support.portable_pg import connect as portable_pg_connect
+from tests.support.portable_pg import connect_kwargs as portable_connect_kwargs
 
 from speechnexus_backend.speech.application.jobs import CreateJobService, JobTransactions
 from speechnexus_backend.speech.domain.jobs import CreateJob
@@ -43,6 +45,7 @@ from speechnexus_backend.speech.infrastructure.jobs_postgres import (
 )
 from speechnexus_backend.speech.infrastructure.jobs_sql import JobCursor, create_in_transaction
 from speechnexus_backend.speech.interfaces.job_transactions import JobTransactionBoundary
+from speechnexus_portable_sql.pymysql_driver import connect as portable_mysql_connect
 
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
@@ -74,7 +77,7 @@ class JobDatabase:
 
     def blocker(self) -> Any:
         if self.dialect == "postgresql":
-            connection = psycopg.connect(self.url, row_factory=dict_row)
+            connection = portable_pg_connect(self.url, row_factory=dict_row)
             connection.execute(f'SET search_path TO "{self.schema}", pg_catalog')
             connection.commit()
             return connection
@@ -135,7 +138,7 @@ def database(request: pytest.FixtureRequest) -> Iterator[JobDatabase]:
                 command.upgrade(config, migration_revision)
         finally:
             engine.dispose()
-        admin: Any = psycopg.connect(url, row_factory=dict_row, autocommit=True)
+        admin: Any = portable_pg_connect(url, row_factory=dict_row, autocommit=True)
         admin.execute(f'SET search_path TO "{schema}", pg_catalog')
         admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD 'synthetic_job_test'")
 
@@ -160,7 +163,7 @@ def database(request: pytest.FixtureRequest) -> Iterator[JobDatabase]:
         port: JobTransactions = PostgresJobTransactions(pool)
     else:
         parsed = urlparse(url)
-        admin = pymysql.connect(
+        admin = portable_mysql_connect(
             host=parsed.hostname or "127.0.0.1",
             port=parsed.port or 3306,
             user=unquote(parsed.username or ""),
@@ -383,7 +386,7 @@ class FaultConnection(psycopg.Connection[dict[str, Any]]):
     def commit(self) -> None:
         fault, self.fault = self.fault, None
         if fault == "before":
-            with psycopg.connect(self.admin_url, autocommit=True) as killer:
+            with portable_pg_connect(self.admin_url, autocommit=True) as killer:
                 killer.execute("SELECT pg_terminate_backend(%s)", (self.info.backend_pid,))
         super().commit()
         if fault == "after":
@@ -402,7 +405,7 @@ def test_pg_commit_uncertainty_requires_read_only_recovery(
     with ConnectionPool[FaultConnection](
         make_conninfo(database.url, user=database.role, password="synthetic_job_test"),
         connection_class=FaultConnection,
-        kwargs={"row_factory": dict_row},
+        kwargs=portable_connect_kwargs(),
         configure=configure,
         min_size=1,
         max_size=1,

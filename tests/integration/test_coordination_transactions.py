@@ -32,6 +32,9 @@ from tests.support.coordination import (
     counter,
     digest,
 )
+from tests.support.portable_pg import connect as portable_pg_connect
+
+from speechnexus_portable_sql.pymysql_driver import connect as portable_mysql_connect
 
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
@@ -67,12 +70,12 @@ def database(request: pytest.FixtureRequest) -> Iterator[Database]:
     namespace = "sn_coord_" + uuid.uuid4().hex[:12]
     database = Database(dialect, url, namespace)
     if dialect == "postgresql":
-        admin: Any = psycopg.connect(url, autocommit=True)
+        admin: Any = portable_pg_connect(url, autocommit=True)
         with admin.cursor() as cursor:
             cursor.execute(f'CREATE SCHEMA "{namespace}"')
     else:
         parsed = urlparse(url)
-        admin = pymysql.connect(
+        admin = portable_mysql_connect(
             host=parsed.hostname or "127.0.0.1",
             port=parsed.port or 3306,
             user=unquote(parsed.username or ""),

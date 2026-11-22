@@ -23,6 +23,7 @@ from tests.integration.test_lease_release import command, stopped
 from tests.integration.test_production_jobs import JobDatabase
 from tests.integration.test_production_jobs import database as database
 from tests.integration.test_production_leases import LEASE_ID, LeaseDatabase
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.speech.domain.leases import LeaseRejectedError
 from speechnexus_backend.speech.infrastructure import lease_release_sql
@@ -44,7 +45,7 @@ pytestmark = pytest.mark.integration
 @pytest.fixture
 def lease(sandbox: Sandbox) -> Iterator[LeaseDatabase]:
     """Explicit PG-only fixture; it does not weaken the shared dual-DB gate."""
-    with psycopg.connect(sandbox.url, autocommit=True, row_factory=dict_row) as admin:
+    with portable_pg_connect(sandbox.url, autocommit=True, row_factory=dict_row) as admin:
         admin.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
         gateway_role = sandbox.schema + "_gateway"
         admin.execute(f'CREATE ROLE "{gateway_role}" NOLOGIN')

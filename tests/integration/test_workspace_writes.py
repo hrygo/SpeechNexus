@@ -17,7 +17,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
-import psycopg
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -28,6 +27,7 @@ from pydantic import SecretStr
 from speechnexus_contracts.admin_http import validate_response
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.app import create_app
 from speechnexus_backend.settings import Settings
@@ -157,7 +157,7 @@ def database() -> Iterator[Database]:
     suffix = uuid.uuid4().hex[:12]
     schema, role = "sn_workspace_" + suffix, "sn_workspace_role_" + suffix
     upgrade(url, schema, "head")
-    admin = psycopg.connect(url, row_factory=dict_row, autocommit=True)
+    admin = portable_pg_connect(url, row_factory=dict_row, autocommit=True)
     admin.execute(f'SET search_path TO "{schema}", pg_catalog')
     admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{PASSWORD}'")
     for grant in workspace_writer_grants(schema, role):

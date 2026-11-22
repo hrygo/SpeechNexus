@@ -51,7 +51,7 @@ def require_migrated_schema(
     rows = connection.execute(
         "SELECT r.relname AS name FROM pg_catalog.pg_class AS r "
         "JOIN pg_catalog.pg_namespace AS n ON n.oid = r.relnamespace "
-        "WHERE n.nspname = %s AND r.relname = ANY(%s)",
+        "WHERE n.nspname = ? AND r.relname = ANY(?)",
         (schema, list(wanted)),
     ).fetchall()
     present = {str(row["name"]) for row in rows}

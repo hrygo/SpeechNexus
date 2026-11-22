@@ -29,7 +29,7 @@ def require_complete_asr_roots(pool: SpeechPool, *, timeout_seconds: float = 3) 
         # `job-…` and qualification probes are not `asr_file`; neither is ours.
         "l.lease_state<>'released' AND o.operation_id LIKE 'operation-%' "
         "AND (CASE WHEN o.operation_id LIKE 'operation-%' "
-        "THEN o.request_document::jsonb->>'kind' END)='asr_file' "
+        "THEN CAST(o.request_document AS jsonb)->>'kind' END)='asr_file' "
         f"AND {_ROOT_ABSENT}"
         " OR "
         # A settled root still holding a lease means the marker ran without a
@@ -42,7 +42,7 @@ def require_complete_asr_roots(pool: SpeechPool, *, timeout_seconds: float = 3) 
         with pool.connection(timeout=timeout_seconds) as conn:
             conn.execute("SET TRANSACTION READ ONLY")
             conn.execute(
-                "SELECT set_config('statement_timeout',%s,true)",
+                "SELECT set_config('statement_timeout',?,true)",
                 (str(max(1, int(timeout_seconds * 1000))),),
             )
             row = conn.execute(query).fetchone()

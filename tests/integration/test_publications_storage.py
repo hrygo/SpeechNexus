@@ -18,6 +18,7 @@ from psycopg.rows import dict_row
 from pydantic import AnyHttpUrl, SecretStr
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
+from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.app import create_app
 from speechnexus_backend.model_catalog_runtime import ModelCatalogRuntime
@@ -91,7 +92,7 @@ def sandbox(request: pytest.FixtureRequest) -> Iterator[Sandbox]:
             )
     finally:
         engine.dispose()
-    admin = psycopg.connect(url, autocommit=True)
+    admin = portable_pg_connect(url, autocommit=True)
     admin.execute(f'SET search_path TO "{schema}", pg_catalog')
     admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{PASSWORD}'")
     for grant in (
@@ -185,7 +186,7 @@ def test_listing_is_ordered_and_scoped_by_kind(sandbox: Sandbox) -> None:
 
 def test_runtime_role_cannot_rewrite_or_remove_publications(sandbox: Sandbox) -> None:
     _append(sandbox, publication(1, "binding-rev-1"), expected_current_revision=None)
-    runtime = psycopg.connect(
+    runtime = portable_pg_connect(
         make_conninfo(sandbox.url, user=sandbox.role, password=PASSWORD), autocommit=True
     )
     try:
@@ -641,7 +642,7 @@ def test_reader_view_exposes_only_published_binding_revisions(sandbox: Sandbox) 
         assert [model["id"] for model in catalogue.list_models()] == ["tts-quality"]
         runtime.close()
 
-        connection = psycopg.connect(
+        connection = portable_pg_connect(
             make_conninfo(sandbox.url, user=reader, password=PASSWORD), autocommit=True
         )
         try:
@@ -857,7 +858,7 @@ def test_concurrent_publications_receive_distinct_catalog_revisions(sandbox: San
     errors: list[BaseException] = []
 
     def insert_and_read(label: str, object_id: str, revision: int) -> None:
-        connection = psycopg.connect(url)
+        connection = portable_pg_connect(url)
         try:
             connection.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
             connection.execute(

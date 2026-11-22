@@ -85,8 +85,8 @@ def _runtime(cursor: AdmissionCursor, instance: Row, head: Row, intent: Row) -> 
             cursor,
             "SELECT COALESCE(SUM(l.reserved_slots), 0) AS slots FROM admission_leases l "
             "JOIN admission_attempts a ON a.operation_id = l.operation_id "
-            "AND a.attempt_id = l.attempt_id WHERE l.instance_id = %s "
-            "AND l.instance_generation = %s AND l.lease_state <> 'released' "
+            "AND a.attempt_id = l.attempt_id WHERE l.instance_id = ? "
+            "AND l.instance_generation = ? AND l.lease_state <> 'released' "
             "AND a.service_class <> 'realtime'",
             (instance["instance_id"], instance["instance_generation"]),
         )["slots"]
@@ -118,7 +118,7 @@ def admit_in_transaction(
         key: one(
             cursor,
             "SELECT instance_id, instance_generation, host_node_id, pool_id, gateway_id "
-            "FROM engine_instances WHERE instance_id = %s AND instance_generation = %s",
+            "FROM engine_instances WHERE instance_id = ? AND instance_generation = ?",
             key,
         )
         for key in sorted({s.instance_key for s in request.stages})
@@ -132,16 +132,16 @@ def admit_in_transaction(
         ):
             raise AdmissionRejectedError("recipe_mismatch")
     pool_rows = {
-        key: one(cursor, "SELECT * FROM resource_pools WHERE pool_id = %s FOR UPDATE", (key,))
+        key: one(cursor, "SELECT * FROM resource_pools WHERE pool_id = ? FOR UPDATE", (key,))
         for key in sorted(a.pool_id for a in request.authorities)
     }
     quota_row = one(
         cursor,
-        "SELECT * FROM workspace_quotas WHERE workspace_id = %s FOR UPDATE",
+        "SELECT * FROM workspace_quotas WHERE workspace_id = ? FOR UPDATE",
         (request.workspace_id,),
     )
     host_rows = {
-        node: one(cursor, "SELECT * FROM host_nodes WHERE host_node_id = %s FOR UPDATE", (node,))
+        node: one(cursor, "SELECT * FROM host_nodes WHERE host_node_id = ? FOR UPDATE", (node,))
         for node in sorted({s.host_node_id for s in request.stages})
     }
     # A prior identical transaction may have committed while its parent locks
@@ -154,7 +154,7 @@ def admit_in_transaction(
     head_rows = {
         instance: one(
             cursor,
-            "SELECT * FROM runtime_instance_heads WHERE instance_id = %s FOR UPDATE",
+            "SELECT * FROM runtime_instance_heads WHERE instance_id = ? FOR UPDATE",
             (instance,),
         )
         for instance in sorted({s.instance_id for s in request.stages})
@@ -167,8 +167,8 @@ def admit_in_transaction(
     instance_rows = {
         key: one(
             cursor,
-            "SELECT * FROM engine_instances WHERE instance_id = %s "
-            "AND instance_generation = %s FOR UPDATE",
+            "SELECT * FROM engine_instances WHERE instance_id = ? "
+            "AND instance_generation = ? FOR UPDATE",
             key,
         )
         for key in sorted({s.instance_key for s in request.stages})
@@ -189,8 +189,8 @@ def admit_in_transaction(
     intent_rows = {
         key: one(
             cursor,
-            "SELECT * FROM runtime_instance_intents WHERE target_node_id = %s "
-            "AND intent_id = %s FOR UPDATE",
+            "SELECT * FROM runtime_instance_intents WHERE target_node_id = ? "
+            "AND intent_id = ? FOR UPDATE",
             key,
         )
         for key in sorted(intent_keys)
@@ -199,7 +199,7 @@ def admit_in_transaction(
     # No reverse FK to quota/attempt causes an implicit earlier-parent wait.
     operations = rows(
         cursor,
-        "SELECT * FROM admission_operations WHERE operation_id = %s FOR UPDATE",
+        "SELECT * FROM admission_operations WHERE operation_id = ? FOR UPDATE",
         (identity.operation_id,),
     )
     if operations:
@@ -219,11 +219,11 @@ def admit_in_transaction(
         raise AdmissionRejectedError("reconciliation_required")
     if rows(
         cursor,
-        "SELECT attempt_id FROM admission_attempts WHERE operation_id = %s LIMIT 1",
+        "SELECT attempt_id FROM admission_attempts WHERE operation_id = ? LIMIT 1",
         (identity.operation_id,),
     ) or rows(
         cursor,
-        "SELECT job_id FROM coordination_jobs WHERE operation_id = %s LIMIT 1",
+        "SELECT job_id FROM coordination_jobs WHERE operation_id = ? LIMIT 1",
         (identity.operation_id,),
     ):
         raise AdmissionRejectedError("reconciliation_required")
@@ -246,7 +246,7 @@ def admit_in_transaction(
         cursor,
         "INSERT INTO admission_operations (operation_id, workspace_id, request_digest, "
         "request_document, initial_attempt_id, current_attempt_id, recorded_at_us) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
         (
             identity.operation_id,
             request.workspace_id,
@@ -270,7 +270,7 @@ def admit_in_transaction(
         cursor,
         "INSERT INTO admission_attempts (operation_id, attempt_id, workspace_id, "
         "binding_revision_id, manifest_id, recipe_digest, policy_revision_id, service_class, "
-        "request_digest, required_stage_ids) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        "request_digest, required_stage_ids) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             *key,
             request.workspace_id,
@@ -286,7 +286,7 @@ def admit_in_transaction(
     changed(
         cursor,
         "INSERT INTO admission_requests (operation_id, attempt_id, request_digest, "
-        "request_document, recorded_at_us) VALUES (%s, %s, %s, %s, %s)",
+        "request_document, recorded_at_us) VALUES (?, ?, ?, ?, ?)",
         (*key, prepared.request_digest, prepared.document, recorded_at_us),
     )
     authorities = {a.pool_id: a for a in request.authorities}
@@ -299,7 +299,7 @@ def admit_in_transaction(
             "INSERT INTO admission_leases (lease_id, operation_id, attempt_id, stage_id, "
             "host_node_id, instance_id, instance_generation, pool_id, gateway_id, fencing_token, "
             f"reserved_slots, deadline_at_us, {columns}) VALUES "
-            f"(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, {placeholders})",
+            f"(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, {placeholders})",
             (
                 stage.lease_id,
                 *key,
@@ -317,8 +317,8 @@ def admit_in_transaction(
         )
     changed(
         cursor,
-        "UPDATE workspace_quotas SET held_attempts = %s, version = version + 1 "
-        "WHERE workspace_id = %s AND version = %s",
+        "UPDATE workspace_quotas SET held_attempts = ?, version = version + 1 "
+        "WHERE workspace_id = ? AND version = ?",
         (decision.quota_held_attempts, request.workspace_id, quota.version),
     )
     host_by_id = {host.node_id: host for host in hosts}
@@ -327,7 +327,7 @@ def admit_in_transaction(
         changed(
             cursor,
             f"UPDATE host_nodes SET {assignments}, version = version + 1 "
-            "WHERE host_node_id = %s AND version = %s",
+            "WHERE host_node_id = ? AND version = ?",
             (*held.values, node, host_by_id[node].version),
         )
     by_instance = {
@@ -336,8 +336,8 @@ def admit_in_transaction(
     for instance_key, held_slots in decision.instance_held_slots:
         changed(
             cursor,
-            "UPDATE engine_instances SET held_slots = %s, version = version + 1 "
-            "WHERE instance_id = %s AND instance_generation = %s AND version = %s",
+            "UPDATE engine_instances SET held_slots = ?, version = version + 1 "
+            "WHERE instance_id = ? AND instance_generation = ? AND version = ?",
             (held_slots, *instance_key, by_instance[instance_key].version),
         )
     job = create_in_transaction(cursor, request.job)  # Same transaction, never a committing port.

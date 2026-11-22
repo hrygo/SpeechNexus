@@ -17,6 +17,7 @@ from tests.integration.test_coordination_foundation import Foundation
 from tests.integration.test_coordination_foundation import foundation as foundation
 from tests.integration.test_production_jobs import database as database
 from tests.support.cancellation_fence_schema import ensure_cancellation_fence_schema
+from tests.support.portable_pg import connect as portable_pg_connect
 
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
@@ -40,7 +41,7 @@ def migration_sandbox() -> Iterator[tuple[Config, psycopg.Connection[tuple[objec
     )
     config = Config(str(ROOT / "alembic.ini"))
     config.attributes["schema"] = schema
-    admin = psycopg.connect(url, autocommit=True)
+    admin = portable_pg_connect(url, autocommit=True)
     try:
         with engine.connect() as connection:
             config.attributes["connection"] = connection
@@ -172,7 +173,7 @@ def test_upgrade_waits_for_lifecycle_writer_before_scanning(
     schema_row = admin.execute("SELECT current_schema()").fetchone()
     assert schema_row is not None and isinstance(schema_row[0], str)
     with ThreadPoolExecutor(max_workers=1) as executor:
-        with psycopg.connect(os.environ["SPEECHNEXUS_TEST_DATABASE_URL"]) as writer:
+        with portable_pg_connect(os.environ["SPEECHNEXUS_TEST_DATABASE_URL"]) as writer:
             writer.execute(f'SET search_path TO "{schema_row[0]}", pg_catalog')
             writer.execute("LOCK TABLE speech_publication_retirements IN ROW EXCLUSIVE MODE")
             pid_row = writer.execute("SELECT pg_backend_pid()").fetchone()
@@ -359,7 +360,7 @@ def test_disable_downgrade_waits_for_writer_and_preserves_new_root(
 
     try:
         with ThreadPoolExecutor(max_workers=1) as executor:
-            with psycopg.connect(os.environ["SPEECHNEXUS_TEST_DATABASE_URL"]) as writer:
+            with portable_pg_connect(os.environ["SPEECHNEXUS_TEST_DATABASE_URL"]) as writer:
                 writer.execute(f'SET search_path TO "{schema}", pg_catalog')
                 seed_disable(writer)
                 writer.execute("INSERT INTO speech_binding_disable_intents VALUES ('event-test')")
@@ -437,7 +438,7 @@ def test_gateway_abort_downgrade_waits_for_committed_receipt(foundation: Foundat
 
     try:
         with ThreadPoolExecutor(max_workers=1) as executor:
-            with psycopg.connect(db.url) as writer:
+            with portable_pg_connect(db.url) as writer:
                 writer.execute(f'SET search_path TO "{db.schema}", pg_catalog')
                 writer.execute(
                     "INSERT INTO gateway_abort_intents "

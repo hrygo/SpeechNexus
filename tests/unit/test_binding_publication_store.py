@@ -123,6 +123,10 @@ class Cursor:
         elif query.startswith("INSERT INTO speech_publications "):
             self.writes.append((query, parameters))
             self.published, self.rowcount = True, 1
+        elif query.startswith("UPDATE speech_publication_heads"):
+            # 头指针的「先更新、再插入」:首次发布时更新不命中。
+            self.writes.append((query, parameters))
+            self.rowcount = 0
         elif query.startswith(
             (
                 "INSERT INTO speech_publication_heads",
@@ -253,15 +257,17 @@ def test_publish_appends_one_publication_evidence_and_journal_row() -> None:
     assert receipt.published_at_us == NOW
     assert [query.split("(")[0] for query, _ in cursor.writes] == [
         "INSERT INTO speech_publications ",
+        "UPDATE speech_publication_heads SET revision = ?, revision_id = ?, updated_at_us = ? "
+        "WHERE kind = ? AND object_id = ?",
         "INSERT INTO speech_publication_heads ",
         "INSERT INTO speech_binding_publication_evidence ",
         "INSERT INTO speech_publication_lifecycle_events ",
     ]
     publication = cursor.writes[0][1]
     assert publication[:4] == ("binding", "asr-quality", "1", "binding-rev-1")
-    evidence = cursor.writes[2][1]
+    evidence = cursor.writes[3][1]
     assert evidence[0] == "binding" and evidence[6] == "publish_http"
-    event = cursor.writes[3][1]
+    event = cursor.writes[4][1]
     assert event[1] == "model_binding.publish" and event[5] == "published"
     # The catalogue version is read after the append advanced it, so the journal
     # records the revision its own fact produced.
@@ -282,7 +288,7 @@ def test_the_appended_evidence_keeps_the_observation_identity() -> None:
     cursor = Cursor()
     adapter()._publish(cast(Any, cursor), command())
     _, publication_parameters = cursor.writes[0]
-    _, evidence_parameters = cursor.writes[2]
+    _, evidence_parameters = cursor.writes[3]
     assert publication_parameters[4] == evidence_parameters[7] == NOW
     assert evidence_parameters[4:6] == ("cap-asr-quality-7", "qrep-asr-quality-1")
     assert evidence_parameters[8:] == (None, None)

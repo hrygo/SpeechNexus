@@ -715,14 +715,6 @@
     },
     {
       "rule": "sql-string-building",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/publications_sql.py",
-      "count": 6,
-      "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "sql-string-building",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/qualified_speech_facts_postgres.py",
       "count": 2,
       "card": "#1100",

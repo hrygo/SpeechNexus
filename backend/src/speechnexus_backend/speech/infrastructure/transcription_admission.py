@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, cast
 
 from speechnexus_backend.speech.application.admission import AdmissionService
 from speechnexus_backend.speech.application.transcription import (
@@ -37,6 +37,7 @@ from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.transcription_recipe import (
     TranscriptionRecipe,
 )
+from speechnexus_portable_sql.clock import ClockReader, now_us
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,15 +96,12 @@ class PostgresTranscriptionAdmissionFacts:
                     "WHERE h.instance_id = ?",
                     (recipe.instance_id,),
                 ).fetchone()
-                clock = connection.execute(
-                    "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) "
-                    "AS now_us"
-                ).fetchone()
+                clock = now_us(cast(ClockReader, connection))
         except Exception:
             raise TranscriptionUnavailableError(
                 "Transcription admission facts are unavailable"
             ) from None
-        if quota is None or pool is None or instance is None or clock is None:
+        if quota is None or pool is None or instance is None:
             raise TranscriptionUnavailableError("Transcription admission facts are not provisioned")
         if (
             int(instance["current_generation"]) != int(instance["instance_generation"])
@@ -122,7 +120,7 @@ class PostgresTranscriptionAdmissionFacts:
                 "Transcription admission facts disagree with the private recipe"
             )
         return LiveTranscriptionFacts(
-            now_us=int(clock["now_us"]),
+            now_us=int(clock),
             quota_version=int(quota["version"]),
             quota_policy_revision_id=str(quota["policy_revision"]),
             pool_version=int(pool["version"]),

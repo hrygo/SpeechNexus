@@ -360,7 +360,6 @@
     "vendor-sdk::execution-gateway/src/speechnexus_gateway/infrastructure/submit_postgres.py": 2,
     "vendor-time::backend/src/speechnexus_backend/engine_readiness.py": 1,
     "vendor-time::backend/src/speechnexus_backend/engine_registration.py": 1,
-    "vendor-time::backend/src/speechnexus_backend/operator_attested_qualification.py": 1,
     "vendor-time::backend/src/speechnexus_backend/speech/infrastructure/asset_schema.py": 1,
     "vendor-time::backend/src/speechnexus_backend/speech/infrastructure/readiness.py": 2,
     "vendor-time::backend/src/speechnexus_backend/speech/infrastructure/runtime_postgres.py": 1,

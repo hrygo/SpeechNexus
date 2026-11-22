@@ -216,10 +216,14 @@ def record_operator_attestation(
             "CAST(floor(extract(epoch FROM s.expires_at)*1000000) AS bigint) AS expires_us "
             "FROM speech_builtin_voice_source_approvals s "
             "WHERE s.source_approval_id=? AND s.voice_id=? AND s.native_speaker_id='Vivian' "
-            "AND s.expires_at>clock_timestamp() "
+            "AND s.expires_at > ? "
             "AND NOT EXISTS (SELECT 1 FROM speech_builtin_voice_source_revocations r "
             "WHERE r.source_approval_id=s.source_approval_id)",
-            (request.source_approval_id, request.voice_id),
+            (
+                request.source_approval_id,
+                request.voice_id,
+                datetime.fromtimestamp(now_us / 1_000_000, tz=UTC),
+            ),
         )
         sources = cursor.fetchall()
         if len(sources) != 1:

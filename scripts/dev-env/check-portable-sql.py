@@ -122,6 +122,15 @@ SQL_SHAPE = re.compile(
     re.IGNORECASE,
 )
 
+#: 语句起始关键字。`sql-string-building` 只看「文本里出现 SELECT」会把提示语也算进来
+#: (例如 `" no longer select a local inspection process; "`),所以判据要求字面量**以**一条
+#: 语句的关键字开头 —— 这也是 f-string 拼接 SQL 的真实形状。
+SQL_STATEMENT_START = re.compile(
+    r"\A\s*\(?\s*(?:SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM|WITH|CREATE|ALTER|DROP"
+    r"|REVOKE|GRANT|TRUNCATE|COMMENT\s+ON|MERGE\s+INTO|SET\s|SAVEPOINT|ROLLBACK|RELEASE)\b",
+    re.IGNORECASE,
+)
+
 DDL_FORBIDDEN_TYPES = (
     ("ddl-type", re.compile(r"\b(?:TEXT|CLOB|BLOB|BYTEA|LONGTEXT|MEDIUMTEXT)\b", re.IGNORECASE)),
     ("ddl-type", re.compile(r"\b(?:JSON|JSONB)\b", re.IGNORECASE)),
@@ -236,7 +245,7 @@ def scan_python(path: str, source: str) -> list[Finding]:
                 for part in node.values
                 if isinstance(part, ast.Constant) and isinstance(part.value, str)
             )
-            if SQL_SHAPE.search(literal):
+            if SQL_SHAPE.search(literal) and SQL_STATEMENT_START.search(literal):
                 findings.append(Finding("sql-string-building", path))
 
         if (
@@ -440,6 +449,14 @@ def selftest() -> list[str]:
     clean = "SELECT job_id FROM coordination_jobs WHERE job_id = ?"
     if scan_python("backend/src/clean.py", f'SQL = "{clean}"' + chr(10)):
         problems.append("clean statement was rejected")
+
+    # 提示语里出现 `select` 不是 SQL:f-string 必须以语句关键字开头才算拼接 SQL。
+    prose = 'MESSAGE = f" no longer select a local process; select audio instead"'
+    if any(
+        finding.rule == "sql-string-building"
+        for finding in scan_python("backend/src/prose.py", prose)
+    ):
+        problems.append("a prose f-string that merely mentions select was treated as SQL")
 
     cases: tuple[tuple[str, str, str], ...] = (
         ("vendor-sdk", "backend/src/bad.py", "import psycopg\n"),

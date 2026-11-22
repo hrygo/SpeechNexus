@@ -883,14 +883,6 @@
     },
     {
       "rule": "upsert",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/binding_publication_evidence_sql.py",
-      "count": 1,
-      "card": "#1100",
-      "reason": "需要保存点式冲突翻译;见计划 §8.19/§8.20",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "upsert",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/job_cancellation_reconciliation_postgres.py",
       "count": 1,
       "card": "#1100",
@@ -900,14 +892,6 @@
     {
       "rule": "upsert",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/job_dispatch_postgres.py",
-      "count": 1,
-      "card": "#1100",
-      "reason": "需要保存点式冲突翻译;见计划 §8.19/§8.20",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "upsert",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/publications_sql.py",
       "count": 1,
       "card": "#1100",
       "reason": "需要保存点式冲突翻译;见计划 §8.19/§8.20",

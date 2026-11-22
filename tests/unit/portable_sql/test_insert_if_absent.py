@@ -52,3 +52,28 @@ def test_other_errors_are_not_translated() -> None:
     cursor = _Cursor(fails=_OtherError("serialization failure"))
     with pytest.raises(_OtherError):
         insert_if_absent(cursor, "INSERT INTO t (a) VALUES (?)", (1,))
+
+
+class _AutocommitConnection:
+    autocommit = True
+
+
+class _AutocommitCursor(_Cursor):
+    def __init__(self, *, fails: Exception | None = None) -> None:
+        super().__init__(fails=fails)
+        self.connection = _AutocommitConnection()
+
+
+def test_autocommit_connection_skips_the_savepoint() -> None:
+    """自动提交连接没有外层事务,开保存点会被 PG 直接拒绝(25P01)."""
+
+    cursor = _AutocommitCursor()
+    assert insert_if_absent(cursor, "INSERT INTO t (a) VALUES (?)", (1,)) is True
+    assert cursor.statements == ["INSERT INTO t (a) VALUES (?)"]
+
+
+def test_autocommit_connection_still_reports_a_duplicate_as_no_insert() -> None:
+    cursor = _AutocommitCursor(fails=_UniqueViolationError())
+
+    assert insert_if_absent(cursor, "INSERT INTO t (a) VALUES (?)", (1,)) is False
+    assert cursor.statements == ["INSERT INTO t (a) VALUES (?)"]

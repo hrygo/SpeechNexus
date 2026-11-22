@@ -110,6 +110,9 @@ class Cursor:
             self.rows = [] if self.head is None else [{"revision": self.head, "revision_id": "r"}]
         elif "FROM speech_publication_heads WHERE kind = ?" in query:
             self.rows = [] if self.head is None else [{"revision": self.head}]
+        elif query.startswith(("SAVEPOINT ", "ROLLBACK TO SAVEPOINT", "RELEASE SAVEPOINT")):
+            # 发布与证据插入走保存点:替身同意这些控制语句,不做事务模拟。
+            self.rows = []
         elif query == "SELECT clock_timestamp() AS now":
             # 时钟语句来自登记的 profile;替身按同一列名回答。
             self.rows = [{"now": _epoch_us(NOW)}]

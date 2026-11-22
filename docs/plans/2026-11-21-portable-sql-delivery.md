@@ -960,3 +960,43 @@ f'GRANT SELECT, INSERT (authorization_id, …) ON "{schema}".speech_builtin_voic
 它**不是**「176 条方言问题被修好了」,而是「176 条从来不是业务 DML 的 DDL 文本回到了它该在的
 计数里」。业务 DML 基线剩下 309 条,`sql-string-building` 从 252 降到 69 —— 剩下的那些才是
 真正的语句拼接。
+
+### 8.38 剩下 12 处 `ON CONFLICT` 全是 `DO NOTHING`,可以统一走 `insert_if_absent`
+
+数完剩下的 upsert:`engine_registration` 2 处、10 个单点文件各 1 处,形态**全部**是
+`ON CONFLICT (…) DO NOTHING`(没有 `DO UPDATE` 的语义差别)。这正好是 §8.24 那个原语的用例:
+把插入包在保存点里,唯一冲突回滚到保存点,返回 `False`,事务保持可用。
+
+本轮先转两处:
+
+- `publications_sql.append_publication` —— 原来用 `cursor.rowcount != 1` 判断;
+- `binding_publication_evidence_sql.insert_evidence` —— 原来用 `cursor.rowcount == 1` 判断。
+
+两处都改成 `insert_if_absent(...)` 的布尔返回。`ON CONFLICT` 之前**免费**提供的一条性质现在必须
+显式保住:冲突之后事务仍然可用。用例把它钉住 —— 重复插入后 `ROLLBACK TO SAVEPOINT` 真的发生过,
+且异常不外泄;而检查约束失败(`23514`)必须原样抛出,证明「只有唯一冲突算已存在」。
+
+注入即红:把 `insert_evidence` 退回 `cursor.execute` + `rowcount`,`2 failed`。
+
+顺带修掉两处与 SQL 文本耦合的断言(`ON CONFLICT … DO NOTHING in insert_query` → 断言
+「语句里没有 `ON CONFLICT` + 前面有 `SAVEPOINT`」)。这类断言在 §8.29 已经踩过一次。
+
+基线 **309 → 307**。
+
+### 8.39 原语不能假设调用方有外层事务
+
+`insert_if_absent` 第一版无条件开保存点。CI 的 PG 集成分片立刻红:
+`psycopg.errors.NoActiveSqlTransaction: SAVEPOINT can only be used in transaction blocks` ——
+发布降级用例在自动提交连接上调用 `append_publication`。`ON CONFLICT` 在自动提交下能用,
+所以这是转换引入的**语义收窄**,不是测试写法问题。
+
+修法按连接的事务状态决定,而不是让每个调用方自己开事务:
+
+- 自动提交:语句本身就是独立事务,唯一冲突只中止这一条语句 → 直接执行,捕获唯一冲突返回 `False`;
+- 否则:包保存点(保持冲突后外层事务可用)。
+
+判据:`_in_autocommit` 取不到状态时**按有事务处理** —— 错开保存点的代价(事务被中止)远大于
+多开一个保存点。两条新用例覆盖自动提交下的成功与重复;注入即红(删掉该分支 → `2 failed, 3 passed`)。
+
+这条也顺带说明 #1100 的一个通用风险:把「PG 免费提供的语义」换成显式原语时,要连它**在哪些事务
+状态下成立**一起搬过来,否则会在自动提交的调用点上炸。

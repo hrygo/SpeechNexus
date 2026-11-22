@@ -12,6 +12,7 @@ from speechnexus_backend.speech.domain.configuration import revision_number
 from speechnexus_backend.speech.domain.publications import Publication, PublicationKind
 from speechnexus_backend.speech.infrastructure.catalog_revision_schema import RETIREMENT_TABLE
 from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema import HEAD_TABLE
+from speechnexus_portable_sql.transaction import insert_if_absent
 
 
 class PublicationCursor(Protocol):
@@ -94,11 +95,11 @@ def append_publication(
         current = str(rows[0]["revision"]) if rows else None
         if current != expected_current_revision:
             raise BindingHeadPreconditionError("configuration_changed")
-    cursor.execute(
+    if not insert_if_absent(
+        cursor,
         "INSERT INTO speech_publications "
         "(kind, object_id, revision, revision_id, published_at_us) "
-        "VALUES (?, ?, ?, ?, ?) "
-        "ON CONFLICT (kind, object_id, revision) DO NOTHING",
+        "VALUES (?, ?, ?, ?, ?)",
         (
             publication.kind,
             publication.object_id,
@@ -106,8 +107,7 @@ def append_publication(
             publication.revision_id,
             publication.published_at_us,
         ),
-    )
-    if cursor.rowcount != 1:
+    ):
         return False
     # Publication remains append-only.  The mutable head is a separate pointer
     # so a later explicit activation can select an older stored revision without

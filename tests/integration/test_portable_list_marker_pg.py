@@ -16,8 +16,8 @@ from psycopg.rows import dict_row
 from speechnexus_portable_sql.contract import ListMarker
 from speechnexus_portable_sql.psycopg_driver import connect
 
-pytestmark = pytest.mark.integration
 VARIABLE = "SPEECHNEXUS_TEST_DATABASE_URL"
+pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
 def _dsn() -> str:
@@ -55,3 +55,20 @@ def test_an_empty_batch_is_refused_before_the_statement_is_sent() -> None:
             f"SELECT name FROM ({_NAMES}) AS t WHERE name IN (?)",
             ("a", "b", "c", ListMarker([])),
         )
+
+
+async def test_a_list_marker_expands_on_the_async_path_too() -> None:
+    # workbench 走异步连接;同步路径的展开在这里必须同样发生,否则标记对象会直接交给驱动。
+
+    from speechnexus_portable_sql.psycopg_driver import connect_async
+
+    connection = await connect_async(_dsn(), row_factory=dict_row)
+    try:
+        async with connection.cursor() as cursor:
+            await cursor.execute(
+                f"SELECT name FROM ({_NAMES}) AS t WHERE name IN (?) ORDER BY name",
+                ("a", "b", "c", ListMarker(["b"])),
+            )
+            assert [row["name"] for row in await cursor.fetchall()] == ["b"]
+    finally:
+        await connection.close()

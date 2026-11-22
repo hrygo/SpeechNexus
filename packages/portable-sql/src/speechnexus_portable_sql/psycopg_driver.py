@@ -260,6 +260,10 @@ class AsyncPortableCursor:
         prepare: bool | None = None,
         binary: bool | None = None,
     ) -> AsyncPortableCursor:
+        # 与同步游标同一条规则:列表标记在发出前展开,`params is None` 原样保留。
+        # 少了这一步,标记对象会被直接交给驱动:`cannot adapt type 'ListMarker'`。
+        if isinstance(query, str) and params is not None:
+            query, params = expand_lists(query, params)
         await self._cursor.execute(
             _translated(query, params), params, prepare=prepare, binary=binary
         )

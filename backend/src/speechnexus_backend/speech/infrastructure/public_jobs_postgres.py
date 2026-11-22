@@ -6,7 +6,7 @@ import json
 import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
@@ -83,6 +83,7 @@ from speechnexus_backend.speech.infrastructure.public_job_admission import (
     load_admission_readiness,
     rejection_code,
 )
+from speechnexus_portable_sql.clock import ClockReader, now_us
 
 _LATEST_PROGRESS = (
     "(SELECT e.progress_{column} FROM speech_job_events AS e "
@@ -909,15 +910,16 @@ class PostgresPublicJobs:
                 accepted = job.state in ("pending", "running", "cancelling")
                 target = {"pending": "cancelled", "running": "cancelling"}.get(job.state)
                 changed = None
+                # 整条取消路径共用一个时间点:状态迁移、事件与回执的时戳必须一致.
+                now = _database_now_us(connection)
                 if target is not None:
                     changed = connection.execute(
-                        "WITH clock AS (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) "
-                        "* 1000000 AS BIGINT) AS now_us) "
+                        "WITH clock AS (SELECT CAST(? AS BIGINT) AS now_us) "
                         "UPDATE speech_jobs AS j SET state = ?, "
                         "status_version = j.status_version + 1, updated_at_us = clock.now_us "
                         "FROM clock WHERE j.job_id = ? AND j.status_version = ? AND j.state = ? "
                         "RETURNING clock.now_us AS now_us",
-                        (target, job.job_id, job.status_version, job.state),
+                        (now, target, job.job_id, job.status_version, job.state),
                     ).fetchone()
                     if changed is None:
                         raise PublicJobConflictError("Public Job cancellation lost its guard")
@@ -928,16 +930,7 @@ class PostgresPublicJobs:
                         "FROM speech_job_events WHERE job_id = ?",
                         (job.job_id, target, int(changed["now_us"]), job.job_id),
                     )
-                if changed is not None:
-                    requested_at_us = int(changed["now_us"])
-                else:
-                    now_row = connection.execute(
-                        "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) "
-                        "* 1000000 AS BIGINT) AS now_us"
-                    ).fetchone()
-                    if now_row is None:
-                        raise PublicJobUnavailableError
-                    requested_at_us = int(now_row["now_us"])
+                requested_at_us = int(changed["now_us"]) if changed is not None else now
                 connection.execute(
                     "INSERT INTO speech_job_cancellations "
                     "(job_id, workspace_id, operation_id, attempt_id, request_id, "
@@ -993,13 +986,12 @@ class PostgresPublicJobs:
         try:
             with self._transaction(deadline) as connection:
                 changed = connection.execute(
-                    "WITH clock AS (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) "
-                    "* 1000000 AS BIGINT) AS now_us) "
+                    "WITH clock AS (SELECT CAST(? AS BIGINT) AS now_us) "
                     "UPDATE speech_jobs AS j SET state = 'cancelled', "
                     "status_version = j.status_version + 1, updated_at_us = clock.now_us "
                     "FROM clock WHERE j.job_id = ? AND j.state = 'cancelling' "
                     "AND j.status_version = ? RETURNING clock.now_us AS now_us",
-                    (job_id, expected_version),
+                    (_database_now_us(connection), job_id, expected_version),
                 ).fetchone()
                 if changed is None:
                     return None
@@ -1133,12 +1125,12 @@ class _RetryAdmissionError(Exception):
 
 
 def _database_now_us(connection: _Executor) -> int:
-    row = connection.execute(
-        "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) AS now_us"
-    ).fetchone()
-    if row is None:
-        raise PublicJobUnavailableError
-    return int(row["now_us"])
+    """公开 Job 的「现在」:交给便携时钟读,失败仍按本模块的错误语义上报."""
+
+    try:
+        return now_us(cast(ClockReader, connection))
+    except (LookupError, TypeError) as error:
+        raise PublicJobUnavailableError from error
 
 
 _CANCELLATION_COLUMNS = (

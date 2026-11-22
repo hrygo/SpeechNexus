@@ -95,6 +95,8 @@ def negative_context(destination: Path) -> None:
         "packages/contracts/pyproject.toml",
         "packages/media/README.md",
         "packages/media/pyproject.toml",
+        "packages/portable-sql/README.md",
+        "packages/portable-sql/pyproject.toml",
         "node-controller/README.md",
         "node-controller/pyproject.toml",
         DOCKERFILE,

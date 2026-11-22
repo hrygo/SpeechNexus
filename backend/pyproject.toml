@@ -17,6 +17,7 @@ dependencies = [
   "python-multipart>=0.0.20,<0.1",
   "rfc8785>=0.1.4,<0.2",
   "speechnexus-contracts",
+  "speechnexus-portable-sql",
   "uvicorn[standard]>=0.54,<0.55",
 ]
 
@@ -54,3 +55,4 @@ packages = ["src/speechnexus_backend"]
 
 [tool.uv.sources]
 speechnexus-contracts = { workspace = true }
+speechnexus-portable-sql = { workspace = true }

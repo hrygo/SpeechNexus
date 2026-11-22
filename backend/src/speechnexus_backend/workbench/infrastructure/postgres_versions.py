@@ -340,6 +340,16 @@ class _Session:
     async def _execute(self, query: str, params: Sequence[object] = ()) -> None:
         await self._connection.execute(self._sql(query), params)
 
+    async def _execute_changed(self, query: str, params: Sequence[object] = ()) -> int:
+        """执行一条写入并返回受影响行数.
+
+        受限方言没有 `ON CONFLICT`、`RETURNING`,所以「存在就更新、不存在就插入」只能靠
+        `rowcount` 分两步走,而不是一条 upsert 语句。
+        """
+
+        cursor = await self._connection.execute(self._sql(query), params)
+        return cursor.rowcount
+
     async def _one[T](
         self, factory: type[T], query: str, params: Sequence[object] = ()
     ) -> T | None:

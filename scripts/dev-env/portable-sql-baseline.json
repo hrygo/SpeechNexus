@@ -112,7 +112,6 @@
     "sql-string-building::node-controller/src/speechnexus_node_controller/infrastructure/sqlite_intent_store.py": 1,
     "upsert::backend/src/speechnexus_backend/engine_registration.py": 1,
     "upsert::backend/src/speechnexus_backend/speech/infrastructure/job_cancellation_reconciliation_postgres.py": 1,
-    "upsert::backend/src/speechnexus_backend/workbench/infrastructure/postgres_teleprompter.py": 1,
     "upsert::node-controller/src/speechnexus_node_controller/infrastructure/sqlite_intent_store.py": 1,
     "vendor-error-branch::backend/src/speechnexus_backend/workbench/application/version_ports.py": 2,
     "vendor-error-branch::backend/src/speechnexus_backend/workbench/infrastructure/postgres_versions.py": 1,

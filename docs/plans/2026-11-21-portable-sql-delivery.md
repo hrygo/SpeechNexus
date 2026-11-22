@@ -1112,3 +1112,34 @@ PG oracle:`tests/integration/test_binding_lifecycle_pg.py` 已经在真实库上
 - 注入即红:把 `if changed: return` 短路成 `if False:` → `1 failed, 1 passed`。
 
 基线 **294 → 293**。
+
+### 8.45 复合抢占语句拆成 keyset 游标 + CAS:一次消掉四条规则
+
+`job_cancellation_reconciliation_postgres` 的 `_CLAIM` 一条语句里压着四条被禁构造:
+`WITH due AS`, `LIMIT`, `ON CONFLICT … DO UPDATE … RETURNING`,以及 `LEAST`。拆成三层:
+
+1. **候选**:`_CANDIDATES` 用 `(accepted_at_us, job_id)` 的 keyset 游标(`f.accepted_at_us > ?
+   OR (f.accepted_at_us = ? AND f.job_id > ?)`)+ `fetchmany(limit)`。`LIMIT` 消失,扫描量仍以
+   过滤后的前 `limit` 行为界,和原来的 `LIMIT` 等价。keyset 下界是 `_KEYSET_START = -1`
+   (时间戳列非负,`-1` 严格小于任何真实值)—— 第一次实现时我把 `accepted_before_us` 同时当
+   上下界,真实库上直接 `claimed=0`,是 PG 集成用例抓到的。
+2. **抢占**:`_take()` 先读 `attempts/settled_at_us/last_outcome/next_check_at_us`,再按读到的
+   `attempts` 做 CAS 更新(`WHERE … AND attempts = ?`),`rowcount == 1` 才算拿到。
+   行不存在就 `insert_if_absent`;插入失败(并发抢先)退回 CAS 路径。
+3. **上限**:`LEAST(attempts + 1, ?)` 变成 Python 的 `min(attempts + 1, _MAX_ATTEMPTS)`。
+   常量因此**直接**被引用而不是抄进 SQL 文本 —— `test_the_claim_clamps_in_python_through_the_same_binding`
+   钉住这一点,并在同一处断言三条语句里不许再出现 `LEAST`、`max_attempts` 或那个数字本身。
+
+两处与驱动有关的事实值得记下来:
+- `rowcount` 必须从 `execute()` 的**返回值**取。池里传进来的既可能是连接也可能是游标,
+  `connection.rowcount` 不存在 —— `AttributeError` 是在 PG 集成用例里暴露的。
+- 语句是多行 f-string,前面有换行,替身若要按前缀分派必须先 `lstrip()`。
+
+判据:9 条 `_take` 用例(插入、CAS 命中、CAS 落选、已结清/已耗尽/未到期跳过、饱和后仍可抢占、
+插入失败退回 CAS、次数递增);**注入即红**:去掉 `rowcount == 1` 判据 → `1 failed`;
+PG oracle:`test_job_dispatch_settlement_pg.py` 12 passed、`test_cancellation_exhausted_release_pg.py`
+(含「耗尽分支保持可重试」)全绿 —— 真实库上 `claimed == 1 and settled == 1` 成立。
+
+基线的诚实注脚:`_CANDIDATES` 起首关键字从 `WITH` 变成 `SELECT`,守卫因此把 2 条
+`sql-string-building` 报成 `new`(表名来自 schema 模块、标识符不可绑定)。这 2 条**显式登记进
+ledger**并注明理由,而不是让 `new` 悄悄落进基线。基线 **293 → 289**。

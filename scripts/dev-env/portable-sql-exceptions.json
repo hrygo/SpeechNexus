@@ -219,14 +219,6 @@
     },
     {
       "rule": "cte",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/job_cancellation_reconciliation_postgres.py",
-      "count": 1,
-      "card": "#1100",
-      "reason": "拆成多条语句或派生表,逐条判断",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "cte",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/job_dispatch_postgres.py",
       "count": 7,
       "card": "#1100",
@@ -323,14 +315,6 @@
     },
     {
       "rule": "pyformat",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/job_cancellation_reconciliation_postgres.py",
-      "count": 3,
-      "card": "#1100",
-      "reason": "标记统一为 ?,与该语句异步迁移同批",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "pyformat",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/readiness.py",
       "count": 1,
       "card": "#1100",
@@ -341,14 +325,6 @@
       "rule": "returning",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/deletion_executions_postgres.py",
       "count": 2,
-      "card": "#1100",
-      "reason": "写后按主键读回,与所属语句族同批迁移",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "returning",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/job_cancellation_reconciliation_postgres.py",
-      "count": 1,
       "card": "#1100",
       "reason": "写后按主键读回,与所属语句族同批迁移",
       "release": "#1100 完成时删除本条目"
@@ -660,10 +636,8 @@
     {
       "rule": "sql-string-building",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/job_cancellation_reconciliation_postgres.py",
-      "count": 2,
       "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
+      "reason": "表名来自 job_cancellation_fence_schema,标识符不可绑定;抢占语句的其余部分已是静态文本"
     },
     {
       "rule": "sql-string-building",
@@ -869,14 +843,6 @@
       "rule": "upsert",
       "path": "backend/src/speechnexus_backend/engine_registration.py",
       "count": 2,
-      "card": "#1100",
-      "reason": "需要保存点式冲突翻译;见计划 §8.19/§8.20",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "upsert",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/job_cancellation_reconciliation_postgres.py",
-      "count": 1,
       "card": "#1100",
       "reason": "需要保存点式冲突翻译;见计划 §8.19/§8.20",
       "release": "#1100 完成时删除本条目"

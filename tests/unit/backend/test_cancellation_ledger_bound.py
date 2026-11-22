@@ -261,40 +261,47 @@ def test_the_claim_does_not_rebind_the_imported_constant() -> None:
     )
 
 
-def test_the_claim_parameter_carries_that_binding() -> None:
-    """The SQL parameter must be the imported ceiling, not a second number."""
-    values = _parameters_dict_values("max_attempts")
-    found = "; ".join(f"line {line}: {ast.dump(value)}" for line, value in values)
-    assert len(values) == 1, (
-        "the claim must set max_attempts exactly once: a second dict entry would "
-        f"silently override the first; found {found or 'nothing'}"
-    )
-    value = values[0][1]
-    same_source = isinstance(value, ast.Name) and value.id == _CLAIM_ALIAS
-    same_source = same_source or _is_the_one_ceiling(value)
-    assert same_source, (
-        "the claim must pass the imported ceiling as max_attempts, through the alias "
-        f"or directly; a value here bypasses the binding above; found {ast.dump(value)}"
-    )
+def test_the_claim_clamps_in_python_through_the_same_binding() -> None:
+    """The clamp moved out of the SQL: the only number is the imported ceiling.
 
+    便携改造后抢占不再用 ``LEAST(attempts + 1, ?)``:次数在 Python 里按上限饱和,再作为参数
+    写回。判据因此钉在两处 —— 语句里不许再出现那个数字或 ``LEAST``,代码里必须是
+    ``min(<attempts> + 1, <别名>)``。
+    """
 
-def test_the_claim_sql_clamps_through_the_constant() -> None:
-    """A number written inside the claim SQL is the copy no import can protect."""
-    sql = ledger_store._CLAIM
-    assert "%(max_attempts)s" in sql, "the claim must take the ceiling as a bound parameter"
-    clamps = _call_arguments(sql, "LEAST")
-    assert len(clamps) == 1, "the claim clamps attempts exactly once"
-    increment, ceiling = (argument.strip() for argument in clamps[0])
-    assert increment.endswith("+ 1"), (
-        f"the clamp's first argument must increment the counter; found {increment!r}"
+    for statement in (
+        ledger_store._TAKE_CLAIM,
+        ledger_store._INSERT_CLAIM,
+        ledger_store._READ_CLAIM,
+    ):
+        assert "LEAST" not in statement.upper()
+        assert "max_attempts" not in statement
+        assert str(fence_schema.ATTEMPT_CEILING) not in statement, (
+            "the ceiling must not be written into the claim SQL again"
+        )
+    clamps = [
+        node
+        for node in ast.walk(_claim_module_tree())
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "min"
+        and len(node.args) == 2
+        and (
+            (isinstance(node.args[1], ast.Name) and node.args[1].id == _CLAIM_ALIAS)
+            or _is_the_one_ceiling(node.args[1])
+        )
+    ]
+    assert len(clamps) == 1, (
+        "the claim must saturate attempts through min(<attempts> + 1, "
+        f"{_CLAIM_ALIAS}) exactly once; found {len(clamps)}"
     )
-    assert ceiling == "%(max_attempts)s", (
-        "LEAST's second argument must be the placeholder, not a numeric literal: a "
-        "number here is the copy that drifts while every Python-level assertion stays "
-        f"green; found {ceiling!r}"
+    increment = clamps[0].args[0]
+    assert isinstance(increment, ast.BinOp) and isinstance(increment.op, ast.Add), (
+        f"the clamp's first argument must increment the counter; found {ast.dump(increment)}"
     )
-    assert sql.count("%(max_attempts)s") == 1, (
-        "one placeholder, bound by the parameters dict the previous test pins"
+    right = increment.right
+    assert isinstance(right, ast.Constant) and right.value == 1, (
+        f"the claim must add exactly one attempt; found {ast.dump(right)}"
     )
 
 

@@ -363,3 +363,27 @@ cursor.execute("... WHERE id IN (?) AND state = ?", (ListMarker(ids), "ok"))
 与「空批次在语句发出前被拒绝」两条。
 
 调用点迁移是下一步:13 处 `= ANY(数组)` 分别改成 `IN (?)` + `ListMarker`,不再有定元元数问题。
+
+### 8.13 `= ANY(数组)` 的 13 处调用点迁到 `IN (?)` + `ListMarker`
+
+七个模块,13 处,全部是「运行期才知道大小的集合」:
+
+| 模块 | 处数 | 集合是什么 |
+| --- | --- | --- |
+| `postgres_deletion_cleanup` | 7 | 本次删除涉及的 transcript / meeting id |
+| `assets_postgres` | 2 | 本轮要锁定的 asset id |
+| `artifact_retention_runtime` | 1 | 允许 UPDATE 的列名 |
+| `job_dispatch_postgres` | 1 | 车道允许的 Job kind |
+| `job_schema_preflight` | 1 | 期望存在的关系名 |
+| `postgres_exports` | 1 | 一本书里的 render unit id |
+| `postgres_render_units` | 1 | 要读的 generation unit id |
+
+`vendor-operator` 由 19 降到 6(`ILIKE`/`FULL JOIN` 家族),`vendor-type` 同时再降 10(所有
+`CAST(? AS text[])` 一并消失),基线 897 → 876。
+
+**这次的心脏是「元数不再写死」**:上一轮 §8.11 的定元 `IN` 在运行期集合上写不出来,写出来也
+会在集合大小变化时静默错位。迁移后 SQL 里始终是一个 `?`,元数只在展开时决定。
+
+一处测试随之改变:`test_claim_uses_the_instance_lane_not_the_module_default` 原来断言参数等于
+一个 list,现在参数是 `ListMarker`,断言改成「是标记且内容等于车道 kinds」——断言落在语义上,
+而不是落在某个容器类型上。

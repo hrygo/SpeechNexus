@@ -16,9 +16,8 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
-from speechnexus_portable_sql.contract import ConflictError
 from speechnexus_portable_sql.psycopg_driver import connect
-from speechnexus_portable_sql.transaction import insert_if_absent, savepoint
+from speechnexus_portable_sql.transaction import savepoint
 
 pytestmark = [pytest.mark.integration]
 
@@ -74,7 +73,8 @@ def test_a_cross_session_conflict_is_absorbed_and_the_transaction_stays_usable(
         assert ready.wait(5.0)
         cursor = conn.cursor()
         # 这一行在唯一索引上等待,holder 提交后变成唯一冲突。
-        assert insert_if_absent(cursor, _INSERT, ("k", 2, "k")) is False
+        with pytest.raises(psycopg.errors.UniqueViolation), savepoint(cursor):
+            cursor.execute(_INSERT, ("k", 2, "k"))
         # 关键断言:事务没有被中止,后面的语句照常执行,而且看到的是 holder 那一行。
         cursor.execute(f"SELECT payload FROM {_TABLE} WHERE key_digest = ?", ("k",))
         assert cursor.fetchone() == {"payload": 1}
@@ -90,7 +90,7 @@ def test_without_a_savepoint_the_same_conflict_poisons_the_transaction(schema: s
         holder.start()
         assert ready.wait(5.0)
         cursor = conn.cursor()
-        with pytest.raises(ConflictError):
+        with pytest.raises(psycopg.errors.UniqueViolation):
             cursor.execute(_INSERT, ("k", 2, "k"))
         # 事务被中止:后续语句不再是「查不到」,而是直接失败(25P02)。
         with pytest.raises(psycopg.errors.InFailedSqlTransaction):
@@ -104,7 +104,7 @@ def test_a_failing_statement_inside_a_savepoint_does_not_poison_the_transaction(
     with connect(schema, row_factory=dict_row) as conn:
         cursor = conn.cursor()
         cursor.execute(f"INSERT INTO {_TABLE} (key_digest, payload) VALUES (?, ?)", ("a", 1))
-        with pytest.raises(ConflictError), savepoint(cursor):
+        with pytest.raises(psycopg.errors.UniqueViolation), savepoint(cursor):
             cursor.execute(f"INSERT INTO {_TABLE} (key_digest, payload) VALUES (?, ?)", ("a", 2))
         cursor.execute(f"SELECT COUNT(*) AS total FROM {_TABLE}")
         assert cursor.fetchone() == {"total": 1}

@@ -168,13 +168,7 @@ class PortableCursor:
         # 换成空序列会让 DDL 里的字面量 `%` 被当成占位符。
         if params is not None:
             query, params = _expanded(query, params)
-        try:
-            self._cursor.execute(_translated(query, params), params, prepare=prepare, binary=binary)
-        except psycopg.errors.UniqueViolation as error:
-            # 只翻译唯一冲突:其余异常(检查约束、外键、语法)保持原样,它们是编程或
-            # schema 错误,调用方与测试都按原类别断言。事务仍处于中止状态,要继续用它
-            # 必须回滚到自己的保存点。
-            raise portable_error(error) from error
+        self._cursor.execute(_translated(query, params), params, prepare=prepare, binary=binary)
         return self
 
     def executemany(self, query: Any, params_seq: Any, *, returning: bool = False) -> None:

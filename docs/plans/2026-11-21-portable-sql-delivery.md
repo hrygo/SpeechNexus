@@ -540,23 +540,23 @@ assert ('created' == 'created' and 'unknown' == 'replayed')
 失败则 `ROLLBACK TO SAVEPOINT` 再 `RELEASE`。名字只接受普通标识符(SQL 不允许把标识符参数化),
 默认 `portable_sql_sp`。PostgreSQL 与 MySQL/InnoDB 都支持这三句,所以这层没有品牌分支。
 
-`transaction.insert_if_absent(cursor, statement, params)` 建在它上面:保存点内执行
-`INSERT ... WHERE NOT EXISTS`,唯一冲突读成「未插入」并返回 `False`,事务保持可用。
+`insert_if_absent` 暂时没有用户:它需要在冲突时把唯一违反翻成 `ConflictError`,而那一步必须先
+分清「业务要处理的冲突」和「检查约束/外键这类编程错误」。
 
-同时补上驱动侧翻译缺口:`PortableCursor.execute` 以前直接抛 `psycopg.errors.UniqueViolation`,
-业务层拿不到契约类别。现在唯一冲突走既有的 `portable_error` 变成 `ConflictError`。
-
-**只翻译唯一冲突**。第一版把 `execute` 里所有 `psycopg.Error` 都翻成契约类别,集成分区立刻红了
-一堆:`CheckViolation` 变成 `StorageError`、`ForeignKeyViolation` 变成 `ConflictError`,而检查约束
-与外键违反是编程/schema 错误,调用方和测试都按原类别断言。错误翻译的范围要跟着「业务需要处理
-哪一种」走,不是「能翻就翻」。
+**第一次尝试证明了这个代价**:在 `PortableCursor.execute` 里把所有 `psycopg.Error` 翻成契约类别
+后,集成分区红了一片 —— `CheckViolation` 变 `StorageError`、`ForeignKeyViolation` 变
+`ConflictError`,而这类违反的既有测试按原类别断言。收窄到**只翻唯一冲突**后再跑,仍然红了
+`test_binding_drafts`、`test_cluster_coordination_schema`、`test_workspace_writes` 等按
+`psycopg.errors.UniqueViolation` 断言的用例。所以驱动层不做全局翻译,`insert_if_absent` 也随之
+撤下,只保留保存点本身 —— 它不改变任何既有错误语义。
 
 真实 PG oracle(`tests/integration/test_portable_savepoint_pg.py`,3 条,本机通过):
 
 1. **跨会话冲突被吸收**:连接 A 先插同键并保持事务打开,B 的插入在唯一索引上等待,A 提交后
-   B 撞冲突 → `insert_if_absent` 返回 `False`,**事务仍可用**,随后的 SELECT 读到 A 那一行。
-2. **注入即红**:同样的跨会话冲突,不走保存点直接 `execute`,后续 SELECT 得到 `StorageError`
-   (25P02 事务中止)。这条证明第 1 条靠的是保存点,不是时序巧合。
+   B 的插入在保存点内撞冲突 → `ROLLBACK TO SAVEPOINT`,**事务仍可用**,随后的 SELECT 读到 A 那一行。
+2. **注入即红**:同样的跨会话冲突,不走保存点直接 `execute`,后续 SELECT 得到
+   `psycopg.errors.InFailedSqlTransaction`(25P02 事务中止)。这条证明第 1 条靠的是保存点,
+   不是时序巧合。
 3. 保存点内的失败语句不影响事务其余部分。
 
 注意第一条必须用**两个连接**:同一个事务里连插两次不会冲突,`WHERE NOT EXISTS` 看得见自己那行。

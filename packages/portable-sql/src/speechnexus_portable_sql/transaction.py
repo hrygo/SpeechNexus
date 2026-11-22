@@ -9,14 +9,12 @@ from typing import Any
 
 from speechnexus_portable_sql.contract import (
     CommitUnknownError,
-    ConflictError,
     Connection,
     Cursor,
-    Params,
     TransactionError,
 )
 
-__all__ = ["insert_if_absent", "savepoint", "transaction"]
+__all__ = ["savepoint", "transaction"]
 
 
 @contextmanager
@@ -82,29 +80,3 @@ def savepoint(cursor: Any, name: str = "portable_sql_sp") -> Iterator[None]:
         raise
     else:
         cursor.execute("RELEASE SAVEPOINT " + name)
-
-
-def insert_if_absent(cursor: Any, statement: str, params: Params = ()) -> bool:
-    """在保存点内执行一条自带 `WHERE NOT EXISTS` 的 INSERT,返回是否真的插入了一行.
-
-    受限方言没有 `ON CONFLICT`/`MERGE`。等价写法是
-    `INSERT ... SELECT ... WHERE NOT EXISTS (SELECT 1 FROM ... WHERE key = ?)`;
-    两个写者同时通过 NOT EXISTS 检查时,较晚的那个会撞唯一索引,驱动把它翻成
-    `ConflictError` —— 这正是「别人先插了」,语义与 `ON CONFLICT DO NOTHING` 相同。
-
-    **保存点是必要条件,不是优化**:PG 里唯一冲突会中止整个事务,捕获 Python 异常不会让事务
-    恢复;`ROLLBACK TO SAVEPOINT` 才把它拉回可用状态。没有保存点的版本会在冲突之后让后续语句
-    全部失败 —— 这条已被真实 PG oracle 推翻过一次,见计划 §8.19。
-
-    判据是 `rowcount`,不是异常类型。
-    """
-
-    inserted = False
-    try:
-        with savepoint(cursor):
-            cursor.execute(statement, params)
-            rowcount: int = cursor.rowcount
-            inserted = rowcount == 1
-    except ConflictError:
-        return False
-    return inserted

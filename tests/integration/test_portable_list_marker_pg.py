@@ -28,6 +28,7 @@ def _dsn() -> str:
         pytest.fail("Configure an isolated PostgreSQL DSN; skip is not portable-SQL evidence")
     return url
 
+
 _NAMES = (
     "SELECT CAST(? AS text) AS name UNION ALL SELECT CAST(? AS text) "
     "UNION ALL SELECT CAST(? AS text)"

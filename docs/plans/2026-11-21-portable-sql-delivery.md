@@ -428,3 +428,26 @@ ContractError: statement expects 4 parameters, got 5
 保留的 4 处都是「参数是文本、列也是文本」或「参数是文本、比较的是名字」的语句:
 `artifact_retention_runtime`(列名)、`job_schema_preflight`(关系名)、`assets_postgres`(asset id)。
 **workbench 的 uuid 列需要标记携带元素类型才能迁移**,这是下一个契约变更的明确边界。
+
+### 8.16 撤回的 9 处回来了:根因是异步游标没展开,不是列类型
+
+上一节把 workbench 那 9 处的失败归因为「uuid 列 + 文本参数」。**这个归因是错的**,本机起库后
+一条最小探针就推翻了它:
+
+```
+psycopg.ProgrammingError: cannot adapt type 'ListMarker' using placeholder '%s' (format: AUTO)
+```
+
+`psycopg_driver` 里同步游标做了展开,`AsyncPortableCursor` 没有。workbench 走异步连接,标记
+对象于是被原样交给驱动,适配失败后被 `VersionStoreError` 包成 `503 store_unavailable` —— 对外
+看起来像存储不可用,和类型推断毫无关系。
+
+修法是把同一条规则加进异步游标,并补一条异步真实库 oracle。注入实测:把这条规则去掉,用例立刻
+打印上面那行 `cannot adapt type 'ListMarker'`;加回来即绿。
+
+教训写在判据上:**报错被 `from None` 吃掉时,先让证据可见,再归因**。前一轮我用「撤回二分」
+代替了「拿到原始错误」,代价是两轮 CI 和一份错误的根因说明。
+
+本机现在可用的真实库:`PostgreSQL 18.6`,端口 55432,库 `speechnexus_test`。workbench 集成
+harness 另有更严的 DSN 守卫(Unix socket + `workbench_test_owner` + `sslmode=on`),本机未满足,
+所以 workbench 路径的真实库证据仍只来自 CI。

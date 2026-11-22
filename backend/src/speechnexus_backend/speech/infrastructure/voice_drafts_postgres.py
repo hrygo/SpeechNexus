@@ -23,6 +23,7 @@ from speechnexus_backend.speech.domain.public_jobs import (
     identifier,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechConnection, SpeechPool
+from speechnexus_portable_sql.clock import ClockReader, now_us
 
 _SELECT_BASE = (
     "SELECT d.draft_id, d.kind, d.status, d.head_revision, d.metadata_revision, "
@@ -314,10 +315,9 @@ class PostgresVoiceDrafts:
             changed = connection.execute(
                 "UPDATE speech_voice_drafts SET display_name=?, "
                 "metadata_revision=metadata_revision+1, "
-                "updated_at_us=GREATEST(updated_at_us, "
-                "CAST((EXTRACT(EPOCH FROM clock_timestamp())*1000000) AS bigint)) "
+                "updated_at_us=GREATEST(updated_at_us, CAST(? AS BIGINT)) "
                 "WHERE draft_id=? RETURNING *",
-                (command["display_name"], draft_id),
+                (command["display_name"], now_us(cast(ClockReader, connection)), draft_id),
             ).fetchone()
             if changed is None:
                 raise PublicJobUnavailableError

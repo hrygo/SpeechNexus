@@ -1,5 +1,5 @@
 {
-  "revision": "0004",
+  "revision": "0005",
   "tables": [
     {
       "name": "schema_meta",
@@ -393,6 +393,106 @@
         ]
       ],
       "foreign_keys": [],
+      "checks": [],
+      "indexes": []
+    },
+    {
+      "name": "output_stream_heads",
+      "columns": [
+        {
+          "name": "stream_id",
+          "type": "varchar(128)",
+          "nullable": false
+        },
+        {
+          "name": "meter_kind",
+          "type": "varchar(24)",
+          "nullable": false
+        },
+        {
+          "name": "last_end",
+          "type": "decimal(38,0)",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "type": "decimal(38,0)",
+          "nullable": false
+        }
+      ],
+      "primary_key": [
+        "stream_id",
+        "meter_kind"
+      ],
+      "uniques": [],
+      "foreign_keys": [],
+      "checks": [],
+      "indexes": []
+    },
+    {
+      "name": "usage_intervals",
+      "columns": [
+        {
+          "name": "interval_id",
+          "type": "varchar(128)",
+          "nullable": false
+        },
+        {
+          "name": "stream_id",
+          "type": "varchar(128)",
+          "nullable": false
+        },
+        {
+          "name": "meter_kind",
+          "type": "varchar(24)",
+          "nullable": false
+        },
+        {
+          "name": "interval_start",
+          "type": "decimal(38,0)",
+          "nullable": false
+        },
+        {
+          "name": "interval_end",
+          "type": "decimal(38,0)",
+          "nullable": false
+        },
+        {
+          "name": "fact_hash",
+          "type": "varchar(71)",
+          "nullable": false
+        },
+        {
+          "name": "units",
+          "type": "decimal(38,0)",
+          "nullable": false
+        }
+      ],
+      "primary_key": [
+        "stream_id",
+        "meter_kind",
+        "interval_start"
+      ],
+      "uniques": [
+        [
+          "interval_id"
+        ]
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "stream_id",
+            "meter_kind"
+          ],
+          "references": {
+            "table": "output_stream_heads",
+            "columns": [
+              "stream_id",
+              "meter_kind"
+            ]
+          }
+        }
+      ],
       "checks": [],
       "indexes": []
     }

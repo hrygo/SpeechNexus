@@ -58,7 +58,7 @@ from speechnexus_portable_sql.clock import ClockReader
 from speechnexus_portable_sql.clock import now_us as now_us_for
 from speechnexus_portable_sql.psycopg_driver import PortableConnection
 from speechnexus_portable_sql.psycopg_driver import connect as portable_connect
-from speechnexus_portable_sql.transaction import is_savepoint_control
+from speechnexus_portable_sql.transaction import insert_if_absent, is_savepoint_control
 from speechnexus_portable_sql.vendor import dict_row, psycopg
 
 EXIT_INVALID = 2
@@ -74,6 +74,22 @@ _DIMENSIONS = (
     "host_pcm_buffer_bytes",
     "scratch_disk_bytes",
 )
+# 列清单写字面量而不是运行时拼:受限方言不允许动态语句,而且拼出来的占位符混用 `?` 与 `%s`。
+# `_DIMENSIONS` 与这里的一致性由 tests/unit/backend/test_engine_registration_statements.py 钉住。
+HOST_INSERT = (
+    "INSERT INTO host_nodes (host_node_id, memory_architecture, node_state, topology_digest, "
+    "allocatable_unified_physical_memory_bytes, allocatable_device_memory_bytes, "
+    "allocatable_host_memory_bytes, allocatable_cpu_decode_millicores, "
+    "allocatable_host_pcm_buffer_bytes, allocatable_scratch_disk_bytes) "
+    "VALUES (?, ?, 'active', ?, ?, ?, ?, ?, ?, ?)"
+)
+POOL_INSERT = (
+    "INSERT INTO resource_pools "
+    "(pool_id, service_class, pool_state, owner_id, fencing_token, "
+    "owner_expires_at_us, owner_state) VALUES (?, ?, 'active', NULL, 0, 0, "
+    "'reconciling_takeover')"
+)
+
 type Row = dict[str, Any]
 
 
@@ -371,15 +387,9 @@ def _require_schema(cursor: _Cursor) -> None:
 def _ensure_host(cursor: _Cursor, spec: RegistrationSpec) -> Row:
     plan = spec.plan
     binding = plan.binding
-    names = ", ".join("allocatable_" + name for name in _DIMENSIONS)
-    placeholders = ", ".join(["%s"] * len(_DIMENSIONS))
-    cursor.execute(
-        "INSERT INTO host_nodes (host_node_id, memory_architecture, node_state, "
-        "topology_digest, "
-        + names
-        + ") VALUES (?, ?, 'active', ?, "
-        + placeholders
-        + ") ON CONFLICT (host_node_id) DO NOTHING",
+    insert_if_absent(
+        cursor,
+        HOST_INSERT,
         (
             binding.target_node_id,
             plan.memory_architecture,
@@ -425,11 +435,9 @@ def _ensure_pool(
     owner_ttl_us: int,
 ) -> Row:
     binding = spec.plan.binding
-    cursor.execute(
-        "INSERT INTO resource_pools "
-        "(pool_id, service_class, pool_state, owner_id, fencing_token, "
-        "owner_expires_at_us, owner_state) VALUES (?, ?, 'active', NULL, 0, 0, "
-        "'reconciling_takeover') ON CONFLICT (pool_id) DO NOTHING",
+    insert_if_absent(
+        cursor,
+        POOL_INSERT,
         (binding.pool_id, spec.plan.service_class),
     )
     row = _one(

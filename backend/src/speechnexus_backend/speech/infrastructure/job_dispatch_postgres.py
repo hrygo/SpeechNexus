@@ -33,6 +33,7 @@ from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema imp
 from speechnexus_backend.speech.infrastructure.leases_postgres import PostgresLeaseTransactions
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_portable_sql.clock import now_us
+from speechnexus_portable_sql.transaction import insert_if_absent
 from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 _JOB_SELECT = (
@@ -394,12 +395,12 @@ class PostgresDispatchStateStore:
             raise DispatchUnavailableError("Dispatch progress storage failed") from None
 
     def _record_cancellation_not_submitted(self, job_id: str, observer: str) -> None:
+        # 时钟不再走 CTE:同一行的时间戳由参数给出,插入是否真的发生由 `insert_if_absent`
+        # 的返回值决定 —— 受限方言既没有 `WITH`,也没有 `ON CONFLICT`。
         query = (
-            "WITH clock AS (SELECT CAST(? AS BIGINT) AS now_us) "
             f"INSERT INTO {NOT_SUBMITTED_TABLE} (job_id, observed_at_us, observer) "
-            "SELECT j.job_id, clock.now_us, ? FROM speech_jobs AS j CROSS JOIN clock "
-            "WHERE j.job_id = ? AND j.state = 'cancelling' "
-            "ON CONFLICT (job_id) DO NOTHING"
+            "SELECT j.job_id, ?, ? FROM speech_jobs AS j "
+            "WHERE j.job_id = ? AND j.state = 'cancelling'"
         )
         try:
             with self._pool.connection(timeout=self._timeout) as connection:
@@ -407,7 +408,7 @@ class PostgresDispatchStateStore:
                     "SELECT set_config('statement_timeout', ?, true)",
                     (str(max(1, int(self._timeout * 1000))),),
                 )
-                connection.execute(query, (now_us(connection), observer, job_id))
+                insert_if_absent(connection, query, (now_us(connection), observer, job_id))
         except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
             raise DispatchUnavailableError(
                 "Cancellation not-submitted observation is unavailable"

@@ -327,6 +327,9 @@ class Store:
 
     def handle(self, sql: str, params: tuple[object, ...]) -> list[dict[str, Any]]:
         self.rowcount = 1
+        if sql.startswith(("SAVEPOINT ", "ROLLBACK TO SAVEPOINT", "RELEASE SAVEPOINT")):
+            # 首次插入走保存点(受限方言没有 `ON CONFLICT`);替身同意控制语句,不做事务模拟。
+            return []
         if "set_config" in sql:
             return []
         if "to_regclass" in sql:

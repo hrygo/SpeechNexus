@@ -1038,3 +1038,35 @@ f'GRANT SELECT, INSERT (authorization_id, …) ON "{schema}".speech_builtin_voic
 
 这是同一个根因的第四次:把「驱动免费给的判定」换成显式原语时,顺手把它的**副作用**也换了。
 前三次是替身认 SQL 文本(§8.29/§8.31/§8.39),这次是 `rowcount` 被保存点覆盖。
+
+### 8.42 动态拼出来的占位符会混用两种标记
+
+`engine_registration._ensure_host` 原来这样建语句:
+
+```python
+names = ", ".join("allocatable_" + name for name in _DIMENSIONS)
+placeholders = ", ".join(["%s"] * len(_DIMENSIONS))
+cursor.execute(
+    "INSERT INTO host_nodes (…, "
+    + names
+    + ") VALUES (?, ?, 'active', ?, "
+    + placeholders
+    + ") ON CONFLICT (host_node_id) DO NOTHING",
+    ...,
+)
+```
+
+同一条语句里既有 `?`(便携标记)又有 `%s`(驱动标记)。它能工作只因为便携游标把 `?` 翻成 `%s`,
+换个驱动就崩;而且受限方言本来就不允许动态语句。
+
+改法:列清单写字面量(`HOST_INSERT` / `POOL_INSERT`),插入走 `insert_if_absent`。
+字面量的代价是与 `_DIMENSIONS` 漂移,所以用 `tests/unit/backend/test_engine_registration_statements.py`
+逐项对齐:列顺序、占位符数量(`3 + len(_DIMENSIONS)`)、语句里不出现 `%s`。
+注入即红:删掉一个维度列 → 该用例 `1 failed`。
+
+同一轮还转了 `job_dispatch_postgres._record_cancellation_not_submitted`:
+时钟 `WITH clock AS (…)` 改成参数,`ON CONFLICT DO NOTHING` 改成 `insert_if_absent`,
+一次消掉 `upsert` 与 `cte` 两条。基线 **303 → 300**。
+
+替身又一次要改:发布/注册的假游标遇到 `SAVEPOINT` 报「unhandled」——这是 §8.39/§8.41 之后
+同一个根因的第五次出现,替身必须认可保存点控制语句。

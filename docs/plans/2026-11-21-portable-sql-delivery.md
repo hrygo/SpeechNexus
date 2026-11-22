@@ -709,3 +709,23 @@ RESULT FAIL: the baseline carries entries with no owning card
 
 同类判据:这条排除**不覆盖** `*_schema.py` —— 那些模块虽是 DDL,但被业务模块导入表名与列常量,
 不满足「只在部署期执行」,仍按 §8.25 的规则逐个判定。
+
+### 8.27 `insert_if_absent` 原语,以及它暂时还没有调用方的原因
+
+§8.19/§8.20 的结论是 `ON CONFLICT DO NOTHING` 的可移植替代必须走保存点。本轮把它做成原语:
+
+`speechnexus_portable_sql.transaction.insert_if_absent(cursor, statement, params) -> bool`
+—— 插入包在保存点里,唯一冲突(`SQLSTATE 23505`,或 MySQL errno 1062)时回滚到保存点并返回
+`False`,事务保持可用;其它异常原样抛出。判据三组,`tests/unit/portable_sql/`
+(插入 / 冲突 / 其它异常)与 `tests/integration/test_portable_insert_if_absent_pg.py`
+(同一事务内二次插入后仍能读回已有行,本机 PG 18.6 实跑通过)。
+
+**原语先落地,调用点后移**,因为把一个 upsert 换成它不只是改产品代码:把
+`profile_lifecycle_intents_sql.record_intent` 的 `ON CONFLICT (key_digest) DO NOTHING` 换掉之后,
+`tests/support/profile_database.py` 里的 MySQL 替身立刻失效 —— 那个替身靠**识别 SQL 文本里的
+` ON CONFLICT `** 来决定改写成 `INSERT IGNORE`,并据此读 `SHOW WARNINGS` 判 1062。SQL 一旦不含
+该标记,替身就退化成普通 INSERT。同时 `tests/unit/test_profile_publications.py` 的
+「失败即整体回滚」用例开始看到意图行残留。
+
+也就是说:upsert 族的迁移必须先改**测试替身的判定依据**(从「找 SQL 标记」变成「按保存点语义判定」),
+否则会同时破坏 MySQL 侧的双 DSN 验证与回滚断言。这条已计入 `upsert` 的登记理由,本轮不改调用点。

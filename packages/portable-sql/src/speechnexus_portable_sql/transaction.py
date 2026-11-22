@@ -14,7 +14,7 @@ from speechnexus_portable_sql.contract import (
     TransactionError,
 )
 
-__all__ = ["savepoint", "transaction"]
+__all__ = ["insert_if_absent", "savepoint", "transaction"]
 
 
 @contextmanager
@@ -80,3 +80,41 @@ def savepoint(cursor: Any, name: str = "portable_sql_sp") -> Iterator[None]:
         raise
     else:
         cursor.execute("RELEASE SAVEPOINT " + name)
+
+
+#: 唯一约束冲突的 SQLSTATE。标准值,PostgreSQL 与 MySQL 都用它。
+_UNIQUE_VIOLATION = "23505"
+
+#: MySQL 不用 SQLSTATE 表达唯一冲突时的 errno 兜底(InnoDB 1062 = ER_DUP_ENTRY)。
+_MYSQL_DUP_ENTRY = 1062
+
+
+def _is_unique_violation(error: BaseException) -> bool:
+    """判断异常是否为唯一约束冲突,不导入任何厂商异常类."""
+
+    sqlstate = getattr(error, "sqlstate", None) or getattr(error, "pgcode", None)
+    if sqlstate == _UNIQUE_VIOLATION:
+        return True
+    args: tuple[Any, ...] = getattr(error, "args", ())
+    return len(args) > 0 and args[0] == _MYSQL_DUP_ENTRY
+
+
+def insert_if_absent(cursor: Any, statement: str, params: Any = ()) -> bool:
+    """插入一行;该行已存在时返回 `False`,事务保持可用.
+
+    受限方言既没有 `ON CONFLICT` 也没有 `MERGE`,而「先查后插」在竞争下必然可能撞唯一索引。
+    唯一冲突会让 PostgreSQL **中止整个事务**,只捕获 Python 异常不会恢复 —— 所以插入这一步
+    必须包在保存点里:冲突时回滚到保存点,事务回到可用状态,调用方可以接着读已有行。
+
+    返回 `True` 表示这一次真的插入了;`False` 表示已存在(并发写者先到,或自己先前插过)。
+    其它异常原样抛出。
+    """
+
+    try:
+        with savepoint(cursor, name="portable_sql_insert_if_absent"):
+            cursor.execute(statement, params)
+    except Exception as error:
+        if _is_unique_violation(error):
+            return False
+        raise
+    return True

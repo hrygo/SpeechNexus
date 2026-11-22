@@ -217,6 +217,7 @@ def _unavailable_detail(error: BaseException) -> str | None:
 
     return prerequisite_detail(portable_error(error))
 
+
 class PostgresPublicJobs:
     """Implements the narrow Job facts and store ports with explicit deadlines."""
 

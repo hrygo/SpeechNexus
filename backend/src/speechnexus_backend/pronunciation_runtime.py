@@ -84,24 +84,24 @@ def verify_reader_role(connection: SpeechConnection, schema: str, role: str) -> 
     than trusting table-level checks under column grants (#549).
     """
     _require_non_owner(connection, schema, role)
-    tables = list(_READER_TABLES)
+    tables = _require_arity(_READER_TABLES, 3)
     extra = connection.execute(
         "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
         "WHERE n.nspname=? AND c.relkind IN ('r','p','v','m','f') AND ("
-        "(c.relname <> ALL(CAST(? AS text[])) AND ("
+        "(c.relname NOT IN (?, ?, ?) AND ("
         "pg_catalog.has_table_privilege(CAST(? AS name),c.oid,'SELECT') OR "
         "pg_catalog.has_any_column_privilege(CAST(? AS name),c.oid,'SELECT') OR "
         "pg_catalog.has_table_privilege(CAST(? AS name),c.oid,"
         "'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') OR "
         "pg_catalog.has_any_column_privilege(CAST(? AS name),c.oid,"
         "'INSERT,UPDATE,REFERENCES'))) OR "
-        "(c.relname = ANY(CAST(? AS text[])) AND ("
+        "(c.relname IN (?, ?, ?) AND ("
         "pg_catalog.has_table_privilege(CAST(? AS name),c.oid,"
         "'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') OR "
         "pg_catalog.has_any_column_privilege(CAST(? AS name),c.oid,"
         "'INSERT,UPDATE,REFERENCES'))))) AS forbidden",
-        (schema, tables, role, role, role, role, tables, role, role),
+        (schema, *tables, role, role, role, role, *tables, role, role),
     ).fetchone()
     permitted = connection.execute(
         "SELECT pg_catalog.has_table_privilege(CAST(? AS name),?,'SELECT') AS revisions, "
@@ -136,12 +136,12 @@ def verify_writer_role(connection: SpeechConnection, schema: str, role: str) -> 
         "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
         "WHERE n.nspname=? AND c.relkind IN ('r','p','v','m','f') "
-        "AND c.relname <> ALL(CAST(? AS text[])) AND ("
+        "AND c.relname NOT IN (?, ?, ?) AND ("
         "pg_catalog.has_table_privilege(CAST(? AS name),c.oid,"
         "'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') OR "
         "pg_catalog.has_any_column_privilege(CAST(? AS name),c.oid,"
         "'SELECT,INSERT,UPDATE,REFERENCES'))) AS forbidden",
-        (schema, list(_WRITER_TABLES), role, role),
+        (schema, *_require_arity(_WRITER_TABLES, 3), role, role),
     ).fetchone()
     tables = connection.execute(
         "SELECT c.relname AS relname, "
@@ -152,16 +152,16 @@ def verify_writer_role(connection: SpeechConnection, schema: str, role: str) -> 
         "'DELETE,TRUNCATE,REFERENCES,TRIGGER') AS forbidden_table "
         "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
         "WHERE n.nspname=? AND c.relkind IN ('r','p','v','m','f') "
-        "AND c.relname = ANY(CAST(? AS text[])) ORDER BY c.relname",
-        (role, role, role, role, schema, list(_WRITER_TABLES)),
+        "AND c.relname IN (?, ?, ?) ORDER BY c.relname",
+        (role, role, role, role, schema, *_require_arity(_WRITER_TABLES, 3)),
     ).fetchall()
     columns = connection.execute(
         "SELECT c.relname AS relname, a.attname AS attname FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
         "JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid AND a.attnum>0 "
-        "AND NOT a.attisdropped WHERE n.nspname=? AND c.relname = ANY(CAST(? AS text[])) "
+        "AND NOT a.attisdropped WHERE n.nspname=? AND c.relname IN (?, ?, ?) "
         "AND pg_catalog.has_column_privilege(CAST(? AS name),c.oid,a.attname,'UPDATE')",
-        (schema, list(_WRITER_TABLES), role),
+        (schema, *_require_arity(_WRITER_TABLES, 3), role),
     ).fetchall()
     observed = {(row["relname"], row["attname"]) for row in columns}
     if other is None or other["forbidden"] or len(tables) != len(_WRITER_TABLES):
@@ -176,6 +176,18 @@ def verify_writer_role(connection: SpeechConnection, schema: str, role: str) -> 
             raise ValueError("Pronunciation writer requires only revision and pointer INSERTs")
     if observed != _WRITER_COLUMN_UPDATES:
         raise ValueError("Pronunciation writer column UPDATEs drifted")
+
+
+# SQL 里 `IN (?, ?, ?)` 的元数与这三个常量元组的长度是同一件事:改任一处都要改另一处,
+# 所以下面每个 `IN` 语句执行前都断言元数。
+def _require_arity(names: tuple[str, ...], size: int) -> tuple[str, ...]:
+    """固定小集合的元数就是 SQL 里占位符的个数:方言没有 `ANY(array)`。"""
+
+    if len(names) != size:
+        raise ValueError(
+            f"the fixed IN list in this statement holds exactly {size} names, got {len(names)}"
+        )
+    return names
 
 
 _PUBLISHER_TABLES = (
@@ -208,17 +220,17 @@ def verify_publisher_role(connection: SpeechConnection, schema: str, role: str) 
     under column grants and would turn the check into a no-op (#549).
     """
     _require_non_owner(connection, schema, role)
-    tables = list(_PUBLISHER_TABLES)
+    tables = _require_arity(_PUBLISHER_TABLES, 6)
     other = connection.execute(
         "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
         "WHERE n.nspname=? AND c.relkind IN ('r','p','v','m','f') "
-        "AND c.relname <> ALL(CAST(? AS text[])) AND ("
+        "AND c.relname NOT IN (?, ?, ?, ?, ?, ?) AND ("
         "pg_catalog.has_table_privilege(CAST(? AS name),c.oid,"
         "'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') OR "
         "pg_catalog.has_any_column_privilege(CAST(? AS name),c.oid,"
         "'SELECT,INSERT,UPDATE,REFERENCES'))) AS forbidden",
-        (schema, tables, role, role),
+        (schema, *tables, role, role),
     ).fetchone()
     if other is None or other["forbidden"]:
         raise ValueError("Pronunciation publisher requires exactly its declared tables")
@@ -233,24 +245,24 @@ def verify_publisher_role(connection: SpeechConnection, schema: str, role: str) 
         "column_reference "
         "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
         "WHERE n.nspname=? AND c.relkind IN ('r','p','v','m','f') "
-        "AND c.relname = ANY(CAST(? AS text[])) ORDER BY c.relname",
-        (role, role, role, role, role, schema, tables),
+        "AND c.relname IN (?, ?, ?, ?, ?, ?) ORDER BY c.relname",
+        (role, role, role, role, role, schema, *tables),
     ).fetchall()
     columns = connection.execute(
         "SELECT c.relname AS relname, a.attname AS attname FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
         "JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid AND a.attnum>0 "
-        "AND NOT a.attisdropped WHERE n.nspname=? AND c.relname = ANY(CAST(? AS text[])) "
+        "AND NOT a.attisdropped WHERE n.nspname=? AND c.relname IN (?, ?, ?, ?, ?, ?) "
         "AND pg_catalog.has_column_privilege(CAST(? AS name),c.oid,a.attname,'UPDATE')",
-        (schema, tables, role),
+        (schema, *tables, role),
     ).fetchall()
     column_inserts = connection.execute(
         "SELECT c.relname AS relname FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
-        "WHERE n.nspname=? AND c.relname = ANY(CAST(? AS text[])) "
+        "WHERE n.nspname=? AND c.relname IN (?, ?, ?, ?, ?, ?) "
         "AND pg_catalog.has_any_column_privilege(CAST(? AS name),c.oid,'INSERT') "
         "AND NOT pg_catalog.has_table_privilege(CAST(? AS name),c.oid,'INSERT')",
-        (schema, tables, role, role),
+        (schema, *tables, role, role),
     ).fetchall()
     observed = {(row["relname"], row["attname"]) for row in columns}
     expected = {

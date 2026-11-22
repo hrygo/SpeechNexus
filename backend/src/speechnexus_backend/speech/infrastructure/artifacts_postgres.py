@@ -300,4 +300,3 @@ class PostgresArtifactRetention:
             raise
         except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
             raise ArtifactError("artifact_storage_unavailable") from None
-

@@ -168,7 +168,12 @@ class PortableCursor:
         # 换成空序列会让 DDL 里的字面量 `%` 被当成占位符。
         if params is not None:
             query, params = _expanded(query, params)
-        self._cursor.execute(_translated(query, params), params, prepare=prepare, binary=binary)
+        try:
+            self._cursor.execute(_translated(query, params), params, prepare=prepare, binary=binary)
+        except psycopg.Error as error:
+            # 唯一冲突在这里翻成 `ConflictError`:业务层只认类别,不读 SQLSTATE。
+            # 事务仍处于中止状态,要继续用它必须回滚到自己的保存点。
+            raise portable_error(error) from error
         return self
 
     def executemany(self, query: Any, params_seq: Any, *, returning: bool = False) -> None:

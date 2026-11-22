@@ -531,3 +531,29 @@ assert ('created' == 'created' and 'unknown' == 'replayed')
 
 在此之前,这 15 处 `upsert` 是**有理由的例外**,不是待办:它们靠的正是 `ON CONFLICT` 的语句级
 静默语义。把它们从基线上抹掉需要先有 savepoint 原语,这属于 #1100 之后的契约工作,不在本轮。
+
+### 8.20 补上 `SAVEPOINT` 原语:§8.19 的前提
+
+§8.19 说「真正等价需要保存点」。本轮把它补上,并在真实 PG 上立了 oracle。
+
+`transaction.savepoint(cursor, name)` 只是三句标准 SQL:`SAVEPOINT` → 执行 → `RELEASE SAVEPOINT`,
+失败则 `ROLLBACK TO SAVEPOINT` 再 `RELEASE`。名字只接受普通标识符(SQL 不允许把标识符参数化),
+默认 `portable_sql_sp`。PostgreSQL 与 MySQL/InnoDB 都支持这三句,所以这层没有品牌分支。
+
+`transaction.insert_if_absent(cursor, statement, params)` 建在它上面:保存点内执行
+`INSERT ... WHERE NOT EXISTS`,唯一冲突读成「未插入」并返回 `False`,事务保持可用。
+
+同时补上驱动侧翻译缺口:`PortableCursor.execute` 以前直接抛 `psycopg.errors.UniqueViolation`,
+业务层拿不到契约类别。现在统一走既有的 `portable_error`,唯一冲突变成 `ConflictError`。
+这也是「SQLSTATE 只读一次」这条规则的补齐 —— 之前只覆盖了连接与提交路径。
+
+真实 PG oracle(`tests/integration/test_portable_savepoint_pg.py`,3 条,本机通过):
+
+1. **跨会话冲突被吸收**:连接 A 先插同键并保持事务打开,B 的插入在唯一索引上等待,A 提交后
+   B 撞冲突 → `insert_if_absent` 返回 `False`,**事务仍可用**,随后的 SELECT 读到 A 那一行。
+2. **注入即红**:同样的跨会话冲突,不走保存点直接 `execute`,后续 SELECT 得到 `StorageError`
+   (25P02 事务中止)。这条证明第 1 条靠的是保存点,不是时序巧合。
+3. 保存点内的失败语句不影响事务其余部分。
+
+注意第一条必须用**两个连接**:同一个事务里连插两次不会冲突,`WHERE NOT EXISTS` 看得见自己那行。
+早先我用单连接写的「oracle」是绿的但什么也没证明 —— 这是这轮第二个「绿了也不作数」的实例。

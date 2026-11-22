@@ -52,6 +52,7 @@ from speechnexus_backend.speech.infrastructure.voice_publication_schema import (
     REVISION_TABLE,
 )
 from speechnexus_portable_sql.clock import ClockReader, now_us
+from speechnexus_portable_sql.transaction import is_savepoint_control
 from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 _SELECT_DRAFT = (
@@ -88,6 +89,8 @@ class _Cursor:
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
             raise VoicePublicationUnavailableError
+        if is_savepoint_control(query):
+            return self.raw.execute(query, parameters)
         self.raw.execute(
             "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(remaining * 1000))),),

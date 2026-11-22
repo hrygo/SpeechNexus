@@ -24,6 +24,7 @@ from speechnexus_backend.speech.infrastructure.binding_publication_evidence_sql 
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.publications_sql import find_publication
+from speechnexus_portable_sql.transaction import is_savepoint_control
 from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 
@@ -74,6 +75,8 @@ class _Cursor:
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
             raise PublicationUnavailableError
+        if is_savepoint_control(query):
+            return self.raw.execute(query, parameters)
         self.raw.execute(
             "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(remaining * 1000))),),

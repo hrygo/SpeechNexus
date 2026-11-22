@@ -22,6 +22,7 @@ from speechnexus_backend.speech.infrastructure.profile_drafts_sql import (
     recover_draft,
 )
 from speechnexus_portable_sql.clock import ClockReader, now_us
+from speechnexus_portable_sql.transaction import is_savepoint_control
 from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 
@@ -33,15 +34,13 @@ class _Cursor:
     def rowcount(self) -> int:
         return self.raw.rowcount
 
-    #: 事务已被唯一冲突中止时,唯一还能执行的就是保存点回滚;探针不能插在它前面,
-    #: 否则探针自己会先报 `current transaction is aborted`,回滚永远走不到。
-    _SAVEPOINT_CONTROL = ("SAVEPOINT ", "ROLLBACK TO SAVEPOINT", "RELEASE SAVEPOINT")
-
     def execute(self, query: str, parameters: tuple[object, ...] = ()) -> object:
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
             raise ProfileUnavailableError
-        if query.startswith(self._SAVEPOINT_CONTROL):
+        if is_savepoint_control(query):
+            return self.raw.execute(query, parameters)
+        if is_savepoint_control(query):
             return self.raw.execute(query, parameters)
         self.raw.execute(
             "SELECT set_config('statement_timeout', ?, true)",

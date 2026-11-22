@@ -34,6 +34,7 @@ from speechnexus_backend.speech.infrastructure.quarantine_release_sql import (
     read_ledger,
 )
 from speechnexus_portable_sql.clock import ClockReader, now_us
+from speechnexus_portable_sql.transaction import is_savepoint_control
 from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 #: A missing relation, column or schema object means the migration chain did not
@@ -81,6 +82,8 @@ class _DeadlineCursor:
         remaining = self._deadline - time.monotonic()
         if remaining <= 0:
             raise _BudgetExpiredError
+        if is_savepoint_control(query):
+            return self._cursor.execute(query, parameters)
         self._cursor.execute(
             "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(remaining * 1000))),),

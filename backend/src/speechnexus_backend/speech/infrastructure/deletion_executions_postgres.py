@@ -71,6 +71,7 @@ from speechnexus_backend.speech.infrastructure.deletion_plans_postgres import (
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_portable_sql.clock import ClockReader, now_us
+from speechnexus_portable_sql.transaction import is_savepoint_control
 from speechnexus_portable_sql.vendor import Jsonb, PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 _PLAN_ROW_COLUMNS = (
@@ -205,6 +206,9 @@ class _Transaction:
         remaining = self._deadline - time.monotonic()
         if remaining <= 0:
             raise _unavailable()
+        if is_savepoint_control(statement):
+            self._connection.execute(statement, args)
+            return []
         self._connection.execute(
             "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(remaining * 1000))),),
@@ -218,6 +222,8 @@ class _Transaction:
         remaining = self._deadline - time.monotonic()
         if remaining <= 0:
             raise _unavailable()
+        if is_savepoint_control(statement):
+            return int(self._connection.execute(statement, args).rowcount)
         self._connection.execute(
             "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(remaining * 1000))),),
@@ -238,6 +244,8 @@ class _Transaction:
         remaining = self._deadline - time.monotonic()
         if remaining <= 0:
             raise _unavailable()
+        if is_savepoint_control(statement):
+            return self._connection.execute(statement, args)
         self._connection.execute(
             "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(remaining * 1000))),),

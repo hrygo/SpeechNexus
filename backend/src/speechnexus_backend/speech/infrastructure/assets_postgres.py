@@ -30,6 +30,7 @@ from speechnexus_backend.speech.domain.assets import (
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_portable_sql.clock import ClockReader, now_us
 from speechnexus_portable_sql.contract import ListMarker
+from speechnexus_portable_sql.transaction import is_savepoint_control
 from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 
@@ -42,6 +43,9 @@ class AssetCursor:
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
             raise AssetError("asset_metadata_deadline")
+        if is_savepoint_control(sql):
+            self.raw.execute(sql, args)
+            return []
         self.raw.execute(
             "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(remaining * 1000))),),
@@ -55,6 +59,9 @@ class AssetCursor:
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
             raise AssetError("asset_metadata_deadline")
+        if is_savepoint_control(sql):
+            self.raw.execute(sql, args)
+            return self
         self.raw.execute(
             "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(remaining * 1000))),),

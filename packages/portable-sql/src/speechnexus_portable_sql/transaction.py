@@ -14,7 +14,13 @@ from speechnexus_portable_sql.contract import (
     TransactionError,
 )
 
-__all__ = ["insert_if_absent", "savepoint", "transaction"]
+__all__ = [
+    "SAVEPOINT_CONTROL",
+    "insert_if_absent",
+    "is_savepoint_control",
+    "savepoint",
+    "transaction",
+]
 
 
 @contextmanager
@@ -49,6 +55,17 @@ def _rollback_quietly(connection: Connection) -> None:
     # 回滚失败不改变「未提交」这一结论,只丢连接。
     with suppress(Exception):
         connection.rollback()
+
+
+#: 保存点控制语句的前缀。事务被中止之后,唯一还能执行的就是它们;任何「先探测再执行」
+#: 的适配器(例如先装 `statement_timeout`)都必须先看这里,否则探针自己会先失败。
+SAVEPOINT_CONTROL = ("SAVEPOINT ", "ROLLBACK TO SAVEPOINT", "RELEASE SAVEPOINT")
+
+
+def is_savepoint_control(statement: str) -> bool:
+    """判断语句是不是保存点控制语句(唯一一条定义)."""
+
+    return statement.startswith(SAVEPOINT_CONTROL)
 
 
 #: 保存点名字只允许普通标识符:S QL 不允许把标识符参数化,放行前先按字符集收窄。

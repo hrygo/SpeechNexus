@@ -782,3 +782,49 @@ return recover_intent(cursor, command)
 
 这条也解释了为什么 §8.19 的「单连接 + 捕获异常」看不出问题:**探针把中止状态提前引爆了**,
 真正的保存点回滚根本没被执行过。
+
+### 8.31 剩下两个 upsert 调用点,以及替身里那段改写的退场
+
+`profile_drafts_sql.create_draft` 与 `pronunciation_drafts_sql.create_draft` 都改成
+`insert_if_absent`:
+
+```python
+inserted = insert_if_absent(cursor, "INSERT INTO speech_profile_commands … VALUES (?,?,?,?,'pending')", (…))
+rows = _rows(cursor, "SELECT * FROM speech_profile_commands WHERE key_digest=? FOR UPDATE", (…,))
+```
+
+原来的 `inserted = cursor.rowcount == 1` 随之删除:插入是否真的发生由保存点结果直接给出,
+不再借 `rowcount` 反推。
+
+这两个模块是 `tests/support/profile_database.py` 里 ` ON CONFLICT ` 改写的**最后两个消费者**。
+改完之后那段识别 SQL 文本、改写成 `INSERT IGNORE`、再读 `SHOW WARNINGS` 判 1062 的逻辑就没有
+任何输入了,按「确定不使用即废除」直接删除 —— 替身的 `execute` 只剩原样转发,保存点由 InnoDB
+原生处理。
+
+基线 **531 → 529**(`upsert` 族剩 12)。
+
+验证范围:`tests/unit` 3991 passed(backend)+ 全量 unit;守卫、mypy、`lint-imports` 全绿。
+`create_draft` 的并发/重放语义由双 DSN 集成用例覆盖,本机没有 MySQL 实例,证据只能来自 CI。
+
+### 8.32 保存点控制放行收成一条不变量
+
+§8.30 只在 `profile_drafts_postgres` 上修了「探针不能插在保存点回滚前面」。`pronunciation_drafts_sql`
+换成保存点插入后立刻撞上同一个陷阱(PG 用例把 `conflict` 报成 `unknown`),说明按文件逐个修
+是把同一判定抄成多份的开始。
+
+收法:
+
+1. 判定只定义一次 —— `speechnexus_portable_sql.transaction` 的 `SAVEPOINT_CONTROL` 与
+   `is_savepoint_control(statement)`;
+2. **13 个逐语句装 `statement_timeout` 的适配器**全部改为先问这条判定,命中则直接下发、
+   不装探针(`rows()` 返回 `[]`、`changed()` 返回 `rowcount`、`execute()` 返回自身/游标);
+3. 新增守护用例 `test_every_per_statement_probe_lets_savepoint_control_through`:
+   凡是「装了逐语句探针 + 自己实现了 `execute`/`rows`/`changed`」的模块,必须调用
+   `is_savepoint_control(`。只看名字不够 —— 只 import 不调用也会被算作通过,所以判据锚在
+   调用形参上。
+
+注入即红:删掉 `pronunciation_drafts_postgres` 的跳过分支,守护用例立刻失败
+(`1 failed, 1 passed`)。
+
+范围说明:`SET TRANSACTION` 之类的**事务级**语句不走 `execute`(它们必须是事务第一条语句),
+因此不在逐语句探针的路径上,也不受这条不变量约束。

@@ -21,6 +21,7 @@ from speechnexus_backend.speech.infrastructure.claims_sql import (
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_portable_sql.clock import ClockReader, now_us
+from speechnexus_portable_sql.transaction import is_savepoint_control
 from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 
@@ -41,6 +42,8 @@ class _DeadlineCursor:
         remaining = self._deadline - time.monotonic()
         if remaining <= 0:
             raise _BudgetExpiredError
+        if is_savepoint_control(query):
+            return self._cursor.execute(query, parameters)
         self._cursor.execute(
             "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(remaining * 1000))),),

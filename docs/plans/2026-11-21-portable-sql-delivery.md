@@ -476,3 +476,23 @@ workbench 用 `sql.SQL(query).format(s=schema)` 拼语句,得到的是 `psycopg.
 空批次、异步、`Composed`)。
 
 workbench 那 9 处因此恢复,基线 894 → 877。
+
+### 8.18 `vendor-sdk` 收敛:业务层只从 `speechnexus_portable_sql.vendor` 取驱动
+
+`vendor-sdk` 132 处分在 75 个文件,几乎都是同一种形状:`import psycopg`、`from psycopg import sql`、
+`from psycopg.rows import dict_row`、`from psycopg_pool import PoolClosed, ...`。
+
+新增 `speechnexus_portable_sql/vendor.py` 只做再导出(`psycopg`、`sql`、`dict_row`、`class_row`、
+`Jsonb`、`conninfo_to_dict`、`IsolationLevel`、`ConnectionPool` 与三个池异常),业务侧改的只有
+import 行,调用点一字不动:
+
+```python
+from speechnexus_portable_sql.vendor import psycopg   # 替代 import psycopg
+from speechnexus_portable_sql.vendor import dict_row  # 替代 from psycopg.rows import dict_row
+```
+
+这样「品牌依赖只在 portable-sql 内」这条边界从守卫规则变成结构事实。首批 12 个文件、34 处已迁移,
+基线 877 → 843。
+
+后续每轮迁移一批;全部迁完后应当新增一条 `lint-imports` 反向契约(业务包不得导入 `psycopg`),
+把边界钉在结构上而不是靠扫描。

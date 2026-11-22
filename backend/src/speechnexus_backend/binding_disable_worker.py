@@ -7,9 +7,6 @@ import logging
 import uuid
 from typing import Literal, Self
 
-import psycopg
-from psycopg.conninfo import conninfo_to_dict
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 from pydantic import AnyHttpUrl, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -36,6 +33,13 @@ from speechnexus_backend.speech.infrastructure.postgres_pool import (
     SpeechConnection,
     SpeechPool,
     speech_pool,
+)
+from speechnexus_portable_sql.vendor import (
+    PoolClosed,
+    PoolTimeout,
+    TooManyRequests,
+    conninfo_to_dict,
+    psycopg,
 )
 
 _LOG = logging.getLogger(__name__)

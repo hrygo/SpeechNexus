@@ -14,9 +14,6 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import uuid4
 
-from psycopg.rows import class_row
-from psycopg.types.json import Jsonb
-
 from speechnexus_backend.workbench.application.saved_assets import (
     ObjectZone,
     ObjectZoneUnavailableError,
@@ -36,6 +33,7 @@ from speechnexus_backend.workbench.infrastructure.postgres_versions import (
     _Session,
 )
 from speechnexus_portable_sql.contract import ListMarker
+from speechnexus_portable_sql.vendor import Jsonb, class_row
 
 #: 项目范围删除没有 transcript/meeting 过滤时,那一支靠 `? OR ...` 的布尔开关短路;
 #: 标记本身仍然需要一个值。空字符串不是任何合法 id,`id IN ('')` 恒假,OR 的语义不变。

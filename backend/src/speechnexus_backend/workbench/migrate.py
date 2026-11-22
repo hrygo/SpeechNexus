@@ -32,10 +32,6 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, TextIO, cast
 
-import psycopg
-from psycopg import sql
-from psycopg.conninfo import conninfo_to_dict
-
 from speechnexus_backend.workbench.infrastructure.runtime_schema import (
     SCHEMA_REVISION,
     bootstrap_sql,
@@ -43,6 +39,7 @@ from speechnexus_backend.workbench.infrastructure.runtime_schema import (
     runtime_grants_sql,
 )
 from speechnexus_backend.workbench.infrastructure.version_schema import schema_identifier
+from speechnexus_portable_sql.vendor import conninfo_to_dict, psycopg, sql
 
 OWNER_DSN_ENV = "SPEECHNEXUS_MIGRATION_DATABASE_URL"
 SCHEMA_ENV = "SPEECHNEXUS_WORKBENCH_DATABASE_SCHEMA"

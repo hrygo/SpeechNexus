@@ -9,10 +9,7 @@ from contextlib import asynccontextmanager, suppress
 from typing import Any
 
 import httpx
-import psycopg
 from fastapi import FastAPI
-from psycopg import sql
-from psycopg.rows import dict_row
 
 from speechnexus_backend.workbench.app import create_app
 from speechnexus_backend.workbench.application.assistant import WorkbenchAssistant
@@ -84,6 +81,7 @@ from speechnexus_backend.workbench.infrastructure.runtime_schema import SCHEMA_R
 from speechnexus_backend.workbench.interfaces.runtime_ingress import RuntimeIngress
 from speechnexus_backend.workbench.runtime_settings import WorkbenchSettings
 from speechnexus_portable_sql.psycopg_driver import connect_async as portable_connect_async
+from speechnexus_portable_sql.vendor import dict_row, psycopg, sql
 
 _READ_ONLY = frozenset({"erased_mutation_receipts", "deletion_ledger", "runtime_schema_revision"})
 _INSERT = TABLES - _READ_ONLY

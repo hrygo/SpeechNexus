@@ -9,10 +9,6 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Any, Protocol, cast
 
-import psycopg
-from psycopg.types.json import Jsonb
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
-
 from speechnexus_backend.speech.application.deletions import (
     PlanReceipt,
     PlanSnapshot,
@@ -35,6 +31,7 @@ from speechnexus_backend.speech.infrastructure.deletion_plan_schema import (
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_portable_sql.clock import now_us
+from speechnexus_portable_sql.vendor import Jsonb, PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 _ACTIVE_JOB_STATES = frozenset({"pending", "running", "cancelling"})
 # The route checks only its own authority. These are not part of the process

@@ -14,9 +14,6 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Any, TypeVar, cast
 
-import psycopg
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
-
 from speechnexus_gateway.domain.abort_intent import (
     AbortClaimRefusal,
     AbortDispatchClaim,
@@ -101,6 +98,7 @@ from speechnexus_gateway.infrastructure.submit_sql import (
 )
 from speechnexus_portable_sql.clock import ClockReader
 from speechnexus_portable_sql.clock import now_us as _portable_now_us
+from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 _Result = TypeVar("_Result")
 

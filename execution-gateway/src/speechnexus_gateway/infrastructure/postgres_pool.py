@@ -13,12 +13,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
-import psycopg
-from psycopg import IsolationLevel
-from psycopg.rows import dict_row
-from psycopg_pool import ConnectionPool
-
 from speechnexus_portable_sql.psycopg_driver import PortableCursor
+from speechnexus_portable_sql.vendor import ConnectionPool, IsolationLevel, dict_row, psycopg
 
 type GatewayConnection = psycopg.Connection[dict[str, Any]]
 type GatewayPool = ConnectionPool[GatewayConnection]

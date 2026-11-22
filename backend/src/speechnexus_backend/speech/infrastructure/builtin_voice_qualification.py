@@ -20,7 +20,7 @@ from speechnexus_backend.speech.infrastructure.qualification_source_evidence imp
     qualification_source_state_sql,
     source_refusal_detail,
 )
-from speechnexus_portable_sql.clock import ClockReader, now_us
+from speechnexus_portable_sql.clock import ClockReader, now_us, to_epoch_us
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,8 +48,8 @@ def require_builtin_voice(
         raise AdmissionRejectedError("policy_or_resource_disabled") from error
     observed_at = datetime.fromtimestamp(observed_us / 1_000_000, tz=UTC)
     cursor.execute(
-        "SELECT a.facts, CAST(floor(extract(epoch FROM a.expires_at)*1000000) AS bigint) AS "
-        "expiry_us, "
+        # 微秒在应用侧换算:方言没有 `extract(epoch ...)`。
+        "SELECT a.facts, a.expires_at AS expires_at, "
         "? AS now_us, "
         f"({qualification_source_state_sql('q')}) AS source_state "
         "FROM speech_builtin_voice_qualifications q "
@@ -121,7 +121,7 @@ def require_builtin_voice(
         BuiltinVoiceFacts(rows[0]["facts"])
         validate_response("getVoiceRevision", 200, {"body": rows[0]["facts"]["public_document"]})
         if (
-            rows[0]["facts"]["expires_at_us"] != rows[0]["expiry_us"]
+            rows[0]["facts"]["expires_at_us"] != to_epoch_us(rows[0]["expires_at"])
             or rows[0]["facts"]["checked_at_us"] > rows[0]["now_us"]
         ):
             raise ValueError("invalid qualification time")

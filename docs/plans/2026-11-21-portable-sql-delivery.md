@@ -302,3 +302,20 @@ instance_generation)` 排序取第一行」,既保持确定性,又不再把正�
 记录在这里,以免以后有人把「指纹一致」误读成「库里的约束文本也一致」。
 
 `vendor-cast` 由此归零。
+
+### 8.10 `vendor-function`:把 `extract(epoch ...)` 移到应用侧
+
+3 处把 `timestamptz` 换成 epoch 微秒的 `CAST(floor(extract(epoch FROM x)*1000000) AS bigint)`
+改成「读回时间列 + 应用侧换算」:
+
+| 模块 | 读回列 | 换算点 |
+| --- | --- | --- |
+| `operator_attested_qualification` | `s.expires_at` | `to_epoch_us(source["expires_at"])` |
+| `builtin_voice_qualification` | `a.expires_at` | `to_epoch_us(rows[0]["expires_at"])` |
+| `qualification_provenance` | `a.expires_at` | `to_epoch_us(row["approval_expires_at"])`,空值保持 `None` |
+
+换算只有一个定义点:`speechnexus_portable_sql.clock.to_epoch_us`,它已经在(时钟路径用它把
+`datetime` 换成微秒),这次只是把它用到读回的数据上,不新增第二套换算。
+
+`vendor-function` 余 4 处:`readiness.py` 的 3 处是时钟(与标记、分页同批),`asset_schema.py`
+的 1 处是 DDL 的 `DEFAULT`,属于物理 DDL profile,不随 DML 一起迁。

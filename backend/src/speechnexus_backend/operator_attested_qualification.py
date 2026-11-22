@@ -41,7 +41,7 @@ from speechnexus_backend.speech.infrastructure.publications_sql import find_publ
 from speechnexus_backend.speech.interfaces.binding_release_evidence import (
     verify_binding_release_evidence,
 )
-from speechnexus_portable_sql.clock import ClockReader
+from speechnexus_portable_sql.clock import ClockReader, to_epoch_us
 from speechnexus_portable_sql.clock import now_us as _portable_now_us
 
 _LEDGER_RELATIONS = (
@@ -212,8 +212,8 @@ def record_operator_attestation(
         now_us = _now_us(cursor)
         declaration.require_live(now_us)
         cursor.execute(
-            "SELECT s.source_revision,s.source_digest,"
-            "CAST(floor(extract(epoch FROM s.expires_at)*1000000) AS bigint) AS expires_us "
+            # 微秒在应用侧换算:方言没有 `extract(epoch ...)`。
+            "SELECT s.source_revision,s.source_digest,s.expires_at AS expires_at "
             "FROM speech_builtin_voice_source_approvals s "
             "WHERE s.source_approval_id=? AND s.voice_id=? AND s.native_speaker_id='Vivian' "
             "AND s.expires_at > ? "
@@ -315,7 +315,7 @@ def record_operator_attestation(
         request.window.require_live(
             now_us=now_us,
             max_validity_seconds=declaration.max_validity_seconds,
-            source_expires_us=int(source["expires_us"]),
+            source_expires_us=to_epoch_us(source["expires_at"]),
             release_expires_us=release_expires_us,
         )
         facts = build_operator_facts(

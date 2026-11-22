@@ -323,14 +323,6 @@
     },
     {
       "rule": "pyformat",
-      "path": "backend/src/speechnexus_backend/job_dispatch_runtime.py",
-      "count": 1,
-      "card": "#1100",
-      "reason": "标记统一为 ?,与该语句异步迁移同批",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "pyformat",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/job_cancellation_reconciliation_postgres.py",
       "count": 3,
       "card": "#1100",

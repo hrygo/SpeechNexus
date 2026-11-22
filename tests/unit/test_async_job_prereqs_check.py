@@ -75,6 +75,24 @@ def test_dispatch_startup_probes_match_runtime() -> None:
     assert module.DISPATCH_ROLE_GUARD == job_dispatch_runtime.DISPATCH_ROLE_GUARD_SQL
 
 
+def test_role_guard_parameters_follow_the_placeholder_order() -> None:
+    """`?` 没有名字,顺序就是语义;唯一一处说明重复次数的地方必须被钉住."""
+
+    from speechnexus_backend import job_dispatch_runtime
+    from speechnexus_backend.job_dispatch_runtime import role_guard_parameters
+
+    params = role_guard_parameters("sn_jobs_role", "speech")
+    assert params == (
+        "sn_jobs_role",
+        "speech",
+        "sn_jobs_role",
+        "speech",
+        "sn_jobs_role",
+        "sn_jobs_role",
+    )
+    assert job_dispatch_runtime.DISPATCH_ROLE_GUARD_SQL.count("?") == len(params)
+
+
 def test_writer_surfaces_match_runtime() -> None:
     from speechnexus_backend import job_runtime
     from speechnexus_backend.speech.infrastructure.job_writer_columns import (

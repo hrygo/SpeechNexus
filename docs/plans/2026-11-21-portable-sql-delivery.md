@@ -256,3 +256,23 @@ claim bucket 改的是准入侧的领取，**没有覆盖派发队列**。因此
 顺带修了一个真实缺陷:存储原来用 `raise ... from None` 抛出,链被切断,分类拿不到任何事实
 ——这也是为什么三个 PG oracle 用例(`test_public_job_prerequisites_pg`)在改成读 `reason` 后
 一开始是红的:它们真的在未迁移库/被撤权角色上跑,暴露出翻译点没接上。
+
+### 8.7 `paging-limit` 16 处:先分「存在性」与「取哪一行」
+
+| 站点 | 形态 | 处置 |
+| --- | --- | --- |
+| `model_catalog_runtime` | 有没有 `SECURITY DEFINER` 函数 | 删 `LIMIT`,只 `fetchone()` |
+| `asr_settlement_preflight` | 有没有「持有租约却没结算根」的行 | 删 `LIMIT`,`fetchone()` 判空 |
+| `output_interval_sql` | 区间是否重叠 | 删 `LIMIT`,`fetchall()` 判空 |
+| `public_job_admission._instance` | 取一台就绪实例 | 删 `LIMIT`,`ORDER BY` 已确定第一行 |
+| `admission_sql`(2) | `WHERE operation_id=?` 取 attempt/job | **未动**:`coordination_jobs` 只保证 `UNIQUE(operation_id, attempt_id)`,同一操作有多条重试,取哪条没有定义 |
+| `publications_postgres` | 单例表 `LIMIT 2` 做写坏检测 | **未动**:可移植写法要拆成三条各自 `fetchone()` 的读,热门路径 1 次往返变 3 次,是取舍不是替换 |
+| `postgres_meetings` | 收据按 `(meeting_id, minutes_id, operation)` 取一条 | **未动**:主键是 `(workspace_id, operation, scope_id, key_digest)`,这条谓词落在非唯一索引上,多条时可返回任意一条 |
+| `postgres_versions` | `ORDER BY erased DESC LIMIT 1` | **未动**:并列时的取舍是业务判断 |
+| `voice_evidence_worker`、`admission_recovery_sql`(65)、`postgres_render_units`(2)、`workbench/runtime`、`asr_settlement_debt` | 批量取行或相关子查询取最新一条 | **未动**:批量要 `fetchmany`、相关子查询要去掉后被 N+1 取代,各自需要单独验证 |
+
+**这一处改动暴露了一个真判据**:删掉 `public_job_admission` 的 `LIMIT 1` 后,
+`test_public_job_admission_readiness_pg` 立刻转红 —— 原查询后面那行 `if len(rows) != 1:
+raise ... job_unavailable` 在 `LIMIT 1` 下是死代码,去掉 `LIMIT` 后变成「一个 binding 有多台
+就绪实例就拒绝」。而多台就绪实例(健康兄弟)是正常状态。改成「按 `(instance_id,
+instance_generation)` 排序取第一行」,既保持确定性,又不再把正常拓扑当故障。

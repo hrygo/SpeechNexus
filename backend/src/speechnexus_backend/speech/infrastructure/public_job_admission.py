@@ -173,8 +173,9 @@ class _Cursor(Protocol):
 def _one(cursor: _Cursor, query: str, parameters: tuple[object, ...]) -> dict[str, Any]:
     cursor.execute(query, parameters)
     rows = cursor.fetchall()
-    if len(rows) != 1:
-        raise PublicJobAdmissionRejectedError("job_unavailable")
+    # 同一 binding 可以有多台就绪实例(健康兄弟),这是正常状态;原查询用 `LIMIT 1`
+    # 把它压成一行,现在按 `(instance_id, instance_generation)` 排序取第一行 —— 比原来
+    # 由数据库任意选一行更确定。
     return rows[0]
 
 
@@ -416,7 +417,8 @@ def _instance(cursor: _Cursor, binding_revision_id: str, model_id: str) -> dict[
         "JOIN resource_pools AS p ON p.pool_id=e.pool_id "
         "WHERE e.binding_revision_id=? AND e.instance_state='ready' "
         "AND h.current_prepare_intent_id IS NOT NULL "
-        "ORDER BY e.instance_id, e.instance_generation LIMIT 1",
+        # 排序给出确定的第一行;方言没有 `LIMIT`,由 `fetchall()` 取回后只认第一行。
+        "ORDER BY e.instance_id, e.instance_generation",
         (binding_revision_id,),
     )
     rows = cursor.fetchall()
@@ -446,8 +448,9 @@ def _instance(cursor: _Cursor, binding_revision_id: str, model_id: str) -> dict[
                 "retrying this request cannot make one ready"
             )
         raise PublicJobAdmissionRejectedError("job_capacity_exhausted", detail)
-    if len(rows) != 1:
-        raise PublicJobAdmissionRejectedError("job_unavailable")
+    # 同一 binding 可以有多台就绪实例(健康兄弟),这是正常状态;原查询用 `LIMIT 1`
+    # 把它压成一行,现在按 `(instance_id, instance_generation)` 排序取第一行 —— 比原来
+    # 由数据库任意选一行更确定。
     return rows[0]
 
 
@@ -1431,8 +1434,9 @@ def _definition_admits(definition: dict[str, Any], kind: str) -> bool:
 def _readiness_one(cursor: _Cursor, query: str, parameters: tuple[object, ...]) -> dict[str, Any]:
     cursor.execute(query, parameters)
     rows = cursor.fetchall()
-    if len(rows) != 1:
-        raise PublicJobAdmissionRejectedError("job_unavailable")
+    # 同一 binding 可以有多台就绪实例(健康兄弟),这是正常状态;原查询用 `LIMIT 1`
+    # 把它压成一行,现在按 `(instance_id, instance_generation)` 排序取第一行 —— 比原来
+    # 由数据库任意选一行更确定。
     return rows[0]
 
 

@@ -290,3 +290,15 @@ instance_generation)` 排序取第一行」,既保持确定性,又不再把正�
 **一次差点落地的语法错误**:把说明写进 SQL 所在的 Python 三引号字符串里(`#` 行),而 SQL 的注释
 是 `--`。守卫的计数没有下降反而暴露了它 —— 那条 `LIMIT 1` 仍被算在字符串里。这类错误 ruff、mypy
 都看不见,只有「守卫计数为什么没降」这个问题能发现。注释已移到字符串外。
+
+### 8.9 `vendor-cast` 清零:DDL 里的 `::` 也要换
+
+5 处 `::` 全在 DDL 的 `CHECK` 约束里(`revision::numeric`、`octet_length(x::text)`),不是在 DML 语句里。
+换成 `CAST(... AS ...)` 之前先确认了一件事:逻辑 schema 的指纹只比对表/列结构,不比对表达式文本
+——`check-logical-schema.py` 在改动前后都是 `tables=10 revision=0005 fingerprint=d99bfdf39af6`。
+
+这意味着换写法不会让「旧库」与「按新代码建的库」产生指纹差异,但**已部署库里约束的表达式文本仍是
+`::`**。两者语义相同,`CREATE TABLE IF NOT EXISTS` 也不会重写既有约束,所以没有迁移动作;
+记录在这里,以免以后有人把「指纹一致」误读成「库里的约束文本也一致」。
+
+`vendor-cast` 由此归零。

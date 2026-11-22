@@ -16,7 +16,7 @@ def content_writes_migration_sql(schema: str) -> sql.Composed:
             key_digest text CHECK (key_digest ~ '^[0-9a-f]{{64}}$'),
             intent_digest text NOT NULL CHECK (intent_digest ~ '^[0-9a-f]{{64}}$'),
             intent jsonb CHECK (intent IS NULL OR
-                (jsonb_typeof(intent)='object' AND octet_length(intent::text)<=8192)),
+                (jsonb_typeof(intent)='object' AND octet_length(CAST(intent AS text))<=8192)),
             state text NOT NULL CHECK (state IN ('reserved','writing','unknown','settled')),
             object_key text CHECK (length(object_key) BETWEEN 1 AND 512),
             sha256 text CHECK (sha256 ~ '^sha256:[0-9a-f]{{64}}$'),

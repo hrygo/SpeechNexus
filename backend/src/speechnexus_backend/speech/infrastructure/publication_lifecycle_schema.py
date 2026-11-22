@@ -49,7 +49,7 @@ LIFECYCLE_DDL = (
     WHERE NOT EXISTS (
         SELECT 1 FROM {PUBLICATION_TABLE} AS newer
         WHERE newer.kind = p.kind AND newer.object_id = p.object_id
-          AND newer.revision::numeric > p.revision::numeric
+          AND CAST(newer.revision AS numeric) > CAST(p.revision AS numeric)
     )
       AND NOT EXISTS (
         SELECT 1 FROM {RETIREMENT_TABLE} AS retired

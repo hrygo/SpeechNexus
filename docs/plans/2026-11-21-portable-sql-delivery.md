@@ -729,3 +729,16 @@ RESULT FAIL: the baseline carries entries with no owning card
 
 也就是说:upsert 族的迁移必须先改**测试替身的判定依据**(从「找 SQL 标记」变成「按保存点语义判定」),
 否则会同时破坏 MySQL 侧的双 DSN 验证与回滚断言。这条已计入 `upsert` 的登记理由,本轮不改调用点。
+
+### 8.28 测试替身必须自己管事务边界,否则保存点会骗过回滚断言
+
+§8.27 把 upsert 的阻塞点定在「替身认 SQL 标记」。再往下挖一层,真正的机制是:**替身用了
+sqlite 的隐式事务管理**。`with connection:` 在遇到产品发出的 `SAVEPOINT` / `RELEASE SAVEPOINT`
+之后会失去回滚能力 —— `RELEASE` 一执行,那个 `with` 块失败时也不再回滚,于是「失败即整体回滚」
+的断言看起来通过,实际什么都没证明。
+
+修法是让替身自己拿事务边界:`isolation_level=None` + 显式 `BEGIN` / `COMMIT` / `ROLLBACK`,
+保存点交给 sqlite 原生执行(它支持 `SAVEPOINT`/`RELEASE`/`ROLLBACK TO`)。同时补一条直接压
+这一点的用例:`insert_if_absent` 成功(保存点已 RELEASE)之后抛错,快照必须与之前完全一致。
+
+注入即红:把替身退回 `with connection:`,这条用例立刻失败(`1 failed`)。

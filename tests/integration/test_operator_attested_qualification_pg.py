@@ -151,6 +151,12 @@ def _timestamp(us: int) -> str:
     )
 
 
+def _epoch_us_now() -> int:
+    """报告语句不再返回「现在」;用例自己取一个当前时间点交给报告函数."""
+
+    return int(datetime.now(UTC).timestamp() * 1_000_000)
+
+
 class Ledger:
     """The published binding, the release evidence and the registration facts."""
 
@@ -1530,7 +1536,7 @@ def test_the_read_surface_separates_both_sources_through_the_reader_identity(
     code = provenance_main(
         ["--database-url", "postgresql://unused/synthetic", "--schema", schema],
         env={},
-        connect=lambda url, name: (rows, int(rows[0]["now_us"])),
+        connect=lambda url, name: (rows, _epoch_us_now()),
         stdout=out,
         stderr=err,
     )

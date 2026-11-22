@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from speechnexus_backend.speech.domain.operator_attestation import (
     AttestationRequest,
@@ -41,6 +41,8 @@ from speechnexus_backend.speech.infrastructure.publications_sql import find_publ
 from speechnexus_backend.speech.interfaces.binding_release_evidence import (
     verify_binding_release_evidence,
 )
+from speechnexus_portable_sql.clock import ClockReader
+from speechnexus_portable_sql.clock import now_us as _portable_now_us
 
 _LEDGER_RELATIONS = (
     "speech_builtin_voice_source_approvals",
@@ -207,10 +209,7 @@ def record_operator_attestation(
         )
         if cursor.fetchall():
             raise OperatorAttestationError("attestation_revision_already_attested")
-        cursor.execute(
-            "SELECT CAST(floor(extract(epoch FROM clock_timestamp())*1000000) AS bigint) AS now_us"
-        )
-        now_us = int(cursor.fetchall()[0]["now_us"])
+        now_us = _now_us(cursor)
         declaration.require_live(now_us)
         cursor.execute(
             "SELECT s.source_revision,s.source_digest,"
@@ -445,3 +444,12 @@ def _replay(
     if cursor.fetchall():
         raise OperatorAttestationError("attestation_conflict")
     return None
+
+
+def _now_us(cursor: Any) -> int:
+    """「现在」只从便携时钟读一次;失败按本模块的错误语义上报."""
+
+    try:
+        return _portable_now_us(cast(ClockReader, cursor))
+    except (LookupError, TypeError) as error:
+        raise OperatorAttestationError("attestation_unavailable") from error

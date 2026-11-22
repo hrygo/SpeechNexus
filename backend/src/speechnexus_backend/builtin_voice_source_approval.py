@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
+from typing import Any, cast
 from uuid import UUID
 
 from speechnexus_backend.speech.infrastructure.publications_postgres import PostgresPublications
 from speechnexus_backend.speech.infrastructure.publications_sql import PublicationCursor
+from speechnexus_portable_sql.clock import ClockReader
+from speechnexus_portable_sql.clock import now_us as _portable_now_us
 
 _IDENTIFIER = re.compile(r"[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]\Z")
 _REVISION = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/+\-]{0,511}\Z")
@@ -151,7 +154,10 @@ def approve_builtin_voice_source(
                 "schema": schema,
                 "installation_id": installation_id,
             }
-        cursor.execute("SELECT CAST(? AS timestamptz) > clock_timestamp() AS live", (expiry,))
+        cursor.execute(
+            "SELECT CAST(? AS timestamptz) > ? AS live",
+            (expiry, datetime.fromtimestamp(_now_us(cursor) / 1_000_000, tz=UTC)),
+        )
         if not cursor.fetchall()[0]["live"]:
             raise BuiltinSourceApprovalError("approval_expired")
         cursor.execute(
@@ -170,7 +176,10 @@ def approve_builtin_voice_source(
         )
         # INSERT may wait for a relation lock after the first expiry check.
         # Reject inside the transaction so the new row is rolled back.
-        cursor.execute("SELECT CAST(? AS timestamptz) > clock_timestamp() AS live", (expiry,))
+        cursor.execute(
+            "SELECT CAST(? AS timestamptz) > ? AS live",
+            (expiry, datetime.fromtimestamp(_now_us(cursor) / 1_000_000, tz=UTC)),
+        )
         if not cursor.fetchall()[0]["live"]:
             raise BuiltinSourceApprovalError("approval_expired")
         return {
@@ -182,3 +191,12 @@ def approve_builtin_voice_source(
         }
 
     return store._run(operation, preserve=(BuiltinSourceApprovalError,))
+
+
+def _now_us(cursor: Any) -> int:
+    """「现在」只从便携时钟读一次;失败按本模块的错误语义上报."""
+
+    try:
+        return _portable_now_us(cast(ClockReader, cursor))
+    except (LookupError, TypeError) as error:
+        raise BuiltinSourceApprovalError("approval_unavailable") from error

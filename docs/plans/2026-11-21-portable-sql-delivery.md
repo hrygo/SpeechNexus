@@ -276,3 +276,17 @@ claim bucket 改的是准入侧的领取，**没有覆盖派发队列**。因此
 raise ... job_unavailable` 在 `LIMIT 1` 下是死代码,去掉 `LIMIT` 后变成「一个 binding 有多台
 就绪实例就拒绝」。而多台就绪实例(健康兄弟)是正常状态。改成「按 `(instance_id,
 instance_generation)` 排序取第一行」,既保持确定性,又不再把正常拓扑当故障。
+
+### 8.8 `paging-limit` 第二批:标量子查询与批量上界
+
+- `voice_evidence_worker`:同一身份的外来授权存在性探针。删 `LIMIT`,由 `fetchone()` 只取一行。
+- `workbench/runtime`:标量子查询取「经由哪个可达角色」的名字。`SELECT rt.name ... ORDER BY rt.name
+  LIMIT 1` 与 `SELECT MIN(rt.name) ...` 等价(同一排序规则下取最小),标量子查询因此仍只返回一行。
+
+**批量上界这一支被证明不是本地改动**:把 `RuntimeCursor` 协议补上 `fetchmany` 后,mypy 立刻列出
+四个游标包装与三处测试替身都要跟着实现 —— 这与仓库边界重构是同一件事,不属于本卡。所以
+`admission_recovery_sql` 的 `LIMIT 65` 保持原样,理由写在这里而不是留给下一次猜。
+
+**一次差点落地的语法错误**:把说明写进 SQL 所在的 Python 三引号字符串里(`#` 行),而 SQL 的注释
+是 `--`。守卫的计数没有下降反而暴露了它 —— 那条 `LIMIT 1` 仍被算在字符串里。这类错误 ruff、mypy
+都看不见,只有「守卫计数为什么没降」这个问题能发现。注释已移到字符串外。

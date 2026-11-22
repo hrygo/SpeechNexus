@@ -290,12 +290,14 @@ async def _refuse_foreign_relation_privileges(
     ``current_user`` is the login identity the connection already reset to.
     """
     row = await (
+        # 标量子查询只取第一次命中的角色名:方言没有 `LIMIT`,
+        # `MIN(rt.name)` 与「按名字排序取第一行」表达同一件事。
         await connection.execute(
             _REACHABLE_ROLES
             + """
             SELECT n.nspname AS schema, c.relname AS name, current_user AS login,
                 (
-                    SELECT rt.name FROM reachable rt
+                    SELECT MIN(rt.name) FROM reachable rt
                     WHERE CASE WHEN c.relkind = 'S'
                         THEN pg_catalog.has_sequence_privilege(
                             rt.oid, c.oid, 'USAGE,SELECT,UPDATE')
@@ -304,8 +306,6 @@ async def _refuse_foreign_relation_privileges(
                             OR pg_catalog.has_any_column_privilege(rt.oid, c.oid,
                                 'SELECT,INSERT,UPDATE,REFERENCES')
                     END
-                    ORDER BY rt.name
-                    LIMIT 1
                 ) AS via
             FROM pg_catalog.pg_class c
             JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace

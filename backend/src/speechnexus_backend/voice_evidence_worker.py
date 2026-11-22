@@ -213,6 +213,7 @@ def _verify_foreign_schema(connection: SpeechConnection, role: str, schema: str)
     narrower identity. System schemas are excluded because they carry grants to
     ``PUBLIC`` that are not a deployment decision.
     """
+    # 存在性探针:方言没有 `LIMIT`,由 `fetchone()` 只取一行。
     foreign = connection.execute(
         "SELECT 1 AS foreign_privilege FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
@@ -221,8 +222,7 @@ def _verify_foreign_schema(connection: SpeechConnection, role: str, schema: str)
         "AND c.relkind IN ('r','p','v','m','f') "
         "AND (pg_catalog.has_any_column_privilege(CAST(? AS name), c.oid, "
         "'SELECT,INSERT,UPDATE,REFERENCES') "
-        "OR pg_catalog.has_table_privilege(CAST(? AS name), c.oid, 'DELETE,TRUNCATE,TRIGGER')) "
-        "LIMIT 1",
+        "OR pg_catalog.has_table_privilege(CAST(? AS name), c.oid, 'DELETE,TRUNCATE,TRIGGER'))",
         (schema, role, role),
     ).fetchone()
     if foreign is not None:

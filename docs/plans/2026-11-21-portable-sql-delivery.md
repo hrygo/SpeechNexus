@@ -256,4 +256,3 @@ claim bucket 改的是准入侧的领取，**没有覆盖派发队列**。因此
 顺带修了一个真实缺陷:存储原来用 `raise ... from None` 抛出,链被切断,分类拿不到任何事实
 ——这也是为什么三个 PG oracle 用例(`test_public_job_prerequisites_pg`)在改成读 `reason` 后
 一开始是红的:它们真的在未迁移库/被撤权角色上跑,暴露出翻译点没接上。
-

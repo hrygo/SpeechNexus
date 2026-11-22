@@ -41,6 +41,7 @@ from speechnexus_backend.workbench.infrastructure.postgres_versions import (
     PostgresVersionUnitOfWork,
     _Session,
 )
+from speechnexus_portable_sql.contract import ListMarker
 
 _COLUMNS = """
     id, project_id, book_id, status, export_format, manifest_revision,
@@ -211,10 +212,10 @@ class PostgresExports(ExportJobStore):
             """
             SELECT b.project_id, b.casting_revision,
                 (SELECT count(*) FROM {s}.render_units u
-                    WHERE u.book_id = b.id AND u.id = ANY(CAST(? AS text[]))) AS units
+                    WHERE u.book_id = b.id AND u.id IN (?)) AS units
             FROM {s}.books b WHERE b.id = ?
         """,
-            (list(unit_ids), book_id),
+            (ListMarker(list(unit_ids)), book_id),
         )
         if row is None or int(row.units) != len(unit_ids):
             # An export may only name units of the book it pins.

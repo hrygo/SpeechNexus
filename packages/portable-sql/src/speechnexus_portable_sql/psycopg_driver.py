@@ -22,12 +22,13 @@ import psycopg
 from .contract import (
     ConflictError,
     ConnectionLostError,
+    ListMarker,
     Row,
     StorageError,
     StorageReason,
     expand_lists,
 )
-from .markers import PYFORMAT, qmark_to_pyformat
+from .markers import PYFORMAT, placeholder_positions, qmark_to_pyformat
 
 __all__ = [
     "PYFORMAT",
@@ -51,6 +52,52 @@ def _translated(query: Any, params: Any) -> Any:
     if isinstance(query, str):
         return qmark_to_pyformat(query, params)
     return _translate_composed(query, params)
+
+
+def _expand_composed(node: Any, params: Sequence[object]) -> tuple[Any, tuple[object, ...]]:
+    """在 `Composed` 上展开列表标记.
+
+    标记只出现在 `SQL` 片段里,`Identifier`/`Literal` 是叶子且不含占位符;所以按片段顺序
+    消耗参数即可,片段边界(以及标识符的引用规则)保持原样。
+    """
+
+    expanded: list[object] = []
+    cursor = [0]
+
+    def walk(part: Any) -> Any:
+        if isinstance(part, psycopg.sql.Composed):
+            return psycopg.sql.Composed([walk(item) for item in cast(Sequence[Any], part._obj)])
+        if isinstance(part, psycopg.sql.SQL):
+            template: str = part._obj
+            positions = placeholder_positions(template)
+            pieces: list[str] = []
+            previous = 0
+            for position in positions:
+                value = params[cursor[0]]
+                cursor[0] += 1
+                pieces.append(template[previous:position])
+                if isinstance(value, ListMarker):
+                    pieces.append(", ".join("?" * len(value)))
+                    expanded.extend(value)
+                else:
+                    pieces.append("?")
+                    expanded.append(value)
+                previous = position + 1
+            pieces.append(template[previous:])
+            return psycopg.sql.SQL("".join(pieces))
+        return part
+
+    return walk(node), tuple(expanded)
+
+
+def _expanded(query: Any, params: Any) -> tuple[Any, Any]:
+    """纯文本与 `Composed` 都要展开列表标记;workbench 走的正是后者。"""
+
+    if isinstance(query, str):
+        return expand_lists(query, params)
+    if any(isinstance(value, ListMarker) for value in params):
+        return _expand_composed(query, params)
+    return query, params
 
 
 def _translate_composed(node: Any, params: Any) -> Any:
@@ -119,8 +166,8 @@ class PortableCursor:
     ) -> PortableCursor:
         # `params is None` 必须原样保留:psycopg 只在不带参数时跳过 `%` 解析,
         # 换成空序列会让 DDL 里的字面量 `%` 被当成占位符。
-        if isinstance(query, str) and params is not None:
-            query, params = expand_lists(query, params)
+        if params is not None:
+            query, params = _expanded(query, params)
         self._cursor.execute(_translated(query, params), params, prepare=prepare, binary=binary)
         return self
 
@@ -262,8 +309,8 @@ class AsyncPortableCursor:
     ) -> AsyncPortableCursor:
         # 与同步游标同一条规则:列表标记在发出前展开,`params is None` 原样保留。
         # 少了这一步,标记对象会被直接交给驱动:`cannot adapt type 'ListMarker'`。
-        if isinstance(query, str) and params is not None:
-            query, params = expand_lists(query, params)
+        if params is not None:
+            query, params = _expanded(query, params)
         await self._cursor.execute(
             _translated(query, params), params, prepare=prepare, binary=binary
         )

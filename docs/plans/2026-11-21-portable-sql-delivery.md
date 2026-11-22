@@ -828,3 +828,34 @@ rows = _rows(cursor, "SELECT * FROM speech_profile_commands WHERE key_digest=? F
 
 范围说明:`SET TRANSACTION` 之类的**事务级**语句不走 `execute`(它们必须是事务第一条语句),
 因此不在逐语句探针的路径上,也不受这条不变量约束。
+
+### 8.33 `sql-string-building` 的假阳:提示语里出现 select 不算拼接 SQL
+
+基线 529 里,`sql-string-building` 有 18 条其实是**提示语**:
+
+```python
+f" no longer select a local inspection process; "
+f"configured but SPEECHNEXUS_ASSET_INSPECTOR=text; select audio or unset every …"
+```
+
+旧判据只要 f-string 的字面量里出现 `SELECT\b` 就算违规,于是「请选择 audio」这类文案被记成
+「用 f-string 拼 SQL」。这 18 条不是待迁移的代码,是判据没落在被测对象上。
+
+收法:拼接 SQL 的真实形状是**以一条语句的关键字开头**,所以新增
+`SQL_STATEMENT_START`(锚在 `\A`,接受 `SELECT` / `INSERT INTO` / `UPDATE` / `DELETE FROM` /
+`WITH` / `CREATE` / `ALTER` / `DROP` / `REVOKE` / `GRANT` / `TRUNCATE` / `COMMENT ON` /
+`MERGE INTO` / `SET` / `SAVEPOINT` / `ROLLBACK` / `RELEASE`),两条判据同时满足才算违规。
+
+判据两边都实测:
+
+| 输入 | 结果 |
+| --- | --- |
+| `f"SELECT a FROM t WHERE b = {value}"` | 违规 |
+| `f"INSERT INTO t (a) VALUES ({value})"` | 违规 |
+| `f"GRANT SELECT ON {table} TO role"` | 违规 |
+| `f" no longer select a local process"` | 不违规(反例) |
+| `f"job_id = {value} AND queue = {queue}"`(纯片段) | 不违规 |
+
+反例写进 `--selftest`:把判据退回只匹配 `SQL_SHAPE`,`SELFTEST FAIL`。
+
+基线 **529 → 511**(18 条假阳归零),涉及 14 个文件的登记条目一并删除。

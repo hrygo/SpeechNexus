@@ -58,6 +58,7 @@ from speechnexus_portable_sql.clock import ClockReader
 from speechnexus_portable_sql.clock import now_us as now_us_for
 from speechnexus_portable_sql.psycopg_driver import PortableConnection
 from speechnexus_portable_sql.psycopg_driver import connect as portable_connect
+from speechnexus_portable_sql.transaction import is_savepoint_control
 from speechnexus_portable_sql.vendor import dict_row, psycopg
 
 EXIT_INVALID = 2
@@ -312,6 +313,8 @@ class _Cursor:
                 "registration transaction exceeded its bounded deadline",
                 EXIT_UNAVAILABLE,
             )
+        if is_savepoint_control(query):
+            return self._cursor.execute(query, parameters)
         self._cursor.execute(
             "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(remaining * 1000))),),

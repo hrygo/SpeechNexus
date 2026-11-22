@@ -82,6 +82,7 @@ from speechnexus_backend.speech.infrastructure.public_job_admission import (
 )
 from speechnexus_portable_sql.clock import ClockReader, now_us
 from speechnexus_portable_sql.psycopg_driver import portable_error
+from speechnexus_portable_sql.transaction import is_savepoint_control
 from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 _LATEST_PROGRESS = (
@@ -180,6 +181,9 @@ class _DeadlineConnection:
         _remaining(self.deadline)
 
     def execute(self, query: str, parameters: tuple[object, ...] = ()) -> _DeadlineRows:
+        if is_savepoint_control(query):
+            # 中止事务里唯一还能执行的是保存点控制,`arm()` 的探针会先失败。
+            return _DeadlineRows(self.raw.execute(query, parameters), self.deadline)
         self.arm()
         rows = self.raw.execute(query, parameters)
         _remaining(self.deadline)

@@ -291,3 +291,33 @@ def _profile_cursor(raw: Any) -> Any:
         "speechnexus_backend.speech.infrastructure.profile_drafts_postgres"
     )
     return module._Cursor(raw, time.monotonic() + 5)
+
+
+PROBE = "SELECT set_config('statement_timeout', ?, true)"
+PER_STATEMENT = re.compile(r"def (?:execute|rows|changed)\(self, [a-z_]+: str")
+SAVEPOINT_SKIP = "is_savepoint_control("
+
+
+def test_every_per_statement_probe_lets_savepoint_control_through() -> None:
+    """先探测再执行的适配器必须放行保存点控制语句.
+
+    事务被唯一冲突中止之后,唯一还能执行的是 `ROLLBACK TO SAVEPOINT`;探测语句抢在它前面
+    会让回滚永远走不到,调用方看到的是可用性错误而不是「别人先写」。这条守护的是**一致性**:
+    新增一个逐语句装 `statement_timeout` 的适配器时,必须一并放行保存点控制。
+    """
+
+    offenders = []
+    for path in sorted(SOURCE_ROOT.rglob("*.py")):
+        if "__pycache__" in str(path):
+            continue
+        text = path.read_text(encoding="utf-8")
+        # 协议声明(`def execute(...) -> _Rows: ...`)不是实现,不装探针也不执行语句。
+        implemented = any(
+            PER_STATEMENT.search(line) and not line.rstrip().endswith(": ...")
+            for line in text.splitlines()
+        )
+        if PROBE not in text or not implemented:
+            continue
+        if SAVEPOINT_SKIP not in text:
+            offenders.append(str(path.relative_to(SOURCE_ROOT)))
+    assert offenders == [], offenders

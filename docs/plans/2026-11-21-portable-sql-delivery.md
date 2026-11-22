@@ -898,3 +898,39 @@ f"configured but SPEECHNEXUS_ASSET_INSPECTOR=text; select audio or unset every �
 
 原有的漂移守护(`check-async-job-prereqs.py` 的副本必须等于运行时声明)继续生效,所以三处
 不会悄悄分叉。基线 **510 → 509**。
+
+### 8.36 特权制品的判定依据与 schema/DDL 不同,所以声明文件分成两类
+
+`qualification_admission_grants.py` 有 12 条 `sql-string-building`,全是这种:
+
+```python
+f'GRANT SELECT, INSERT (authorization_id, …) ON "{schema}".speech_builtin_voice_probe_admissions TO "{role}"'
+```
+
+它不是待迁移的 DML:schema、角色、表名、列名都是**标识符**,任何方言都不能把标识符参数化;
+`GRANT`/`REVOKE` 也没有可绑定的等价写法。继续「迁移」只会把它改写成另一种字符串拼接。
+
+判定依据(代码证据):
+
+| 制品 | 唯一消费者 | 结论 |
+| --- | --- | --- |
+| `qualification_admission_grants` | `tests/integration/test_qualification_admission_pg.py` | 部署期/用例供给 |
+| `builtin_voice_grants` | `deploy/cluster/provision-roles.py` + 4 个集成用例 | 部署期供给 |
+| `gateway_query_grants` | `deploy/cluster/provision-roles.py` + 用例(产品模块只取列名常量) | 部署期供给 |
+| `coordination_grants` | `deploy/` 供给脚本 + 用例 | 部署期供给 |
+| `public_job_admission_grants` | `deploy/README.md` 记录的部署步骤 + 4 个集成用例 | 部署期供给 |
+
+所以声明文件分两类,各自写清依据:
+
+- `paths` —— 唯一消费者是 alembic 迁移树(schema/DDL);
+- `deploy` —— 标识符无法参数化的部署期特权制品,没有任何 DML 路径执行它。
+
+守卫的 `load_profile_patterns` 同时读两类(`DECLARED_PROFILE_FIELDS`);少读一类,另一类就掉回
+业务 DML 基线。判据两侧都实测:
+
+- 注入即红:从 `deploy` 删掉一条 `qualification_admission_grants.py`,`baseline=485 new=12`
+  → `RESULT FAIL: portable SQL subset regressed`;
+- 声明健康:`test_declared_profiles_cover_both_artifact_categories` 断言两类都非空、路径都真实
+  存在、同一条目不会被两类重复声明。
+
+基线 **509 → 485**(24 条),`profile-ddl` 从 168/18 变成 192/23。

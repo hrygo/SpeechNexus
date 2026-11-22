@@ -1,5 +1,5 @@
 {
-  "note": "已声明的物理 DDL profile 制品。判定标准:该模块在本仓唯一消费者是 alembic 迁移(backend/src/speechnexus_backend/speech/infrastructure/migrations/versions/*),不与任何业务 DML 共用。清单内条目单独计入 profile-ddl,不进业务 DML 基线;不在清单里的文件照旧按受限方言判红。",
+  "note": "已声明的物理 profile 制品,分两类,各自有独立判定依据。`paths`(schema/DDL):该模块在本仓唯一消费者是 alembic 迁移(backend/src/speechnexus_backend/speech/infrastructure/migrations/versions/*),不与任何业务 DML 共用。`deploy`(特权制品):GRANT/REVOKE 语句里的 schema、角色、表名都是标识符,任何方言都不能参数化;这些函数的消费者只有 deploy/cluster/provision-roles.py(部署期供给)与集成用例,没有 DML 路径执行它们。清单内条目单独计入 profile-ddl,不进业务 DML 基线;不在清单里的文件照旧按受限方言判红,从清单里删掉一条会立刻变成 UNREGISTERED。",
   "paths": [
     "backend/src/speechnexus_backend/speech/infrastructure/admission_command_schema.py",
     "backend/src/speechnexus_backend/speech/infrastructure/asset_schema.py",
@@ -19,5 +19,12 @@
     "backend/src/speechnexus_backend/speech/infrastructure/runtime_intent_schema.py",
     "backend/src/speechnexus_backend/speech/infrastructure/runtime_observation_schema.py",
     "backend/src/speechnexus_backend/speech/infrastructure/voice_draft_schema.py"
+  ],
+  "deploy": [
+    "backend/src/speechnexus_backend/speech/infrastructure/qualification_admission_grants.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/builtin_voice_grants.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/gateway_query_grants.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/coordination_grants.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/public_job_admission_grants.py"
   ]
 }

@@ -372,6 +372,13 @@ def audit_exceptions(
     return sorted(unregistered), sorted(stale)
 
 
+#: 声明文件里的分类字段。两类制品的判定依据不同,所以分开列,而不是混在一个 `paths` 里:
+#: - `paths`:唯一消费者是 alembic 迁移树;
+#: - `deploy`:部署期特权制品(GRANT/REVOKE),标识符无法参数化,由 `deploy/cluster/` 的
+#:   供给脚本与集成用例消费,任何 DML 路径都不执行它。
+DECLARED_PROFILE_FIELDS = ("paths", "deploy")
+
+
 def load_profile_patterns(path: Path) -> tuple[str, ...]:
     """读取已声明的 profile 制品路径模式.
 
@@ -381,10 +388,17 @@ def load_profile_patterns(path: Path) -> tuple[str, ...]:
     """
 
     payload = json.loads(path.read_text(encoding="utf-8"))
-    patterns = payload.get("paths")
-    if not isinstance(patterns, list) or not all(isinstance(item, str) for item in patterns):
-        raise SystemExit(f"{path}: expected an object with a 'paths' string array")
-    return tuple(patterns)
+    collected: list[str] = []
+    for field in DECLARED_PROFILE_FIELDS:
+        patterns = payload.get(field)
+        if patterns is None:
+            continue
+        if not isinstance(patterns, list) or not all(isinstance(item, str) for item in patterns):
+            raise SystemExit(f"{path}: '{field}' must be a string array")
+        collected.extend(patterns)
+    if not collected:
+        raise SystemExit(f"{path}: expected at least one of {DECLARED_PROFILE_FIELDS}")
+    return tuple(collected)
 
 
 def split_declared(

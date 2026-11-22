@@ -387,3 +387,21 @@ cursor.execute("... WHERE id IN (?) AND state = ?", (ListMarker(ids), "ok"))
 一处测试随之改变:`test_claim_uses_the_instance_lane_not_the_module_default` 原来断言参数等于
 一个 list,现在参数是 `ListMarker`,断言改成「是标记且内容等于车道 kinds」——断言落在语义上,
 而不是落在某个容器类型上。
+
+### 8.14 一条语句不能混用两种标记:派发领取的 `ANY(?)` 保持原样
+
+迁移 13 处时,`job_dispatch_postgres` 的领取语句判红:
+
+```
+ContractError: statement expects 4 parameters, got 5
+```
+
+原因是这条语句是**混合标记**:`?` 是便携标记,`LIMIT %s` 还是旧式标记。`?` 的个数永远不等于
+参数个数(差的就是那个 `%s` 的位置),展开时无从对齐位置。这不是能靠猜补上的偏差。
+
+因此这一处撤回,保持 `= ANY(?)`;`expand_lists` 遇到混合标记语句时直接给出原因
+(「需要纯 qmark 语句」),而不是抛一个「参数个数不符」的模糊错误 —— 后者会让人去数参数,
+而真正的原因在标记体系。
+
+`vendor-operator` 由 19 降到 7(这一处 + `ILIKE`/`FULL JOIN` 家族);基线 897 → 876 的降幅来自
+其余 12 处。

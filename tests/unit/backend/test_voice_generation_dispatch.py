@@ -36,7 +36,6 @@ from speechnexus_backend.speech.domain.job_dispatch import (
 from speechnexus_backend.speech.infrastructure.job_dispatch_postgres import (
     PostgresDispatchQueue,
 )
-from speechnexus_portable_sql.contract import ListMarker
 
 NOW = 1_700_000_000_000_000
 RETENTION_US = 30 * 24 * 60 * 60 * 1_000_000
@@ -245,10 +244,8 @@ def test_claim_uses_the_instance_lane_not_the_module_default() -> None:
     claim_parameters = pool.connection_log.parameters[-1]
 
     # 第一个参数是这次领取共用的「现在」,第二个才是车道过滤。
-    # 车道过滤是一个 `?` 绑一列值:元数在运行期定,断言按标记取值而不是按 Python 列表。
     assert claim_parameters[0] == 1_000_000
-    assert isinstance(claim_parameters[1], ListMarker)
-    assert list(claim_parameters[1]) == list(VOICE_GENERATION_JOB_KINDS)
+    assert claim_parameters[1] == list(VOICE_GENERATION_JOB_KINDS)
 
 
 @dataclass

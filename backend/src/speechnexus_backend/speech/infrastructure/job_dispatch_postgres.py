@@ -36,7 +36,6 @@ from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema imp
 from speechnexus_backend.speech.infrastructure.leases_postgres import PostgresLeaseTransactions
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_portable_sql.clock import now_us
-from speechnexus_portable_sql.contract import ListMarker
 
 _JOB_SELECT = (
     "SELECT j.job_id, j.workspace_id, j.kind, j.state, j.status_version, "
@@ -155,7 +154,7 @@ class PostgresDispatchQueue:
             # A Job outside this queue's lane is filtered inside the claim so it
             # neither consumes the batch limit nor turns into a
             # DispatchProtocolError that starves the kinds this worker owns.
-            "AND j.kind IN (?) "
+            "AND j.kind = ANY(?) "
             "ORDER BY j.created_at_us, c.job_id FOR UPDATE OF c SKIP LOCKED LIMIT %s"
             "), updated AS (UPDATE coordination_jobs AS c "
             "SET claim_owner_id = ?, claim_version = c.claim_version + 1, "
@@ -180,7 +179,7 @@ class PostgresDispatchQueue:
                     query,
                     (
                         now_us(connection),
-                        ListMarker(list(self._kinds)),
+                        list(self._kinds),
                         limit,
                         worker_id,
                         lease_ms * 1000,

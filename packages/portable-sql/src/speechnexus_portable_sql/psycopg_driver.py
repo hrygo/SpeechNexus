@@ -19,7 +19,14 @@ from typing import Any, cast
 
 import psycopg
 
-from .contract import ConflictError, ConnectionLostError, Row, StorageError, StorageReason
+from .contract import (
+    ConflictError,
+    ConnectionLostError,
+    Row,
+    StorageError,
+    StorageReason,
+    expand_lists,
+)
 from .markers import PYFORMAT, qmark_to_pyformat
 
 __all__ = [
@@ -110,6 +117,10 @@ class PortableCursor:
         prepare: bool | None = None,
         binary: bool | None = None,
     ) -> PortableCursor:
+        # `params is None` 必须原样保留:psycopg 只在不带参数时跳过 `%` 解析,
+        # 换成空序列会让 DDL 里的字面量 `%` 被当成占位符。
+        if isinstance(query, str) and params is not None:
+            query, params = expand_lists(query, params)
         self._cursor.execute(_translated(query, params), params, prepare=prepare, binary=binary)
         return self
 

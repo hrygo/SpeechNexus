@@ -337,3 +337,29 @@ instance_generation)` 排序取第一行」,既保持确定性,又不再把正�
 6 处,`_PUBLISHER_TABLES` 实际是 **6** 个名字。测试先红(`the fixed IN list ... holds exactly
 three names`),随后真实 PG 用例 21 条全红 —— 参数个数与占位符不匹配,探针把「参数错位」读成了
 「越权」。定元 `IN` 的代价就是这个:元数写死在 SQL 里,必须有一处断言盯着。
+
+### 8.12 变长 `IN` 的展开原语:`ListMarker`
+
+`= ANY(array)` 在受限方言里没有替代,而 `IN (?, ?, ?)` 的元数写死。运行期才知道大小的集合
+(清理批次、按 id 集合读)因此需要一个「一个 `?` 绑一列值」的标记:
+
+```python
+cursor.execute("... WHERE id IN (?) AND state = ?", (ListMarker(ids), "ok"))
+# 执行前展开成:... WHERE id IN (?, ?, ?) AND state = ?  / 参数 (1, 2, 3, "ok")
+```
+
+为什么放在 `packages/portable-sql`:`?` 是这个包拥有的标记语法,展开位置也必须由它算(字符串字面量
+里的 `?` 不参与)。业务侧自己拼 `?, ?, ?` 就是 `sql-string-building`,而且每处都会拼错一次 ——
+#1100 里已经有两次「元数算错」的实例(§8.11)。
+
+三条判据,都带注入实测:
+
+- **两个列表在同一句里各自展开**且参数顺序不变(`test_two_lists_expand_in_their_own_positions`);
+- **字面量里的 `?` 不参与**展开(`test_a_question_mark_inside_a_literal_is_not_a_placeholder`);
+- **空集合直接拒绝**(`ListMarker([])` 抛 `ContractError`):展开成 `IN ()` 不合语法,当成
+  「匹配不到任何行」会让 `NOT IN` 静默返回空 —— 两种猜测都会把缺陷藏起来。
+
+真实库 oracle:`tests/integration/test_portable_list_marker_pg.py` 用生产驱动跑通「三个值里选两个」
+与「空批次在语句发出前被拒绝」两条。
+
+调用点迁移是下一步:13 处 `= ANY(数组)` 分别改成 `IN (?)` + `ListMarker`,不再有定元元数问题。

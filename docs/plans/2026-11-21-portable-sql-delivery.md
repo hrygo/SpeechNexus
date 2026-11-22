@@ -593,3 +593,33 @@ DDL 模块合计占了 446 条。它们不是「写错了的 SQL」,而是**物�
 其他 11 处 `cte` 里,`model_catalog_runtime` 与 `workbench/runtime` 是 `WITH RECURSIVE`
 走 `pg_auth_members` 的权限探针,`job_cancellation_reconciliation_postgres` 是
 `WITH due ... INSERT ... ON CONFLICT ... RETURNING` 的租约领取 —— 都归各自的卡,不是迁移对象。
+### 8.22 把「已声明的 profile 制品」从业务 DML 基线上分开
+
+§8.21 的结论是 446 条 DDL 条目挡住了归零。架构文档其实已经给了口径
+(`docs/architecture/database-portability.md` §1.1):
+
+- 第 2 条:表、列、键、约束由同一 canonical 逻辑 schema 定义,**目标库可使用受控的物理 DDL profile**;
+- 第 4 条:仅当目标库无法执行同一 SQL 文本时,才允许在 `infrastructure` 内增加**已登记、静态的
+  DML profile variant**。
+
+也就是说,「品牌相关的物理产物」本来就要被**声明**,不是被禁止;受限方言约束的是**未声明的**
+品牌 SQL。守卫之前把两者算在同一条基线上,所以 §8.21 那个环其实是口径问题,不是工作量问题。
+
+本轮只加机制,不加声明:
+
+- `--profiles <json>`:清单里的文件按通配符匹配,其条目单独报 `profile-ddl=<n> files=<m>`,
+  不再进入业务 DML 的基线与 `new/fixed` 比较;不传这个参数时行为完全不变。
+- `scripts/dev-env/portable-sql-profiles.json`:**空的** `paths: []`。声明属于策略决定,
+  由评审给出,不由守卫作者顺手写。
+- 自检里加一条注入:`split_declared` 必须把已声明路径与未声明路径分开,否则报错 —— 这条覆盖
+  「声明了就放行、没声明照旧红」的两半。
+
+实测口径(本机,声明 `backend/src/**/speech/infrastructure/*_schema.py` 作样本):
+
+```
+baseline=747 new=0 fixed=350
+profile-ddl=350 files=39
+```
+
+即:全量 747 里 350 条落在这批 schema 模块上,剩下 397 条才是真正需要迁移或单独豁免的业务 DML。
+这个数字是「声明之后基线会变成多少」的直接依据,但**清单保持为空**,直到有人明确接受这份划分。

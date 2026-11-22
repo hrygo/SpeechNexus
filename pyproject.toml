@@ -185,7 +185,7 @@ forbidden_modules = [
   "psycopg_pool",
   "pymysql",
 ]
-allow_indirect_imports = true
+allow_indirect_imports = "true"
 # portable-sql 自己就是唯一允许碰驱动的包;这里用 allow 单独把它排除。
 
 [[tool.importlinter.contracts]]

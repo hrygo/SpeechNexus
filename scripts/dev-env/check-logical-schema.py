@@ -66,6 +66,7 @@ INDEX_PATTERN = re.compile(
     r"(?P<table>[a-z][a-z0-9_]*)\s*\((?P<columns>[^)]*)\)$",
     re.IGNORECASE | re.DOTALL,
 )
+SEED_CLEAR_PATTERN = re.compile(r"^DELETE\s+FROM\s+schema_meta\b", re.IGNORECASE)
 SEED_PATTERN = re.compile(
     r"^INSERT\s+INTO\s+schema_meta\s*\([^)]*\)\s*VALUES\s*\((?P<values>.*)\)$",
     re.IGNORECASE | re.DOTALL,
@@ -193,6 +194,10 @@ def parse_ddl(source: str) -> PhysicalSchema:
             if table_name not in schema.tables:
                 raise DdlError(f"index {index.name} targets unknown table {table_name}")
             schema.tables[table_name].indexes.append(index)
+            continue
+        if SEED_CLEAR_PATTERN.match(statement):
+            # 每个 revision 重新盖章:清掉上一条种子,由本 revision 的 INSERT 决定权威身份。
+            schema.seed = None
             continue
         seed_match = SEED_PATTERN.match(statement)
         if seed_match is not None:
@@ -341,30 +346,56 @@ def schema_files(root: Path) -> list[Path]:
     )
 
 
+def render_ddl(schema: LogicalSchema) -> str:
+    """从逻辑定义渲染 canonical DDL;selftest 用同一份定义,夹具不会漂移。"""
+
+    chunks: list[str] = []
+    for table in schema.tables:
+        lines = [f"CREATE TABLE {table.name} ("]
+        for column in table.columns:
+            suffix = "" if column.nullable else " NOT NULL"
+            lines.append(f"    {column.name} {column.type.upper()}{suffix},")
+        if table.primary_key:
+            lines.append(f"    PRIMARY KEY ({', '.join(table.primary_key)}),")
+        for unique in table.uniques:
+            lines.append(f"    UNIQUE ({', '.join(unique)}),")
+        for foreign_key in table.foreign_keys:
+            lines.append(
+                f"    FOREIGN KEY ({', '.join(foreign_key.columns)}) REFERENCES "
+                f"{foreign_key.references_table} ({', '.join(foreign_key.references_columns)}),"
+            )
+        last = lines[-1]
+        lines[-1] = last[:-1] if last.endswith(",") else last
+        lines.append(");")
+        chunks.append("\n".join(lines))
+        for index in table.indexes:
+            chunks.append(
+                f"CREATE INDEX {index.name} ON {table.name} ({', '.join(index.columns)});"
+            )
+    chunks.append("DELETE FROM schema_meta WHERE meta_id = 'portable';")
+    chunks.append(
+        "INSERT INTO schema_meta (meta_id, schema_rev, schema_fingerprint, authority_epoch)"
+        f"\nVALUES ('portable', '{schema.revision}', '{fingerprint(schema)}', 1);"
+    )
+    return "\n\n".join(chunks) + "\n"
+
+
 def selftest() -> list[str]:
     """注入式自检:删除列 / 键 / 约束、改 NULL 性、改索引覆盖、改种子都必须变红。"""
 
     problems: list[str] = []
-    logical = load_logical_schema(LOGICAL)
-    clean = """
-CREATE TABLE schema_meta (
-    meta_id VARCHAR(32) NOT NULL,
-    schema_rev VARCHAR(64) NOT NULL,
-    schema_fingerprint CHAR(64) NOT NULL,
-    authority_epoch DECIMAL(38,0) NOT NULL,
-    PRIMARY KEY (meta_id)
-);
-INSERT INTO schema_meta (meta_id, schema_rev, schema_fingerprint, authority_epoch)
-VALUES ('portable', '{revision}', '{fingerprint}', 1);
-""".replace("{revision}", logical.revision).replace("{fingerprint}", fingerprint(logical))
-
-    if compare(logical, parse_ddl(clean)):
+    schema = load_logical_schema(LOGICAL)
+    clean = render_ddl(schema)
+    if compare(schema, parse_ddl(clean)):
         problems.append("clean DDL was rejected")
 
     mutations: tuple[tuple[str, str], ...] = (
         ("missing-column", clean.replace("    schema_rev VARCHAR(64) NOT NULL,\n", "")),
         ("nullable", clean.replace("schema_rev VARCHAR(64) NOT NULL", "schema_rev VARCHAR(64)")),
-        ("primary key", clean.replace("    PRIMARY KEY (meta_id)\n", "").replace(",\n);", "\n);")),
+        (
+            "primary-key",
+            clean.replace("    PRIMARY KEY (meta_id)\n", ""),
+        ),
         (
             "extra-column",
             clean.replace(
@@ -372,8 +403,12 @@ VALUES ('portable', '{revision}', '{fingerprint}', 1);
                 "    extra_col VARCHAR(8) NOT NULL,\n    PRIMARY KEY (meta_id)",
             ),
         ),
-        ("seed-fingerprint", clean.replace(fingerprint(logical), "0" * 64)),
-        ("seed-revision", clean.replace(f"'{logical.revision}'", "'9999'")),
+        ("seed-fingerprint", clean.replace(fingerprint(schema), "0" * 64)),
+        ("seed-revision", clean.replace(f"'{schema.revision}'", "'9999'")),
+        (
+            "index-coverage",
+            clean + "\nCREATE INDEX idx_extra ON coordination_jobs (job_state);\n",
+        ),
     )
     for label, source in mutations:
         try:
@@ -381,19 +416,22 @@ VALUES ('portable', '{revision}', '{fingerprint}', 1);
         except DdlError as error:
             problems.append(f"{label}: mutation did not parse ({error})")
             continue
-        if not compare(logical, parsed):
+        if not compare(schema, parsed):
             problems.append(f"{label}: mutation was accepted")
 
-    index_variant = clean + "\nCREATE INDEX idx_schema_meta_rev ON schema_meta (schema_rev);\n"
-    if not compare(logical, parse_ddl(index_variant)):
-        problems.append("extra index coverage was accepted")
-
-    try:
-        parse_ddl("ALTER TABLE schema_meta ADD extra_col VARCHAR(8);")
-    except DdlError:
-        pass
-    else:
-        problems.append("ALTER TABLE was accepted")
+    for label, source in (
+        ("ALTER TABLE", clean + "\nALTER TABLE schema_meta ADD x VARCHAR(8);\n"),
+        (
+            "missing-table",
+            clean.replace("CREATE TABLE coordination_outbox", "CREATE TABLE outbox_x"),
+        ),
+    ):
+        try:
+            parsed = parse_ddl(source)
+        except DdlError:
+            continue
+        if not compare(schema, parsed):
+            problems.append(f"{label}: mutation was accepted")
 
     return problems
 

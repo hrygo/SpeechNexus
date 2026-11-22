@@ -40,7 +40,7 @@ def payload(**overrides: object) -> dict[str, object]:
 
 def test_the_committed_logical_schema_is_canonical() -> None:
     schema = load_logical_schema(LOGICAL)
-    assert schema.revision == "0002"
+    assert schema.revision == "0003"
     column = schema.table("schema_meta")
     assert column is not None
     assert [item.name for item in column.columns] == [
@@ -49,6 +49,9 @@ def test_the_committed_logical_schema_is_canonical() -> None:
         "schema_fingerprint",
         "authority_epoch",
     ]
+    jobs = schema.table("coordination_jobs")
+    assert jobs is not None
+    assert jobs.primary_key == ("job_id",)
     assert len(fingerprint(schema)) == 64
 
 

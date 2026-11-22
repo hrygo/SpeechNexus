@@ -29,6 +29,7 @@ STATEMENTS = REPO_ROOT / "packages/portable-sql/statements"
 if str(PACKAGE_SOURCE) not in sys.path:
     sys.path.insert(0, str(PACKAGE_SOURCE))
 
+from speechnexus_portable_sql.claims import STATEMENTS as CLAIM_STATEMENTS  # noqa: E402
 from speechnexus_portable_sql.manifest import (  # noqa: E402 - 需先补 sys.path
     Manifest,
     ManifestError,
@@ -69,11 +70,16 @@ def check_manifest(manifest: Manifest, profiles: dict[str, object]) -> list[str]
         if not statement.transaction:
             problems.append(f"{statement.statement_id}: missing transaction boundary")
 
-    authority = manifest.statement("authority.probe")
-    if authority is None:
-        problems.append("manifest is missing the authority.probe statement")
-    elif authority.sql != AUTHORITY_SQL:
-        problems.append("authority.probe SQL drifted from schema.AUTHORITY_SQL")
+    # 运行时可执行 SQL 是唯一来源:manifest 与代码必须互为子集,任何一侧漂移都红。
+    executable = {"authority.probe": AUTHORITY_SQL, **CLAIM_STATEMENTS}
+    registered = {statement.statement_id: statement.sql for statement in manifest.statements}
+    for statement_id, sql in sorted(executable.items()):
+        if statement_id not in registered:
+            problems.append(f"{statement_id}: executable statement is not registered")
+        elif registered[statement_id] != sql:
+            problems.append(f"{statement_id}: SQL drifted from the executable statement")
+    for statement_id in sorted(set(registered) - set(executable)):
+        problems.append(f"{statement_id}: registered but no executable statement exists")
 
     for variant in manifest.profiles:
         key = (variant.profile_id, variant.statement_id)
@@ -123,6 +129,10 @@ def check_digest(manifest: Manifest, expected_path: Path) -> tuple[str, str | No
     return current, None
 
 
+def claims_sql(statement_id: str) -> str:
+    return CLAIM_STATEMENTS[statement_id]
+
+
 def selftest() -> list[str]:
     """注入式自检:每一类漂移都必须能红。"""
 
@@ -159,6 +169,9 @@ def selftest() -> list[str]:
     )
     if not check_manifest(Manifest(base.revision, base.statements, (unregistered,)), profiles):
         problems.append("an unregistered profile variant was accepted")
+
+    if not check_manifest(mutated(sql=claims_sql("job.claim") + " /* drift */"), profiles):
+        problems.append("a drifted statement SQL was accepted")
 
     if digest(mutated(result=statement.result[:1])) == digest(base):
         problems.append("a changed result shape did not change the manifest digest")

@@ -95,8 +95,11 @@ def database(request: pytest.FixtureRequest) -> Iterator[Database]:
             # commands, and `COLLATE "C"` is PostgreSQL's byte-wise ordering. utf8mb4_0900_bin
             # is its MySQL counterpart, so both engines keep byte-wise comparisons.
             ddl_statements = [
-                re.sub(r'COLLATE\s+"C"', "COLLATE utf8mb4_0900_bin",
-                       re.sub(r"\bTEXT\b", "LONGTEXT", statement))
+                re.sub(
+                    r'COLLATE\s+"C"',
+                    "COLLATE utf8mb4_0900_bin",
+                    re.sub(r"\bTEXT\b", "LONGTEXT", statement),
+                )
                 for statement in ddl_statements
             ]
         with database.transaction() as tx:

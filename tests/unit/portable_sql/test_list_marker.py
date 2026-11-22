@@ -83,3 +83,27 @@ def test_a_list_marker_in_a_mixed_statement_is_refused_with_the_reason() -> None
     # 混合标记语句里 `?` 的个数永远不等于参数个数(还有 `%s`),展开无从对齐。
     with pytest.raises(ContractError, match="pure qmark statement"):
         expand_lists("SELECT a FROM t WHERE a IN (?) LIMIT %s", (ListMarker([1, 2]), 5))
+
+
+def test_insert_if_absent_reads_a_unique_conflict_as_not_inserted() -> None:
+    """`ON CONFLICT DO NOTHING` 的等价语义:冲突 = 别人先插了,不是错误。"""
+
+    from speechnexus_portable_sql.contract import ConflictError, insert_if_absent
+
+    class _Cursor:
+        def __init__(self, rowcount: int, error: BaseException | None = None) -> None:
+            self.rowcount = rowcount
+            self._error = error
+
+        def execute(self, statement: str, params: object = ()) -> object:
+            if self._error is not None:
+                raise self._error
+            return None
+
+    statement = (
+        "INSERT INTO t (key_digest) SELECT ? "
+        "WHERE NOT EXISTS (SELECT 1 FROM t WHERE key_digest = ?)"
+    )
+    assert insert_if_absent(_Cursor(1), statement, ("k", "k")) is True
+    assert insert_if_absent(_Cursor(0), statement, ("k", "k")) is False
+    assert insert_if_absent(_Cursor(0, ConflictError("duplicate")), statement, ("k", "k")) is False

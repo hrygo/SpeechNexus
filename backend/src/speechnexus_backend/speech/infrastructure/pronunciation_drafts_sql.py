@@ -31,6 +31,7 @@ from speechnexus_backend.speech.domain.pronunciation_drafts import (
 )
 from speechnexus_backend.speech.domain.publications import Publication
 from speechnexus_backend.speech.infrastructure.publications_sql import append_publication
+from speechnexus_portable_sql.contract import insert_if_absent
 
 
 class PronunciationCursor(Protocol):
@@ -209,13 +210,21 @@ def create_draft(
     allocate_id: Callable[[], str] = new_pronunciation_id,
 ) -> PronunciationDraftResult:
     check_command(command)
-    cursor.execute(
+    # 幂等创建:同 key 的第二个写者不插入。竞争下较晚的一方撞唯一索引,由
+    # `insert_if_absent` 读成「未插入」——与 `ON CONFLICT DO NOTHING` 的语义一致。
+    inserted = insert_if_absent(
+        cursor,
         "INSERT INTO speech_pronunciation_commands "
         "(key_digest,intent_json,request_digest,command_state) "
-        "VALUES (?,?,?,'pending') ON CONFLICT (key_digest) DO NOTHING",
-        (command.key_digest, command.intent.decode(), command.request_digest),
+        "SELECT ?,?,?,'pending' WHERE NOT EXISTS "
+        "(SELECT 1 FROM speech_pronunciation_commands WHERE key_digest = ?)",
+        (
+            command.key_digest,
+            command.intent.decode(),
+            command.request_digest,
+            command.key_digest,
+        ),
     )
-    inserted = cursor.rowcount == 1
     rows = _rows(
         cursor,
         "SELECT * FROM speech_pronunciation_commands WHERE key_digest=? FOR UPDATE",

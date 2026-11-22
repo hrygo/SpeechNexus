@@ -10,6 +10,7 @@ from speechnexus_backend.speech.domain.profile_lifecycle_intents import (
     ProfileLifecycleIntentResult,
 )
 from speechnexus_backend.speech.infrastructure.profile_drafts_sql import ProfileCursor
+from speechnexus_portable_sql.contract import insert_if_absent
 
 
 def recover_intent(
@@ -52,10 +53,12 @@ def record_intent(
     if original.outcome != "unknown":
         return original
     recorded = ProfileLifecycleIntent(command, clock())
-    cursor.execute(
+    if insert_if_absent(
+        cursor,
         "INSERT INTO speech_profile_lifecycle_intents "
         "(key_digest,operation,profile_id,revision,intent_json,request_digest,recorded_at_us) "
-        "VALUES (?,?,?,?,?,?,?) ON CONFLICT (key_digest) DO NOTHING",
+        "SELECT ?,?,?,?,?,?,? WHERE NOT EXISTS "
+        "(SELECT 1 FROM speech_profile_lifecycle_intents WHERE key_digest = ?)",
         (
             command.key_digest,
             command.operation,
@@ -64,9 +67,9 @@ def record_intent(
             command.intent.decode("utf-8"),
             command.request_digest,
             recorded.recorded_at_us,
+            command.key_digest,
         ),
-    )
-    if cursor.rowcount == 1:
+    ):
         return ProfileLifecycleIntentResult("recorded", recorded)
     if cursor.rowcount != 0:
         raise ProfileUnavailableError

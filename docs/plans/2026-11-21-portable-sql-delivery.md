@@ -503,3 +503,29 @@ from speechnexus_portable_sql.vendor import dict_row  # 替代 from psycopg.rows
 
 注入实测:往 `backend/src` 放一个 `import psycopg` 的探针文件,`lint-imports` 立刻
 `9 kept, 1 broken`;删掉即恢复 `10 kept`。
+后续每轮迁移一批;全部迁完后应当新增一条 `lint-imports` 反向契约(业务包不得导入 `psycopg`),
+把边界钉在结构上而不是靠扫描。
+
+### 8.19 幂等插入原语:`insert_if_absent`
+
+受限方言没有 `ON CONFLICT`/`MERGE`。三处「同 key 只写一次」的插入(profile 草稿、profile 生命周期
+意图、发音集合草稿)原先靠 `ON CONFLICT (key_digest) DO NOTHING` + `cursor.rowcount == 1` 判断
+是否真的插入。
+
+等价写法是两条信息合在一起:
+
+```sql
+INSERT INTO t (key_digest, ...) SELECT ?, ... WHERE NOT EXISTS
+  (SELECT 1 FROM t WHERE key_digest = ?)
+```
+
+竞争下较晚的一方会撞唯一索引,驱动把它翻成 `ConflictError` —— 那正是「别人先插了」,语义与
+`ON CONFLICT DO NOTHING` 相同。`contract.insert_if_absent` 把这条判断收在一处:冲突读成
+「未插入」,其余情况返回 `rowcount == 1`。游标按结构接收(业务侧用的是各自的最小 `Protocol`),
+不强制实现完整 `Cursor`。
+
+一处顺带的清理:生命周期意图原先在插入后还判 `rowcount != 0`,冲突路径下 `rowcount` 不可靠;
+改用原身份恢复(`recover_intent`)后,这个判断就是死的,已删。
+
+基线 843 → 840。这三处的真实库 oracle 在 CI(`test_profile_drafts`、`test_profile_lifecycle_intents`、
+`test_pronunciation_drafts` 都要求 PG + InnoDB 双 DSN,本机只有 PG,缺 MySQL)。

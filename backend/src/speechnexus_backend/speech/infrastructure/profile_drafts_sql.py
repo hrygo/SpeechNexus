@@ -15,6 +15,7 @@ from speechnexus_backend.speech.domain.profile_drafts import (
     document_digest,
     revision_number,
 )
+from speechnexus_portable_sql.contract import insert_if_absent
 
 
 class ProfileCursor(Protocol):
@@ -91,13 +92,22 @@ def create_draft(
     cursor: ProfileCursor, command: CreateProfileDraft, clock: Callable[[], int]
 ) -> ProfileDraftResult:
     check_command(command)
-    cursor.execute(
+    # 幂等创建:同 key 的第二个写者不插入。竞争下较晚的一方会撞唯一索引,由
+    # `insert_if_absent` 读成「未插入」——与 `ON CONFLICT DO NOTHING` 的语义一致。
+    inserted = insert_if_absent(
+        cursor,
         "INSERT INTO speech_profile_commands "
         "(key_digest,profile_id,intent_json,request_digest,command_state) "
-        "VALUES (?,?,?,?,'pending') ON CONFLICT (key_digest) DO NOTHING",
-        (command.key_digest, command.profile_id, command.intent.decode(), command.request_digest),
+        "SELECT ?,?,?,?,'pending' WHERE NOT EXISTS "
+        "(SELECT 1 FROM speech_profile_commands WHERE key_digest = ?)",
+        (
+            command.key_digest,
+            command.profile_id,
+            command.intent.decode(),
+            command.request_digest,
+            command.key_digest,
+        ),
     )
-    inserted = cursor.rowcount == 1
     rows = _rows(
         cursor,
         "SELECT * FROM speech_profile_commands WHERE key_digest=? FOR UPDATE",

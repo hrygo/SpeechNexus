@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from speechnexus_portable_sql.markers import PYFORMAT, placeholder_positions
 from speechnexus_portable_sql.subset import placeholder_count, validate
@@ -251,6 +251,28 @@ def check_parameters(params: Sequence[object]) -> tuple[Binding, ...]:
 
 
 type Binding = Param | ListMarker
+
+
+def insert_if_absent(cursor: Any, statement: str, params: Sequence[object] = ()) -> bool:
+    """执行一条自带 `WHERE NOT EXISTS` 的 INSERT,返回是否真的插入了一行.
+
+    受限方言没有 `ON CONFLICT`/`MERGE`。等价的写法是
+    `INSERT ... SELECT ... WHERE NOT EXISTS (SELECT 1 FROM ... WHERE key = ?)`;
+    两个写者同时通过 NOT EXISTS 检查时,较晚的那个会撞唯一索引,驱动把它翻成
+    `ConflictError` —— 这正是「别人先插了」,语义与 `ON CONFLICT DO NOTHING` 相同,
+    所以这里把它读成「未插入」而不是错误。
+
+    判据是 `rowcount`,不是异常类型:调用方拿到的布尔值与 `ON CONFLICT` 版本的
+    `cursor.rowcount == 1` 完全一致。游标按结构接收 —— 业务侧用的是各自定义的最小
+    `Protocol`(只有 `execute`/`rowcount`),不强制实现契约里的完整 `Cursor`。
+    """
+
+    try:
+        cursor.execute(statement, params)
+    except ConflictError:
+        return False
+    rowcount: int = cursor.rowcount
+    return rowcount == 1
 
 
 def expand_lists(

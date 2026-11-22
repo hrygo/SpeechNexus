@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Literal, Protocol, runtime_checkable
 
+from speechnexus_portable_sql.markers import placeholder_positions
 from speechnexus_portable_sql.subset import placeholder_count, validate
 
 __all__ = [
@@ -191,16 +192,48 @@ class ExecutableConnection(Connection, Protocol):
     def execute(self, sql: str, params: Sequence[object] = ()) -> Cursor: ...
 
 
+class ListMarker(Sequence[Param]):
+    """一个 `?` 代表一列值:`IN (?)` 里绑定多个身份,元数在运行期才定.
+
+    为什么需要它:受限方言没有 `= ANY(array)`,而 `IN (?, ?, ?)` 的元数写死,遇到运行期批次
+    (清理、按 id 集合读)就写不出来。展开只能由拥有标记语法的这一层做 —— 业务侧自己拼
+    `?, ?, ?` 就是 `sql-string-building`,而且每处都会拼错一次。
+
+    空列表直接拒绝:展开成 `IN ()` 不合语法,当成「匹配不到任何行」则会让 `NOT IN` 静默返回空,
+    两种猜测都会把缺陷藏起来。调用方应当根本不发这条语句。
+    """
+
+    def __init__(self, values: Sequence[Param]) -> None:
+        if not values:
+            raise ContractError(
+                "a list marker needs at least one value; skip the statement instead"
+            )
+        self._values = tuple(values)
+
+    def __getitem__(self, index: int) -> Param:  # type: ignore[override]
+        return self._values[index]
+
+    def __len__(self) -> int:
+        return len(self._values)
+
+    def __repr__(self) -> str:
+        return f"ListMarker({len(self._values)} values)"
+
+
 #: 新建连接的工厂。时间探针必须用独立连接,不能复用持锁的写事务。
 type ConnectionFactory = Callable[[], Connection]
 
 
-def check_parameters(params: Sequence[object]) -> Params:
+def check_parameters(params: Sequence[object]) -> tuple[Binding, ...]:
     """校验并规范化绑定参数;`bool`、`float`、`bytes` 一律拒绝。"""
 
-    normalized: list[Param] = []
+    normalized: list[Binding] = []
     for value in params:
-        if value is None or isinstance(value, str):
+        if isinstance(value, ListMarker):
+            # 展开可以晚于校验:先把每个值按同一规则验一遍,展开时不再需要判断。
+            check_parameters(value)
+            normalized.append(value)
+        elif value is None or isinstance(value, str):
             normalized.append(value)
         elif isinstance(value, bool):
             raise ContractError("bind Y/N as CHAR(1), not bool")
@@ -217,11 +250,43 @@ def check_parameters(params: Sequence[object]) -> Params:
     return tuple(normalized)
 
 
+type Binding = Param | ListMarker
+
+
+def expand_lists(sql: str, params: Sequence[object]) -> tuple[str, tuple[object, ...]]:
+    """把 `ListMarker` 占着的那个 `?` 展开成够用的占位符序列,参数按同一顺序摊平.
+
+    位置由词法扫描给出,所以字符串字面量里的 `?` 不参与;两个列表变量在同一句里也能按出现
+    顺序各自展开。
+    """
+
+    if not any(isinstance(value, ListMarker) for value in params):
+        return sql, tuple(params)
+    positions = placeholder_positions(sql)
+    if len(positions) != len(params):
+        raise ContractError(f"statement expects {len(positions)} parameters, got {len(params)}")
+    pieces: list[str] = []
+    expanded: list[object] = []
+    previous = 0
+    for position, value in zip(positions, params, strict=True):
+        pieces.append(sql[previous:position])
+        if isinstance(value, ListMarker):
+            pieces.append(", ".join("?" * len(value)))
+            expanded.extend(value)
+        else:
+            pieces.append("?")
+            expanded.append(value)
+        previous = position + 1
+    pieces.append(sql[previous:])
+    return "".join(pieces), tuple(expanded)
+
+
 def check_statement(sql: str, params: Sequence[object]) -> Params:
     """在发送前校验语句子集、参数风格与参数个数。"""
 
     validate(sql)
+    sql, params = expand_lists(sql, params)
     expected = placeholder_count(sql)
     if expected != len(params):
         raise ContractError(f"statement expects {expected} parameters, got {len(params)}")
-    return check_parameters(params)
+    return check_parameters(params)  # type: ignore[return-value]

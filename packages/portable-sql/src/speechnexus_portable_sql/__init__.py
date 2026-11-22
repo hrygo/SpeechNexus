@@ -54,6 +54,7 @@ from speechnexus_portable_sql.contract import (
     ConnectionFactory,
     ContractError,
     Cursor,
+    ListMarker,
     Param,
     Params,
     PortableSqlError,
@@ -61,6 +62,7 @@ from speechnexus_portable_sql.contract import (
     TransactionError,
     check_parameters,
     check_statement,
+    expand_lists,
 )
 from speechnexus_portable_sql.credit import (
     CreditLedger,
@@ -166,6 +168,7 @@ __all__ = [
     "IntervalOverlapError",
     "LaneAdmission",
     "LedgerInvariantError",
+    "ListMarker",
     "LogicalColumn",
     "LogicalForeignKey",
     "LogicalIndex",
@@ -201,6 +204,7 @@ __all__ = [
     "deadline_after",
     "digest",
     "digest_hex",
+    "expand_lists",
     "find_forbidden",
     "find_parameter_markers",
     "fingerprint",

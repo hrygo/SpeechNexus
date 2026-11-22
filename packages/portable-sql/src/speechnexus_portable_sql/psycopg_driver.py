@@ -19,7 +19,14 @@ from typing import Any, cast
 
 import psycopg
 
-from .contract import ConflictError, ConnectionLostError, Row, StorageError, StorageReason
+from .contract import (
+    ConflictError,
+    ConnectionLostError,
+    Row,
+    StorageError,
+    StorageReason,
+    expand_lists,
+)
 from .markers import PYFORMAT, qmark_to_pyformat
 
 __all__ = [
@@ -110,6 +117,8 @@ class PortableCursor:
         prepare: bool | None = None,
         binary: bool | None = None,
     ) -> PortableCursor:
+        if isinstance(query, str):
+            query, params = expand_lists(query, params or ())
         self._cursor.execute(_translated(query, params), params, prepare=prepare, binary=binary)
         return self
 

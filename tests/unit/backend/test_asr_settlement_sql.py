@@ -51,7 +51,9 @@ def test_insert_reads_back_the_exact_identity() -> None:
     cursor = FakeCursor([_ROW])
     insert_asr_settlement(cursor, _REQUEST)
     assert len(cursor.statements) == 2
-    assert "ON CONFLICT (lease_id) DO NOTHING" in cursor.statements[0][0]
+    # 判据是「重复准入不改写已有根」,不是某句厂商语法:换成 NOT EXISTS 后仍然成立。
+    assert "NOT EXISTS" in cursor.statements[0][0]
+    assert "ON CONFLICT" not in cursor.statements[0][0]
 
 
 def test_insert_rejects_a_root_pinned_to_another_identity() -> None:

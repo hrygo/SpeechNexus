@@ -109,10 +109,12 @@ def create_draft(
         return _result(cursor, command, rows[0])
     # A null allocation head is only an internal lock anchor, never a revision
     # or the default/current published profile pointer.
+    # 命令行已经选出唯一赢家,只有赢家走到这里;`WHERE NOT EXISTS` 替代 `ON CONFLICT`。
     cursor.execute(
-        "INSERT INTO speech_profile_families (profile_id) VALUES (?) "
-        "ON CONFLICT (profile_id) DO NOTHING",
-        (command.profile_id,),
+        "INSERT INTO speech_profile_families (profile_id) "
+        "SELECT ? WHERE NOT EXISTS ("
+        "SELECT 1 FROM speech_profile_families f WHERE f.profile_id = ?)",
+        (command.profile_id, command.profile_id),
     )
     families = _rows(
         cursor,

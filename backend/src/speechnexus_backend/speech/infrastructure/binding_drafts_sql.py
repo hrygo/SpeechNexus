@@ -186,10 +186,13 @@ def create_draft(
         raise BindingUnavailableError
     if not inserted:
         return _result(cursor, command, rows[0])
+    # 命令行已经选出唯一赢家,只有赢家走到这里,所以「已存在就跳过」不需要捕获冲突;
+    # `WHERE NOT EXISTS` 只是方言里没有 `ON CONFLICT` 时的同一件事。
     cursor.execute(
-        "INSERT INTO speech_binding_families (binding_id) VALUES (?) "
-        "ON CONFLICT (binding_id) DO NOTHING",
-        (command.binding_id,),
+        "INSERT INTO speech_binding_families (binding_id) "
+        "SELECT ? WHERE NOT EXISTS ("
+        "SELECT 1 FROM speech_binding_families f WHERE f.binding_id = ?)",
+        (command.binding_id, command.binding_id),
     )
     families = _rows(
         cursor,

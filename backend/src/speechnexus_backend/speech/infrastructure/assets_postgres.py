@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import time
 import uuid
 from collections.abc import Iterator
@@ -122,7 +123,8 @@ class AssetCursor:
         # may encounter it again, but never rewrites its original timestamp.
         # 方言没有 `ON CONFLICT`:用「不存在才插入」表达同一件事。并发下两个事务都可能
         # 通过 NOT EXISTS,唯一约束会拒掉后到的那个 —— 那正说明事实已经记过,不是失败。
-        try:
+        with contextlib.suppress(psycopg.errors.UniqueViolation):
+            # 并发下另一个事务先写了同一事实:本事实「最多一次」,不是失败。
             self.rows(
                 "INSERT INTO speech_asset_events "
                 "(event_id,asset_id,event_kind,asset_version,occurred_at_us) "
@@ -139,9 +141,6 @@ class AssetCursor:
                     kind,
                 ),
             )
-        except psycopg.errors.UniqueViolation:
-            # 另一个事务先写了同一事实;本事实「最多一次」,读回原行即可。
-            pass
 
 
 def _has_unreleased_references(cursor: AssetCursor, asset_id: str) -> bool:

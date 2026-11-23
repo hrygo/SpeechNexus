@@ -41,6 +41,7 @@ class PostgresJobTransactions:
         request: CreateJob,
         *,
         recover: bool,
+        created_at_us: int,
         deadline: float | None = None,
         conflict_if_absent: bool = False,
     ) -> JobResult:
@@ -76,7 +77,9 @@ class PostgresJobTransactions:
                                 conflict_if_absent=conflict_if_absent,
                             )
                         else:
-                            result = create_in_transaction(cast(JobCursor, cursor), request)
+                            result = create_in_transaction(
+                                cast(JobCursor, cursor), request, created_at_us=created_at_us
+                            )
                 return result
             except psycopg.errors.DeadlockDetected, psycopg.errors.SerializationFailure:
                 # These SQLSTATEs confirm abort. The context has rolled back and
@@ -90,7 +93,11 @@ class PostgresJobTransactions:
                 if recover:
                     return unknown_result(request)
                 return self._transaction(
-                    request, recover=True, deadline=deadline, conflict_if_absent=True
+                    request,
+                    recover=True,
+                    created_at_us=created_at_us,
+                    deadline=deadline,
+                    conflict_if_absent=True,
                 )
             except PoolClosed, PoolTimeout, TooManyRequests:
                 break  # No connection was acquired, so no transaction was attempted.
@@ -117,7 +124,12 @@ class PostgresJobTransactions:
         )
 
     def create_job(self, request: CreateJob) -> JobResult:
-        return self._transaction(request, recover=False)
+        # No public ``speech_jobs`` row exists on this boundary, so the creation
+        # instant is this transaction's own wall clock. One value per call: a retry
+        # must not move an already-decided due instant, and the whole attempt loop
+        # shares it.
+        return self._transaction(request, recover=False, created_at_us=time.time_ns() // 1_000)
 
     def recover_create_job(self, request: CreateJob) -> JobResult:
-        return self._transaction(request, recover=True)
+        # Recovery only reads; the creation instant is not part of a replay assertion.
+        return self._transaction(request, recover=True, created_at_us=0)

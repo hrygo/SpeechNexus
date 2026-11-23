@@ -282,6 +282,7 @@ WRITER_INSERT_COLUMNS: dict[str, tuple[str, ...]] = {
         "initial_event_digest",
         "request_digest",
         "bucket_no",
+        "due_at",
     ),
     "coordination_outbox": (
         "event_id",

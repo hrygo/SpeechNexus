@@ -6,6 +6,7 @@ is no product MySQL driver or generic database-plugin selection mechanism.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -70,7 +71,9 @@ class MySQLJobTransactions:
         for attempt in range(3):
             try:
                 with self.transaction() as cursor:
-                    return create_in_transaction(cast(JobCursor, cursor), request)
+                    return create_in_transaction(
+                        cast(JobCursor, cursor), request, created_at_us=time.time_ns() // 1_000
+                    )
             except pymysql.IntegrityError as error:
                 if error.args[0] == 1062:
                     return self._recover(request, conflict_if_absent=True)

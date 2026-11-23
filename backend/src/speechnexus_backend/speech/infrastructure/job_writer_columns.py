@@ -27,6 +27,10 @@ COORDINATION_JOB_INSERT_COLUMNS = (
     # so the column grant has to cover it too. It stays nullable until the later
     # revision that owns the NOT NULL constraint.
     "bucket_no",
+    # ``due_at`` is derived, never independently scheduled: canonical_source_map.json
+    # freezes its source at ``speech_jobs.created_at_us`` and both writers convert the
+    # same epoch microseconds (naive UTC) into this nullable TIMESTAMP(6).
+    "due_at",
 )
 COORDINATION_OUTBOX_INSERT_COLUMNS = ("event_id", "job_id", "event_digest")
 ADMISSION_OPERATION_INSERT_COLUMNS = (

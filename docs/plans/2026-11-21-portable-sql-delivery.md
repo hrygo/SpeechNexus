@@ -1403,3 +1403,32 @@ SELECT 1 FROM speech_workspaces, workspace_quotas, … WHERE 1=0
 
 基线 **249 → 246**。PG oracle:`-k runtime_instance or engine_instance` 2 passed、
 `-k artifact` 相关 `test_artifact_retention_pg.py` 因需要隔离 MinIO 而 skip(本机无端点)。
+
+### 8.64 剩余 244 条的构成与「能不能动」的判定
+
+按规则统计(2026-11-23,基线 244):
+
+| 规则 | 条数 | 归属 | 能否现在动 |
+| --- | ---: | --- | --- |
+| `sql-string-building` | 65 | #1100 | 能;但字面量化会暴露被掩盖的 `paging-limit` / `vendor-json` |
+| `vendor-type` | 47 | #1102 | 不能:厂商类型名(`jsonb`/`text`)要等 bootstrap 与 profile |
+| `vendor-json` | 33 | #1102 | 不能:JSONB 运算符与 `->>` 取值的替代需要契约层先定 |
+| `advisory-lock` | 32 | 无卡 | **不能**:见下 |
+| `runtime-ddl` | 18 | #1102 | 不能:workbench 在运行期建表,bootstrap 改由迁移承担后才消失 |
+| `paging-limit` | 12 | #1100(已登记) | 不能等价去掉:都是有界页,去掉要改成取全量再截断 |
+| `cte` | 9 | #1102 | 不能:递归/聚合改写要先证明等价 |
+| 其余 | 28 | 混合 | 逐条判定 |
+
+`advisory-lock` 的判定(证据):
+
+- 站点是活代码,不是死代码。以 `admission_postgres` 为例,锁在「Voice 目录发布 vs 准入」之间串行化,
+  锁后**故意重读一次原身份**(`A duplicate admission can commit while the voice lock is awaited`),
+  这是 #1096 的「锁后探针」模式,不是残留。
+- 它不是 #1095 的 claim bucket:后者管 Job 的 claim 分配与 fencing,不管 Voice 目录发布。
+  所以 #1095 关闭并不使这些锁成为可删对象。
+- 受限方言里没有「可移植的跨事务串行化原语」替代 `pg_advisory_xact_lock`。
+  要动它必须先设计一个(例如用 bucket 行锁 + 持久 grant),那是新设计增量,
+  不在 #1100 的收敛范围内,也不是删代码能解决的。
+
+因此 #1100 的可动面只剩 `sql-string-building` 与已登记的有界页;基线归零需要 #1102 先落地。
+这一条写进 issue #1100,避免把「基线没归零」读成「执行不力」。

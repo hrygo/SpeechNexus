@@ -26,7 +26,17 @@ import pytest
 from tests.support.portable_pg import connect as portable_pg_connect
 from tests.support.portable_sql_pg import QmarkConnection
 
-from speechnexus_portable_sql import ContractError, bucket_for, candidates, canonical_job_from_draft
+from speechnexus_portable_sql import (
+    ContractError,
+    HistoricalEvent,
+    adopt_historical_events,
+    append_event,
+    bucket_for,
+    candidates,
+    canonical_job_from_draft,
+    event_digest,
+    read_events,
+)
 
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
@@ -197,3 +207,83 @@ def test_a_claimed_job_keeps_its_expiry(namespace: tuple[str, str]) -> None:
     assert stored is not None
     assert stored.at(0) == (MOMENT + timedelta(minutes=5)).replace(tzinfo=None)
     assert stored.at(1) == "worker-1"
+
+
+def test_adopted_history_then_a_new_event_keeps_the_sequence_continuous(
+    namespace: tuple[str, str],
+) -> None:
+    """历史事件搬完再追加一条:序号必须连续,摘要在搬迁与在线两条路径上一致."""
+
+    url, name = namespace
+    connection = _connect(url, name)
+    try:
+        _insert(connection, canonical_job_from_draft(job_id="job-h", **_draft()))
+        connection.commit()
+        history = [
+            HistoricalEvent(state="pending", occurred_at_us=int(MOMENT.timestamp() * 1_000_000)),
+            HistoricalEvent(
+                state="running",
+                occurred_at_us=int((MOMENT + timedelta(seconds=1)).timestamp() * 1_000_000),
+                kind="progress",
+                progress_completed=1,
+                progress_total=2,
+            ),
+            HistoricalEvent(
+                state="succeeded",
+                occurred_at_us=int((MOMENT + timedelta(seconds=2)).timestamp() * 1_000_000),
+            ),
+        ]
+        head = adopt_historical_events(connection, job_id="job-h", events=history)
+        connection.commit()
+        appended = append_event(
+            connection, job_id="job-h", event_digest="sha256:" + "e" * 64, deliverable=False
+        )
+        connection.commit()
+        rows = read_events(connection, job_id="job-h", after_seq=Decimal(0))
+    finally:
+        connection.close()
+    assert head == Decimal(3)
+    assert appended.event_seq == Decimal(4)
+    assert [seq for seq, _, _ in rows] == [Decimal(1), Decimal(2), Decimal(3), Decimal(4)]
+    # 搬迁写下的摘要必须与 `event_digest()` 对同一输入给出的值一致,否则将来任何去重都会分叉。
+    for index, event in enumerate(history, start=1):
+        expected = event_digest(
+            job_id="job-h",
+            event_seq=Decimal(index),
+            state=event.state,
+            occurred_at=datetime.fromtimestamp(event.occurred_at_us / 1_000_000, tz=UTC),
+            kind=event.kind,
+            progress_completed=event.progress_completed,
+            progress_total=event.progress_total,
+            payload_ref=event.payload_ref,
+        )
+        assert rows[index - 1][1] == expected
+
+
+def test_adoption_refuses_a_job_that_already_has_events(namespace: tuple[str, str]) -> None:
+    url, name = namespace
+    connection = _connect(url, name)
+    try:
+        _insert(connection, canonical_job_from_draft(job_id="job-i", **_draft()))
+        connection.commit()
+        adopt_historical_events(
+            connection,
+            job_id="job-i",
+            events=[
+                HistoricalEvent(state="pending", occurred_at_us=int(MOMENT.timestamp() * 1_000_000))
+            ],
+        )
+        connection.commit()
+        with pytest.raises(ContractError):
+            adopt_historical_events(
+                connection,
+                job_id="job-i",
+                events=[
+                    HistoricalEvent(
+                        state="pending", occurred_at_us=int(MOMENT.timestamp() * 1_000_000)
+                    )
+                ],
+            )
+        connection.rollback()
+    finally:
+        connection.close()

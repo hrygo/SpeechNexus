@@ -570,6 +570,69 @@ def append_event(
     return EventAppend(job_id=job_id, event_seq=next_seq, event_id=event_id, digest=digest)
 
 
+@dataclass(frozen=True)
+class HistoricalEvent:
+    """草案 `speech_job_events` 的一行,按 canonical 规则重建摘要。"""
+
+    state: str
+    occurred_at_us: int
+    kind: str | None = None
+    progress_completed: int | None = None
+    progress_total: int | None = None
+    payload_ref: str | None = None
+
+
+def adopt_historical_events(
+    connection: Connection, *, job_id: str, events: Sequence[HistoricalEvent]
+) -> Decimal:
+    """把历史事件搬进 canonical `job_events` 并把 head 推到末尾,返回新的 `last_event_seq`.
+
+    为什么必须走这条路径:canonical 的事件去重依赖摘要,而草案表没有摘要列,所以历史事件
+    的 `event_seq` 与摘要都要在这里重建一次。序号必须从 1 连续,head 必须等于搬完后的最大值
+    ——否则下一次 `append_event` 会撞主键,而撞主键在重试语义里会被当成「已经写过」。
+
+    这里不新增 SQL:复用 `job.event_head` / `job_event.insert` / `job.event_head_update`,
+    所以搬迁与在线写入走的是同一组语句。
+    """
+
+    require_text(job_id, field="job_id", max_bytes=128)
+    cursor = connection.cursor()
+    try:
+        cursor.execute(STATEMENTS["job.event_head"], (job_id,))
+        head_rows = cursor.fetchall()
+        if len(head_rows) != 1:
+            raise ContractError(f"coordination_jobs has {len(head_rows)} rows for {job_id!r}")
+        head = head_rows[0]
+        seq = Decimal(str(head.at(0)))
+        version = Decimal(str(head.at(1)))
+        if seq != 0:
+            raise ContractError(f"{job_id!r} already has events; adoption is a one-shot backfill")
+        for index, event in enumerate(events, start=1):
+            occurred_at = _utc_from_epoch_us(event.occurred_at_us, field="occurred_at_us")
+            if occurred_at is None:
+                raise ContractError("a historical event needs a real timestamp")
+            digest = event_digest(
+                job_id=job_id,
+                event_seq=Decimal(index),
+                state=event.state,
+                occurred_at=occurred_at.replace(tzinfo=UTC),
+                kind=event.kind,
+                progress_completed=event.progress_completed,
+                progress_total=event.progress_total,
+                payload_ref=event.payload_ref,
+            )
+            cursor.execute(
+                STATEMENTS["job_event.insert"], (job_id, index, digest, event.payload_ref)
+            )
+        last = Decimal(len(events))
+        cursor.execute(STATEMENTS["job.event_head_update"], (last, version + 1, job_id, version))
+        if cursor.rowcount != 1:
+            raise ContractError("event head moved under the backfill; rerun it in one transaction")
+    finally:
+        cursor.close()
+    return last
+
+
 def read_events(
     connection: Connection, *, job_id: str, after_seq: Decimal
 ) -> list[tuple[Decimal, str, str | None]]:

@@ -87,7 +87,6 @@
     "sql-string-building::backend/src/speechnexus_backend/workbench/infrastructure/postgres_exports.py": 2,
     "sql-string-building::backend/src/speechnexus_backend/workbench/infrastructure/postgres_saved_assets.py": 1,
     "sql-string-building::backend/src/speechnexus_backend/workbench/runtime.py": 2,
-    "sql-string-building::execution-gateway/src/speechnexus_gateway/infrastructure/abort_recovery_sql.py": 3,
     "sql-string-building::execution-gateway/src/speechnexus_gateway/infrastructure/cancellation_fence_sql.py": 1,
     "sql-string-building::execution-gateway/src/speechnexus_gateway/infrastructure/reader_authority.py": 1,
     "sql-string-building::node-controller/src/speechnexus_node_controller/infrastructure/sqlite_intent_store.py": 1,
@@ -155,6 +154,7 @@
     "vendor-type::backend/src/speechnexus_backend/workbench/infrastructure/teleprompter_schema.py": 1,
     "vendor-type::backend/src/speechnexus_backend/workbench/infrastructure/version_schema.py": 1,
     "vendor-type::execution-gateway/src/speechnexus_gateway/infrastructure/reader_authority.py": 1,
-    "vendor-type::node-controller/src/speechnexus_node_controller/infrastructure/sqlite_intent_store.py": 3
+    "vendor-type::node-controller/src/speechnexus_node_controller/infrastructure/sqlite_intent_store.py": 3,
+    "sql-string-building::execution-gateway/src/speechnexus_gateway/infrastructure/abort_recovery_sql.py": 3
   }
 }

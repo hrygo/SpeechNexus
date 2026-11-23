@@ -105,10 +105,20 @@ def _require_reconciled(connection: Connection) -> None:
 
 
 def upgrade() -> None:
-    op.execute("ALTER TABLE coordination_jobs ADD COLUMN bucket_no SMALLINT")
-    op.execute("ALTER TABLE coordination_jobs ADD COLUMN last_event_seq BIGINT NOT NULL DEFAULT 0")
-    op.execute("ALTER TABLE coordination_jobs ADD COLUMN due_at TIMESTAMP(6)")
-    op.execute("ALTER TABLE coordination_jobs ADD COLUMN claim_expires_at TIMESTAMP(6)")
+    # ``IF NOT EXISTS`` 不是保险,是这套迁移树的实际需要:若干集成测试用
+    # ``tests.support.migrations.step_below_*`` 直接回退 ``alembic_version`` 表(不走
+    # downgrade),再 ``upgrade head``。用裸 ``ADD COLUMN`` 时这些测试会以
+    # ``DuplicateColumn`` 失败,而它们验证的是别的修订,不该被本修订拖红。
+    # 回填语句本身幂等(全表重算),所以重复执行不会累积偏差。
+    op.execute("ALTER TABLE coordination_jobs ADD COLUMN IF NOT EXISTS bucket_no SMALLINT")
+    op.execute(
+        "ALTER TABLE coordination_jobs ADD COLUMN IF NOT EXISTS "
+        "last_event_seq BIGINT NOT NULL DEFAULT 0"
+    )
+    op.execute("ALTER TABLE coordination_jobs ADD COLUMN IF NOT EXISTS due_at TIMESTAMP(6)")
+    op.execute(
+        "ALTER TABLE coordination_jobs ADD COLUMN IF NOT EXISTS claim_expires_at TIMESTAMP(6)"
+    )
 
     connection = op.get_bind()
     connection.execute(text(_CLAIM_EXPIRES_SQL))
@@ -120,4 +130,4 @@ def upgrade() -> None:
 def downgrade() -> None:
     # 纯加法列,尚无生产读取者;epoch 列仍在,回退不会丢证据。
     for column in _ADDED_COLUMNS:
-        op.execute(f"ALTER TABLE coordination_jobs DROP COLUMN {column}")
+        op.execute(f"ALTER TABLE coordination_jobs DROP COLUMN IF EXISTS {column}")

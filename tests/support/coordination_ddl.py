@@ -8,10 +8,13 @@
 from __future__ import annotations
 
 from speechnexus_backend.speech.infrastructure.coordination_schema import COORDINATION_DDL
-from speechnexus_backend.speech.infrastructure.job_schema import JOB_DDL
+from speechnexus_backend.speech.infrastructure.job_schema import CANONICAL_JOB_DDL, JOB_DDL
 
-#: 与旧草案一致的 15 条建表语句,顺序为协调 schema 在前、job schema 在后。
-COORDINATION_DDL_STATEMENTS: tuple[str, ...] = COORDINATION_DDL + JOB_DDL
+#: 协调 schema 在前、job schema 在后,最后追加 canonical 列增量。
+#: 增量单独成一条 ``ALTER`` 而不是写进 ``JOB_DDL``:后者被历史迁移 0001 引用,改它等于
+#: 改写已发布迁移;而按 ``JOB_DDL`` 直接建表的验证 schema 必须与迁移后的生产形状一致,
+#: 否则同一段写入代码会在「跑迁移的 PG」与「按 DDL 建表的库」之间分叉。
+COORDINATION_DDL_STATEMENTS: tuple[str, ...] = COORDINATION_DDL + JOB_DDL + CANONICAL_JOB_DDL
 
 #: 同一批语句的整段文本,供按正则检查时使用。
 COORDINATION_DDL_TEXT: str = "\n".join(statement + ";" for statement in COORDINATION_DDL_STATEMENTS)

@@ -200,6 +200,15 @@ def job_dispatch_grants(schema: str, role: str) -> tuple[str, ...]:
         f'GRANT SELECT ON "{schema}".speech_job_intents TO "{role}"',
         f"GRANT INSERT ({', '.join(JOB_INTENT_INSERT_COLUMNS)}) "
         f'ON "{schema}".speech_job_intents TO "{role}"',
+        # The claim path takes a bucket lease before it touches a Job row
+        # (``claims.claim_batch``): SELECT to read the fence, UPDATE on the three
+        # lease columns. Rows are seeded by migration 0066, so no INSERT/DELETE and
+        # no UPDATE on ``bucket_no``. ``job_dispatch_grants`` is the only place
+        # that grants this table to the dispatcher identity; the speech role has
+        # its own copy in ``coordination_runtime_grants``.
+        f'GRANT SELECT ON "{schema}".coordination_claim_buckets TO "{role}"',
+        f"GRANT UPDATE (claim_owner_id, lease_until, version) "
+        f'ON "{schema}".coordination_claim_buckets TO "{role}"',
         *artifact_publisher_grants(schema, role),
         *cancellation_not_submitted_grants(schema, role),
     )

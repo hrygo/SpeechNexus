@@ -10,9 +10,6 @@ from speechnexus_backend.speech.application.job_cancellation_reconciliation impo
 )
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
     ATTEMPT_CEILING,
-    NOT_SUBMITTED_TABLE,
-    RECONCILIATION_TABLE,
-    TABLE,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_portable_sql.transaction import insert_if_absent
@@ -43,11 +40,11 @@ class _Cursor(Protocol):
     def execute(self, query: str, parameters: object = ()) -> _Rows: ...
 
 
-_CANDIDATES = f"""
+_CANDIDATES = """
 SELECT f.job_id, f.accepted_at_us, n.observed_at_us AS not_submitted_at_us
-FROM {TABLE} AS f
-LEFT JOIN {RECONCILIATION_TABLE} AS r ON r.job_id = f.job_id
-LEFT JOIN {NOT_SUBMITTED_TABLE} AS n ON n.job_id = f.job_id
+FROM speech_job_cancellation_fences AS f
+LEFT JOIN speech_job_cancellation_reconciliations AS r ON r.job_id = f.job_id
+LEFT JOIN speech_job_cancellation_not_submitted AS n ON n.job_id = f.job_id
 WHERE f.accepted_at_us <= ?
   AND (f.accepted_at_us > ? OR (f.accepted_at_us = ? AND f.job_id > ?))
   AND (
@@ -60,36 +57,40 @@ ORDER BY f.accepted_at_us, f.job_id
 """
 # 抢占的两步:先读,再按读到的 ``attempts`` 做 CAS 更新;行不存在时插入。
 # 受限方言没有 ``WITH`` / ``LIMIT`` / ``RETURNING``,也没有 ``ON CONFLICT``。
-_READ_CLAIM = f"""
+_READ_CLAIM = """
 SELECT attempts, settled_at_us, last_outcome, next_check_at_us
-FROM {RECONCILIATION_TABLE} WHERE job_id = ?
+FROM speech_job_cancellation_reconciliations WHERE job_id = ?
 """
-_INSERT_CLAIM = f"""
-INSERT INTO {RECONCILIATION_TABLE} (job_id, attempts, next_check_at_us, updated_at_us)
+_INSERT_CLAIM = """
+INSERT INTO speech_job_cancellation_reconciliations
+(job_id, attempts, next_check_at_us, updated_at_us)
 VALUES (?, 1, ?, ?)
 """
-_TAKE_CLAIM = f"""
-UPDATE {RECONCILIATION_TABLE}
+_TAKE_CLAIM = """
+UPDATE speech_job_cancellation_reconciliations
 SET attempts = ?, next_check_at_us = ?, updated_at_us = ?
 WHERE job_id = ? AND attempts = ? AND settled_at_us IS NULL AND next_check_at_us <= ?
 """
 
 _RECORD_SETTLED = (
-    f"UPDATE {RECONCILIATION_TABLE} SET last_outcome = 'settled', settled_at_us = ?, "
+    "UPDATE speech_job_cancellation_reconciliations "
+    "SET last_outcome = 'settled', settled_at_us = ?, "
     "next_check_at_us = ?, updated_at_us = ? "
     "WHERE job_id = ? AND settled_at_us IS NULL"
 )
 _RECORD_RETRY = (
-    f"UPDATE {RECONCILIATION_TABLE} SET last_outcome = ?, next_check_at_us = ?, "
+    "UPDATE speech_job_cancellation_reconciliations "
+    "SET last_outcome = ?, next_check_at_us = ?, "
     "updated_at_us = ? WHERE job_id = ? AND settled_at_us IS NULL"
 )
 _RECORD_EXHAUSTED = (
-    f"UPDATE {RECONCILIATION_TABLE} SET last_outcome = ?, next_check_at_us = ?, "
+    "UPDATE speech_job_cancellation_reconciliations "
+    "SET last_outcome = ?, next_check_at_us = ?, "
     "updated_at_us = ? WHERE job_id = ? AND settled_at_us IS NULL"
 )
 _READ = (
-    f"SELECT job_id, attempts, next_check_at_us, last_outcome, settled_at_us "
-    f"FROM {RECONCILIATION_TABLE} WHERE job_id = ?"
+    "SELECT job_id, attempts, next_check_at_us, last_outcome, settled_at_us "
+    "FROM speech_job_cancellation_reconciliations WHERE job_id = ?"
 )
 
 

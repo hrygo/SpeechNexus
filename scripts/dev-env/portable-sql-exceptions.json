@@ -545,12 +545,6 @@
     },
     {
       "rule": "sql-string-building",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/job_cancellation_reconciliation_postgres.py",
-      "card": "#1100",
-      "reason": "表名来自 job_cancellation_fence_schema,标识符不可绑定;抢占语句的其余部分已是静态文本"
-    },
-    {
-      "rule": "sql-string-building",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/job_dispatch_postgres.py",
       "count": 1,
       "card": "#1100",

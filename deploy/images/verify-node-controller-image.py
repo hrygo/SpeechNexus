@@ -110,7 +110,7 @@ def context_inputs() -> list[str]:
 
 def negative_context(destination: Path) -> None:
     # Copy exactly the sources the Dockerfile reads, not user data.
-    for relative in context_inputs():
+    for relative in [DOCKERFILE, *context_inputs()]:
         source = ROOT / relative
         target = destination / relative
         target.parent.mkdir(parents=True, exist_ok=True)

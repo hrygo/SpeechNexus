@@ -45,6 +45,9 @@ JOB_DDL: tuple[str, ...] = (
 #: 改写已发布迁移的行为。
 CANONICAL_JOB_DDL: tuple[str, ...] = (
     "ALTER TABLE coordination_jobs ADD COLUMN bucket_no SMALLINT",
+    # 0064 added ``due_at`` in the same way; the writer now fills it, so the InnoDB
+    # verification schema must carry the column too or the shared INSERT fails only there.
+    "ALTER TABLE coordination_jobs ADD COLUMN due_at TIMESTAMP(6)",
 )
 
 

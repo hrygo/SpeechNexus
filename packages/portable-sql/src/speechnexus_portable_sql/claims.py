@@ -59,6 +59,7 @@ __all__ = [
     "release_bucket",
     "require_fence",
     "start_bucket_for",
+    "utc_from_epoch_us",
 ]
 
 #: 固定 bucket 数量。扩大它只改变竞争分布,不改变正确性。
@@ -281,7 +282,7 @@ def bucket_for(job_id: str, buckets: int = BUCKETS) -> Decimal:
 UNDECIDED_EPOCH_US = 0
 
 
-def _utc_from_epoch_us(value: object, *, field: str) -> datetime | None:
+def utc_from_epoch_us(value: object, *, field: str) -> datetime | None:
     """epoch 微秒 -> canonical 时间;0 与负数是「从未发生」,不是 1970 年.
 
     返回值是**naive UTC**:canonical 的列是 `TIMESTAMP(6)`(不带时区),写进去的是 UTC 墙上
@@ -325,8 +326,8 @@ def canonical_job_from_draft(
     require_digest(request_digest, field="request_digest")
     if claim_version < 0 or last_event_seq < 0:
         raise ContractError("claim_version and last_event_seq must not be negative")
-    expires_at = _utc_from_epoch_us(claim_expires_at_us, field="claim_expires_at_us")
-    due_at = _utc_from_epoch_us(due_at_us, field="due_at_us")
+    expires_at = utc_from_epoch_us(claim_expires_at_us, field="claim_expires_at_us")
+    due_at = utc_from_epoch_us(due_at_us, field="due_at_us")
     if due_at is None:
         raise ContractError("due_at_us must be a positive epoch, a Job cannot be due at the epoch")
     return {
@@ -1050,7 +1051,7 @@ def adopt_historical_events(
         if seq != 0:
             raise ContractError(f"{job_id!r} already has events; adoption is a one-shot backfill")
         for index, event in enumerate(events, start=1):
-            occurred_at = _utc_from_epoch_us(event.occurred_at_us, field="occurred_at_us")
+            occurred_at = utc_from_epoch_us(event.occurred_at_us, field="occurred_at_us")
             if occurred_at is None:
                 raise ContractError("a historical event needs a real timestamp")
             digest = event_digest(

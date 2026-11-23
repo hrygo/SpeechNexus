@@ -80,7 +80,7 @@ from speechnexus_backend.speech.infrastructure.public_job_admission import (
     load_admission_readiness,
     rejection_code,
 )
-from speechnexus_portable_sql.claims import bucket_for
+from speechnexus_portable_sql.claims import bucket_for, utc_from_epoch_us
 from speechnexus_portable_sql.clock import ClockReader, now_us
 from speechnexus_portable_sql.psycopg_driver import portable_error
 from speechnexus_portable_sql.transaction import is_savepoint_control
@@ -699,6 +699,10 @@ class PostgresPublicJobs:
                                         admission.prepared,
                                         clock=cursor.clock,
                                         max_command_bytes=self._max_command_bytes,
+                                        # The same value this create writes into
+                                        # speech_jobs.created_at_us below; the coordination
+                                        # row is committed first, in the admission cursor.
+                                        created_at_us=job.submission.submitted_at_us,
                                     )
                                     if result.outcome != "committed":
                                         return JobCreateResult(
@@ -1667,7 +1671,7 @@ def _insert_job_rows(connection: _Executor, job: NewPublicJob, *, admitted: bool
         connection.execute(
             "INSERT INTO coordination_jobs "
             "(job_id, operation_id, attempt_id, initial_event_id, initial_event_digest, "
-            "request_digest, bucket_no) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "request_digest, bucket_no, due_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 job.job_id,
                 job.job_id,
@@ -1676,6 +1680,10 @@ def _insert_job_rows(connection: _Executor, job: NewPublicJob, *, admitted: bool
                 job.initial_event_digest,
                 job.request_digest,
                 int(bucket_for(job.job_id)),
+                # canonical_source_map.json freezes due_at's source at
+                # speech_jobs.created_at_us, which the insert above writes from this
+                # same local. Non-positive stays NULL, exactly as 0065 leaves it.
+                utc_from_epoch_us(submission.submitted_at_us, field="submitted_at_us"),
             ),
         )
         connection.execute(

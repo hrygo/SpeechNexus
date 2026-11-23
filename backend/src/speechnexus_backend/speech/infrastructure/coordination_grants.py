@@ -76,7 +76,7 @@ PRIVATE_SPEECH_TABLES = frozenset(
 INSERT_COLUMNS = {
     "coordination_jobs": (
         "job_id operation_id attempt_id initial_event_id initial_event_digest request_digest "
-        "bucket_no"
+        "bucket_no due_at"
     ),
     "coordination_outbox": "event_id job_id event_digest event_kind target_node_id intent_id",
     "runtime_intent_deliveries": "event_id delivery_phase created_at_us updated_at_us",

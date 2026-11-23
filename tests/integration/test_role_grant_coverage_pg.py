@@ -716,7 +716,7 @@ def _run_writer_claim(coverage: Coverage) -> str:
             # it reads the coordination row and then the outbox row it published. No
             # statement here is copied from the adapter, so a change to the production
             # SELECT reddens this face instead of passing on a stale copy.
-            created = create_in_transaction(cursor, request)
+            created = create_in_transaction(cursor, request, created_at_us=now_us)
             current = read_claim(cursor, COORDINATION_JOB, lock=True)
             result = claim_in_transaction(
                 cursor,

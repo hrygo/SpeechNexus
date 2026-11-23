@@ -119,6 +119,9 @@ def _insert_like_the_live_writer(admin: psycopg.Connection[Any], *, job_id: str)
         "initial_event_digest": DIGEST,
         "request_digest": DIGEST,
         "bucket_no": int(bucket_for(job_id)),
+        # The writer also supplies the frozen source of due_at (speech_jobs.created_at_us);
+        # this seed has no speech_jobs row, so any positive naive-UTC value is the shape.
+        "due_at": NAIVE_MOMENT,
     }
     assert set(COORDINATION_JOB_INSERT_COLUMNS) <= set(values), sorted(values)
     columns = ", ".join(COORDINATION_JOB_INSERT_COLUMNS)

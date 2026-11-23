@@ -103,7 +103,16 @@ def admit_in_transaction(
     *,
     clock: Callable[[], int],
     max_command_bytes: int,
+    created_at_us: int | None = None,
 ) -> AdmissionResult:
+    """Admit one complete recipe, including the coordination Job row.
+
+    ``created_at_us`` is the instant the owner of the public ``speech_jobs`` row writes
+    into ``created_at_us`` (and therefore the frozen source of canonical ``due_at``).
+    A caller that owns no public Job row leaves it ``None``; then the admission clock
+    value computed below is the only creation instant that exists, and using it keeps
+    ``due_at <= now`` true at commit.
+    """
     command = prepared.command
     request, identity = command.request, command.request.identity
     key = identity.operation_id, identity.attempt_id
@@ -340,7 +349,11 @@ def admit_in_transaction(
             "WHERE instance_id = ? AND instance_generation = ? AND version = ?",
             (held_slots, *instance_key, by_instance[instance_key].version),
         )
-    job = create_in_transaction(cursor, request.job)  # Same transaction, never a committing port.
+    job = create_in_transaction(
+        cursor,
+        request.job,
+        created_at_us=recorded_at_us if created_at_us is None else created_at_us,
+    )  # Same transaction, never a committing port.
     if job.outcome == "replayed":
         raise AdmissionRejectedError("reconciliation_required")
     if job.outcome != "committed":

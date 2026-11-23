@@ -313,7 +313,12 @@ def test_real_insertion_wait_resolves_one_committed_identity(
     blocker = database.blocker()
     try:
         with blocker.cursor() as cursor:
-            assert create_in_transaction(cast(JobCursor, cursor), REQUEST).outcome == "committed"
+            assert (
+                create_in_transaction(
+                    cast(JobCursor, cursor), REQUEST, created_at_us=1_700_000_000_000_000
+                ).outcome
+                == "committed"
+            )
         with ThreadPoolExecutor(max_workers=1) as executor:
             waiting = (
                 replace(REQUEST, request_digest="sha256:" + "b" * 64) if different else REQUEST

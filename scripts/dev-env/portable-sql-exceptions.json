@@ -158,14 +158,6 @@
       "release": "#1095 完成时删除本条目"
     },
     {
-      "rule": "aggregate-filter",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/resource_pools_postgres.py",
-      "count": 1,
-      "card": "#1100",
-      "reason": "FILTER 改 CASE 聚合",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
       "rule": "cte",
       "path": "backend/src/speechnexus_backend/model_catalog_runtime.py",
       "count": 1,
@@ -187,14 +179,6 @@
       "count": 1,
       "card": "#1100",
       "reason": "拆成多条语句或派生表,逐条判断",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "distinct-on",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/public_job_admission.py",
-      "count": 1,
-      "card": "#1100",
-      "reason": "DISTINCT ON 改键集去重",
       "release": "#1100 完成时删除本条目"
     },
     {

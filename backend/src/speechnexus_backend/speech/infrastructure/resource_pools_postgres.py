@@ -5,6 +5,12 @@ instance columns already carry the per-instance slot accounting that admission
 maintains in the same transaction, so summing them cannot double count or
 report quarantined capacity as free capacity. Instances that released their
 budget are excluded, so a stopped instance cannot keep a node in the aggregate.
+
+The ready count is a conditional ``CASE`` sum rather than a filtered aggregate:
+``FILTER (WHERE ...)`` is outside the four-engine subset. A ``sum`` over no rows is
+NULL where ``count`` is 0, so the expression carries its own ``COALESCE`` and its
+own ``bigint`` cast; the outer ``COALESCE`` still covers the pool that has no
+aggregated instance row at all.
 """
 
 from __future__ import annotations
@@ -31,7 +37,8 @@ FROM resource_pools AS pool
 LEFT JOIN (
     SELECT pool_id,
            array_agg(DISTINCT host_node_id ORDER BY host_node_id) AS node_ids,
-           count(*) FILTER (WHERE instance_state = 'ready') AS ready_instances,
+           CAST(COALESCE(sum(CASE WHEN instance_state = 'ready' THEN 1 ELSE 0 END), 0)
+                AS bigint) AS ready_instances,
            CAST(sum(max_slots) AS bigint) AS max_active_slots,
            CAST(sum(realtime_reserved_slots) AS bigint) AS realtime_reserved_slots,
            CAST(sum(held_slots) AS bigint) AS active_slots,

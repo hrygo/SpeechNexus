@@ -1,29 +1,17 @@
-"""Shared identity and lock namespace for public Job cancellation fencing.
+"""Shared identity of the durable public Job cancellation fence.
 
-This module is not a wire contract. The backend acceptance transaction and the
-execution gateway must derive the same PostgreSQL transaction-scoped advisory
-lock key: acquiring it before writing or reading the durable cancellation fence
-orders the two transactions, so a submit either observes the committed fence or
-commits before acceptance. The digest is stable across PostgreSQL versions and
-across both processes.
+This module is not a wire contract. The backend acceptance transaction writes the
+fence and the execution gateway reads it; both name the same table. No lock
+namespace lives here: the two sides order themselves on the canonical Job row
+(``coordination_jobs``), the same row the dispatch claim and the terminal
+transition lock, so the fixed order stays bucket -> Job -> fence/outbox. That row
+lock is portable SQL; a PostgreSQL advisory key would be outside the subset and
+would have to be derived identically by two processes.
 """
 
 from __future__ import annotations
 
-import hashlib
-
 #: Durable fact shared by the backend (writer) and gateway (reader).
 JOB_CANCELLATION_FENCE_TABLE = "speech_job_cancellation_fences"
 
-_LOCK_DOMAIN = b"speechnexus:job-cancellation-fence:"
-
-
-def job_cancellation_fence_lock_key(job_id: str) -> int:
-    """Return the signed 64-bit advisory-lock key for one Job's fence."""
-    if not isinstance(job_id, str) or not job_id.isascii() or not 1 <= len(job_id) <= 128:
-        raise ValueError("cancellation fencing requires a bounded ASCII Job identity")
-    digest = hashlib.sha256(_LOCK_DOMAIN + job_id.encode("ascii")).digest()
-    return int.from_bytes(digest[:8], "big", signed=True)
-
-
-__all__ = ["JOB_CANCELLATION_FENCE_TABLE", "job_cancellation_fence_lock_key"]
+__all__ = ["JOB_CANCELLATION_FENCE_TABLE"]

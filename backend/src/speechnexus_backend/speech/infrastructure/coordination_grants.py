@@ -158,4 +158,12 @@ def coordination_runtime_grants(
                     grants.append(f'GRANT UPDATE ({columns}) ON {target} TO "{role}"')
             elif "version" in updates.split():
                 grants.append(f'GRANT UPDATE (version) ON {target} TO "{role}"')
+    # The gateway takes the canonical Job row lock before it reads the cancellation
+    # fence (that is what orders submit against acceptance), and PostgreSQL requires
+    # UPDATE privilege on some column of a row it locks with `FOR UPDATE`. The
+    # fencing counter is the row-lock allowance for this table, exactly like the
+    # `version` columns above: the gateway never writes it.
+    grants.append(
+        f'GRANT UPDATE (claim_version) ON "{schema}".coordination_jobs TO "{gateway_role}"'
+    )
     return (*grants, *release_guard_grants(schema, speech_role))

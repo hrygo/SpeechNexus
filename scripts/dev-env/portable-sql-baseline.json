@@ -100,7 +100,7 @@
     "vendor-type::backend/src/speechnexus_backend/speech/infrastructure/resource_pools_postgres.py": 1,
     "vendor-type::backend/src/speechnexus_backend/workbench/infrastructure/postgres_books.py": 3,
     "vendor-type::backend/src/speechnexus_backend/workbench/infrastructure/postgres_render_units.py": 1,
-    "vendor-type::backend/src/speechnexus_backend/workbench/infrastructure/postgres_versions.py": 4,
+    "vendor-type::backend/src/speechnexus_backend/workbench/infrastructure/postgres_versions.py": 3,
     "vendor-type::execution-gateway/src/speechnexus_gateway/infrastructure/reader_authority.py": 1,
     "vendor-type::node-controller/src/speechnexus_node_controller/infrastructure/sqlite_intent_store.py": 3
   }

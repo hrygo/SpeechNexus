@@ -1577,6 +1577,27 @@ workbench 的 13 个 `*_schema.py` 一直是「部署期制品却按业务 DML �
 不进业务 DML 基线)。剩下 5 条 `runtime-ddl` 全在 `node-controller` 的 SQLite intent store,属单机本地库,
 是另一条判定线。
 
+### 8.73 判定:node-controller 的本地 intent store 不迁移(节点本地状态,非产品库)
+
+剩下 5 条 `runtime-ddl` 全在 `node-controller/src/speechnexus_node_controller/infrastructure/sqlite_intent_store.py`,
+同文件另有 `sql-string-building` / `upsert` / `vendor-type` 各一条。判定是**不迁移**,证据:
+
+| 证据 | 位置 |
+| --- | --- |
+| 存储路径来自部署配置 | `deploy/cluster/compute/compose.yaml:72`、`deploy/images/node-controller.Dockerfile:75`(`SPEECHNEXUS_CONTROLLER_INTENT_STORE_PATH`) |
+| 装配点唯一 | `node-controller/src/speechnexus_node_controller/app.py:76` `SqliteIntentStore(settings.intent_path)` |
+| 参与就绪判定 | `node-controller/src/speechnexus_node_controller/app.py:104` 的 `IntentStoreReadinessProbe(store)` |
+| 设置项必填 | `node-controller/src/speechnexus_node_controller/settings.py:53` `intent_store_path: Path` |
+
+为什么不是「暂时没人调用」:它**在部署清单里、在就绪探针里、在必填设置里**,是活的节点本地状态。
+
+为什么仍不迁移:SQLite 的首启建表没有第二个执行点(没有迁移器),`INSERT OR REPLACE` 也是本地库
+的写法;受限方言约束的是**产品 DML**(PostgreSQL 权威库)。把节点本地 bootstrap 当作产品 DML
+来「迁移」,只会把它变成更绕的本地建表流程,不会减少任何方言风险。
+
+**这与「确定不使用的功能要删除」并不矛盾**:它不是不用的功能,是不能删的节点本地状态。五条在
+ledger 里以本表为理由登记。
+
 ### 8.74 #1100 剩余 196 条的真实构成:逐类说清「卡在什么上」
 
 基线停在 196 时,最容易犯的错是把「没做完」和「做不了」混为一谈。下表是**每一条都指向一个具体

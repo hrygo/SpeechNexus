@@ -1,0 +1,167 @@
+"""coordination_jobs 二次回填 last_event_seq 与 0064 窗口行(0065),约束收紧另立修订。
+
+0064 只给存量行做了一次加法回填,之后新建的 ``coordination_jobs`` 行仍只有草案列:
+``bucket_no`` / ``claim_expires_at`` / ``due_at`` 为 ``NULL``,``last_event_seq`` 停在
+``DEFAULT 0``。这在一张随时会写入的表上等于「回填只对迁移那一刻的行成立」,所以本修订先把
+这段窗口补上,否则任何依赖 canonical 列的后续动作都会只对历史行成立。
+
+1. **重跑 0064 的三条回填**。它们都是全表重算,天然幂等:``claim_expires_at`` 按
+   ``claim_expires_at_us`` 的 0/负数为「未领取」换算成 ``NULL``,其余
+   ``to_timestamp(us / 1e6) AT TIME ZONE 'UTC'``;``due_at`` 从已冻结的来源
+   ``speech_jobs.created_at_us`` 换算,没有对应 ``speech_jobs`` 行的 Job 保持 ``NULL``;
+   ``bucket_no`` 仍由 Python 的唯一定义点 ``bucket_for(job_id)`` 算好再写入,不在 SQL 里
+   重写一遍哈希。``AT TIME ZONE`` 不是修辞:canonical 列是不带时区的 ``TIMESTAMP(6)``,
+   直接把 timestamptz 赋给它按会话时区折墙上时间,``Asia/Shanghai`` 会话下静默偏移 8 小时。
+2. **回填 ``last_event_seq``** 为每 Job 的 ``MAX(speech_job_events.event_seq)``,无事件为
+   ``0``。这里是全表一次聚合(``UPDATE ... FROM (SELECT ... GROUP BY)`` 的形状),不是
+   逐行往返:草案事件表的 ``event_seq`` 由 ``COALESCE(MAX(event_seq), -1) + 1`` 生成,所以
+   ``MAX`` 是唯一可信的事件头,``COUNT`` 会把 ``0,1,2`` 读成 ``3``。
+3. **没有收紧 ``bucket_no`` 的 NOT NULL。**要求里的这一步在当前树上会直接打断 Job 创建:
+   写入者 ``jobs_sql.create_in_transaction`` 与 ``public_jobs_postgres`` 的 fallback 只写
+   ``COORDINATION_JOB_INSERT_COLUMNS`` 的六个草案列,``bucket_no`` 既不在授权里也不在
+   INSERT 里,约束一旦 NOT NULL,每次新建 Job 都以 ``23502`` 失败并报成
+   ``503 job_unavailable``。让数据库自己算桶号等于把 ``bucket_for`` 的 sha256 规则重写一份
+   SQL 实现,而这条规则的唯一定义点在 Python;所以收紧必须与「写入者开始提供
+   ``bucket_for(job_id)``」同一个修订落地(属于 #1102 的写入切换),不是本段能单独完成的
+   加法。这里保留可空列,但第 4 步的第一条对账仍然保证 **每一行都有桶号**——缺的只是对
+   未来写入的强制力,不是本修订回填的正确性。``tests/integration/test_canonical_jobs_0065_pg.py``
+   断言 ``"bucket_no" not in COORDINATION_JOB_INSERT_COLUMNS``,写入路径一旦开始提供该列,
+   那条断言会先红,提醒收紧的前提已经具备。
+4. **提交前对账四条不变量**,任一不满足就抛 ``RuntimeError`` 并报出行数:没有漏 ``bucket_no``
+   的行;``claim_expires_at`` 与 ``claim_expires_at_us`` 的 0/``NULL`` 等价关系没被破坏;
+   ``last_event_seq`` 与事件表的 ``MAX`` 逐行一致(这条让第 2 步可证伪,否则「回填了 0」
+   和「回填跑了但什么都没读」看起来一样);``due_at`` 不为 ``NULL`` 而对应 ``speech_jobs``
+   行的 ``created_at_us > 0``。
+
+``downgrade`` 把 ``last_event_seq`` 归零,并防御性清掉 ``bucket_no`` 上可能存在的 NOT NULL
+(本修订自己不设它,但别的部署或手工 DDL 可能设过),列本身不删——列由 0064 拥有。回到 0064
+语义是安全的:这两列目前**没有任何读取者**,生产读写仍走 ``claim_expires_at_us`` 等草案列,
+归零只影响一个尚未被消费的占位列。这也让 ``step_below_*`` 那类「直接回退 alembic_version
+再 upgrade head」的测试可以重复进入本修订:回填全是全表重算,``DROP NOT NULL`` 对已可空的
+列是空操作,重复执行不会累积偏差。
+"""
+
+from __future__ import annotations
+
+from alembic import op
+from sqlalchemy import Connection, text
+
+from speechnexus_portable_sql.claims import bucket_for
+
+revision = "0065_canonical_jobs_reconcile"
+down_revision = "0064_canonical_jobs_columns"
+branch_labels = None
+depends_on = None
+
+#: 与 0064 同一条换算:0/负数是草案的「未领取」,换算是 ``NULL`` 而不是 1970。
+#: 迁移是历史制品,不跨修订 import 上一段的常量——那会把「0064 的语义」变成可变量。
+_CLAIM_EXPIRES_SQL = (
+    "UPDATE coordination_jobs SET claim_expires_at = CASE "
+    "WHEN claim_expires_at_us > 0 "
+    "THEN to_timestamp(claim_expires_at_us / 1000000.0) AT TIME ZONE 'UTC' "
+    "ELSE NULL END"
+)
+
+#: canonical_source_map.json 把 due_at 的来源固定为 speech_jobs.created_at_us。
+_DUE_AT_SQL = (
+    "UPDATE coordination_jobs AS c "
+    "SET due_at = to_timestamp(s.created_at_us / 1000000.0) AT TIME ZONE 'UTC' "
+    "FROM speech_jobs AS s "
+    "WHERE s.job_id = c.job_id AND s.created_at_us > 0"
+)
+
+#: 一次聚合而不是逐行往返;``LEFT JOIN`` 让没有事件的 Job 也落进分组,取 ``COALESCE`` 为 0。
+_LAST_EVENT_SEQ_SQL = (
+    "UPDATE coordination_jobs AS c "
+    "SET last_event_seq = COALESCE(agg.last_seq, 0) "
+    "FROM ("
+    "SELECT c2.job_id AS job_id, MAX(e.event_seq) AS last_seq "
+    "FROM coordination_jobs AS c2 "
+    "LEFT JOIN speech_job_events AS e ON e.job_id = c2.job_id "
+    "GROUP BY c2.job_id"
+    ") AS agg "
+    "WHERE agg.job_id = c.job_id"
+)
+
+_MISSING_BUCKETS_SQL = "SELECT COUNT(*) FROM coordination_jobs WHERE bucket_no IS NULL"
+
+_BROKEN_CLAIM_EQUIVALENCE_SQL = (
+    "SELECT COUNT(*) FROM coordination_jobs WHERE "
+    "(claim_expires_at_us <= 0 AND claim_expires_at IS NOT NULL) "
+    "OR (claim_expires_at_us > 0 AND claim_expires_at IS NULL)"
+)
+
+_STALE_EVENT_HEAD_SQL = (
+    "SELECT COUNT(*) FROM coordination_jobs AS c WHERE c.last_event_seq <> COALESCE("
+    "(SELECT MAX(e.event_seq) FROM speech_job_events AS e WHERE e.job_id = c.job_id), 0)"
+)
+
+_MISSING_DUE_AT_SQL = (
+    "SELECT COUNT(*) FROM coordination_jobs AS c WHERE c.due_at IS NULL AND EXISTS ("
+    "SELECT 1 FROM speech_jobs AS s WHERE s.job_id = c.job_id AND s.created_at_us > 0)"
+)
+
+
+def _backfill_buckets(connection: Connection) -> None:
+    """bucket 由 Python 的唯一定义点算出;SQL 只负责写入.
+
+    全表重算而不是只补 ``NULL`` 行:与 0064 同一段语句,这样「0064 之后新建的行」和
+    「0064 之前算错的行」都会被同一条规则收敛到同一个值。
+    """
+
+    job_ids = [
+        str(value)
+        for value in connection.execute(
+            text("SELECT job_id FROM coordination_jobs ORDER BY job_id")
+        ).scalars()
+    ]
+    if not job_ids:
+        return
+    connection.execute(
+        text("UPDATE coordination_jobs SET bucket_no = :bucket_no WHERE job_id = :job_id"),
+        [{"bucket_no": int(bucket_for(job_id)), "job_id": job_id} for job_id in job_ids],
+    )
+
+
+def _require_zero(connection: Connection, statement: str, message: str) -> None:
+    offending = connection.execute(text(statement)).scalar_one()
+    if offending:
+        raise RuntimeError(f"0065 reconcile left {offending} {message}")
+
+
+def upgrade() -> None:
+    connection = op.get_bind()
+    # 第 1 步:重跑 0064 的回填,覆盖 0064 之后写入、只有草案列的行。
+    connection.execute(text(_CLAIM_EXPIRES_SQL))
+    connection.execute(text(_DUE_AT_SQL))
+    _backfill_buckets(connection)
+    # 第 2 步:事件头。草案事件表的 event_seq 由 MAX+1 生成,所以 MAX 才是头,COUNT 不是。
+    connection.execute(text(_LAST_EVENT_SEQ_SQL))
+    # 第 3 步(有意不做):bucket_no 的 NOT NULL 属于写入切换,不能先于写入者落地。
+    # 详见模块 docstring;强制力由第 4 步的对账与测试的写入者形状断言分两层守。
+    # 第 4 步:提交前对账,任一条不为 0 就抛错并随迁移事务回滚。
+    _require_zero(connection, _MISSING_BUCKETS_SQL, "coordination_jobs row(s) without bucket_no")
+    _require_zero(
+        connection,
+        _BROKEN_CLAIM_EQUIVALENCE_SQL,
+        "coordination_jobs row(s) whose claim_expires_at does not match claim_expires_at_us",
+    )
+    _require_zero(
+        connection,
+        _STALE_EVENT_HEAD_SQL,
+        "coordination_jobs row(s) whose last_event_seq differs from the event MAX",
+    )
+    _require_zero(
+        connection,
+        _MISSING_DUE_AT_SQL,
+        "coordination_jobs row(s) with NULL due_at but a due public speech_jobs row",
+    )
+
+
+def downgrade() -> None:
+    # 回到 0064 语义:列还在(0064 拥有它们),事件头归零,桶号不再被强制。这两列当前
+    # 没有任何读取者,所以这次回退不改变生产行为,也不丢证据——草案 epoch 列仍是唯一权威。
+    # 本修订的 upgrade 不设 NOT NULL;这里仍然显式清一次,让「别处设过」的库也能回到
+    # 0064 语义,而不是把不可空的约束留在一个已经声明回退的版本上。
+    op.execute("ALTER TABLE coordination_jobs ALTER COLUMN bucket_no DROP NOT NULL")
+    op.execute("UPDATE coordination_jobs SET last_event_seq = 0")

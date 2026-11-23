@@ -72,7 +72,6 @@
     "sql-string-building::backend/src/speechnexus_backend/speech/infrastructure/deletion_plans_postgres.py": 3,
     "sql-string-building::backend/src/speechnexus_backend/speech/infrastructure/job_cancellation_fence.py": 2,
     "sql-string-building::backend/src/speechnexus_backend/speech/infrastructure/job_dispatch_postgres.py": 1,
-    "sql-string-building::backend/src/speechnexus_backend/speech/infrastructure/model_catalog_sql.py": 2,
     "sql-string-building::backend/src/speechnexus_backend/speech/infrastructure/public_job_admission.py": 4,
     "sql-string-building::backend/src/speechnexus_backend/speech/infrastructure/public_jobs_postgres.py": 5,
     "sql-string-building::backend/src/speechnexus_backend/speech/infrastructure/qualified_speech_facts_postgres.py": 2,

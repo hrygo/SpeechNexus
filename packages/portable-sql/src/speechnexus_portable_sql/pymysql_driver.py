@@ -7,10 +7,11 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast
 
 import pymysql
 
+from .contract import expand_lists
 from .markers import qmark_to_pyformat
 
 __all__ = ["PortableConnection", "connect"]
@@ -23,6 +24,11 @@ class _PortableCursor:
         self._cursor = cursor
 
     def execute(self, sql: str, params: Sequence[Any] | None = None) -> _PortableCursor:
+        # `ListMarker` 必须在这里展开:标记文法由这一层拥有,业务侧拼 `?, ?, ?` 就是
+        # `sql-string-building`。与 psycopg 驱动共用 `expand_lists`,规则不写第二遍。
+        if params is not None:
+            expanded, values = expand_lists(sql, params)
+            sql, params = expanded, cast(Any, values)
         self._cursor.execute(qmark_to_pyformat(sql, params), params)
         return self
 

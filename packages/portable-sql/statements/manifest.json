@@ -840,6 +840,192 @@
       "sql": "SELECT job_id, claim_version, due_at FROM coordination_jobs WHERE bucket_no = ? AND job_state = ? AND due_at <= ? AND (due_at > ? OR (due_at = ? AND job_id > ?)) ORDER BY due_at, job_id"
     },
     {
+      "id": "job.candidates.admitted",
+      "version": 1,
+      "params": [
+        {
+          "name": "bucket_no",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "job_state",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "now",
+          "kind": "timestamp",
+          "nullable": false
+        },
+        {
+          "name": "cursor_due",
+          "kind": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "cursor_due_equal",
+          "kind": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "cursor_job",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "result": [
+        {
+          "name": "job_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "claim_version",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "due_at",
+          "kind": "timestamp",
+          "nullable": false
+        }
+      ],
+      "transaction": "read_only",
+      "lock_order": [],
+      "idempotency": "read_only_replay",
+      "error_semantics": "rollback_and_rescan",
+      "sql": "SELECT c.job_id, c.claim_version, c.due_at FROM coordination_jobs AS c WHERE c.bucket_no = ? AND c.job_state = ? AND c.due_at <= ? AND (c.due_at > ? OR (c.due_at = ? AND c.job_id > ?)) AND EXISTS (SELECT 1 FROM admission_operations AS a WHERE a.operation_id = c.job_id AND a.request_document IS NOT NULL AND CHAR_LENGTH(a.request_document) > 0 AND a.request_digest = c.request_digest AND EXISTS (SELECT 1 FROM admission_attempts AS t WHERE t.operation_id = a.operation_id AND t.attempt_id = a.current_attempt_id AND EXISTS (SELECT 1 FROM admission_leases AS l WHERE l.operation_id = t.operation_id AND l.attempt_id = t.attempt_id AND l.lease_state IN ('reserved', 'executing') AND l.cleanup_state = 'pending'))) ORDER BY c.due_at, c.job_id"
+    },
+    {
+      "id": "job.candidates.lane",
+      "version": 1,
+      "params": [
+        {
+          "name": "bucket_no",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "job_state",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "now",
+          "kind": "timestamp",
+          "nullable": false
+        },
+        {
+          "name": "cursor_due",
+          "kind": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "cursor_due_equal",
+          "kind": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "cursor_job",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "kinds",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "result": [
+        {
+          "name": "job_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "claim_version",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "due_at",
+          "kind": "timestamp",
+          "nullable": false
+        }
+      ],
+      "transaction": "read_only",
+      "lock_order": [],
+      "idempotency": "read_only_replay",
+      "error_semantics": "rollback_and_rescan",
+      "sql": "SELECT c.job_id, c.claim_version, c.due_at FROM coordination_jobs AS c JOIN speech_jobs AS j ON j.job_id = c.job_id WHERE c.bucket_no = ? AND c.job_state = ? AND c.due_at <= ? AND (c.due_at > ? OR (c.due_at = ? AND c.job_id > ?)) AND j.kind IN (?) ORDER BY c.due_at, c.job_id",
+      "note": "The single `?` binds a driver-expanded list (`ListMarker`): one runtime-sized parameter slot, declared as `text` because the manifest vocabulary has no list kind. Expanded arity never changes the statement text or the placeholder count."
+    },
+    {
+      "id": "job.candidates.lane_admitted",
+      "version": 1,
+      "params": [
+        {
+          "name": "bucket_no",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "job_state",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "now",
+          "kind": "timestamp",
+          "nullable": false
+        },
+        {
+          "name": "cursor_due",
+          "kind": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "cursor_due_equal",
+          "kind": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "cursor_job",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "kinds",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "result": [
+        {
+          "name": "job_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "claim_version",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "due_at",
+          "kind": "timestamp",
+          "nullable": false
+        }
+      ],
+      "transaction": "read_only",
+      "lock_order": [],
+      "idempotency": "read_only_replay",
+      "error_semantics": "rollback_and_rescan",
+      "sql": "SELECT c.job_id, c.claim_version, c.due_at FROM coordination_jobs AS c JOIN speech_jobs AS j ON j.job_id = c.job_id WHERE c.bucket_no = ? AND c.job_state = ? AND c.due_at <= ? AND (c.due_at > ? OR (c.due_at = ? AND c.job_id > ?)) AND j.kind IN (?) AND EXISTS (SELECT 1 FROM admission_operations AS a WHERE a.operation_id = c.job_id AND a.request_document IS NOT NULL AND CHAR_LENGTH(a.request_document) > 0 AND a.request_digest = c.request_digest AND EXISTS (SELECT 1 FROM admission_attempts AS t WHERE t.operation_id = a.operation_id AND t.attempt_id = a.current_attempt_id AND EXISTS (SELECT 1 FROM admission_leases AS l WHERE l.operation_id = t.operation_id AND l.attempt_id = t.attempt_id AND l.lease_state IN ('reserved', 'executing') AND l.cleanup_state = 'pending'))) ORDER BY c.due_at, c.job_id",
+      "note": "The single `?` binds a driver-expanded list (`ListMarker`): one runtime-sized parameter slot, declared as `text` because the manifest vocabulary has no list kind. Expanded arity never changes the statement text or the placeholder count."
+    },
+    {
       "id": "job.claim",
       "version": 1,
       "params": [
@@ -888,6 +1074,65 @@
       "idempotency": "retry_on_zero_rows",
       "error_semantics": "rollback_and_rescan",
       "sql": "UPDATE coordination_jobs SET job_state = ?, claim_owner_id = ?, claim_expires_at = ?, claim_version = ? WHERE job_id = ? AND claim_version = ? AND job_state = ?"
+    },
+    {
+      "id": "job.claimed_view",
+      "version": 1,
+      "params": [
+        {
+          "name": "job_ids",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "result": [
+        {
+          "name": "job_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "workspace_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "kind",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "state",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "status_version",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "created_at_us",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "request_digest",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "request_document",
+          "kind": "text",
+          "nullable": true
+        }
+      ],
+      "transaction": "read_only",
+      "lock_order": [],
+      "idempotency": "read_only_replay",
+      "error_semantics": "rollback_and_rescan",
+      "sql": "SELECT j.job_id, j.workspace_id, j.kind, j.state, j.status_version, j.created_at_us, COALESCE(a.request_digest, j.request_digest), a.request_document FROM speech_jobs AS j LEFT JOIN admission_operations AS a ON a.operation_id = j.job_id WHERE j.job_id IN (?) ORDER BY j.job_id",
+      "note": "The single `?` binds a driver-expanded list (`ListMarker`): one runtime-sized parameter slot, declared as `text` because the manifest vocabulary has no list kind. Expanded arity never changes the statement text or the placeholder count."
     },
     {
       "id": "job.event_head",

@@ -43,7 +43,9 @@ __all__ = [
 
 #: 允许绑定的参数类型。`bool` 是 `int` 的子类,单独拒绝;`float` 永不用于预算与样本坐标。
 type Param = str | int | Decimal | datetime | None
-type Params = tuple[Param, ...]
+#: 一个 `?` 绑定的值:`Param`,或运行期才定元数的 `ListMarker`(`IN (?)`)。游标契约按
+#: 这个集合收参数,列表展开由驱动层完成,业务侧不拼占位符。
+type Params = tuple[Param | ListMarker, ...]
 
 
 class PortableSqlError(Exception):
@@ -303,4 +305,4 @@ def check_statement(sql: str, params: Sequence[object]) -> Params:
     expected = placeholder_count(sql)
     if expected != len(params):
         raise ContractError(f"statement expects {expected} parameters, got {len(params)}")
-    return check_parameters(params)  # type: ignore[return-value]
+    return check_parameters(params)

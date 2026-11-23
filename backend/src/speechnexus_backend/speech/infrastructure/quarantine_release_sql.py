@@ -48,7 +48,6 @@ from speechnexus_backend.speech.infrastructure.leases_sql import (
     _one,
     _rows,
 )
-from speechnexus_backend.speech.infrastructure.quarantine_release_schema import TABLE
 
 type Row = dict[str, Any]
 
@@ -76,14 +75,26 @@ def _ledger(row: Row) -> ReleaseLedger:
     )
 
 
+_READ_LEDGER = (
+    "SELECT lease_id, evidence_kind, evidence_digest, evidence_observed_at_us, "
+    "reason, budget_released_at_us, released_submit_intent_ids, "
+    "idempotency_key_digest, request_digest "
+    "FROM admission_quarantine_releases WHERE lease_id = ?"
+)
+_INSERT_LEDGER = (
+    "INSERT INTO admission_quarantine_releases (lease_id, operation_id, attempt_id, "
+    "stage_id, host_node_id, instance_id, instance_generation, fencing_token, "
+    "idempotency_key_digest, request_digest, evidence_kind, evidence_digest, "
+    "evidence_observed_at_us, reason, budget_released_at_us, "
+    "released_submit_intent_ids) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+)
+
+
 def read_ledger(cursor: LeaseCursor, lease_id: str) -> ReleaseLedger | None:
     """Read the immutable ledger row; no business lock is taken here."""
     rows = _rows(
         cursor,
-        "SELECT lease_id, evidence_kind, evidence_digest, evidence_observed_at_us, "
-        "reason, budget_released_at_us, released_submit_intent_ids, "
-        "idempotency_key_digest, request_digest "
-        f"FROM {TABLE} WHERE lease_id = ?",
+        _READ_LEDGER,
         (lease_id,),
     )
     if not rows:
@@ -209,11 +220,7 @@ def _insert_ledger(
     if released_at is None:
         raise LeaseRejectedError("reconciliation_required")
     cursor.execute(
-        f"INSERT INTO {TABLE} (lease_id, operation_id, attempt_id, stage_id, host_node_id, "
-        "instance_id, instance_generation, fencing_token, idempotency_key_digest, "
-        "request_digest, evidence_kind, evidence_digest, evidence_observed_at_us, reason, "
-        "budget_released_at_us, released_submit_intent_ids) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        _INSERT_LEDGER,
         (
             lease["lease_id"],
             lease["operation_id"],

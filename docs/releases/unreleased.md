@@ -26,10 +26,10 @@
 
 ## 运维必须做
 
-### 1. 迁移到 `0064_canonical_jobs_columns`
+### 1. 迁移到 `0065_canonical_jobs_reconcile`
 
 `v0.1.0` 的目录树停在 `0057_asr_settlement`（发布说明写的 head 是
-`0056_debt_probe_live_state_index`，但 tag 里已经有 0057），此后新增六个 revision：
+`0056_debt_probe_live_state_index`，但 tag 里已经有 0057），此后新增八个 revision：
 
 | 迁移 | 做什么 |
 | --- | --- |
@@ -40,6 +40,7 @@
 | `0062_lease_debt_index` | 删掉 0061 的索引，改建 `speech_job_cancellation_lease_debt_scan`：永久取消债的界从「失败历史」换成「仍持有容量的租约」 |
 | `0063_deletion_targets_blocked` | 删除账本的 `target_kind` 加 `artifact`、`voice_revision`，`status` 加 `blocked`、`failed`，并新增 `error` JSONB 列（与这两个状态一一对应） |
 | `0064_canonical_jobs_columns` | `coordination_jobs` 加 canonical 列 `bucket_no`、`due_at`、`claim_expires_at`、`last_event_seq` 并按既有 epoch 列回填（`0` → `NULL`、UTC 墙上时间、`bucket_for(job_id)`）；纯加法，无读取者，`downgrade` 只删这四列 |
+| `0065_canonical_jobs_reconcile` | 重跑 0064 的三条回填，覆盖 0064 之后写入、只有草案列的行；按 `MAX(speech_job_events.event_seq)` 回填 `last_event_seq`（无事件为 `0`）；提交前对账四条不变量（含「每行都有 `bucket_no`」）。**不收紧 `bucket_no`**：写入者只提供六个草案列，`NOT NULL` 会让新建 Job 以 `23502` 失败，收紧必须与写入切换同一修订落地；`downgrade` 把 `last_event_seq` 归零并防御性清掉 `NOT NULL`，不删列 |
 | `0008_runtime_delivery` | 参数标记迁到 `?` 契约后，迁移把唯一的占位符内联成迁移事务时间戳；行为不变，仍给旧 outbox 行补 `unknown` 投递相位 |
 | `0023_publication_lifecycle`（视图定义） | 视图里的 `::numeric` 改成标准 `CAST(... AS numeric)`，语义等价；只在重新 bootstrap 时生效，不新增迁移 |
 
@@ -51,15 +52,25 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
   'select version_num from speech.alembic_version'
 ```
 
-第二段的期望输出是 `0064_canonical_jobs_columns`。迁移身份是独立 DDL 身份
-（`SPEECHNEXUS_MIGRATION_DATABASE_URL`），不要用 `sn_api`。六个 revision 的
+第二段的期望输出是 `0065_canonical_jobs_reconcile`。迁移身份是独立 DDL 身份
+（`SPEECHNEXUS_MIGRATION_DATABASE_URL`），不要用 `sn_api`。`0058`–`0063` 六个 revision 的
 `downgrade` 全部显式 `raise`（计划是删除凭据、账本是删除事实、索引是轮询读的访问路径），
-回退没有 `alembic downgrade` 这条路径，只能显式处理数据后手工回收。
+回退没有 `alembic downgrade` 这条路径，只能显式处理数据后手工回收。`0064` 只删自己加的
+canonical 列，`0065` 把 `last_event_seq` 归零（并防御性清掉 `bucket_no` 上可能存在的
+`NOT NULL`）而不删列：这两列当前没有任何读取者，回到 0064 语义不改变生产行为，也不丢证据。
 
 核实：**实跑 + 读代码**。2026-11-20 在临时 PostgreSQL 18.6 上以
 `SPEECHNEXUS_MIGRATION_DATABASE_URL` 跑 `speechnexus-job-migrate --schema speech`，
 `speech.alembic_version` 得到 `0063_deletion_targets_blocked`；六个文件与各自的
 `down_revision` 链、`downgrade` 的 `raise` 逐个读过。
+
+`0065` 的补充核实（2026-11-23，同机 PostgreSQL 18.6）：空库上
+`speechnexus-job-migrate --schema sn_0065_headcheck` 后
+`alembic_version = 0065_canonical_jobs_reconcile`，`coordination_jobs` 的
+`bucket_no`／`due_at`／`claim_expires_at` 为可空、`last_event_seq` 为 NOT NULL；
+`tests/integration/test_canonical_jobs_0065_pg.py` 在 `Asia/Shanghai` 会话下实跑，
+覆盖 `MAX(event_seq)` 事件头、0064 之后写入窗口行的二次回填、`AT TIME ZONE 'UTC'`
+的墙上时间、`downgrade` 回 0064 三类判据。
 
 ### 2. 重跑 `cancellation_debt_reader_grants`：账本授权从 4 列扩到 5 列
 

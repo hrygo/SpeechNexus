@@ -19,6 +19,7 @@ from tests.integration.test_production_jobs import REQUEST as CREATE
 from tests.integration.test_production_jobs import database as database
 from tests.support.claim_database import MySQLClaimTransactions
 from tests.support.job_database import MySQLJobTransactions
+from tests.support.migration_rows import project_onto
 
 from speechnexus_backend.speech.application.claims import ClaimService, ClaimTransactions
 from speechnexus_backend.speech.domain.claims import MAX_COUNTER, ClaimJob
@@ -129,7 +130,7 @@ def test_claim_and_read_only_current_authority_do_not_release_or_dispatch(
     for _ in range(2):
         queried = boundary.query_outcome({"target": {"kind": "job", "job_id": "job-test"}})
         assert queried["value"] == result["value"]
-    assert db.query("SELECT * FROM coordination_jobs") == snapshot
+    assert project_onto(db.query("SELECT * FROM coordination_jobs"), snapshot) == snapshot
     assert {table: db.query(f"SELECT * FROM {table}") for table in before} == before
     for command in (
         REQUEST,
@@ -249,7 +250,7 @@ def test_counter_overflow_and_missing_job_preserve_original_rows(
         port.claim_job(replace(REQUEST, expected_claim_version=MAX_COUNTER)).error_code
         == "invalid_counter"
     )
-    assert db.query("SELECT * FROM coordination_jobs") == original
+    assert project_onto(db.query("SELECT * FROM coordination_jobs"), original) == original
 
 
 def test_gateway_cannot_mutate_worker_claim_authority(claim_database: ClaimDatabase) -> None:

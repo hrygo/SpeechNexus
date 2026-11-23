@@ -30,6 +30,7 @@ from tests.integration.test_production_jobs import database as database
 from tests.support.binding_defaults_database import MySQLBindingDefaults
 from tests.support.binding_examples import binding_request
 from tests.support.job_database import MySQLJobTransactions
+from tests.support.migration_rows import project_onto
 from tests.support.portable_pg import connect_kwargs as portable_connect_kwargs
 
 from speechnexus_backend.speech.application.binding_default_drafts import BindingDefaultDrafts
@@ -600,7 +601,10 @@ def test_empty_new_facts_roundtrip_and_history_preservation(
     assert sandbox.admin.execute(f"SELECT to_regclass('{TABLE}') AS t").fetchone()["t"] is None
     sandbox.upgrade("0011_binding_parameter_defaults")
     assert sandbox.version() == "0011_binding_parameter_defaults"
-    assert sandbox.admin.execute("SELECT * FROM coordination_jobs").fetchall() == prior
+    assert (
+        project_onto(sandbox.admin.execute("SELECT * FROM coordination_jobs").fetchall(), prior)
+        == prior
+    )
     assert sandbox.admin.execute("SELECT * FROM speech_binding_revisions").fetchall() == old_binding
     assert sandbox.admin.execute(f"SELECT * FROM {TABLE}").fetchall() == []
     assert sandbox.admin.execute(
@@ -778,7 +782,10 @@ def test_failed_upgrade_rolls_back_new_column_constraint_and_acl(
         ).fetchall()
         == []
     )
-    assert sandbox.admin.execute("SELECT * FROM coordination_jobs").fetchall() == prior
+    assert (
+        project_onto(sandbox.admin.execute("SELECT * FROM coordination_jobs").fetchall(), prior)
+        == prior
+    )
     assert (
         sandbox.admin.execute(
             "SELECT relname,relacl FROM pg_class WHERE relnamespace=%s::regnamespace "

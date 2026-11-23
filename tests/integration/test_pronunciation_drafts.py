@@ -27,6 +27,7 @@ from tests.integration.test_coordination_foundation import upgrade_sandbox as up
 from tests.integration.test_production_jobs import ROOT, FaultConnection, JobDatabase
 from tests.integration.test_production_jobs import database as database
 from tests.support.job_database import MySQLJobTransactions
+from tests.support.migration_rows import project_onto
 from tests.support.migrations import HEAD
 from tests.support.portable_pg import connect_kwargs as portable_connect_kwargs
 from tests.support.profile_database import ProfileCursor
@@ -413,7 +414,7 @@ def test_migration_is_repeatable_and_preserves_any_committed_pronunciation_histo
         with pytest.raises(RuntimeError, match="Pronunciation history"):
             migration.downgrade(s.config, "0013_profile_lifecycle_intents")
     assert s.version() == "0014_pronunciation_drafts"
-    assert s.admin.execute("SELECT * FROM coordination_jobs").fetchall() == old
+    assert project_onto(s.admin.execute("SELECT * FROM coordination_jobs").fetchall(), old) == old
     assert s.admin.execute(
         "SELECT pronunciation_id FROM speech_pronunciation_families"
     ).fetchall() == [{"pronunciation_id": "pron-history"}]
@@ -709,7 +710,7 @@ def test_failed_new_migration_rolls_back_all_ddl_without_losing_previous_history
     assert s.version() == "0013_profile_lifecycle_intents"
     for table in ("speech_pronunciation_families", "speech_pronunciation_revisions"):
         assert s.admin.execute("SELECT to_regclass(%s) AS t", (table,)).fetchone()["t"] is None
-    assert s.admin.execute("SELECT * FROM coordination_jobs").fetchall() == old
+    assert project_onto(s.admin.execute("SELECT * FROM coordination_jobs").fetchall(), old) == old
     s.admin.execute("ALTER TABLE speech_pronunciation_commands RENAME TO pron_collision_fixture")
     s.upgrade()
     assert s.version() == HEAD

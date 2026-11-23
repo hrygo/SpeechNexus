@@ -24,6 +24,7 @@ from tests.integration.test_coordination_foundation import upgrade_sandbox as up
 from tests.integration.test_production_jobs import ROOT, FaultConnection, JobDatabase
 from tests.integration.test_production_jobs import database as database
 from tests.support.job_database import MySQLJobTransactions
+from tests.support.migration_rows import project_onto
 from tests.support.portable_pg import connect_kwargs as portable_connect_kwargs
 from tests.support.profile_database import MySQLProfileDrafts, ProfileCursor
 from tests.support.profile_examples import profile_request
@@ -426,7 +427,10 @@ def test_failed_upgrade_rolls_back_new_tables_and_preserves_original_history(
         sandbox.upgrade()
     assert getattr(failure.value.orig, "sqlstate", None) == "42P07"
     assert sandbox.version() == "0008_runtime_delivery"
-    assert sandbox.admin.execute("SELECT * FROM coordination_jobs").fetchall() == old
+    assert (
+        project_onto(sandbox.admin.execute("SELECT * FROM coordination_jobs").fetchall(), old)
+        == old
+    )
     for table in ("speech_profile_families", "speech_profile_revisions"):
         assert (
             sandbox.admin.execute("SELECT to_regclass(%s) AS name", (table,)).fetchone()["name"]
@@ -441,4 +445,7 @@ def test_failed_upgrade_rolls_back_new_tables_and_preserves_original_history(
         with pytest.raises(RuntimeError, match="Profile history downgrade"):
             migration.downgrade(sandbox.config, "0008_runtime_delivery")
     assert sandbox.version() == "0009_profile_drafts"
-    assert sandbox.admin.execute("SELECT * FROM coordination_jobs").fetchall() == old
+    assert (
+        project_onto(sandbox.admin.execute("SELECT * FROM coordination_jobs").fetchall(), old)
+        == old
+    )

@@ -16,17 +16,17 @@
    ``0``。这里是全表一次聚合(``UPDATE ... FROM (SELECT ... GROUP BY)`` 的形状),不是
    逐行往返:草案事件表的 ``event_seq`` 由 ``COALESCE(MAX(event_seq), -1) + 1`` 生成,所以
    ``MAX`` 是唯一可信的事件头,``COUNT`` 会把 ``0,1,2`` 读成 ``3``。
-3. **没有收紧 ``bucket_no`` 的 NOT NULL。**要求里的这一步在当前树上会直接打断 Job 创建:
-   写入者 ``jobs_sql.create_in_transaction`` 与 ``public_jobs_postgres`` 的 fallback 只写
+3. **没有收紧 ``bucket_no`` 的 NOT NULL。**这一步在本修订里会把约束和写入者拆开落地:
+   当时 ``jobs_sql.create_in_transaction`` 与 ``public_jobs_postgres`` 的 fallback 只写
    ``COORDINATION_JOB_INSERT_COLUMNS`` 的六个草案列,``bucket_no`` 既不在授权里也不在
-   INSERT 里,约束一旦 NOT NULL,每次新建 Job 都以 ``23502`` 失败并报成
+   INSERT 里,一旦 NOT NULL,每次新建 Job 都会以 ``23502`` 失败并报成
    ``503 job_unavailable``。让数据库自己算桶号等于把 ``bucket_for`` 的 sha256 规则重写一份
-   SQL 实现,而这条规则的唯一定义点在 Python;所以收紧必须与「写入者开始提供
-   ``bucket_for(job_id)``」同一个修订落地(属于 #1102 的写入切换),不是本段能单独完成的
-   加法。这里保留可空列,但第 4 步的第一条对账仍然保证 **每一行都有桶号**——缺的只是对
-   未来写入的强制力,不是本修订回填的正确性。``tests/integration/test_canonical_jobs_0065_pg.py``
-   断言 ``"bucket_no" not in COORDINATION_JOB_INSERT_COLUMNS``,写入路径一旦开始提供该列,
-   那条断言会先红,提醒收紧的前提已经具备。
+   SQL 实现,而这条规则的唯一定义点在 Python;所以收紧必须晚于「写入者开始提供
+   ``bucket_for(job_id)``」的写入切换(#1176)。该切换落地后两个写入者都在 INSERT 时提供
+   ``bucket_no``,本修订仍保留可空列,把 ``NOT NULL`` 留给后续修订;第 4 步的第一条对账
+   继续保证 **每一行都有桶号**。``tests/integration/test_canonical_jobs_0065_pg.py``
+   现在两个方向都钉住:``"bucket_no"`` 在 ``COORDINATION_JOB_INSERT_COLUMNS`` 里,而列本身
+   仍可空——后者只有收紧修订会翻。
 4. **提交前对账四条不变量**,任一不满足就抛 ``RuntimeError`` 并报出行数:没有漏 ``bucket_no``
    的行;``claim_expires_at`` 与 ``claim_expires_at_us`` 的 0/``NULL`` 等价关系没被破坏;
    ``last_event_seq`` 与事件表的 ``MAX`` 逐行一致(这条让第 2 步可证伪,否则「回填了 0」

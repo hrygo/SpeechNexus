@@ -14,12 +14,12 @@ migration:
   backfill and these reads shift by eight hours with no error anywhere.
 
 ``bucket_no`` is deliberately **still nullable** after 0065, and that is a finding rather
-than an omission. The live Job writer inserts only
-``COORDINATION_JOB_INSERT_COLUMNS`` — the six draft columns — so a NOT NULL constraint on
-``bucket_no`` makes every Job creation fail with ``23502``, surfaced as ``503
-job_unavailable``. The tightening has to land with the write path that supplies
-``bucket_for(job_id)`` (#1102's write switch), and the guard below fails as soon as that
-write path does supply the column, so the deferral cannot silently outlive its premise.
+than an omission: the migration does not own the tightening. The live Job writer now
+supplies ``bucket_for(job_id)`` through ``COORDINATION_JOB_INSERT_COLUMNS`` (#1176), so the
+deferral's premise — a writer that does not supply the column — is gone, but the ``NOT
+NULL`` constraint belongs to the revision after this write switch. The guard below pins
+the current truth in both directions: ``bucket_no`` *is* in the declared writer columns and
+the column *is* still nullable, so the tightening's own migration is what flips the latter.
 """
 
 from __future__ import annotations
@@ -106,9 +106,9 @@ def _insert_event(admin: psycopg.Connection[Any], *, job_id: str, event_seq: int
 def _insert_like_the_live_writer(admin: psycopg.Connection[Any], *, job_id: str) -> None:
     """Insert with exactly the columns the production writer is granted and uses.
 
-    ``COORDINATION_JOB_INSERT_COLUMNS`` is the single declaration the grants, the startup
-    verifier and both INSERT statements follow, so this is the real producer surface rather
-    than a hand-copied column list.
+    ``COORDINATION_JOB_INSERT_COLUMNS`` is the declaration the writer's own GRANT, the
+    startup verifier and both INSERT statements follow, so this is the real producer
+    surface rather than a hand-copied column list.
     """
 
     values = {
@@ -118,6 +118,7 @@ def _insert_like_the_live_writer(admin: psycopg.Connection[Any], *, job_id: str)
         "initial_event_id": f"{job_id}-queued",
         "initial_event_digest": DIGEST,
         "request_digest": DIGEST,
+        "bucket_no": int(bucket_for(job_id)),
     }
     assert set(COORDINATION_JOB_INSERT_COLUMNS) <= set(values), sorted(values)
     columns = ", ".join(COORDINATION_JOB_INSERT_COLUMNS)
@@ -273,20 +274,19 @@ def test_0065_backfills_the_event_head_and_rows_written_after_0064() -> None:
         # whole-table recompute rather than an append that would double-count.
         assert _canonical_row(admin, "job-0065-three-events")[3] == 3
 
-        # 0065 leaves bucket_no nullable on purpose: the live writer's six-column INSERT
-        # does not supply it, so NOT NULL here would reject every new Job (23502 ->
-        # 503 job_unavailable). The deferral is tied to the writer, not to memory: once
-        # the write path supplies bucket_no, this assertion goes red and the tightening
-        # becomes implementable.
-        assert "bucket_no" not in COORDINATION_JOB_INSERT_COLUMNS, (
-            "the Job writer now supplies bucket_no; 0065's deferral of NOT NULL is stale"
+        # 0065 leaves bucket_no nullable on purpose: the write switch that supplies
+        # ``bucket_for(job_id)`` has landed (#1176), but the NOT NULL tightening belongs
+        # to the revision after it. The declaration flip is pinned so the two facts cannot
+        # silently swap: the writer now supplies the column, the column is still nullable.
+        assert "bucket_no" in COORDINATION_JOB_INSERT_COLUMNS, (
+            "the Job writer no longer supplies bucket_no; #1176's write switch regressed"
         )
         assert _bucket_no_is_nullable(admin, schema) == "YES"
         _insert_like_the_live_writer(admin, job_id="job-0065-live-writer")
         live = _canonical_row(admin, "job-0065-live-writer")
-        # A Job created after the migration is accepted exactly as the runtime writes it;
-        # its canonical columns stay empty until the switch, which is 0064's contract.
-        assert live[0] is None and live[3] == 0
+        # A Job created after the migration is accepted exactly as the runtime writes it:
+        # the bucket is supplied at INSERT time, the event head still waits for dispatch.
+        assert live[0] == int(bucket_for("job-0065-live-writer")) and live[3] == 0
     finally:
         admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
         admin.close()
@@ -356,9 +356,12 @@ def test_0065_downgrade_restores_0064_semantics_without_losing_rows() -> None:
         assert unclaimed[2] is None
         assert unclaimed[1] == datetime(2026, 11, 23, 12, 0, 1)
 
-        # The 0064-era insert path still works after the round trip.
+        # The 0064-era insert path still works after the round trip; the writer-supplied
+        # bucket survives because the column belongs to 0064 and the downgrade keeps it.
         _insert_like_the_live_writer(admin, job_id="job-0065-after-downgrade")
-        assert _canonical_row(admin, "job-0065-after-downgrade")[0] is None
+        assert _canonical_row(admin, "job-0065-after-downgrade")[0] == int(
+            bucket_for("job-0065-after-downgrade")
+        )
     finally:
         admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
         admin.close()

@@ -31,18 +31,19 @@
 #### 部署顺序：迁移（含授权重放）先于新构建
 
 顺序是硬约束，不是建议：先把库迁到 head（当前是 `0066_claim_bucket_table`，它包含
-`0064` 加上的 `bucket_no`），重放下节三个身份的 `coordination_jobs` INSERT 授权，
-**再**启动新构建。新构建的 Job 写入在 INSERT 里固定提供 `bucket_no`
+`0064` 加上的 `bucket_no` 与 `due_at`），重放下节三个身份的 `coordination_jobs` INSERT 授权，
+**再**启动新构建。新构建的 Job 写入在 INSERT 里固定提供 `bucket_no` 与 `due_at`
 （`backend/src/speechnexus_backend/speech/infrastructure/job_writer_columns.py:29`），
-这一列由 `0064` 添加；写入者不做「列不在就换一种 INSERT」的探测，也不保留第二套
-支持的 schema。
+这两列都由 `0064` 添加；写入者不做「列不在就换一种 INSERT」的探测，也不保留第二套
+支持的 schema。`due_at` 由两个写入者从 `speech_jobs.created_at_us` 派生成 naive UTC
+`TIMESTAMP(6)`，不需要新迁移，也不需要回填新列。
 
 新构建先启动、迁移后跑时，每一次新建 Job 都在 INSERT 处以
 `psycopg.errors.UndefinedColumn: column "bucket_no" of relation coordination_jobs
 does not exist`（SQLSTATE `42703`）失败：公开创建面把它归为 `storage_rejected`
-的拒绝（`backend/src/speechnexus_backend/speech/infrastructure/public_jobs_postgres.py:750`），
+的拒绝（`backend/src/speechnexus_backend/speech/infrastructure/public_jobs_postgres.py:757`），
 协调写入者把它归为 `reconciliation_required`
-（`backend/src/speechnexus_backend/speech/infrastructure/jobs_postgres.py:100`）。
+（`backend/src/speechnexus_backend/speech/infrastructure/jobs_postgres.py:113`）。
 两者都不是数据问题，重试和 `recover_create_job` 都绕不过去：语句引用了不存在的列。
 授权未重放是同一位置、同为「新建 Job 必失败」的另一种形态——`42501 permission denied
 for table coordination_jobs`（见下节），所以迁移与授权重放必须一起早于新构建。迁移完成
@@ -337,9 +338,9 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 | `gateway_cancellation_fence_grants` | `job_cancellation_fence_schema.py` | 未变 |
 | `deletion_plan_grants` | `job_schema.py` | **新增**，见第 3 条 |
 | `deletion_execution_grants` | `job_schema.py` | **新增**，见第 3 条 |
-| `job_runtime_grants` | `job_schema.py` | **变**：`coordination_jobs` 的 INSERT 授权随 `COORDINATION_JOB_INSERT_COLUMNS` 自动加 `bucket_no`（函数体未改，见第 1 条） |
-| `coordination_runtime_grants` | `coordination_grants.py` | **变**：`coordination_jobs` 的 INSERT 列加 `bucket_no`（见第 1 条）；另给 speech 角色 `coordination_claim_buckets` 的 `SELECT` 与 `claim_owner_id`／`lease_until`／`version` 三列 `UPDATE`，不给 `INSERT`／`DELETE`，gateway 侧一条都没有。迁移后重放一次即可（`provision-job-roles.py` 会带上） |
-| `public_job_admission_grants` | `public_job_admission_grants.py` | **变**：`coordination_jobs` 的 INSERT 列加 `bucket_no`，见第 1 条 |
+| `job_runtime_grants` | `job_schema.py` | **变**：`coordination_jobs` 的 INSERT 授权随 `COORDINATION_JOB_INSERT_COLUMNS` 自动加 `bucket_no`、`due_at`（函数体未改，见第 1 条） |
+| `coordination_runtime_grants` | `coordination_grants.py` | **变**：`coordination_jobs` 的 INSERT 列加 `bucket_no`、`due_at`（见第 1 条）；另给 speech 角色 `coordination_claim_buckets` 的 `SELECT` 与 `claim_owner_id`／`lease_until`／`version` 三列 `UPDATE`，不给 `INSERT`／`DELETE`，gateway 侧一条都没有。迁移后重放一次即可（`provision-job-roles.py` 会带上） |
+| `public_job_admission_grants` | `public_job_admission_grants.py` | **变**：`coordination_jobs` 的 INSERT 列加 `bucket_no`、`due_at`，见第 1 条 |
 | `binding_disable_admission_grants` | `admission_postgres.py` | 未变（SQL 参数标记迁到 `?`，授权列未动） |
 | `tts_voice_admission_grants` | `admission_postgres.py` | 未变（同文件，参数标记迁移） |
 | `speech_synthesis_reader_grants` | `qualified_speech_facts_postgres.py` | 未变（参数标记迁移） |

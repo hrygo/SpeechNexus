@@ -58,6 +58,7 @@ from speechnexus_portable_sql.claims import (
     release_bucket,
     require_fence,
     start_bucket_for,
+    utc_from_epoch_us,
 )
 from speechnexus_portable_sql.contract import (
     CommitUnknownError,
@@ -263,6 +264,7 @@ __all__ = [
     "reserve",
     "start_bucket_for",
     "transaction",
+    "utc_from_epoch_us",
     "utf8_length",
     "validate",
 ]

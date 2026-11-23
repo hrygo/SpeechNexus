@@ -622,7 +622,12 @@ def test_last_outbox_unique_wait_rechecks_all_authority_windows(
                 attempt_id="attempt-wait-blocker",
                 event_id="event-wait-blocker",
             )
-            assert create_in_transaction(cursor, unrelated).outcome == "committed"
+            assert (
+                create_in_transaction(
+                    cursor, unrelated, created_at_us=1_700_000_000_000_000
+                ).outcome
+                == "committed"
+            )
             # Test-only pending row holds the final unique key; it is rolled
             # back, so the application insertion succeeds after the real wait.
             cursor.execute(

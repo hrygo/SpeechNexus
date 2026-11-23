@@ -322,7 +322,12 @@ def test_private_records_and_job_outbox_roll_back_together(foundation: Foundatio
             with connection.cursor() as cursor:
                 cursor.execute(OPERATION_SQL, OPERATION_VALUES)
                 cursor.execute(ADMISSION_SQL, ADMISSION_VALUES)
-                assert create_in_transaction(cursor, REQUEST).outcome == "committed"
+                assert (
+                    create_in_transaction(
+                        cursor, REQUEST, created_at_us=1_700_000_000_000_000
+                    ).outcome
+                    == "committed"
+                )
                 raise RuntimeError("synthetic failure after all writes")
         except RuntimeError:
             connection.rollback()

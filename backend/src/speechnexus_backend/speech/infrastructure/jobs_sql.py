@@ -15,7 +15,7 @@ from speechnexus_backend.speech.domain.jobs import (
     replay_result,
     unknown_result,
 )
-from speechnexus_portable_sql.claims import bucket_for
+from speechnexus_portable_sql.claims import bucket_for, utc_from_epoch_us
 
 
 class JobCursor(Protocol):
@@ -61,17 +61,28 @@ def _existing(cursor: JobCursor, request: CreateJob) -> JobResult | None:
     return replay
 
 
-def create_in_transaction(cursor: JobCursor, request: CreateJob) -> JobResult:
+def create_in_transaction(
+    cursor: JobCursor, request: CreateJob, *, created_at_us: int
+) -> JobResult:
+    """Insert the coordination row with the instant the Job becomes dispatchable.
+
+    ``due_at`` is not an independent scheduling decision: ``canonical_source_map.json``
+    freezes its source at ``speech_jobs.created_at_us``, so the caller passes the exact
+    epoch microseconds it also writes there. Converting here, in Python, keeps the rule
+    in one place; the staging MySQL driver must see the same statement as PostgreSQL.
+    """
+
     # These identity/digest columns are immutable. Unique indexes serialize new
     # creations; no broad UPDATE grant or mutable-claim lock is needed to replay.
     existing = _existing(cursor, request)
     if existing is not None:
         return existing
+    due_at = utc_from_epoch_us(created_at_us, field="created_at_us")
     cursor.execute(
         """INSERT INTO coordination_jobs
            (job_id, operation_id, attempt_id, initial_event_id,
-            initial_event_digest, request_digest, bucket_no)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            initial_event_digest, request_digest, bucket_no, due_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             request.job_id,
             request.operation_id,
@@ -80,6 +91,7 @@ def create_in_transaction(cursor: JobCursor, request: CreateJob) -> JobResult:
             request.event_digest,
             request.request_digest,
             int(bucket_for(request.job_id)),
+            due_at,
         ),
     )
     cursor.execute(

@@ -1406,11 +1406,11 @@ SELECT 1 FROM speech_workspaces, workspace_quotas, … WHERE 1=0
 
 ### 8.64 剩余 244 条的构成与「能不能动」的判定
 
-按规则统计(2026-11-23,基线 230):
+按规则统计(2026-11-23,基线 228):
 
 | 规则 | 条数 | 归属 | 能否现在动 |
 | --- | ---: | --- | --- |
-| `sql-string-building` | 55 | #1100 | 能;但字面量化会暴露被掩盖的 `paging-limit` / `vendor-json` |
+| `sql-string-building` | 53 | #1100 | 能;但字面量化会暴露被掩盖的 `paging-limit` / `vendor-json` |
 | `vendor-type` | 45 | #1102 | 不能:厂商类型名(`jsonb`/`text`)要等 bootstrap 与 profile |
 | `vendor-json` | 33 | #1102 | 不能:JSONB 运算符与 `->>` 取值的替代需要契约层先定 |
 | `advisory-lock` | 32 | 无卡 | **不能**:见下 |
@@ -1515,3 +1515,16 @@ current.replace("CURRENT_USER", "CAST(? AS name)") == named
   (权限面已写在字面量里)。
 
 净变化 **244 → 230**(−6 `sql-string-building` −2 `vendor-type`),且这一项没有把任何发现「转化」成新规则。
+
+### 8.69 目录读:两处表名插值,判据落在「已退休修订仍被排除」
+
+`model_catalog_sql` 的两条读取用 `{RETIREMENT_TABLE}` / `{STATE_TABLE}` 插值。改成字面量后,判据
+`test_model_catalog_statements.py` 的重点是**语义谓词还在**:
+
+- 已退休修订必须继续被排除,而且四个键都要对上(`kind` / `object_id` / `revision` / `revision_id`);
+  只比对 `NOT EXISTS (` 的存在会漏掉「键少了一个」这种退化;
+- 状态读仍是单行读(`WHERE singleton IS TRUE`),语句里不得出现聚合 —— 计数器不是行数。
+
+注入即红:从退休谓词里删掉 `retired.object_id = p.object_id` → `1 failed, 2 passed`。
+
+基线 **230 → 228**。

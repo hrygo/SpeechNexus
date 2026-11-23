@@ -4,11 +4,6 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from speechnexus_backend.speech.infrastructure.catalog_revision_schema import (
-    RETIREMENT_TABLE,
-    STATE_TABLE,
-)
-
 
 class CatalogCursor(Protocol):
     def execute(self, query: str, parameters: tuple[object, ...] = ()) -> object: ...
@@ -42,7 +37,7 @@ def list_published_bindings(cursor: CatalogCursor) -> list[dict[str, Any]]:
         " AND v.revision_id = p.revision_id "
         "WHERE p.kind = 'binding' "
         "AND NOT EXISTS ("
-        f"SELECT 1 FROM {RETIREMENT_TABLE} AS retired "
+        "SELECT 1 FROM speech_publication_retirements AS retired "
         "WHERE retired.kind = 'binding' AND retired.object_id = p.object_id "
         "AND retired.revision = p.revision AND retired.revision_id = p.revision_id"
         ") "
@@ -63,7 +58,7 @@ def read_catalog_state(cursor: CatalogCursor) -> dict[str, Any]:
     """
     cursor.execute(
         "SELECT revision AS catalog_revision, generated_at_us "
-        f"FROM {STATE_TABLE} WHERE singleton IS TRUE"
+        "FROM speech_catalog_state WHERE singleton IS TRUE"
     )
     rows = cursor.fetchall()
     if len(rows) != 1:

@@ -135,12 +135,12 @@ class _ObservedJobs(PostgresPublicJobs):
         query: str,
         parameters: tuple[object, ...],
         *,
-        submission_key: tuple[str, str] | None = None,
+        binding_lock: str | None = None,
         page_size: int | None = None,
     ) -> list[dict[str, Any]]:
         # 记下真实执行的语句(去掉页大小后与运行时一致),再交给父类取一页。
         self.calls.append((query, parameters))
-        rows = super()._read(query, parameters, submission_key=submission_key)
+        rows = super()._read(query, parameters, binding_lock=binding_lock)
         return rows if page_size is None else rows[:page_size]
 
 

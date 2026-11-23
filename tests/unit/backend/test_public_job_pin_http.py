@@ -120,7 +120,7 @@ async def test_http_failed_rejection_coordination_returns_recoverable_503(
     facts.binding = replace(facts.binding, retired=True)
     calls = 0
 
-    def lookup(*args: Any) -> None:
+    def lookup(*args: Any, **kwargs: Any) -> None:
         nonlocal calls
         calls += 1
         if calls == 2:

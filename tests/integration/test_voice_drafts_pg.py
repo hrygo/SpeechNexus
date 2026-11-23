@@ -2,6 +2,8 @@
 
 import json
 import os
+import threading
+import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -11,11 +13,13 @@ import psycopg
 import pytest
 from alembic import command
 from httpx import ASGITransport, AsyncClient
+from psycopg.rows import dict_row
 from speechnexus_contracts import parse as parse_contract
 from speechnexus_contracts.voice_drafts_http import validate_response
 from tests.integration.test_public_job_progress_migration_pg import _isolated_schema
 from tests.integration.test_public_jobs_http import JobSandbox, _seed_binding, _settings_for
 from tests.integration.test_public_jobs_http import jobs_db as jobs_db
+from tests.support.portable_pg import connect as portable_pg_connect
 from tests.support.voice_recipe import plan_a_write_path  # noqa: F401
 from tests.unit.backend.test_health import _settings
 
@@ -25,6 +29,7 @@ from speechnexus_backend.speech.application.public_jobs import (
     JobRejectedError,
     PublicJobs,
     VoiceDraftNotCandidateError,
+    VoiceDraftNotGeneratableError,
     VoiceDraftStaleRevisionError,
     VoiceInputInvalidError,
 )
@@ -2098,6 +2103,67 @@ async def test_validate_insert_fact_change_is_a_conflict_not_a_retryable_503(
         )
     _assert_conflict_envelope(response, "validateVoiceDraftRevision")
     assert voice_db.count("speech_jobs") == 1
+
+
+def test_public_job_validation_target_waits_for_a_concurrent_publication(
+    voice_db: JobSandbox,
+) -> None:
+    """A validation Job is admitted only against a still-generatable head.
+
+    ``_lock_validation_target`` takes the ``speech_voice_drafts`` row and then
+    re-reads, in one statement, the head revision, the draft status, the
+    generation Job's state and result and every preview Artifact that result
+    names. The invariant: a ``voice_validation`` Job may only target the
+    current head revision of a draft that is still a candidate, and none of
+    those facts may come from a snapshot taken before the lock.
+
+    Here the draft is published by a transaction that is still open while the
+    create runs, so the draft row is the only resource the two share. The
+    create must wait for that transaction (observed in ``pg_blocking_pids``)
+    and then answer draft_not_generatable from the committed status, instead of
+    inserting the Job its earlier, pre-publication reads would have allowed.
+    """
+    provider, draft = _candidate_draft(voice_db)
+    before = voice_db.count("speech_jobs")
+    observed = threading.Event()
+
+    def publish() -> None:
+        with portable_pg_connect(voice_db.url, row_factory=dict_row) as connection:
+            connection.execute(f'SET search_path TO "{voice_db.schema}", pg_catalog')
+            connection.execute(
+                "UPDATE speech_voice_drafts SET status = 'published' WHERE draft_id = %s",
+                (draft["id"],),
+            )
+            pid = connection.info.backend_pid
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                row = connection.execute(
+                    "SELECT count(*) AS waiting FROM pg_stat_activity "
+                    "WHERE pid <> %s AND %s = ANY(pg_blocking_pids(pid))",
+                    (pid, pid),
+                ).fetchone()
+                assert row is not None
+                if int(row["waiting"]):
+                    observed.set()
+                    return
+                time.sleep(0.01)
+            raise AssertionError("No concurrent PostgreSQL lock wait observed")
+
+    publisher = threading.Thread(target=publish, name="publication-holder")
+    publisher.start()
+    try:
+        with pytest.raises(VoiceDraftNotGeneratableError):
+            provider.validate(
+                draft["id"],
+                {"expected_draft_revision": "1", "validation_set_revision": "1"},
+                request_id="req-validate-race",
+                idempotency_key=None,
+            )
+    finally:
+        publisher.join(timeout=10)
+    assert not publisher.is_alive()
+    assert observed.is_set()
+    assert voice_db.count("speech_jobs") == before
 
 
 async def test_deterministic_insert_rejection_is_a_500_contract_violation(

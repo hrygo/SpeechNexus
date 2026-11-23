@@ -100,11 +100,11 @@ def test_the_refusal_precedes_the_idempotency_lookup(kind: str) -> None:
     reads: list[int] = []
     original = store.find_by_key
 
-    def counting_find_by_key(*args: Any) -> Any:
+    def counting_find_by_key(*args: Any, **kwargs: Any) -> Any:
         reads.append(1)
-        return original(*args)
+        return original(*args, **kwargs)
 
-    store.find_by_key = counting_find_by_key  # type: ignore[method-assign,assignment]
+    store.find_by_key = counting_find_by_key  # type: ignore[method-assign]
     with pytest.raises(JobKindNotDispatchableError):
         jobs.submit(body, request_id="request-refused", idempotency_key="voice-key-123")
     assert reads == []

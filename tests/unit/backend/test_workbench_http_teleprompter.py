@@ -159,8 +159,8 @@ async def test_disabled_router_fails_explicitly_without_phantom_state() -> None:
         (ResourceNotFoundError(), 404, "resource_not_found", "put"),
         (IdempotencyConflictError(), 409, "idempotency_conflict", "put"),
         (RevisionConflictError(2, 3), 409, "revision_conflict", "put"),
-        (VersionStoreError(sqlstate=None, commit_unknown=True), 503, "outcome_unknown", "put"),
-        (VersionStoreError(sqlstate=None, commit_unknown=False), 503, "store_unavailable", "get"),
+        (VersionStoreError(failure=None, commit_unknown=True), 503, "outcome_unknown", "put"),
+        (VersionStoreError(failure=None, commit_unknown=False), 503, "store_unavailable", "get"),
         (RuntimeError("private"), 500, "internal_error", "get"),
     ],
 )

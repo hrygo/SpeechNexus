@@ -253,6 +253,9 @@ claim bucket 改的是准入侧的领取，**没有覆盖派发队列**。因此
 `sqlstate="42P01"`、没有 `reason` 的异常,断言分类给不出结论。把领域改回读 `sqlstate` 时这条
 立刻变红(实测过),所以它盯的是「领域不再碰厂商码」这件事本身,不是某次分类结果。
 
+workbench 版本边界上剩下的 3 处在 §8.79 按同一形状收口:应用层不再声明 `sqlstate`,
+基础设施只按契约类别判定。
+
 顺带修了一个真实缺陷:存储原来用 `raise ... from None` 抛出,链被切断,分类拿不到任何事实
 ——这也是为什么三个 PG oracle 用例(`test_public_job_prerequisites_pg`)在改成读 `reason` 后
 一开始是红的:它们真的在未迁移库/被撤权角色上跑,暴露出翻译点没接上。
@@ -1923,3 +1926,47 @@ receipt 走 replay,不会再写围栏;`ON CONFLICT (job_id) DO NOTHING` 与主�
 守卫基线因此减 2 条 advisory-lock:
 `backend/.../job_cancellation_fence.py` 1 条、`execution-gateway/.../cancellation_fence_sql.py`
 1 条,181 → 179,`new=0`。没有新增 advisory lock、vendor 分支或 `SKIP LOCKED`。
+
+### 8.79 workbench 版本边界按契约类别分类:`VersionStoreError` 不再透传 SQLSTATE
+
+§8.6 定义的形状漏在 workbench 版本边界上的最后 3 处,基线 169 里的
+`vendor-error-branch` 全部属于这里:应用层 `version_ports.py` 2 处(参数名与
+`self.sqlstate` 赋值)、基础设施 `postgres_versions.py` 1 处(`error.sqlstate` 参与
+`commit_unknown` 判定)。三层里只有第一层是纯诊断字段,第三层却真的按厂商码分支,而
+「同一个逻辑冲突在另一引擎上是否被识别」正取决于这处分支。
+
+**收口后的形状。**
+
+- `VersionStoreError` 只带 `failure: PortableSqlError | None` 与 `commit_unknown`。
+  `failure` 是驱动已经翻好的契约类别:重复/冲突写是 `ConflictError`,存储级拒绝是
+  `StorageError`(其 `reason` 说明补授权还是重跑迁移)。应用与接口都按这个类型判断,
+  不再有 `sqlstate`、驱动类或驱动消息可比。
+- `postgres_versions.transaction()` 只调一次 `portable_error(error)`。SQLSTATE 仍然只在
+  `psycopg_driver._reason_of` / `portable_error` 被读,业务侧没有第二处。
+- `commit_unknown` 的判据随之改成契约类型:`ConflictError` 是唯一能证明服务器中止了事务
+  的拒绝;连接丢失、后端关闭、序列化失败/死锁、锁超时、语句完成未知与未分类失败都报
+  uncertain。方向是保守的——不确定时报「结果未知」,恢复路径仍是按原 scoped key 重查。
+  代价是 COMMIT 阶段才出现的 40001/40P01 由「确定中止」变成「未知」(psycopg 把 class 40
+  归入 `OperationalError`,契约只能看到 `ConnectionLostError`);没有用例依赖旧判定,而错误的
+  方向不会把不确定说成确定。
+
+**两条真库判据**(`tests/integration/test_workbench_versions_postgres.py`,真 schema、真 runtime 角色):
+
+| 行为 | 构造 | 收口前 | 收口后 |
+| --- | --- | --- | --- |
+| 重复/冲突的版本写 | 同一 scoped receipt 连写两次,撞主键 | `sqlstate='23505'` | `isinstance(failure, ConflictError)`,`commit_unknown=False` |
+| 存储级拒绝 | 从 runtime 角色 `REVOKE INSERT ON project_versions`,与冲突无关 | `sqlstate='42501'` | `StorageError` 且 `reason='permission_denied'`,不是 `ConflictError` |
+
+两种情形抛出的仍是同一个 `VersionStoreError`,接口层仍是 503 `store_unavailable` /
+`outcome_unknown`(单测 `test_workbench_http_error_fallback.py` 覆盖),用户可见行为不变。
+
+**注入即红**(改 `psycopg_driver.portable_error` 的分类,改前改后按 sha256 核对一致,
+注入前后清理 `*.pyc`):
+
+- 唯一/外键冲突不再返回 `ConflictError`(全部降级成 `StorageError`)→ 冲突判据在
+  `assert isinstance(error.value.failure, ConflictError)` 红。
+- 所有 `psycopg.Error` 都返回 `ConflictError` → 存储判据在
+  `assert not isinstance(failure, ConflictError)` 红。
+
+守卫基线 169 → 166(`version_ports.py` 2、`postgres_versions.py` 1),`new=0`;登记表
+107 → 105,两条 `vendor-error-branch` 登记随条目一起删除(留着会 `STALE-EXCEPTION` 判红)。

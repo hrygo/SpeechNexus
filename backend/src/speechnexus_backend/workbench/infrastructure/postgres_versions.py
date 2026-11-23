@@ -37,7 +37,9 @@ from speechnexus_backend.workbench.domain.versions import (
     TranscriptRevision,
 )
 from speechnexus_backend.workbench.infrastructure.version_schema import schema_identifier
+from speechnexus_portable_sql.contract import ConflictError, PortableSqlError
 from speechnexus_portable_sql.psycopg_driver import connect_async as portable_connect_async
+from speechnexus_portable_sql.psycopg_driver import portable_error
 from speechnexus_portable_sql.vendor import class_row, psycopg, sql
 
 
@@ -299,17 +301,21 @@ class PostgresVersionUnitOfWork:
                     # on AsyncConnection.__aexit__ can extend cleanup or expose a query.
                     connection.pgconn.finish()
         except (psycopg.Error, TimeoutError) as error:
-            state = error.sqlstate if isinstance(error, psycopg.Error) else None
-            # Integrity errors, serialization failures and deadlocks prove abort.
-            # Class 40 also contains 40003 (statement_completion_unknown), so it
-            # cannot be accepted wholesale. Transport loss,
-            # shutdown (57P01), or an unclassified COMMIT failure can follow a commit;
-            # a SQLSTATE by itself is not proof of rollback.
-            proven_abort = state is not None and (
-                state.startswith("23") or state in {"40001", "40P01"}
-            )
-            unknown = committing and not proven_abort
-            raise VersionStoreError(sqlstate=state, commit_unknown=unknown) from None
+            # The driver translates the server's fact exactly once, into the contract
+            # category. This adapter never reads SQLSTATE, a driver class or a driver
+            # message: a `ConflictError` is a duplicate/conflicting write, any other
+            # `StorageError` is a storage-level refusal, and the `reason` on it says
+            # which. That keeps the same logical conflict classified identically on
+            # every engine.
+            translated = portable_error(error) if isinstance(error, psycopg.Error) else None
+            failure = translated if isinstance(translated, PortableSqlError) else None
+            # A constraint conflict is the only refusal the contract proves aborted;
+            # transport loss, backend shutdown, serialization/deadlock, lock timeout,
+            # unknown statement completion and anything unclassified can follow a
+            # commit, so they stay unknown. A failure before the COMMIT is attempted
+            # never was able to commit.
+            unknown = committing and not isinstance(failure, ConflictError)
+            raise VersionStoreError(failure=failure, commit_unknown=unknown) from None
         finally:
             if session is not None:
                 session.close()

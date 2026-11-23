@@ -637,9 +637,13 @@ canonical schema 的应用与搬迁由三个入口负责，它们复用包内同
 - `scripts/dev-env/portable-reconcile.py` 在切换前逐字段对账草案与 canonical，任一处不符即非零
   退出；`claim_version` 按「只增不减」比较，因为搬迁推进 head 会合法地令其 +1。
 
-尚未完成：`FOR UPDATE`、`SKIP LOCKED`、upsert、`RETURNING`、advisory lock、数据库通知、品牌时间与
-SQLSTATE 分类仍在产品路径中（第 3、4 步），由 #1100 收敛；非 PG 目标见 #1101。数据搬迁的工具与
-演练已就位，跨实例搬运、停机窗口与切换后的流量切换需要部署环境，见 #1102。
+第 4 步的错误分类已落地：产品代码不再读 SQLSTATE 或厂商错误码，驱动在 `portable_error` 里把它
+翻成 `ConflictError` / `ConnectionLostError` / `StorageError.reason`，业务与 workbench 版本边界只按
+这些契约类别分类（守卫 `vendor-error-branch` 归零）；品牌时间仍需迁到 `clock.py`。
+
+尚未完成：`FOR UPDATE`、`SKIP LOCKED`、upsert、`RETURNING`、advisory lock 与数据库通知仍在产品
+路径中（第 3 步），由 #1100 收敛；非 PG 目标见 #1101。数据搬迁的工具与演练已就位，跨实例搬运、
+停机窗口与切换后的流量切换需要部署环境，见 #1102。
 
 ## 14. 依据与核验
 

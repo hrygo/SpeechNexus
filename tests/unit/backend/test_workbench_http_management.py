@@ -18,6 +18,7 @@ from speechnexus_backend.workbench.domain.deletion import (
     DeletionPlanExpiredError,
     DeletionTarget,
 )
+from speechnexus_portable_sql.contract import StorageError
 from tests.fake.workbench_versions import MemoryVersionUnitOfWork
 
 KEY = b"synthetic-cursor-key-32-bytes-only"
@@ -223,12 +224,12 @@ async def test_deletion_plan_generated_projection_and_explicit_workspace_key_map
         (DeletionDependencyConflictError(), 409, "deletion_dependency_conflict"),
         (RuntimeError("private-synthetic"), 500, "internal_error"),
         (
-            VersionStoreError(sqlstate="private-synthetic", commit_unknown=False),
+            VersionStoreError(failure=StorageError("private-synthetic"), commit_unknown=False),
             503,
             "store_unavailable",
         ),
         (
-            VersionStoreError(sqlstate="private-synthetic", commit_unknown=True),
+            VersionStoreError(failure=StorageError("private-synthetic"), commit_unknown=True),
             503,
             "outcome_unknown",
         ),

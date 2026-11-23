@@ -1281,3 +1281,31 @@ SELECT 1 FROM speech_workspaces, workspace_quotas, … WHERE 1=0
 基线 **270 → 268**。PG oracle:`test_speech_deletion_plans_pg.py` + `test_speech_deletion_execute_pg.py`
 41 passed。旁注:本机 MySQL 未在运行,`tests/integration -k deletion` 里 9 个 `test_workbench_*` 用例
 因 `ConnectionRefusedError` 报错,与本次改动无关。
+
+### 8.56 一个文件清零:`deletion_executions_postgres` 从 8 条到 1 条
+
+这条文件原来同时踩 `returning`(3 处)与 `sql-string-building`(5 处)。清零的做法不是逐条改写,而是先把
+**列清单冻结成字面量**,再让所有 CAS 都只看 `rowcount`:
+
+- `claim_purge` / `release_purge` / `_finalize` / `_accept_operation_content` / 工件墓碑 五处
+  `... RETURNING 列` 改成 `UPDATE|DELETE ...` + `changed()` 的 `rowcount`,命中后按主键读回;
+- 按主键读回需要一条只带主键条件的语句,于是 `_SELECT_LEDGER_BY_PK`(1 个参数)与
+  `_SELECT_LEDGER_BY_ID`(workspace + id,2 个参数)必须分开。**我第一次合并这两条时留下了参数个数
+  不匹配**,PG oracle 立刻红(`503 deletion_unavailable`,19 failed)。类型系统看不见绑定个数,
+  只有真库会。
+
+剩下的 1 条是授权探针的 `VALUES` 行:行内容由 schema 常量派生(列级 GRANT 必须跟着 DDL 走),
+字面化等于把列清单在这里再写一遍,所以登记进 ledger 而不是改写。
+
+判据 `test_deletion_execution_statements.py`:7 条读语句的投影列序 == `_LEDGER_ROW_COLUMNS` /
+`_PLAN_ROW_COLUMNS`,6 条写语句无插值、无 `%s`、无 `RETURNING`。注入即红:给 `_SELECT_LEDGER_FOR_PLAN`
+加一列 → `1 failed`。
+
+### 8.57 守卫按「文件 × 规则」计数,不是按「站点」计数
+
+这一轮才发现:把 5 处 `RETURNING` 中的 2 处改掉不会有任何数字变化——只要同文件还有一处 `RETURNING`,
+规则就从该文件消失不了。所以**一个文件要么清零,要么不动**;按站点「改造一半」在基线记账上没有意义。
+这也解释了为什么前几轮 process 都是「一个文件/一组同构站点整体迁移」。
+
+基线 **268 → 261**。PG oracle:`test_speech_deletion_read_pg.py` + `test_speech_deletion_execute_pg.py`
+37 passed,`test_speech_deletion_plans_pg.py` 另 41 passed。

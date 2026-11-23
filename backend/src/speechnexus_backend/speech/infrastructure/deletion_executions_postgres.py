@@ -145,6 +145,109 @@ _INSERT_LEDGER = (
 )
 
 
+_CLAIM_PURGE = (
+    "UPDATE speech_deletion_ledger SET purge_claimed_at = ?, updated_at = ? "
+    "WHERE id = ? AND status = 'queued' "
+    "AND (purge_claimed_at IS NULL OR purge_claimed_at <= "
+    "? - make_interval(secs => ?))"
+)
+_RELEASE_PURGE = (
+    "UPDATE speech_deletion_ledger SET purge_claimed_at = NULL, updated_at = ? "
+    "WHERE id = ? AND status = 'queued'"
+)
+
+
+_DELETE_JOB_INTENT = "DELETE FROM speech_job_intents WHERE job_id = ? AND request_digest = ?"
+_TOMBSTONE_ARTIFACT = (
+    "UPDATE speech_artifacts SET artifact_state = 'deleted', deleted_at_us = ? "
+    "WHERE artifact_id = ? AND workspace_id = ? "
+    "AND artifact_state IN ('ready','expired') "
+    "AND sha256 = ? AND object_key = ? AND storage_version_id = ?"
+)
+_SETTLE_LEDGER = (
+    "UPDATE speech_deletion_ledger SET status = 'succeeded', cleanup_state = 'complete', "
+    "completed_at = ?, updated_at = ? WHERE id = ? AND status <> 'succeeded'"
+)
+
+
+_SELECT_LEDGER_BY_KEY = (
+    "SELECT "
+    "id, workspace_id, plan_id, plan_revision, plan_digest, target_owner, "
+    "target_kind, target_id, target_revision, idempotency_key_digest, "
+    "intent_digest, deleted, retained, error, status, cleanup_state, "
+    "content_ledger_id, purge_claimed_at, created_at, updated_at, completed_at "
+    "FROM speech_deletion_ledger WHERE workspace_id = ? AND idempotency_key_digest = ?"
+)
+_SELECT_LEDGER_BY_KEY_LOCKED = (
+    "SELECT "
+    "id, workspace_id, plan_id, plan_revision, plan_digest, target_owner, "
+    "target_kind, target_id, target_revision, idempotency_key_digest, "
+    "intent_digest, deleted, retained, error, status, cleanup_state, "
+    "content_ledger_id, purge_claimed_at, created_at, updated_at, completed_at "
+    "FROM speech_deletion_ledger WHERE workspace_id = ? AND idempotency_key_digest = ? "
+    "FOR UPDATE"
+)
+_SELECT_LEDGER_BY_ID_LOCKED = (
+    "SELECT "
+    "id, workspace_id, plan_id, plan_revision, plan_digest, target_owner, "
+    "target_kind, target_id, target_revision, idempotency_key_digest, "
+    "intent_digest, deleted, retained, error, status, cleanup_state, "
+    "content_ledger_id, purge_claimed_at, created_at, updated_at, completed_at "
+    "FROM speech_deletion_ledger WHERE workspace_id = ? AND id = ? FOR UPDATE"
+)
+_SELECT_LEDGER_FOR_PLAN = (
+    "SELECT "
+    "id, workspace_id, plan_id, plan_revision, plan_digest, target_owner, "
+    "target_kind, target_id, target_revision, idempotency_key_digest, "
+    "intent_digest, deleted, retained, error, status, cleanup_state, "
+    "content_ledger_id, purge_claimed_at, created_at, updated_at, completed_at "
+    "FROM speech_deletion_ledger WHERE workspace_id = ? AND plan_id = ?"
+)
+_SELECT_QUEUED_LEDGER = (
+    "SELECT "
+    "id, workspace_id, plan_id, plan_revision, plan_digest, target_owner, "
+    "target_kind, target_id, target_revision, idempotency_key_digest, "
+    "intent_digest, deleted, retained, error, status, cleanup_state, "
+    "content_ledger_id, purge_claimed_at, created_at, updated_at, completed_at "
+    "FROM speech_deletion_ledger WHERE workspace_id = ? AND id = ? AND status = 'queued'"
+)
+_SELECT_PLAN_BY_ID = (
+    "SELECT "
+    "id, workspace_id, target_owner, target_kind, target_id, target_revision, "
+    "target_digest, mode, plan_revision, plan_digest, created_at, expires_at, "
+    "dependencies, content_snapshot "
+    "FROM speech_deletion_plans WHERE id = ? AND workspace_id = ?"
+)
+
+
+_SELECT_LEDGER_BY_PK = (
+    "SELECT "
+    "id, workspace_id, plan_id, plan_revision, plan_digest, target_owner, "
+    "target_kind, target_id, target_revision, idempotency_key_digest, "
+    "intent_digest, deleted, retained, error, status, cleanup_state, "
+    "content_ledger_id, purge_claimed_at, created_at, updated_at, completed_at "
+    "FROM speech_deletion_ledger WHERE id = ?"
+)
+_SELECT_LEDGER_BY_ID = (
+    "SELECT "
+    "id, workspace_id, plan_id, plan_revision, plan_digest, target_owner, "
+    "target_kind, target_id, target_revision, idempotency_key_digest, "
+    "intent_digest, deleted, retained, error, status, cleanup_state, "
+    "content_ledger_id, purge_claimed_at, created_at, updated_at, completed_at "
+    "FROM speech_deletion_ledger WHERE workspace_id = ? AND id = ?"
+)
+_SELECT_LEDGER_CLAIM_STATE = (
+    "SELECT "
+    "id, workspace_id, plan_id, plan_revision, plan_digest, target_owner, "
+    "target_kind, target_id, target_revision, idempotency_key_digest, "
+    "intent_digest, deleted, retained, error, status, cleanup_state, "
+    "content_ledger_id, purge_claimed_at, created_at, updated_at, completed_at "
+    ", (purge_claimed_at IS NOT NULL AND purge_claimed_at > "
+    "? - make_interval(secs => ?)) AS claim_live "
+    "FROM speech_deletion_ledger WHERE id = ?"
+)
+
+
 def _targets(items: list[list[Any]]) -> tuple[DeletionTarget, ...]:
     return tuple(
         DeletionTarget(cast(str, owner), cast(str, kind), cast(str, identifier), int(revision))
@@ -265,36 +368,31 @@ class _Transaction:
         with self._connection.cursor() as raw:
             yield AssetCursor(raw, self._deadline)
 
+    def _read_ledger(self, ledger_id: str) -> dict[str, Any] | None:
+        rows = self.rows(_SELECT_LEDGER_BY_PK, (ledger_id,))
+        return rows[0] if rows else None
+
     def claim_purge(self, ledger_id: str) -> dict[str, Any] | None:
         """CAS: exactly one executor owns the object purge of this row."""
         # 时间戳必须晚于本行的 created_at(表上有 CHECK),所以只能来自即时时钟,
         # 不能用 CURRENT_TIMESTAMP —— 后者是事务开始时间,同行同事务插入时会比 created_at 早。
         now = self.now()
-        # 保留 `RETURNING`:换成「rowcount + 按主键读回」会新增两处拼接式列清单,
-        # 守卫计数直接判红;列清单先冻结成字面量常量,才能一起换(见计划文档 §8.5)。
-        rows = self.rows(
-            f"UPDATE {DELETION_LEDGER} SET purge_claimed_at = ?, updated_at = ? "
-            "WHERE id = ? AND status = 'queued' "
-            "AND (purge_claimed_at IS NULL OR purge_claimed_at <= "
-            "? - make_interval(secs => ?)) RETURNING " + _LEDGER_ROW_COLUMNS,
-            (now, now, ledger_id, now, PURGE_CLAIM_LEASE_SECONDS),
-        )
-        return rows[0] if rows else None
+        # CAS 只看 `rowcount`:语句里没有 `RETURNING`,命中后再按主键读回该行。
+        # 同一事务内读得到自己的写,而 CAS 已证明这一行只归本次调用。
+        claimed = self.changed(_CLAIM_PURGE, (now, now, ledger_id, now, PURGE_CLAIM_LEASE_SECONDS))
+        return self._read_ledger(ledger_id) if claimed else None
 
     def release_purge(self, ledger_id: str) -> dict[str, Any] | None:
         """Give the claim back after this attempt ended without a completion."""
-        rows = self.rows(
-            f"UPDATE {DELETION_LEDGER} SET purge_claimed_at = NULL, "
-            "updated_at = ? WHERE id = ? AND status = 'queued' "
-            "RETURNING " + _LEDGER_ROW_COLUMNS,
-            (self.now(), ledger_id),
-        )
-        return rows[0] if rows else None
+        released = self.changed(_RELEASE_PURGE, (self.now(), ledger_id))
+        return self._read_ledger(ledger_id) if released else None
 
     def missing_privileges(
         self, probes: tuple[tuple[str, str, str | None], ...] = _PRIVILEGES
     ) -> tuple[str, ...]:
-        placeholders = ", ".join(["(%s, %s, %s)"] * len(probes))
+        # 探针行由 schema 常量派生(列级授权必须跟着 DDL 走),所以只有这一条语句按行数拼占位符;
+        # 行内容本身不可字面化,否则列清单会在两个地方各写一遍。
+        placeholders = ", ".join(["(?, ?, ?)"] * len(probes))
         rows = self.rows(
             "SELECT v.privilege, v.table_name, v.column_name, "
             "CASE WHEN v.column_name IS NULL "
@@ -315,33 +413,28 @@ class _Transaction:
 
     def plan_row(self, plan_id: str) -> dict[str, Any] | None:
         rows = self.rows(
-            f"SELECT {_PLAN_ROW_COLUMNS} FROM speech_deletion_plans "
-            "WHERE id = ? AND workspace_id = ?",
+            _SELECT_PLAN_BY_ID,
             (plan_id, self._workspace_id),
         )
         return rows[0] if rows else None
 
     def ledger_by_key(self, key_digest: str, *, lock: bool = False) -> _LedgerRow | None:
         rows = self.rows(
-            f"SELECT {_LEDGER_ROW_COLUMNS} FROM {DELETION_LEDGER} "
-            "WHERE workspace_id = ? AND idempotency_key_digest = ?"
-            + (" FOR UPDATE" if lock else ""),
+            _SELECT_LEDGER_BY_KEY_LOCKED if lock else _SELECT_LEDGER_BY_KEY,
             (self._workspace_id, key_digest),
         )
         return _LedgerRow(rows[0]) if rows else None
 
     def ledger_by_id(self, deletion_id: str) -> _LedgerRow | None:
         rows = self.rows(
-            f"SELECT {_LEDGER_ROW_COLUMNS} FROM {DELETION_LEDGER} "
-            "WHERE workspace_id = ? AND id = ? FOR UPDATE",
+            _SELECT_LEDGER_BY_ID_LOCKED,
             (self._workspace_id, deletion_id),
         )
         return _LedgerRow(rows[0]) if rows else None
 
     def ledger_for_plan(self, plan_id: str) -> _LedgerRow | None:
         rows = self.rows(
-            f"SELECT {_LEDGER_ROW_COLUMNS} FROM {DELETION_LEDGER} "
-            "WHERE workspace_id = ? AND plan_id = ?",
+            _SELECT_LEDGER_FOR_PLAN,
             (self._workspace_id, plan_id),
         )
         return _LedgerRow(rows[0]) if rows else None
@@ -611,11 +704,7 @@ class _DeletionExecution:
         job_id = plan.target.resource_id
         # The authoritative public intent is the row itself: deleting it removes
         # document and digest together, so retry cannot replay a body (#540).
-        deleted = self._tx.rows(
-            "DELETE FROM speech_job_intents "
-            "WHERE job_id = ? AND request_digest = ? RETURNING job_id",
-            (job_id, target_digest),
-        )
+        deleted = self._tx.changed(_DELETE_JOB_INTENT, (job_id, target_digest))
         if not deleted and self._tx.rows(
             "SELECT request_digest FROM speech_job_intents WHERE job_id = ?", (job_id,)
         ):
@@ -729,12 +818,8 @@ class _DeletionExecution:
         if plan_row is None:
             raise _unavailable()
         content = cast(dict[str, Any], plan_row["content_snapshot"])
-        updated = self._tx.rows(
-            "UPDATE speech_artifacts SET artifact_state = 'deleted', deleted_at_us = ? "
-            "WHERE artifact_id = ? AND workspace_id = ? "
-            "AND artifact_state IN ('ready','expired') "
-            "AND sha256 = ? AND object_key = ? AND storage_version_id = ? "
-            "RETURNING artifact_id",
+        updated = self._tx.changed(
+            _TOMBSTONE_ARTIFACT,
             (
                 self._tx.now_us(),
                 cast(str, existing.row["target_id"]),
@@ -749,14 +834,11 @@ class _DeletionExecution:
         return self._finalize(existing, self._tx.now())
 
     def _finalize(self, existing: _LedgerRow, now: datetime) -> DeletionRecord:
-        rows = self._tx.rows(
-            f"UPDATE {DELETION_LEDGER} SET status = 'succeeded', cleanup_state = 'complete', "
-            "completed_at = ?, updated_at = ? "
-            "WHERE id = ? AND status <> 'succeeded' RETURNING " + _LEDGER_ROW_COLUMNS,
-            (now, now, existing.row["id"]),
-        )
-        if rows:
-            return _LedgerRow(rows[0]).record()
+        settled = self._tx.changed(_SETTLE_LEDGER, (now, now, existing.row["id"]))
+        if settled:
+            settled_row = self._tx.ledger_by_id(cast(str, existing.row["id"]))
+            if settled_row is not None:
+                return settled_row.record()
         current = self._tx.ledger_by_id(cast(str, existing.row["id"]))
         if current is None:
             raise _unavailable()
@@ -880,8 +962,7 @@ class PostgresDeletionExecutions:
                 transaction.rows("SET TRANSACTION READ ONLY")
                 self._require_privileges(transaction, _READ_PRIVILEGES)
                 rows = transaction.rows(
-                    f"SELECT {_LEDGER_ROW_COLUMNS} FROM {DELETION_LEDGER} "
-                    "WHERE workspace_id = ? AND id = ?",
+                    _SELECT_LEDGER_BY_ID,
                     (workspace_id, deletion_id),
                 )
                 if not rows:
@@ -1010,10 +1091,7 @@ class PostgresDeletionExecutions:
                         connection, time.monotonic() + self._timeout, workspace_id
                     )
                     rows = transaction.rows(
-                        "SELECT " + _LEDGER_ROW_COLUMNS + ", "
-                        "(purge_claimed_at IS NOT NULL AND purge_claimed_at > "
-                        "? - make_interval(secs => ?)) AS claim_live "
-                        f"FROM {DELETION_LEDGER} WHERE id = ?",
+                        _SELECT_LEDGER_CLAIM_STATE,
                         (transaction.now(), PURGE_CLAIM_LEASE_SECONDS, deletion_id),
                     )
                     if not rows or rows[0]["idempotency_key_digest"] != key_digest:

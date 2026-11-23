@@ -1718,11 +1718,21 @@ fence 复核与 Job CAS 在同一事务,旧 dispatcher 拿到的过期 fence 版
 
 #### 8.76.3 这一步消掉什么、不消什么
 
-- **消掉**:`job_dispatch_postgres._claim()` 的 `WITH clock/due/updated … FOR UPDATE SKIP LOCKED …
-  RETURNING`(16 条 claim 族)与围绕它的 `pg_try_advisory_lock` 串行化(32 条 `advisory-lock`)。
-  基线预期从 196 降到 148。
-- **不消**:`runtime_delivery_sql` 的 `SKIP LOCKED`(另一条 outbox 投递链路,单独切片);
-  其余 `vendor-json`/`paging-limit`/`vendor-type` 主体仍属 #1102 后续。
+按 `scripts/dev-env/portable-sql-baseline.json` 逐条清点(不是按印象估):
+
+`job_dispatch_postgres.py` 一共 **16** 条:`cte` 6、`returning` 5、`skip-locked` 1、
+`aggregate-filter` 1、`format` 1、`sql-string-building` 1、`vendor-operator` 1。
+**B2 消掉的就是这 16 条,基线 196 → 180。**
+
+初稿写的「16 条 claim 族 + 32 条 `advisory-lock`,196 → 148」是错的:那 32 条 `advisory-lock`
+分布在 24 个文件里,主体是发布/资格/绑定/准入/取消 fence(`builtin_voice_publication`、
+`qualification_probe_*`、`binding_lifecycle_postgres`、`public_jobs_postgres` 等),
+`job_dispatch_postgres.py` 里**一条都没有**。把不相干的条目算进这一步的收益,会让后续每一刀
+的预期都虚高。
+
+**不消**:`runtime_delivery_sql` 的 `skip-locked`(另一条 outbox 投递链路,单独切片);
+`advisory-lock` 全族(需要各自判断是「继续支持则迁移」还是「确定不用则删除」,属 #1100 的
+判定工作,不是本切片)。
 
 #### 8.76.4 判据(真库,注入即红)
 

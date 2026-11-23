@@ -1256,3 +1256,28 @@ SELECT 1 FROM speech_workspaces, workspace_quotas, … WHERE 1=0
 列出的每个关系都来自 schema 常量或 DDL。注入即红:把 `…not_submitted` 拼成 `…not_submited` → `1 failed`。
 
 基线 **275 → 270**。PG oracle:`test_builtin_voice_revocation.py` 2 passed(两种身份各一)。
+
+### 8.55 列清单字面量化:用「对着 DDL 核对」偿付重复
+
+上一轮我说列清单要等 manifest 粒度,这一轮换了个不违背那句话的做法:**把列清单写死,再用 DDL
+做独立事实源核对**。`deletion_plans_postgres` 的 16 列插入、`deletion_executions_postgres` 的
+20 列账本插入都改成字面量语句,`%s` 换成 `?`,删掉 `", ".join(...)` 与 `"[%s]*n"` 两条拼装。
+
+新增两个判据(各自注入即红):
+
+- `test_deletion_plan_insert_statement.py`:语句里的列序 == `DELETION_PLAN_INSERT_COLUMNS`,
+  `?` 个数 == 列数,无 `ON CONFLICT`,每列都在 `DELETION_PLAN_DDL` 里(拼 `plan_digset` → red)。
+- `test_deletion_ledger_insert_statement.py`:同构,表名对着 `DELETION_LEDGER` 常量,列对着
+  `DELETION_LEDGER_INSERT_COLUMNS` 与 `DELETION_LEDGER_DDL` + `DELETION_LEDGER_TARGETS_DDL`
+  (拼 `complete_at` → red)。
+
+后一个用例第一次跑就抓到一个真问题:`error` 列不在 `CREATE TABLE` 里,而是 0063 的
+`ADD COLUMN IF NOT EXISTS error JSONB`。判据的事实源因此必须同时包含建表与升级两段 DDL ——
+否则它会因为「找不到列」把正确的插入判成错的。
+
+这次没有重复的清单:插入语句只有一处,常量仍在自己的文件里供 GRANT 与其它语句使用,两者的关系由
+用例钉住。真正难的那部分(5 处 `SELECT` 共享 21 列清单)仍然留着,理由没变:那是登记粒度问题。
+
+基线 **270 → 268**。PG oracle:`test_speech_deletion_plans_pg.py` + `test_speech_deletion_execute_pg.py`
+41 passed。旁注:本机 MySQL 未在运行,`tests/integration -k deletion` 里 9 个 `test_workbench_*` 用例
+因 `ConnectionRefusedError` 报错,与本次改动无关。

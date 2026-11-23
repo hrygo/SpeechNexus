@@ -50,3 +50,15 @@ def test_the_declared_names_travel_as_one_list_marker() -> None:
 def test_the_role_interpolation_helper_is_gone() -> None:
     assert not hasattr(module, "_role_argument")
     assert not hasattr(module, "_TABLE_SURFACE")
+
+
+def test_an_empty_declared_set_drops_the_list_filter_instead_of_binding_nothing() -> None:
+    # 空名单时 `NOT IN ()` 没有合法写法;等价语义是「任何对象都算未声明」,
+    # 也就是去掉过滤,而不是把空列表绑成参数(那会在驱动层抛 ContractError)。
+    for name in (
+        "_SEQUENCE_ANY_CURRENT",
+        "_SEQUENCE_ANY_NAMED",
+        "_STRAY_TABLE_ANY_CURRENT",
+        "_STRAY_TABLE_ANY_NAMED",
+    ):
+        assert "NOT IN (?)" not in getattr(module, name), name

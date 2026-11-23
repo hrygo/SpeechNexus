@@ -8,6 +8,8 @@ the relation, and says how an operator repairs the grant.
 
 from __future__ import annotations
 
+from typing import cast
+
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechConnection
 from speechnexus_portable_sql.contract import ListMarker
 
@@ -153,6 +155,12 @@ def refuse_column_privileges(
             )
 
 
+_SEQUENCE_ANY_CURRENT = _SEQUENCE_STRAY_CURRENT.replace("AND c.relname NOT IN (?) ", "")
+_SEQUENCE_ANY_NAMED = _SEQUENCE_STRAY_NAMED.replace("AND c.relname NOT IN (?) ", "")
+_STRAY_TABLE_ANY_CURRENT = _STRAY_TABLE_CURRENT.replace("AND c.relname NOT IN (?) AND (", "AND (")
+_STRAY_TABLE_ANY_NAMED = _STRAY_TABLE_NAMED.replace("AND c.relname NOT IN (?) AND (", "AND (")
+
+
 def refuse_sequence_privileges(
     connection: SpeechConnection,
     role: str | None,
@@ -171,12 +179,18 @@ def refuse_sequence_privileges(
     table privilege letters mean different authorities, and there is no column
     ACL on a sequence.
     """
-    if role is None:
-        row = connection.execute(_SEQUENCE_STRAY_CURRENT, (schema, ListMarker(declared))).fetchone()
+    # 空名单不是「没有声明」而是「什么都没声明」:多余授权全是问题,去掉过滤才是
+    # `NOT IN ()` 的等价写法(空集合的 NOT IN 恒真)。
+    if not declared:
+        statement = _SEQUENCE_ANY_CURRENT if role is None else _SEQUENCE_ANY_NAMED
+        params: tuple[object, ...] = (schema,) if role is None else (schema, role)
     else:
-        row = connection.execute(
-            _SEQUENCE_STRAY_NAMED, (schema, ListMarker(declared), role)
-        ).fetchone()
+        statement = _SEQUENCE_STRAY_CURRENT if role is None else _SEQUENCE_STRAY_NAMED
+        marks = (
+            (schema, ListMarker(declared)) if role is None else (schema, ListMarker(declared), role)
+        )
+        params = cast(tuple[object, ...], marks)
+    row = connection.execute(statement, params).fetchone()
     if row is not None:
         raise ValueError(
             f"{subject} must not hold sequence privileges on {row['name']}; "
@@ -195,12 +209,18 @@ def refuse_foreign_relation_privileges(
     declared_hint: str,
 ) -> None:
     """The role's authority is exactly its declared tables; name any stray grant."""
-    if role is None:
-        row = connection.execute(_STRAY_TABLE_CURRENT, (schema, ListMarker(declared))).fetchone()
+    if not declared:
+        statement = _STRAY_TABLE_ANY_CURRENT if role is None else _STRAY_TABLE_ANY_NAMED
+        params: tuple[object, ...] = (schema,) if role is None else (schema, role, role)
     else:
-        row = connection.execute(
-            _STRAY_TABLE_NAMED, (schema, ListMarker(declared), role, role)
-        ).fetchone()
+        statement = _STRAY_TABLE_CURRENT if role is None else _STRAY_TABLE_NAMED
+        marks = (
+            (schema, ListMarker(declared))
+            if role is None
+            else (schema, ListMarker(declared), role, role)
+        )
+        params = cast(tuple[object, ...], marks)
+    row = connection.execute(statement, params).fetchone()
     if row is not None:
         raise ValueError(
             f"{subject} must not hold privileges on undeclared table {row['name']}; "

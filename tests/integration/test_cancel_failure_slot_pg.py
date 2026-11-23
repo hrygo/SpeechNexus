@@ -97,6 +97,7 @@ from speechnexus_backend.speech.infrastructure.qualified_speech_facts_postgres i
 )
 from speechnexus_backend.speech.infrastructure.readiness import (
     _LEFT_CANCELLING_DEBT,
+    LEFT_CANCELLING_HOLDING_CAPACITY,
     RETRY_AT_ATTEMPT_CEILING,
     CancellationDebtProbe,
 )
@@ -746,6 +747,8 @@ def _left_cancelling_rows(
                 "window_us": window_us,
                 "grace_us": grace_us,
                 "limit": 96,
+                # The label is bound, not quoted into the statement text.
+                "debt_class": LEFT_CANCELLING_HOLDING_CAPACITY,
             },
         )
         return list(cursor.fetchall())

@@ -82,7 +82,6 @@ from speechnexus_backend.speech.infrastructure.admission_sql import (
 from speechnexus_backend.speech.infrastructure.admission_sql import (
     _quota as _admission_quota_row,
 )
-from speechnexus_backend.speech.infrastructure.catalog_revision_schema import RETIREMENT_TABLE
 from speechnexus_backend.speech.infrastructure.qualification_source_evidence import (
     STATE_EVIDENCED,
     qualification_source_state_sql,
@@ -353,7 +352,7 @@ def _binding(cursor: _Cursor, model_id: str, revision: str) -> tuple[str, int, d
         "AND r.revision=p.revision AND r.revision_id=p.revision_id "
         "WHERE p.kind='binding' AND p.object_id=? AND p.revision=? "
         "AND NOT EXISTS ("
-        f"SELECT 1 FROM {RETIREMENT_TABLE} AS retired WHERE retired.kind=p.kind "
+        "SELECT 1 FROM speech_publication_retirements AS retired WHERE retired.kind=p.kind "
         "AND retired.object_id=p.object_id AND retired.revision=p.revision "
         "AND retired.revision_id=p.revision_id)",
         (model_id, revision),
@@ -483,7 +482,7 @@ def _voice(cursor: _Cursor, intent: dict[str, Any]) -> dict[str, Any]:
     cursor.execute(
         "SELECT revision_id, revision FROM speech_publications "
         "WHERE kind='voice' AND object_id=? AND revision=? AND NOT EXISTS ("
-        f"SELECT 1 FROM {RETIREMENT_TABLE} AS retired WHERE retired.kind='voice' "
+        "SELECT 1 FROM speech_publication_retirements AS retired WHERE retired.kind='voice' "
         "AND retired.object_id=speech_publications.object_id "
         "AND retired.revision=speech_publications.revision "
         "AND retired.revision_id=speech_publications.revision_id)",
@@ -1385,7 +1384,8 @@ def _readiness_candidates(cursor: _Cursor) -> list[dict[str, Any]]:
         ") AS i ON i.binding_revision_id = p.revision_id "
         "WHERE p.kind = 'binding' "
         "AND NOT EXISTS ("
-        f"SELECT 1 FROM {RETIREMENT_TABLE} AS retired WHERE retired.kind = p.kind "
+        "SELECT 1 FROM speech_publication_retirements AS retired "
+        "WHERE retired.kind = p.kind "
         "AND retired.object_id = p.object_id AND retired.revision = p.revision "
         "AND retired.revision_id = p.revision_id) "
         # Only the current publication head is nameable, and this EXISTS is the

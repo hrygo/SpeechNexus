@@ -59,10 +59,6 @@ from speechnexus_backend.speech.domain.publications import (
 )
 from speechnexus_backend.speech.infrastructure.admission_sql import admit_in_transaction
 from speechnexus_backend.speech.infrastructure.binding_disable_barrier import lock_binding
-from speechnexus_backend.speech.infrastructure.catalog_revision_schema import (
-    RETIREMENT_TABLE,
-    STATE_TABLE,
-)
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence import (
     lock_cancellation_fence,
     write_cancellation_fence,
@@ -104,6 +100,11 @@ _ARTIFACT_COLUMNS = (
     "artifact_id, artifact_kind, artifact_state, media_type, bytes, "
     "sha256, receipt_id, expires_at_us"
 )
+# The tombstone and catalogue-state tables are named as literals: a table name is an
+# identifier, so no dialect can bind it as a parameter, and the interpolation was the only
+# thing keeping these statements out of static scope. Every table name below is checked
+# against the schema modules' constants by `test_lifecycle_table_literals.py`, so a rename
+# or a misspelt literal fails there instead of silently reading the wrong relation.
 _PINNED_BINDING_QUERY = (
     "SELECT p.kind, p.object_id, p.revision, p.revision_id, p.published_at_us, "
     "r.definition_json, EXISTS ("
@@ -111,7 +112,7 @@ _PINNED_BINDING_QUERY = (
     "WHERE h.kind = p.kind AND h.object_id = p.object_id "
     "AND h.revision = p.revision AND h.revision_id = p.revision_id) AS is_current, "
     "EXISTS ("
-    f"SELECT 1 FROM {RETIREMENT_TABLE} AS retired "
+    "SELECT 1 FROM speech_publication_retirements AS retired "
     "WHERE retired.kind = p.kind AND retired.object_id = p.object_id "
     "AND retired.revision = p.revision AND retired.revision_id = p.revision_id) AS is_retired "
     "FROM speech_publications AS p "
@@ -277,7 +278,7 @@ class PostgresPublicJobs:
             "AND r.revision = p.revision AND r.revision_id = p.revision_id "
             "WHERE h.kind = 'binding' AND h.object_id = ? "
             "AND NOT EXISTS ("
-            f"SELECT 1 FROM {RETIREMENT_TABLE} AS retired "
+            "SELECT 1 FROM speech_publication_retirements AS retired "
             "WHERE retired.kind = 'binding' AND retired.object_id = p.object_id "
             "AND retired.revision = p.revision "
             "AND retired.revision_id = p.revision_id"
@@ -322,7 +323,7 @@ class PostgresPublicJobs:
             "SELECT kind, object_id, revision, revision_id, published_at_us "
             "FROM speech_publications AS p WHERE kind = ? AND object_id = ? AND revision = ? "
             "AND NOT EXISTS ("
-            f"SELECT 1 FROM {RETIREMENT_TABLE} AS retired "
+            "SELECT 1 FROM speech_publication_retirements AS retired "
             "WHERE retired.kind = p.kind AND retired.object_id = p.object_id "
             "AND retired.revision = p.revision AND retired.revision_id = p.revision_id"
             ")",
@@ -356,7 +357,7 @@ class PostgresPublicJobs:
 
     def catalog_revision(self) -> int:
         rows = self._read(
-            f"SELECT revision AS total FROM {STATE_TABLE} WHERE singleton IS TRUE", ()
+            "SELECT revision AS total FROM speech_catalog_state WHERE singleton IS TRUE", ()
         )
         if len(rows) != 1:
             raise PublicJobUnavailableError
@@ -1302,7 +1303,8 @@ def _binding_is_still_selected(
         "JOIN speech_publications p ON p.kind=h.kind AND p.object_id=h.object_id "
         "AND p.revision=h.revision AND p.revision_id=h.revision_id "
         "WHERE h.kind='binding' AND h.object_id=? AND NOT EXISTS ("
-        f"SELECT 1 FROM {RETIREMENT_TABLE} r WHERE r.kind=h.kind AND r.object_id=h.object_id "
+        "SELECT 1 FROM speech_publication_retirements r "
+        "WHERE r.kind=h.kind AND r.object_id=h.object_id "
         "AND r.revision=h.revision AND r.revision_id=h.revision_id)",
         (model_id,),
     ).fetchone()

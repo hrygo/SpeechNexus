@@ -388,6 +388,7 @@ class CancellationDebtProbe:
                         "window_us": self._window_us,
                         "grace_us": self._grace_us,
                         "limit": self._limit,
+                        "debt_class": LEFT_CANCELLING_HOLDING_CAPACITY,
                     },
                 )
                 rows.extend(await cursor.fetchall())
@@ -396,7 +397,12 @@ class CancellationDebtProbe:
                 # fourth read must judge the same acceptance at the same instant.
                 await cursor.execute(
                     _PERMANENT_DEBT,
-                    {"now_us": now_us, "grace_us": self._grace_us, "limit": self._limit},
+                    {
+                        "now_us": now_us,
+                        "grace_us": self._grace_us,
+                        "limit": self._limit,
+                        "debt_class": ABANDONED_HOLDING_CAPACITY,
+                    },
                 )
                 rows.extend(await cursor.fetchall())
             except _UNREADABLE_TABLES as error:
@@ -770,7 +776,7 @@ SELECT j.job_id, l.lease_id, l.lease_state, i.execution_state,
        -- columns are the Job-state side fact and the retry facts, which
        -- `_describe_debt` counts and renders separately.
        {_SCHEDULE_STATE_SQL} AS schedule_state,
-       '{LEFT_CANCELLING_HOLDING_CAPACITY}' AS debt_class,
+       %(debt_class)s AS debt_class,
        {_RETRY_COLUMNS_SQL}
 FROM {job_cancellation_fence_schema.TABLE} AS f
 JOIN {public_job_schema.JOBS} AS j ON j.job_id = f.job_id
@@ -836,7 +842,7 @@ SELECT j.job_id, l.lease_id, l.lease_state, i.execution_state,
        -- the labels and the retry facts describe one sentence, so no read may classify a
        -- row its own way.
        {_SCHEDULE_STATE_SQL} AS schedule_state,
-       '{ABANDONED_HOLDING_CAPACITY}' AS debt_class,
+       %(debt_class)s AS debt_class,
        {_RETRY_COLUMNS_SQL}
 -- The held leases are the driving set and the bound: migration 0062's partial index holds
 -- exactly these rows, and their number is bounded by the instance slots that reserve them.
@@ -875,11 +881,18 @@ LIMIT %(limit)s
 #: exit, and its remedy is the producer, not a settlement command.
 STOP_EVIDENCE_DEBT_PREFIX = "stop_evidence_debt"
 #: The stop-evidence kinds the coordination contract accepts as a verified stop, as one
-#: SQL tuple. It is derived from the domain's single definition: a second literal here
-#: would drift, and drift in this direction is silent -- the probe would stop matching the
-#: kind the dispatch gate accepts and report no debt for the Jobs that need it.
+#: SQL parameter tuple. The kinds are values, so they are bound instead of quoted into the
+#: statement text: a kind is data the read compares against, and the comparison must not
+#: depend on how a dialect quotes a string. The names are derived from the domain's single
+#: definition (``VERIFIED_STOP_EVIDENCE_KINDS``), so a second literal here cannot drift --
+#: drift in this direction is silent, because the probe would stop matching the kind the
+#: dispatch gate accepts and report no debt for the Jobs that need it.
+_VERIFIED_STOP_PARAMETERS: dict[str, str] = {
+    f"verified_stop_kind_{index}": kind
+    for index, kind in enumerate(sorted(VERIFIED_STOP_EVIDENCE_KINDS))
+}
 _SQL_VERIFIED_STOP_EVIDENCE = (
-    "(" + ", ".join(f"'{kind}'" for kind in sorted(VERIFIED_STOP_EVIDENCE_KINDS)) + ")"
+    "(" + ", ".join(f"%({name})s" for name in _VERIFIED_STOP_PARAMETERS) + ")"
 )
 
 # Same access-path requirement as `_DEBT`: `speech_jobs_live_state_scan` (migration 0056)
@@ -1034,7 +1047,12 @@ class StopEvidenceDebtProbe:
         connection = await self._connection_or_connect()
         async with connection.cursor() as cursor:
             await cursor.execute(
-                _STOP_EVIDENCE_DEBT, {"grace_us": self._grace_us, "limit": self._limit}
+                _STOP_EVIDENCE_DEBT,
+                {
+                    **_VERIFIED_STOP_PARAMETERS,
+                    "grace_us": self._grace_us,
+                    "limit": self._limit,
+                },
             )
             rows = await cursor.fetchall()
         # End the read transaction so the reused session stays idle between polls.

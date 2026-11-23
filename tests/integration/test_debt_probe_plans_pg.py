@@ -42,6 +42,8 @@ from speechnexus_backend.speech.infrastructure.readiness import (
     _DEBT,
     _LEFT_CANCELLING_DEBT,
     _STOP_EVIDENCE_DEBT,
+    _VERIFIED_STOP_PARAMETERS,
+    LEFT_CANCELLING_HOLDING_CAPACITY,
 )
 
 pytestmark = pytest.mark.integration
@@ -224,7 +226,14 @@ def _plan(
     statement: str,
     parameters: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    values: dict[str, Any] = {"grace_us": 300 * 1_000_000, "limit": 96}
+    # Every debt read's parameter set: the two reads here need different subsets, and
+    # psycopg ignores the keys a statement does not name.
+    values: dict[str, Any] = {
+        "grace_us": 300 * 1_000_000,
+        "limit": 96,
+        "debt_class": LEFT_CANCELLING_HOLDING_CAPACITY,
+        **_VERIFIED_STOP_PARAMETERS,
+    }
     if parameters is not None:
         values.update(parameters)
     row = conn.execute("EXPLAIN (ANALYZE, FORMAT JSON) " + statement, values).fetchone()

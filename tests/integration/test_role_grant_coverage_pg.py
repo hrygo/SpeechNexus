@@ -134,6 +134,9 @@ from speechnexus_backend.speech.infrastructure.readiness import (
     _LEFT_CANCELLING_DEBT,
     _PERMANENT_DEBT,
     _STOP_EVIDENCE_DEBT,
+    _VERIFIED_STOP_PARAMETERS,
+    ABANDONED_HOLDING_CAPACITY,
+    LEFT_CANCELLING_HOLDING_CAPACITY,
     CancellationDebtProbe,
     StopEvidenceDebtProbe,
 )
@@ -548,9 +551,20 @@ def _run_debt_drilldown(coverage: Coverage) -> str:
                         "window_us": 86_400_000_000,
                         "grace_us": 1,
                         "limit": 8,
+                        # The row's label is a bound value, not statement text.
+                        "debt_class": LEFT_CANCELLING_HOLDING_CAPACITY,
                     },
                 ),
-                ("permanent", _PERMANENT_DEBT, {"now_us": now_us, "grace_us": 1, "limit": 8}),
+                (
+                    "permanent",
+                    _PERMANENT_DEBT,
+                    {
+                        "now_us": now_us,
+                        "grace_us": 1,
+                        "limit": 8,
+                        "debt_class": ABANDONED_HOLDING_CAPACITY,
+                    },
+                ),
             )
             for label, statement, parameters in reads:
                 cursor.execute(statement, parameters)
@@ -615,7 +629,10 @@ def _run_stop_evidence(coverage: Coverage) -> str:
     try:
         now_us = _now_us(connection)
         with connection.cursor() as cursor:
-            cursor.execute(_STOP_EVIDENCE_DEBT, {"grace_us": 1, "limit": 8, "now_us": now_us})
+            cursor.execute(
+                _STOP_EVIDENCE_DEBT,
+                {**_VERIFIED_STOP_PARAMETERS, "grace_us": 1, "limit": 8, "now_us": now_us},
+            )
             rows = cursor.fetchall()
         assert all(
             tuple(row)

@@ -45,6 +45,8 @@ from tests.support.migrations import LEASE_DEBT_INDEX
 from speechnexus_backend.speech.infrastructure.readiness import (
     _LEFT_CANCELLING_DEBT,
     _PERMANENT_DEBT,
+    ABANDONED_HOLDING_CAPACITY,
+    LEFT_CANCELLING_HOLDING_CAPACITY,
 )
 
 pytestmark = pytest.mark.integration
@@ -538,7 +540,12 @@ def test_the_permanent_read_is_bounded_by_the_held_leases(
         permanent = _plan(
             query,
             _PERMANENT_DEBT,
-            {"now_us": now_us["now_us"], "grace_us": _GRACE_US, "limit": _BOUNDED_LIMIT},
+            {
+                "now_us": now_us["now_us"],
+                "grace_us": _GRACE_US,
+                "limit": _BOUNDED_LIMIT,
+                "debt_class": ABANDONED_HOLDING_CAPACITY,
+            },
         )
         bounded = _plan(
             query,
@@ -548,6 +555,7 @@ def test_the_permanent_read_is_bounded_by_the_held_leases(
                 "window_us": _WINDOW_US,
                 "grace_us": _GRACE_US,
                 "limit": _BOUNDED_LIMIT,
+                "debt_class": LEFT_CANCELLING_HOLDING_CAPACITY,
             },
         )
 
@@ -601,7 +609,12 @@ def test_the_permanent_reads_cost_does_not_follow_the_histories() -> None:
             permanent = _plan(
                 query,
                 _PERMANENT_DEBT,
-                {"now_us": now_us["now_us"], "grace_us": _GRACE_US, "limit": _BOUNDED_LIMIT},
+                {
+                    "now_us": now_us["now_us"],
+                    "grace_us": _GRACE_US,
+                    "limit": _BOUNDED_LIMIT,
+                    "debt_class": ABANDONED_HOLDING_CAPACITY,
+                },
             )
             readings.append(
                 {

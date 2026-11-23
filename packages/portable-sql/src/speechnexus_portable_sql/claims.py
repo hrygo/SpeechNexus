@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -31,6 +32,7 @@ from speechnexus_portable_sql.types import (
 
 __all__ = [
     "BUCKETS",
+    "EVENT_DIGEST_FIELDS",
     "STATEMENTS",
     "BucketFence",
     "ClaimCandidate",
@@ -42,6 +44,7 @@ __all__ = [
     "candidates",
     "claim_job",
     "claim_next",
+    "event_digest",
     "insert_outbox",
     "mark_outbox_delivered",
     "read_events",
@@ -370,6 +373,84 @@ def claim_next(
                 next_version=candidate.claim_version + 1,
             )
     return None
+
+
+#: 公共事件摘要覆盖的字段,顺序即序列化顺序。加字段 = 改公共契约,必须同一处改。
+EVENT_DIGEST_FIELDS = (
+    "job_id",
+    "event_seq",
+    "state",
+    "occurred_at",
+    "kind",
+    "progress_completed",
+    "progress_total",
+    "payload_ref",
+)
+
+
+def _canonical_time(value: datetime) -> str:
+    """UTC 微秒定长:同一时刻的不同时区写法必须折叠成同一个字符串。"""
+
+    moment = require_utc(value, field="occurred_at")
+    return moment.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def event_digest(
+    *,
+    job_id: str,
+    event_seq: Decimal,
+    state: str,
+    occurred_at: datetime,
+    kind: str | None = None,
+    progress_completed: int | None = None,
+    progress_total: int | None = None,
+    payload_ref: str | None = None,
+) -> str:
+    """公共事件摘要的唯一算法:`sha256:` 加规范序列化后的十六进制.
+
+    为什么要有这一个函数:草案表 `speech_job_events` 只存 `state`/`occurred_at_us`/
+    `progress_*`,没有任何摘要列;搬迁(#1102)必须**按同一规则重算**摘要,而 SSE 去重、
+    outbox 幂等与事件重放都依赖这个规则。规则散落在两个文件里就是两份实现,合并时必然
+    出现「同一条事件两种摘要」。所以只在这里定义一次:
+
+    - 字段集合固定为 `EVENT_DIGEST_FIELDS`,顺序固定,缺省值写 `null`,不漏字段;
+    - `occurred_at` 一律折成 UTC 微秒定长(`2026-11-23T00:00:00.000000Z`);
+    - JSON 用 `sort_keys` + 紧凑分隔符 + `ensure_ascii=False`,再对 UTF-8 字节取摘要。
+    """
+
+    require_text(job_id, field="job_id", max_bytes=128)
+    require_text(state, field="state", max_bytes=24)
+    if kind is not None:
+        require_text(kind, field="kind", max_bytes=16)
+    if payload_ref is not None:
+        require_text(payload_ref, field="payload_ref", max_bytes=512)
+    for name, value in (
+        ("progress_completed", progress_completed),
+        ("progress_total", progress_total),
+    ):
+        if value is not None and value < 0:
+            raise ContractError(f"{name} must not be negative")
+    if (
+        progress_completed is not None
+        and progress_total is not None
+        and progress_total < progress_completed
+    ):
+        raise ContractError("progress_total must not be below progress_completed")
+
+    document = {
+        "job_id": job_id,
+        "event_seq": int(event_seq),
+        "state": state,
+        "occurred_at": _canonical_time(occurred_at),
+        "kind": kind,
+        "progress_completed": progress_completed,
+        "progress_total": progress_total,
+        "payload_ref": payload_ref,
+    }
+    if tuple(document) != EVENT_DIGEST_FIELDS:
+        raise ContractError("event digest fields drifted from EVENT_DIGEST_FIELDS")
+    encoded = json.dumps(document, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return "sha256:" + hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def append_event(

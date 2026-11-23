@@ -360,8 +360,18 @@ class PublicJobStore(Protocol):
         key_digest: str,
         request_digest: str,
         retry_of_job_id: str | None,
+        *,
+        binding_id: str | None,
     ) -> JobCreateResult | None:
-        """Serialize with keyed create; settle an in-flight writer before absence."""
+        """Settle an in-flight same-binding writer before reporting absence.
+
+        ``binding_id`` is the binding every writer of this key selects and holds
+        until commit; the store takes that same lock before reading, so a
+        writer that has already re-checked its key is observed instead of
+        reported absent. ``None`` asks for the best-effort read that does not
+        wait, which the early replay path uses. The key itself is decided by its
+        unique constraint, not by this read.
+        """
         ...
 
     def create(self, job: NewPublicJob) -> JobCreateResult: ...
@@ -677,8 +687,15 @@ class PublicJobs:
         request_digest = canonical_digest(intent)
         key_digest = None if idempotency_key is None else idempotency_digest(idempotency_key)
         if key_digest is not None:
+            # Best effort: the fast path must not wait behind unrelated writers.
+            # A miss is settled by the writer lock inside create() or by the
+            # rejecting path's repeat lookup below.
             original = self._find_original(
-                workspace_id, key_digest, request_digest, retry_of_job_id=None
+                workspace_id,
+                key_digest,
+                request_digest,
+                retry_of_job_id=None,
+                binding_id=None,
             )
             if original is not None:
                 return _submission_result(original)
@@ -712,7 +729,11 @@ class PublicJobs:
             # unavailable rather than a 422.
             if key_digest is not None:
                 original = self._find_original(
-                    workspace_id, key_digest, request_digest, retry_of_job_id=None
+                    workspace_id,
+                    key_digest,
+                    request_digest,
+                    retry_of_job_id=None,
+                    binding_id=_settlement_binding(payload),
                 )
                 if original is not None:
                     return _submission_result(original)
@@ -758,7 +779,11 @@ class PublicJobs:
         key_digest = None if idempotency_key is None else idempotency_digest(idempotency_key)
         if key_digest is not None:
             original = self._find_original(
-                workspace_id, key_digest, request_digest, retry_of_job_id=None
+                workspace_id,
+                key_digest,
+                request_digest,
+                retry_of_job_id=None,
+                binding_id=None,
             )
             if original is not None:
                 return _replayed_revision(original, draft_id, self._store)
@@ -789,7 +814,11 @@ class PublicJobs:
         ):
             if key_digest is not None:
                 original = self._find_original(
-                    workspace_id, key_digest, request_digest, retry_of_job_id=None
+                    workspace_id,
+                    key_digest,
+                    request_digest,
+                    retry_of_job_id=None,
+                    binding_id=_settlement_binding(payload),
                 )
                 if original is not None:
                     return _replayed_revision(original, draft_id, self._store)
@@ -802,10 +831,15 @@ class PublicJobs:
         request_digest: str,
         *,
         retry_of_job_id: str | None,
+        binding_id: str | None,
     ) -> JobCreateResult | None:
         try:
             original = self._store.find_by_key(
-                workspace_id, key_digest, request_digest, retry_of_job_id
+                workspace_id,
+                key_digest,
+                request_digest,
+                retry_of_job_id,
+                binding_id=binding_id,
             )
         except PublicJobUnavailableError:
             raise JobOutcomeUnknownError from None
@@ -1251,6 +1285,7 @@ class PublicJobs:
                 key_digest,
                 intent.request_digest,
                 retry_of_job_id=job_id,
+                binding_id=None,
             )
             if original is not None:
                 return _retransmission_result(original, job_id)
@@ -1281,6 +1316,7 @@ class PublicJobs:
                     key_digest,
                     intent.request_digest,
                     retry_of_job_id=job_id,
+                    binding_id=_settlement_binding(payload),
                 )
                 if original is not None:
                     return _retransmission_result(original, job_id)
@@ -1552,6 +1588,24 @@ def _retransmission_result(result: JobCreateResult, parent_job_id: str) -> Publi
     if job.retry_of_job_id != parent_job_id:
         raise IdempotencyConflictError
     return job
+
+
+def _settlement_binding(payload: Mapping[str, Any]) -> str | None:
+    """The lock a writer of this intent holds until it commits its Job.
+
+    Mirrors ``PostgresPublicJobs.create``: a pinned intent locks the pinned
+    binding object, an unpinned one locks the model it checks for selection.
+    Both values are already frozen into the resolved payload, so the
+    reconciliation read joins the writer's own lock instead of adding a second
+    serialization point for the key.
+    """
+    reference = payload.get("model_binding")
+    if isinstance(reference, dict):
+        identifier = reference.get("id")
+        if isinstance(identifier, str):
+            return identifier
+    model = payload.get("model")
+    return model if isinstance(model, str) else None
 
 
 def _replayed_revision(

@@ -43,8 +43,16 @@ class InterleavedStore(Store):
         key_digest: str,
         request_digest: str,
         retry_of_job_id: str | None,
+        *,
+        binding_id: str | None,
     ) -> Any:
-        result = super().find_by_key(workspace_id, key_digest, request_digest, retry_of_job_id)
+        result = super().find_by_key(
+            workspace_id,
+            key_digest,
+            request_digest,
+            retry_of_job_id,
+            binding_id=binding_id,
+        )
         callback = self.after_empty
         if result is None and callback is not None:
             self.after_empty = None
@@ -167,7 +175,7 @@ def test_unresolved_reconciliation_is_unavailable_not_a_selection_error(
     facts.binding = replace(facts.binding, retired=True)
     lookups = 0
 
-    def lookup(*args: Any) -> None:
+    def lookup(*args: Any, **kwargs: Any) -> None:
         nonlocal lookups
         lookups += 1
         if lookups == 2:

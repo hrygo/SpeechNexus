@@ -145,11 +145,15 @@ def test_create_locks_then_revalidates_before_any_insert_and_keeps_original_pin(
     result = _driver(pool).create(request)
     assert result.outcome == "created"
     queries = [query for query, _ in pool.calls]
-    key_lock = next(i for i, query in enumerate(queries) if "speechnexus:public-job-key:" in query)
+    # The key lookup is a lock-free fast path; only the post-lock repeat decides
+    # replay, so the binding lock precedes the visibility re-check and insert.
+    key_lookup = next(
+        i for i, query in enumerate(queries) if "j.idempotency_key_digest = ?" in query
+    )
     lock = next(i for i, query in enumerate(queries) if "speechnexus:catalog:" in query)
     validation = next(i for i, query in enumerate(queries) if "AS is_current" in query)
     first_insert = next(i for i, query in enumerate(queries) if query.startswith("INSERT"))
-    assert key_lock < lock < validation < first_insert
+    assert key_lookup < lock < validation < first_insert
     assert "'speechnexus:catalog:' || current_schema()" in queries[lock]
     original = next(
         parameters

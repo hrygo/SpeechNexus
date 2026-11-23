@@ -1,4 +1,9 @@
-"""Production adapter against a synthetic transactional lock oracle, not PostgreSQL."""
+"""Production adapter against a synthetic binding-lock oracle, not PostgreSQL.
+
+The submission key has no lock of its own: its unique constraint decides the
+writer race, and the binding lock every identical writer holds until commit is
+what a reconciliation read joins before it may report absence.
+"""
 
 import json
 from collections.abc import Iterator
@@ -32,7 +37,7 @@ class BarrierPool:
         self.request, self.outcome = request, outcome
         self.rows: list[dict[str, Any]] = []
         self.binding_rows = Pool(request).binding_rows
-        self.key_lock = Lock()
+        self.binding_lock = Lock()
         self.writer_at_insert, self.release_writer, self.waiter_at_lock = Event(), Event(), Event()
         self.inserts = 0
 
@@ -48,7 +53,7 @@ class BarrierPool:
                     raise psycopg.OperationalError("synthetic commit reply lost")
         finally:
             if transaction.key_held:
-                self.key_lock.release()
+                self.binding_lock.release()
 
 
 class Transaction:
@@ -58,10 +63,11 @@ class Transaction:
 
     def execute(self, query: str, parameters: tuple[object, ...] = ()) -> Rows:
         pool = self.pool
-        if "speechnexus:public-job-key:" in query:
-            if not pool.key_lock.acquire(blocking=False):
+        if "speechnexus:catalog:" in query:
+            assert not self.key_held, "the writer already holds the binding lock"
+            if not pool.binding_lock.acquire(blocking=False):
                 pool.waiter_at_lock.set()
-                assert pool.key_lock.acquire(timeout=3), "synthetic key wait timed out"
+                assert pool.binding_lock.acquire(timeout=3), "synthetic binding wait timed out"
             self.key_held = True
         if query.startswith("SELECT h.revision"):
             reference = json.loads(pool.request.submission.effective_configuration_json)["models"][
@@ -71,10 +77,11 @@ class Transaction:
         if "AS is_current" in query:
             return Rows(pool.binding_rows)
         if "j.idempotency_key_digest = ?" in query:
-            assert self.key_held, "key lookup must follow writer coordination"
+            # The first lookup is deliberately lock-free; the repeat after the
+            # binding lock is the one a reconciliation read also performs.
             return Rows(pool.rows)
         if query.startswith("INSERT INTO speech_jobs "):
-            assert self.key_held
+            assert self.key_held, "the writer must re-check its key under the binding lock"
             pool.writer_at_insert.set()
             assert pool.release_writer.wait(3), "writer barrier timed out"
             if pool.outcome == "rollback":
@@ -98,8 +105,16 @@ class PauseFirstReplay(PostgresPublicJobs):
         key_digest: str,
         request_digest: str,
         retry_of_job_id: str | None,
+        *,
+        binding_id: str | None,
     ) -> Any:
-        result = super().find_by_key(workspace_id, key_digest, request_digest, retry_of_job_id)
+        result = super().find_by_key(
+            workspace_id,
+            key_digest,
+            request_digest,
+            retry_of_job_id,
+            binding_id=binding_id,
+        )
         if self.first:
             self.first = False
             assert result is None
@@ -172,8 +187,8 @@ def test_early_rejection_waits_for_in_flight_keyed_writer(
 def test_replay_lock_failure_cannot_report_absence_or_write(error: type[psycopg.Error]) -> None:
     class BrokenPool(Pool):
         def execute(self, query: str, parameters: tuple[object, ...] = ()) -> Rows:
-            if "speechnexus:public-job-key:" in query:
-                raise error("synthetic key coordination unavailable")
+            if "speechnexus:catalog:" in query:
+                raise error("synthetic binding settlement unavailable")
             return super().execute(query, parameters)
 
     pool = BrokenPool(_request())
@@ -183,20 +198,21 @@ def test_replay_lock_failure_cannot_report_absence_or_write(error: type[psycopg.
             cast(str, pool.request.idempotency_key_digest),
             pool.request.request_digest,
             pool.request.retry_of_job_id,
+            binding_id=pool.request.model_id,
         )
     assert pool.rollbacks == 1
     assert not any(query.startswith("INSERT") for query, _ in pool.calls)
 
 
-def test_keyless_create_does_not_acquire_key_lock() -> None:
+def test_keyless_create_does_not_read_or_write_a_key() -> None:
     request = replace(_request(), idempotency_key_digest=None)
     pool = Pool(request)
     assert PostgresPublicJobs(cast(SpeechPool, pool)).create(request).outcome == "created"
-    assert not any("speechnexus:public-job-key:" in query for query, _ in pool.calls)
+    assert not any("j.idempotency_key_digest = ?" in query for query, _ in pool.calls)
 
 
 @pytest.mark.parametrize("write", [False, True])
-def test_deadline_exhausted_after_key_wait_never_reads_absence_or_inserts(
+def test_deadline_exhausted_after_binding_wait_never_reads_absence_or_inserts(
     write: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     class KeyTimeoutPool(Pool):
@@ -204,7 +220,7 @@ def test_deadline_exhausted_after_key_wait_never_reads_absence_or_inserts(
 
         def execute(self, query: str, parameters: tuple[object, ...] = ()) -> Rows:
             rows = super().execute(query, parameters)
-            if "speechnexus:public-job-key:" in query:
+            if "speechnexus:catalog:" in query:
                 self.elapsed = 3.1
             return rows
 
@@ -223,7 +239,10 @@ def test_deadline_exhausted_after_key_wait_never_reads_absence_or_inserts(
                 cast(str, pool.request.idempotency_key_digest),
                 pool.request.request_digest,
                 pool.request.retry_of_job_id,
+                binding_id=pool.request.model_id,
             )
-    assert not any(
-        "j.idempotency_key_digest" in query or query.startswith("INSERT") for query, _ in pool.calls
-    )
+    assert not any(query.startswith("INSERT") for query, _ in pool.calls)
+    if not write:
+        # The settlement read is the only key read and it must not happen after
+        # the lock consumed the budget; the write path's early lookup is lock-free.
+        assert not any("j.idempotency_key_digest = ?" in query for query, _ in pool.calls)

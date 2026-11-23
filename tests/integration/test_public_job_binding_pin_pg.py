@@ -31,7 +31,6 @@ from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.public_jobs_postgres import (
     PostgresPublicJobs,
     _insert,
-    _lock_submission_key,
 )
 
 pytestmark = pytest.mark.integration
@@ -206,9 +205,6 @@ def test_same_key_wait_recovers_original_before_changed_head(
         _head(jobs_db, "2")
     with ThreadPoolExecutor(max_workers=1) as executor:
         with _blocker(jobs_db) as blocker:
-            _lock_submission_key(
-                blocker, request.workspace_id, cast(str, request.idempotency_key_digest)
-            )
             lock_binding(blocker, "tts-quality")
             _insert(blocker, request, admitted=False)
             pending = executor.submit(driver.create, other)
@@ -262,6 +258,7 @@ def test_actual_commit_reply_loss_recovers_original_key(jobs_db: JobSandbox) -> 
         cast(str, request.idempotency_key_digest),
         request.request_digest,
         request.retry_of_job_id,
+        binding_id=request.model_id,
     )
     assert recovered is not None and recovered.job is not None
     assert recovered.outcome == "replayed" and recovered.job.job_id == request.job_id
@@ -276,7 +273,13 @@ def test_exhausted_real_pool_does_not_invent_absence(jobs_db: JobSandbox) -> Non
         jobs_db.pool.connection(),
         pytest.raises(PublicJobUnavailableError),
     ):
-        driver.find_by_key("workspace-default", "sha256:" + "a" * 64, "sha256:" + "b" * 64, None)
+        driver.find_by_key(
+            "workspace-default",
+            "sha256:" + "a" * 64,
+            "sha256:" + "b" * 64,
+            None,
+            binding_id="tts-quality",
+        )
     _counts(jobs_db, 0)
 
 
@@ -302,15 +305,13 @@ class SlowPool:
             yield SlowSQL(raw)
 
 
-def test_real_key_wait_and_multiple_sql_share_deadline(jobs_db: JobSandbox) -> None:
+def test_real_binding_wait_and_multiple_sql_share_deadline(jobs_db: JobSandbox) -> None:
     driver = _seed(jobs_db)
     request = _request(driver)
     slow = PostgresPublicJobs(cast(SpeechPool, SlowPool(jobs_db.pool)), timeout_seconds=0.65)
     with ThreadPoolExecutor(max_workers=1) as executor:
         with _blocker(jobs_db) as blocker:
-            _lock_submission_key(
-                blocker, request.workspace_id, cast(str, request.idempotency_key_digest)
-            )
+            lock_binding(blocker, "tts-quality")
             started = time.monotonic()
             pending = executor.submit(slow.create, request)
             _wait(jobs_db, blocker.info.backend_pid)
@@ -335,8 +336,16 @@ def test_fact_rejection_reconciles_in_flight_original(jobs_db: JobSandbox, outco
             key_digest: str,
             request_digest: str,
             retry_of_job_id: str | None,
+            *,
+            binding_id: str | None,
         ) -> Any:
-            result = super().find_by_key(workspace_id, key_digest, request_digest, retry_of_job_id)
+            result = super().find_by_key(
+                workspace_id,
+                key_digest,
+                request_digest,
+                retry_of_job_id,
+                binding_id=binding_id,
+            )
             if self.first:
                 self.first = False
                 assert result is None
@@ -355,9 +364,6 @@ def test_fact_rejection_reconciles_in_flight_original(jobs_db: JobSandbox, outco
         try:
             assert empty.wait(3)
             with _blocker(jobs_db) as blocker:
-                _lock_submission_key(
-                    blocker, request.workspace_id, cast(str, request.idempotency_key_digest)
-                )
                 lock_binding(blocker, "tts-quality")
                 _insert(blocker, request, admitted=False)
                 # Separate authoritative workspace commit exposes an early rejection.

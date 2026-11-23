@@ -98,6 +98,8 @@ class Store:
         key_digest: str,
         request_digest: str,
         retry_of_job_id: str | None,
+        *,
+        binding_id: str | None,
     ) -> JobCreateResult | None:
         original = self.keys.get(key_digest)
         if original is None:
@@ -245,6 +247,8 @@ def test_key_lookup_failure_never_creates_a_new_job(monkeypatch: pytest.MonkeyPa
         key_digest: str,
         request_digest: str,
         retry_of_job_id: str | None,
+        *,
+        binding_id: str | None,
     ) -> None:
         raise PublicJobUnavailableError("synthetic failure")
 

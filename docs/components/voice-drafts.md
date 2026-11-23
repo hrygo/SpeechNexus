@@ -173,7 +173,7 @@ store 在 prepare 完成后、插入事务提交前可能拒绝已准备的写�
 
 ## 权威状态与恢复
 
-`VoiceDrafts.create` 调用既有 `PublicJobs.submit`。沿用其 workspace 作用域幂等键锁、
+`VoiceDrafts.create` 调用既有 `PublicJobs.submit`。沿用其 workspace 作用域幂等键唯一约束、
 完整请求摘要、固定 binding/configuration、Job 提交文档、协调 Job 和 outbox。
 草稿与生成输入在该同一事务插入；草稿失败会回滚整笔 Job 提交，没有第二套派发。
 草稿 ID 由已接受的 Job 身份固定，因此重启和同键重放能找到原草稿。同键异意图返回 409。

@@ -1720,9 +1720,20 @@ fence 复核与 Job CAS 在同一事务,旧 dispatcher 拿到的过期 fence 版
 
 按 `scripts/dev-env/portable-sql-baseline.json` 逐条清点(不是按印象估):
 
-`job_dispatch_postgres.py` 一共 **16** 条:`cte` 6、`returning` 5、`skip-locked` 1、
-`aggregate-filter` 1、`format` 1、`sql-string-building` 1、`vendor-operator` 1。
-**B2 消掉的就是这 16 条,基线 196 → 180。**
+`job_dispatch_postgres.py` 一共 **16** 条,并按方法归属清点(AST 定方法,合计与 baseline 的
+per-rule 计数完全一致):
+
+| 方法 | 条数 | kinds |
+| --- | ---: | --- |
+| `PostgresDispatchQueue._claim` | **5** | `cte`、`returning`、`skip-locked`、`vendor-operator`、`format` |
+| `_mark_running` | 2 | `cte`、`returning` |
+| `_renew` | 2 | `cte`、`returning` |
+| `_record_progress` | 2 | `cte`、`aggregate-filter` |
+| `_record_cancellation_not_submitted` | 1 | `sql-string-building` |
+| `_finish` | 4 | `cte` 2、`returning` 2 |
+
+**所以接 `_claim()` 的那一刀只消 5 条,基线 196 → 191;另外 11 条属 state store 切 canonical
+的切片——不是改列名能消的,要新增 manifest 语句。**
 
 初稿写的「16 条 claim 族 + 32 条 `advisory-lock`,196 → 148」是错的:那 32 条 `advisory-lock`
 分布在 24 个文件里,主体是发布/资格/绑定/准入/取消 fence(`builtin_voice_publication`、
@@ -1817,3 +1828,35 @@ canonical `job_state='pending'` 但公共状态已终态的 Job 仍会被认领;
 | 重领不越桶 | 只在当前持有桶内执行,不改别的桶的 Job |
 
 这条与 §8.76.1 第 2 步的顺序固定成:**读 fence → 拿桶 → 复核 → 重领该桶 → 取候选 → 认领**。
+
+### 8.77 派发认领接线的前置:四条,顺序不可换
+
+`claim_batch` 原语已经完整(§8.76),但把生产 `_claim()` 换过去不是「一行替换」:认领谓词依赖的
+三样东西在生产 schema 里都不成立,再加一条授权。按依赖排序:
+
+| 序 | 前置 | 缺什么 | 谁决定 | 不做会让哪条判据红 |
+| --- | --- | --- | --- | --- |
+| 1 | 桶表与播种(alembic 0066) | `coordination_claim_buckets` 只在 canonical schema;alembic 树到 0065 既没这张表也没 256 行种子。派发跑的是 alembic schema | 实现。种子值取自 Python 的 `BUCKETS`,不在 SQL 里写死 256 | 所有 `claim_due` 判据:`read_fence` 42P01 或返回 `None` → 零认领 |
+| 2 | `due_at` 落到写入者 | 只有 0064/0065 的存量回填;两处 INSERT 都不写它 → 新建 Job `due_at IS NULL`,而候选谓词是 `due_at <= ?` | **来源不是待决项**:`canonical_source_map.json` 已冻结为 `speech_jobs.created_at_us`。要评审的只是实现口径:时间戳怎么进 `CreateJob`,以及 `created_at_us` 是否恒等于 `submitted_at_us`(不能假定) | 新 Job 永不被认领 |
+| 3 | 租约列与状态切换(**双写边界才是真待决项**) | 原语写 `job_state='claimed'` + `claim_expires_at`;`_renew`/`_record_progress`/`_finish` 读 `job_state='pending'` + `claim_expires_at_us`。且 0065 重跑方向是 canonical ← draft,只写 canonical 会在下次迁移把在飞租约擦成 NULL | 架构。三种边界:(a) 全量双写到草案列退役;(b) 只写 canonical 并把 0065 改成以 canonical 为准;(c) 三个守卫与草案列一起切 canonical | 认领后立刻失权:renew 返回 `None`、finish 抛 `DispatchClaimLostError` |
+| 4 | 列级 GRANT 与角色 | 派发角色只有 4 列 `UPDATE`,桶表与 `claim_expires_at` 都不在授权里 | 实现。列清单同时写在 `coordination_grants.py` 与 14 个 fixture 里,改时要收敛到一个定义点 | 42501、授权面清点 |
+
+顺序 1 → 2 → 3 →(4 与接线同一提交)。1/2 只决定「有没有候选」,3 决定「认领后还能不能干活」;
+把 3 拖到接线之后,等于让每一次认领都变成一次立即失权。
+
+两条口径澄清(避免把「待决」和「已定」混成一条):
+
+- `due_at` 的**来源不是待决项**,`canonical_source_map.json` 已冻结;待办是把它落到写入者。
+- 数据保真的争议**不是来源**,是同步方向:哪一列权威、0065 的重跑覆盖哪个方向——这才是双写
+  边界要定的内容。
+
+接线时必须同时记录的三个判断:
+
+- `statement_timeout` 是**逐语句**的,而一次 `claim_batch` 最多扫 256 个桶(每桶 4–6 条语句)。
+  §8.76.5 D 接受「桶行等锁由 `statement_timeout` 兜住」,但整轮总预算不等于单条预算:要么显式
+  给整轮 deadline,要么承认最坏情况是 256 × `statement_timeout`。
+- `ClaimedJob.lease_expires_at_us` 现在由数据库算出;改由 `BatchClaim.expires_at`(naive UTC
+  `TIMESTAMP(6)`)换算时必须逐微秒相等,否则 `_renew`/`_finish` 的守卫整体偏移。
+- `job.claimed_view.request_document` 可空,而 `DispatchJob.request_document` 是非空 `str`
+  (老 SQL 用 `COALESCE(…, '')`);接线要显式映射 `None → ""`,并把 `claimed_jobs` 的顺序还原
+  成老语句的 `created_at_us, job_id`。

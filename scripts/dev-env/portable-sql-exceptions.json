@@ -144,34 +144,26 @@
     {
       "rule": "advisory-lock",
       "path": "backend/src/speechnexus_backend/workbench/infrastructure/postgres_deletions.py",
-      "count": 1,
-      "card": "#1095",
-      "reason": "由 claim bucket / bucket fencing 原语替代后失效",
-      "release": "#1095 完成时删除本条目"
+      "card": "#1100",
+      "reason": "workbench 行的第三方类型/参数标记,整块由 #1102 处理"
     },
     {
       "rule": "advisory-lock",
       "path": "backend/src/speechnexus_backend/workbench/infrastructure/postgres_meetings.py",
-      "count": 1,
-      "card": "#1095",
-      "reason": "由 claim bucket / bucket fencing 原语替代后失效",
-      "release": "#1095 完成时删除本条目"
+      "card": "#1100",
+      "reason": "workbench 行的第三方类型/参数标记,整块由 #1102 处理"
     },
     {
       "rule": "advisory-lock",
       "path": "backend/src/speechnexus_backend/workbench/infrastructure/postgres_minutes_tasks.py",
-      "count": 1,
-      "card": "#1095",
-      "reason": "由 claim bucket / bucket fencing 原语替代后失效",
-      "release": "#1095 完成时删除本条目"
+      "card": "#1100",
+      "reason": "workbench 行的第三方类型/参数标记,整块由 #1102 处理"
     },
     {
       "rule": "advisory-lock",
       "path": "backend/src/speechnexus_backend/workbench/infrastructure/postgres_versions.py",
-      "count": 1,
-      "card": "#1095",
-      "reason": "由 claim bucket / bucket fencing 原语替代后失效",
-      "release": "#1095 完成时删除本条目"
+      "card": "#1100",
+      "reason": "workbench 行的第三方类型/参数标记,整块由 #1102 处理"
     },
     {
       "rule": "advisory-lock",
@@ -294,26 +286,20 @@
     {
       "rule": "paging-limit",
       "path": "backend/src/speechnexus_backend/workbench/infrastructure/postgres_meetings.py",
-      "count": 1,
       "card": "#1100",
-      "reason": "先去重定序再决定取哪一行,逐条判断",
-      "release": "#1100 完成时删除本条目"
+      "reason": "workbench 行的第三方类型/参数标记,整块由 #1102 处理"
     },
     {
       "rule": "paging-limit",
       "path": "backend/src/speechnexus_backend/workbench/infrastructure/postgres_render_units.py",
-      "count": 2,
       "card": "#1100",
-      "reason": "先去重定序再决定取哪一行,逐条判断",
-      "release": "#1100 完成时删除本条目"
+      "reason": "workbench 行的第三方类型/参数标记,整块由 #1102 处理"
     },
     {
       "rule": "paging-limit",
       "path": "backend/src/speechnexus_backend/workbench/infrastructure/postgres_versions.py",
-      "count": 1,
       "card": "#1100",
-      "reason": "先去重定序再决定取哪一行,逐条判断",
-      "release": "#1100 完成时删除本条目"
+      "reason": "workbench 行的第三方类型/参数标记,整块由 #1102 处理"
     },
     {
       "rule": "paging-limit",
@@ -339,123 +325,11 @@
     },
     {
       "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/assistant_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/books_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/content_writes_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/deletion_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/exports_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/meetings_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/minutes_tasks_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/render_units_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/runtime_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/saved_assets_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/sealing_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/teleprompter_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/version_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "物理 DDL 由 schema bootstrap 收编后失效",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "runtime-ddl",
       "path": "node-controller/src/speechnexus_node_controller/infrastructure/sqlite_intent_store.py",
       "count": 5,
       "card": "#1102",
       "reason": "物理 DDL 由 schema bootstrap 收编后失效",
       "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "session-tuning",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/minutes_tasks_schema.py",
-      "count": 1,
-      "card": "#1100",
-      "reason": "会话参数改由部署配置统一设置",
-      "release": "#1100 完成时删除本条目"
     },
     {
       "rule": "session-tuning",
@@ -618,26 +492,20 @@
     {
       "rule": "sql-string-building",
       "path": "backend/src/speechnexus_backend/workbench/infrastructure/postgres_assistant_turns.py",
-      "count": 1,
       "card": "#1100",
-      "reason": "workbench 的 schema 名是配置项:runtime_settings.database_schema 必填,经 schema_identifier() 校验且显式拒绝 \"speech\"(workbench requires its own namespace),语句经 sql.SQL(query).format(s=...) 组合标识符。写成字面量会钉死 schema,等于删除这项已支持的能力 —— 判定为不迁移,见文档 8.70",
-      "release": "#1100 完成时删除本条目"
+      "reason": "workbench 行的第三方类型/参数标记,整块由 #1102 处理"
     },
     {
       "rule": "sql-string-building",
       "path": "backend/src/speechnexus_backend/workbench/infrastructure/postgres_exports.py",
-      "count": 2,
       "card": "#1100",
-      "reason": "workbench 的 schema 名是配置项:runtime_settings.database_schema 必填,经 schema_identifier() 校验且显式拒绝 \"speech\"(workbench requires its own namespace),语句经 sql.SQL(query).format(s=...) 组合标识符。写成字面量会钉死 schema,等于删除这项已支持的能力 —— 判定为不迁移,见文档 8.70",
-      "release": "#1100 完成时删除本条目"
+      "reason": "workbench 行的第三方类型/参数标记,整块由 #1102 处理"
     },
     {
       "rule": "sql-string-building",
       "path": "backend/src/speechnexus_backend/workbench/infrastructure/postgres_saved_assets.py",
-      "count": 1,
       "card": "#1100",
-      "reason": "workbench 的 schema 名是配置项:runtime_settings.database_schema 必填,经 schema_identifier() 校验且显式拒绝 \"speech\"(workbench requires its own namespace),语句经 sql.SQL(query).format(s=...) 组合标识符。写成字面量会钉死 schema,等于删除这项已支持的能力 —— 判定为不迁移,见文档 8.70",
-      "release": "#1100 完成时删除本条目"
+      "reason": "workbench 行的第三方类型/参数标记,整块由 #1102 处理"
     },
     {
       "rule": "sql-string-building",
@@ -698,10 +566,8 @@
     {
       "rule": "vendor-error-branch",
       "path": "backend/src/speechnexus_backend/workbench/infrastructure/postgres_versions.py",
-      "count": 1,
       "card": "#1100",
-      "reason": "错误分类统一到 portable_error 后失效",
-      "release": "#1100 完成时删除本条目"
+      "reason": "workbench 行的第三方类型/参数标记,整块由 #1102 处理"
     },
     {
       "rule": "vendor-function",
@@ -819,75 +685,27 @@
     },
     {
       "rule": "vendor-json",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/assistant_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "JSON 列改列式短字符串 + 对象存储读法",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-json",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/content_writes_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "JSON 列改列式短字符串 + 对象存储读法",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-json",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/deletion_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "JSON 列改列式短字符串 + 对象存储读法",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-json",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/exports_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "JSON 列改列式短字符串 + 对象存储读法",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-json",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/minutes_tasks_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "JSON 列改列式短字符串 + 对象存储读法",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-json",
       "path": "backend/src/speechnexus_backend/workbench/infrastructure/postgres_books.py",
-      "count": 2,
-      "card": "#1102",
-      "reason": "JSON 列改列式短字符串 + 对象存储读法",
-      "release": "#1102 完成时删除本条目"
+      "card": "#1100",
+      "reason": "workbench 行的第三方类型/参数标记,整块由 #1102 处理"
     },
     {
       "rule": "vendor-json",
       "path": "backend/src/speechnexus_backend/workbench/infrastructure/postgres_minutes_tasks.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "JSON 列改列式短字符串 + 对象存储读法",
-      "release": "#1102 完成时删除本条目"
+      "card": "#1100",
+      "reason": "workbench 行的第三方类型/参数标记,整块由 #1102 处理"
     },
     {
       "rule": "vendor-json",
       "path": "backend/src/speechnexus_backend/workbench/infrastructure/postgres_render_units.py",
-      "count": 3,
-      "card": "#1102",
-      "reason": "JSON 列改列式短字符串 + 对象存储读法",
-      "release": "#1102 完成时删除本条目"
+      "card": "#1100",
+      "reason": "workbench 行的第三方类型/参数标记,整块由 #1102 处理"
     },
     {
       "rule": "vendor-json",
       "path": "backend/src/speechnexus_backend/workbench/infrastructure/postgres_versions.py",
-      "count": 4,
-      "card": "#1102",
-      "reason": "JSON 列改列式短字符串 + 对象存储读法",
-      "release": "#1102 完成时删除本条目"
+      "card": "#1100",
+      "reason": "workbench 行的第三方类型/参数标记,整块由 #1102 处理"
     },
     {
       "rule": "vendor-lock",
@@ -916,10 +734,8 @@
     {
       "rule": "vendor-time",
       "path": "backend/src/speechnexus_backend/workbench/infrastructure/postgres_versions.py",
-      "count": 1,
       "card": "#1100",
-      "reason": "时钟统一到 clock.py 后失效",
-      "release": "#1100 完成时删除本条目"
+      "reason": "workbench 行的第三方类型/参数标记,整块由 #1102 处理"
     },
     {
       "rule": "vendor-type",
@@ -1033,131 +849,21 @@
     },
     {
       "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/assistant_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/books_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/content_writes_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/deletion_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/exports_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/meetings_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/minutes_tasks_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-type",
       "path": "backend/src/speechnexus_backend/workbench/infrastructure/postgres_books.py",
-      "count": 3,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
+      "card": "#1100",
+      "reason": "workbench 行的第三方类型/参数标记,整块由 #1102 处理"
     },
     {
       "rule": "vendor-type",
       "path": "backend/src/speechnexus_backend/workbench/infrastructure/postgres_render_units.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
+      "card": "#1100",
+      "reason": "workbench 行的第三方类型/参数标记,整块由 #1102 处理"
     },
     {
       "rule": "vendor-type",
       "path": "backend/src/speechnexus_backend/workbench/infrastructure/postgres_versions.py",
-      "count": 4,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/render_units_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/runtime_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/saved_assets_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/sealing_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/teleprompter_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/version_schema.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
+      "card": "#1100",
+      "reason": "参数标记与行工厂第三方类型,见 #1102"
     },
     {
       "rule": "vendor-type",

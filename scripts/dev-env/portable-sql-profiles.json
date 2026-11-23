@@ -37,7 +37,20 @@
     "backend/src/speechnexus_backend/speech/infrastructure/voice_catalogue_schema.py",
     "backend/src/speechnexus_backend/speech/infrastructure/voice_draft_schema.py",
     "backend/src/speechnexus_backend/speech/infrastructure/voice_publication_schema.py",
-    "backend/src/speechnexus_backend/speech/infrastructure/workspace_schema.py"
+    "backend/src/speechnexus_backend/speech/infrastructure/workspace_schema.py",
+    "backend/src/speechnexus_backend/workbench/infrastructure/assistant_schema.py",
+    "backend/src/speechnexus_backend/workbench/infrastructure/books_schema.py",
+    "backend/src/speechnexus_backend/workbench/infrastructure/content_writes_schema.py",
+    "backend/src/speechnexus_backend/workbench/infrastructure/deletion_schema.py",
+    "backend/src/speechnexus_backend/workbench/infrastructure/exports_schema.py",
+    "backend/src/speechnexus_backend/workbench/infrastructure/meetings_schema.py",
+    "backend/src/speechnexus_backend/workbench/infrastructure/minutes_tasks_schema.py",
+    "backend/src/speechnexus_backend/workbench/infrastructure/render_units_schema.py",
+    "backend/src/speechnexus_backend/workbench/infrastructure/runtime_schema.py",
+    "backend/src/speechnexus_backend/workbench/infrastructure/saved_assets_schema.py",
+    "backend/src/speechnexus_backend/workbench/infrastructure/sealing_schema.py",
+    "backend/src/speechnexus_backend/workbench/infrastructure/teleprompter_schema.py",
+    "backend/src/speechnexus_backend/workbench/infrastructure/version_schema.py"
   ],
   "deploy": [
     "backend/src/speechnexus_backend/speech/infrastructure/admission_grants.py",

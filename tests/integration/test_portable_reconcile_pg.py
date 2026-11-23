@@ -73,6 +73,11 @@ def namespace(database_url: str) -> Iterator[tuple[str, str]]:
             "claim_expires_at_us BIGINT NOT NULL, claim_version BIGINT NOT NULL, "
             "due_at_us BIGINT NOT NULL, last_event_seq BIGINT NOT NULL)"
         )
+        admin.execute(
+            f'CREATE TABLE "{name}".speech_job_events ('
+            "job_id VARCHAR(128) NOT NULL, event_seq BIGINT NOT NULL, state VARCHAR(24) NOT NULL, "
+            "occurred_at_us BIGINT NOT NULL)"
+        )
         yield database_url, name
     finally:
         admin.execute(f'DROP SCHEMA IF EXISTS "{name}" CASCADE')
@@ -120,6 +125,9 @@ def _seed(url: str, name: str, *, jobs: int = 2) -> None:
             QmarkConnection(connection),
             job_id="job-0",
             events=[HistoricalEvent(state="pending", occurred_at_us=DUE_US)],
+        )
+        connection.execute(
+            "INSERT INTO speech_job_events VALUES ('job-0', 1, 'pending', %s)", (DUE_US,)
         )
     finally:
         connection.close()
@@ -227,3 +235,44 @@ def test_a_nonzero_expiry_must_match_exactly(namespace: tuple[str, str]) -> None
     result = _run("--dsn", url, "--schema", name)
     assert result.returncode == 1
     assert "job-1: claim_expires_at expected" in result.stderr
+
+
+def test_a_truncated_event_backfill_is_reported(namespace: tuple[str, str]) -> None:
+    """事件少搬不改变任何 Job 行,却会让 SSE 续读在缺口处停住."""
+
+    url, name = namespace
+    _seed(url, name)
+    connection = portable_pg_connect(url, autocommit=True)
+    try:
+        connection.execute(f'SET search_path TO "{name}", pg_catalog')
+        connection.execute(
+            "INSERT INTO speech_job_events VALUES ('job-0', 2, 'running', %s)", (DUE_US + 1,)
+        )
+    finally:
+        connection.close()
+    result = _run("--dsn", url, "--schema", name)
+    assert result.returncode == 1
+    assert "job-0: 2 draft event(s) but 1 in job_events" in result.stderr
+
+
+def test_a_non_contiguous_event_sequence_is_reported(namespace: tuple[str, str]) -> None:
+    url, name = namespace
+    _seed(url, name)
+    connection = portable_pg_connect(url, autocommit=True)
+    try:
+        connection.execute(f'SET search_path TO "{name}", pg_catalog')
+        # 草案只有 1 条,canonical 却把序号写成 2:条数相等但序列不连续。
+        connection.execute("DELETE FROM speech_job_events WHERE event_seq = 1")
+        connection.execute(
+            "INSERT INTO speech_job_events VALUES ('job-0', 2, 'running', %s)", (DUE_US + 1,)
+        )
+        connection.execute("DELETE FROM job_events WHERE job_id = 'job-0'")
+        connection.execute(
+            "INSERT INTO job_events (job_id, event_seq, event_digest) VALUES ('job-0', 2, %s)",
+            ("sha256:" + "a" * 64,),
+        )
+    finally:
+        connection.close()
+    result = _run("--dsn", url, "--schema", name)
+    assert result.returncode == 1
+    assert "job-0: job_events cover 2..2, expected 1..1" in result.stderr

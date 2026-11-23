@@ -95,3 +95,27 @@ def test_progress_bounds_are_validated() -> None:
         event_digest(**_base(progress_completed=5, progress_total=4))
     with pytest.raises(ContractError):
         event_digest(**_base(progress_completed=-1))
+
+
+def test_the_conversion_emits_naive_utc_so_the_session_zone_cannot_change_it() -> None:
+    # canonical 列是 TIMESTAMP(6):把 aware datetime 交给驱动,存下来的是会话时区下的墙上
+    # 时间。真库演练在 +08:00 会话里把 12:00Z 存成了 20:00,所以换算必须交 naive UTC。
+    from speechnexus_portable_sql.claims import canonical_job_from_draft
+
+    row = canonical_job_from_draft(
+        job_id="job-1",
+        operation_id="op-1",
+        attempt_id="attempt-1",
+        request_digest="sha256:" + "d" * 64,
+        job_state="pending",
+        claim_owner_id=None,
+        claim_expires_at_us=0,
+        claim_version=0,
+        due_at_us=int(MOMENT.timestamp() * 1_000_000),
+        last_event_seq=0,
+    )
+    due_at = row["due_at"]
+    assert isinstance(due_at, datetime)
+    assert due_at.tzinfo is None
+    assert due_at == MOMENT.replace(tzinfo=None)
+    assert row["claim_expires_at"] is None

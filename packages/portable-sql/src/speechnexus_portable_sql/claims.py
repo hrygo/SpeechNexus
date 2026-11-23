@@ -174,6 +174,74 @@ def bucket_for(job_id: str, buckets: int = BUCKETS) -> Decimal:
     return Decimal(int.from_bytes(digest[:8], "big") % buckets)
 
 
+#: 草案 `coordination_jobs.claim_expires_at_us` 用 0 表示「未领取」;canonical 用 NULL。
+#: 这条等价关系只在这里定义一次,搬迁脚本与运维查询都不得自己写 `= 0`。
+UNDECIDED_EPOCH_US = 0
+
+
+def _utc_from_epoch_us(value: object, *, field: str) -> datetime | None:
+    """epoch 微秒 -> canonical 时间;0 与负数是「从未发生」,不是 1970 年.
+
+    返回值是**naive UTC**:canonical 的列是 `TIMESTAMP(6)`(不带时区),写进去的是 UTC 墙上
+    时间。如果直接把 aware 的 datetime 交给驱动,存下来的其实是「会话时区下的墙上时间」——
+    同一个时刻在不同 `TimeZone` 的会话里会存成不同的值,而且读回来没有任何报错。真库演练
+    (`test_canonical_job_conversion_pg.py`)在 +08:00 会话里把它测出来了:12:00Z 存成了 20:00。
+    """
+
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ContractError(f"{field} must be an integer epoch in microseconds")
+    if value <= UNDECIDED_EPOCH_US:
+        return None
+    return datetime.fromtimestamp(value / 1_000_000, tz=UTC).replace(tzinfo=None)
+
+
+def canonical_job_from_draft(
+    *,
+    job_id: str,
+    operation_id: str,
+    attempt_id: str,
+    request_digest: str,
+    job_state: str,
+    claim_owner_id: str | None,
+    claim_expires_at_us: int,
+    claim_version: int,
+    due_at_us: int,
+    last_event_seq: int,
+) -> dict[str, object]:
+    """把一条草案 job 行换算成 canonical 行的唯一实现.
+
+    为什么要有这个函数:换算规则(0 表示未领取、bucket 由 `job_id` 派生、时间折成
+    `TIMESTAMP(6)`)写进 SQL、写进脚本、再写进文档,就是三份实现;搬迁演练与生产切换
+    必须走同一段代码。它只做换算,不做 I/O——所以能在真库上按行校验,也能在单测里逐字段
+    钉住。
+    """
+
+    require_text(job_id, field="job_id", max_bytes=128)
+    require_text(job_state, field="job_state", max_bytes=24)
+    require_digest(request_digest, field="request_digest")
+    if claim_version < 0 or last_event_seq < 0:
+        raise ContractError("claim_version and last_event_seq must not be negative")
+    expires_at = _utc_from_epoch_us(claim_expires_at_us, field="claim_expires_at_us")
+    due_at = _utc_from_epoch_us(due_at_us, field="due_at_us")
+    if due_at is None:
+        raise ContractError("due_at_us must be a positive epoch, a Job cannot be due at the epoch")
+    return {
+        "job_id": job_id,
+        "operation_id": operation_id,
+        "attempt_id": attempt_id,
+        "request_digest": request_digest,
+        "bucket_no": bucket_for(job_id),
+        "due_at": due_at,
+        "job_state": job_state,
+        "claim_owner_id": claim_owner_id,
+        "claim_expires_at": expires_at,
+        "claim_version": Decimal(claim_version),
+        "last_event_seq": Decimal(last_event_seq),
+    }
+
+
 def acquire_bucket(
     connection: Connection,
     *,

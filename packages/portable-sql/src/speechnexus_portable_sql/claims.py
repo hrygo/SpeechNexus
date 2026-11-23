@@ -5,8 +5,10 @@
 再用两次 `rowcount` CAS 定输赢:
 
 1. `bucket.acquire` 抢 bucket 租约;`rowcount = 0` 表示 bucket 被别人持有或版本已变,退避重试。
-2. 持有者按 `(claim_expires_at, job_id)` 取候选;候选只是「可能可认领」,不是认领证据。
-3. 认领同一个 Job 的事务按 **bucket → Job → outbox** 固定顺序复核:先锁 bucket 行确认自己仍是
+2. 持有者在取候选之前先 `job.reclaim`:把该桶里租约已死的 `claimed` Job 放回 `pending` 并推进
+   版本。候选谓词只回答「哪些 Job 到期可派」,「哪些租约已经死了」是另一条判定。
+3. 持有者按 `(claim_expires_at, job_id)` 取候选;候选只是「可能可认领」,不是认领证据。
+4. 认领同一个 Job 的事务按 **bucket → Job → outbox** 固定顺序复核:先锁 bucket 行确认自己仍是
    持有者,再对 Job 做带版本条件与状态条件的 `UPDATE`,最后写事件与 outbox。
 
 时间参数一律由权威探针给出(`now`),本模块不读应用时钟,也不读数据库时间。
@@ -53,6 +55,7 @@ __all__ = [
     "mark_outbox_delivered",
     "read_events",
     "read_undelivered",
+    "reclaim_expired",
     "release_bucket",
     "require_fence",
     "start_bucket_for",
@@ -142,6 +145,11 @@ STATEMENTS = {
     "job.claim": (
         "UPDATE coordination_jobs SET job_state = ?, claim_owner_id = ?, claim_expires_at = ?, "
         "claim_version = ? WHERE job_id = ? AND claim_version = ? AND job_state = ?"
+    ),
+    "job.reclaim": (
+        "UPDATE coordination_jobs SET job_state = ?, claim_owner_id = ?, "
+        "claim_version = claim_version + 1 WHERE bucket_no = ? AND job_state = ? "
+        "AND claim_expires_at <= ?"
     ),
     "job.event_head": (
         "SELECT last_event_seq, claim_version FROM coordination_jobs WHERE job_id = ? FOR UPDATE"
@@ -555,6 +563,47 @@ def claim_job(
         cursor.close()
 
 
+def reclaim_expired(
+    connection: Connection,
+    *,
+    bucket_no: Decimal,
+    now: datetime,
+) -> int:
+    """把一个桶里租约已死的 `claimed` Job 放回 `pending`,并推进版本;返回重领条数.
+
+    为什么是一条独立语句而不是把「到期」折进候选谓词(§8.76.6):候选只回答「哪些 Job
+    到期可派」,这条只回答「哪些租约已经死了」。折进候选会让 `pending AND due<=now OR
+    (claimed AND claim_expires_at<=now)` 变成一条语句承担两种判定,`OR` 与 keyset 游标
+    混在一起后分页边界不可证。
+
+    **`claim_version` 加一是 fencing,不是顺手。** 草案语义里「过期」本身就是 fence:旧 owner
+    的 CAS 带 `claim_expires_at_us <= now`,过期必然失败。canonical 里旧 owner 的 CAS 带
+    `claim_version = ?`,若不涨版本,重领后旧 owner 用原版本仍能写成功;涨版本让「重领」对
+    旧持有者等价于一次 fence 失效。调用方的 CAS 若同时带状态条件,拒绝由状态与版本两个条件
+    共同保证,但版本这一半必须在重领这一刻推进——它是「这份租约已经死过」唯一可比较的事实。
+
+    作用域是**一个桶**,由调用方在持有该桶租约时调用:重领不是全局清扫,它不改别的桶的
+    Job,也不碰 `pending`/终态行(状态谓词是 `claimed`)。`claim_expires_at` 保持原值不清:
+    「租约死在哪一刻」是重领的证据,下一次认领会覆盖它。
+    """
+
+    cursor = connection.cursor()
+    try:
+        cursor.execute(
+            STATEMENTS["job.reclaim"],
+            (
+                PENDING_STATE,
+                None,
+                bucket_no,
+                DEFAULT_CLAIM_STATE,
+                require_utc(now, field="now"),
+            ),
+        )
+        return cursor.rowcount
+    finally:
+        cursor.close()
+
+
 def claim_next(
     connection: Connection,
     *,
@@ -632,8 +681,9 @@ def claim_batch(
     「每轮全表 `SKIP LOCKED`」同阶(`docs/plans/2026-11-21-portable-sql-delivery.md` §8.76)。
 
     每个桶的顺序固定为:读 fence → 只在「桶空闲或租约已过期」时按读到的版本 CAS 拿桶 →
-    **同一事务内**复核 fence → 按候选逐条 `claim_job` → 立刻归还桶。`limit` 是本轮认领数,
-    不是桶数。任一桶被别的 owner 持有时只跳过该桶,不等待它过期、不重试。
+    **同一事务内**复核 fence → `reclaim_expired` 重领该桶里租约已死的 Job → 按候选逐条
+    `claim_job` → 立刻归还桶。`limit` 是本轮认领数,不是桶数。任一桶被别的 owner 持有时只
+    跳过该桶,不等待它过期、不重试。
 
     两条实现上的取舍,读者不必再猜:
 
@@ -735,8 +785,14 @@ def _claim_from_bucket(
 
     候选只是「可能可认领」:每一条都要过 `claim_job` 的版本 + 状态 CAS,失败就继续下一条,
     因为竞争失败的那一条已经被别人认领,重试它没有意义。
+
+    重领在取候选**之前**,顺序与 §8.76.6 一致:候选的 `job_state = 'pending'` 谓词看不见
+    停在 `claimed` 的死租约,所以先把「租约已死」这件事做完,候选才是完整的可派集合。重领
+    不受 `kinds`/`require_admission` 约束:死租约与 lane 无关,别的 lane 的 Job 被放回
+    `pending` 只是回到各自的池子,不会被本 worker 认领。
     """
 
+    reclaim_expired(connection, bucket_no=bucket_no, now=now)
     claims: list[BatchClaim] = []
     after: tuple[datetime | None, str] | None = None
     while len(claims) < wanted:

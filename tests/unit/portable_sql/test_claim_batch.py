@@ -20,6 +20,7 @@ from speechnexus_portable_sql import (
     Row,
     claim_batch,
     claimed_jobs,
+    reclaim_expired,
     start_bucket_for,
 )
 from tests.support.portable_sql_fake import FakeDatabase
@@ -95,6 +96,7 @@ def test_a_full_batch_stops_at_the_limit_and_releases_the_bucket() -> None:
         STATEMENTS["bucket.fence"],
         STATEMENTS["bucket.acquire"],
         STATEMENTS["bucket.fence"],
+        STATEMENTS["job.reclaim"],
         STATEMENTS["job.candidates"],
         STATEMENTS["job.claim"],
         STATEMENTS["bucket.release"],
@@ -110,8 +112,16 @@ def test_a_full_batch_stops_at_the_limit_and_releases_the_bucket() -> None:
     )
     # 复核用的是 acquire 之后的版本,不是读 fence 时的版本。
     assert database.statements[2].params == (Decimal(7),)
-    # 候选页的 keyset 下界是纪元,不是 NULL。
+    # 重领在取候选之前:回 pending、清 owner、只碰本桶里租约已死的 claimed 行。
     assert database.statements[3].params == (
+        "pending",
+        None,
+        Decimal(7),
+        "claimed",
+        NOW,
+    )
+    # 候选页的 keyset 下界是纪元,不是 NULL。
+    assert database.statements[4].params == (
         Decimal(7),
         "pending",
         NOW,
@@ -119,7 +129,7 @@ def test_a_full_batch_stops_at_the_limit_and_releases_the_bucket() -> None:
         EPOCH,
         "",
     )
-    assert database.statements[4].params == (
+    assert database.statements[5].params == (
         "claimed",
         "worker-a",
         LEASE,
@@ -129,7 +139,7 @@ def test_a_full_batch_stops_at_the_limit_and_releases_the_bucket() -> None:
         "pending",
     )
     # 归还:清空 owner 与租约,版本从 4 推到 5。
-    assert database.statements[5].params == (
+    assert database.statements[6].params == (
         None,
         None,
         Decimal(5),
@@ -160,6 +170,8 @@ def test_a_bucket_held_by_a_live_lease_is_skipped_without_a_cas() -> None:
     emitted = [statement.sql for statement in database.statements]
     assert emitted == [STATEMENTS["bucket.fence"]] * BUCKETS
     assert STATEMENTS["bucket.acquire"] not in emitted
+    # 没拿到桶就不重领:重领是「持有该桶」时的动作,不是全局清扫。
+    assert STATEMENTS["job.reclaim"] not in emitted
     assert STATEMENTS["job.claim"] not in emitted
 
 
@@ -192,6 +204,7 @@ def test_a_lost_acquire_cas_never_double_acquires_a_bucket() -> None:
     assert len({statement.params[3] for statement in acquires}) == BUCKETS
     emitted = [statement.sql for statement in database.statements]
     assert STATEMENTS["bucket.release"] not in emitted
+    assert STATEMENTS["job.reclaim"] not in emitted
     assert STATEMENTS["job.candidates"] not in emitted
     assert STATEMENTS["job.claim"] not in emitted
 
@@ -288,12 +301,13 @@ def test_the_lane_filter_switches_the_statement_and_expands_the_list() -> None:
         STATEMENTS["bucket.fence"],
         STATEMENTS["bucket.acquire"],
         STATEMENTS["bucket.fence"],
+        STATEMENTS["job.reclaim"],
         STATEMENTS["job.candidates.lane"],
         STATEMENTS["job.claim"],
         STATEMENTS["bucket.release"],
     ]
     # 列表标记由 `check_statement` 摊平成逐值参数:语句里一个 `?`,参数里两个 kind。
-    assert database.statements[3].params == (
+    assert database.statements[4].params == (
         Decimal(2),
         "pending",
         NOW,
@@ -332,8 +346,8 @@ def test_the_admission_anchor_switches_the_statement() -> None:
         )
         == ()
     )
-    assert database.statements[3].sql == STATEMENTS["job.candidates.admitted"]
-    assert database.statements[3].params == (
+    assert database.statements[4].sql == STATEMENTS["job.candidates.admitted"]
+    assert database.statements[4].params == (
         Decimal(2),
         "pending",
         NOW,
@@ -368,12 +382,34 @@ def test_lane_and_admission_need_both_predicates() -> None:
         kinds=("voice_validation",),
         require_admission=True,
     )
-    assert database.statements[3].sql == STATEMENTS["job.candidates.lane_admitted"]
-    assert database.statements[3].params[-1] == "voice_validation"
+    assert database.statements[4].sql == STATEMENTS["job.candidates.lane_admitted"]
+    assert database.statements[4].params[-1] == "voice_validation"
+
+
+def test_reclaim_expired_rewrites_dead_claims_in_one_bucket() -> None:
+    """`job.reclaim` 的参数形状与作用域;行为判据在真库那一份里.
+
+    这里只钉两件静态事实,因为它们是「重领」区别于「候选」的定义:作用域是一个桶(不是
+    全表),并且推进 `claim_version`(旧 owner 的 CAS 因此失效)。真库上「过期可重领 /
+    未过期不可抢 / 旧 owner 被 fence / 重领不越桶」四条由
+    `tests/integration/test_claim_batch_pg.py` 观测。
+    """
+
+    database = FakeDatabase({}, rowcounts={STATEMENTS["job.reclaim"]: 3})
+
+    assert reclaim_expired(database.connect(), bucket_no=Decimal(19), now=NOW) == 3
+    assert [statement.sql for statement in database.statements] == [STATEMENTS["job.reclaim"]]
+    assert database.statements[0].params == ("pending", None, Decimal(19), "claimed", NOW)
+
+    sql = STATEMENTS["job.reclaim"]
+    assert "WHERE bucket_no = ?" in sql
+    assert "AND job_state = ?" in sql
+    assert "claim_expires_at <= ?" in sql
+    # 版本加一是 fencing:不涨版本,重领后旧 owner 仍能写成功。
+    assert "claim_version = claim_version + 1" in sql
 
 
 def test_an_empty_lane_is_refused_before_any_statement() -> None:
-    """空 lane 不是「不过滤」:它在发出任何 I/O 之前就被拒绝。"""
 
     database = FakeDatabase()
 

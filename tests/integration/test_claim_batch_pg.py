@@ -33,6 +33,7 @@ from speechnexus_portable_sql import (
     claim_job,
     claimed_jobs,
     read_fence,
+    reclaim_expired,
     release_bucket,
     require_fence,
 )
@@ -158,6 +159,8 @@ def _seed_job(
     with_attempt: bool = True,
     with_lease: bool = True,
     claim_owner: str | None = None,
+    job_state: str = "pending",
+    claim_expires_at: datetime | None = None,
     claim_version: int = 0,
 ) -> None:
     cursor = connection.cursor()
@@ -173,9 +176,9 @@ def _seed_job(
                 request_digest,
                 Decimal(bucket),
                 DUE,
-                "pending",
+                job_state,
                 claim_owner,
-                None,
+                claim_expires_at,
                 Decimal(claim_version),
                 Decimal(0),
             ),
@@ -226,6 +229,23 @@ def _job_state(connection: Connection, job_id: str) -> tuple[str, str | None]:
         cursor.close()
     assert row is not None
     return str(row.at(0)), None if row.at(1) is None else str(row.at(1))
+
+
+def _claim_row(connection: Connection, job_id: str) -> tuple[str, str | None, Decimal]:
+    """`(job_state, claim_owner_id, claim_version)`:重领判据看的就是这三列。"""
+
+    cursor = connection.cursor()
+    try:
+        cursor.execute(
+            "SELECT job_state, claim_owner_id, claim_version FROM coordination_jobs "
+            "WHERE job_id = ?",
+            (job_id,),
+        )
+        row = cursor.fetchone()
+    finally:
+        cursor.close()
+    assert row is not None
+    return str(row.at(0)), (None if row.at(1) is None else str(row.at(1))), Decimal(str(row.at(2)))
 
 
 def _bucket_row(connection: Connection, bucket: int) -> tuple[object, object, Decimal]:
@@ -703,5 +723,191 @@ def test_release_after_a_batch_leaves_no_residual_lease(namespace: tuple[str, st
         # 旧 owner 用旧版本复核必须被拒:桶已经不是它的了。
         with pytest.raises(ContractError, match="owned by"):
             require_fence(fence, owner_id="worker-a", now=NOW, expected_version=Decimal(1))
+    finally:
+        connection.close()
+
+
+def test_an_expired_claim_is_reclaimed_and_claimed_again(namespace: tuple[str, str]) -> None:
+    """§8.76.6 判据一:租约过期的 `claimed` Job 在下一轮被重领,`claim_version` 连涨两次。"""
+
+    url, name = namespace
+    connection = _connect(url, name)
+    try:
+        _seed_bucket(connection, 4)
+        _seed_job(
+            connection,
+            "job-1",
+            bucket=4,
+            job_state="claimed",
+            claim_owner="worker-a",
+            claim_expires_at=NOW - timedelta(seconds=1),
+            claim_version=1,
+        )
+        connection.commit()
+
+        claims = claim_batch(
+            connection,
+            owner_id="worker-b",
+            now=NOW,
+            lease_until=LEASE,
+            limit=1,
+            start_bucket=4,
+        )
+        connection.commit()
+
+        # 重领(1 → 2)之后才进候选,再被 worker-b 认领(2 → 3):版本连涨两次。
+        assert [claim.job_id for claim in claims] == ["job-1"]
+        assert _claim_row(connection, "job-1") == ("claimed", "worker-b", Decimal(3))
+        # 重领写进的是本次认领的租约,不是重领那一刻的 now。
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                "SELECT claim_expires_at FROM coordination_jobs WHERE job_id = ?", ("job-1",)
+            )
+            row = cursor.fetchone()
+        finally:
+            cursor.close()
+        assert row is not None and row.at(0) is not None
+        assert row.at(0) == LEASE.replace(tzinfo=None)
+    finally:
+        connection.close()
+
+
+def test_a_live_claim_is_neither_reclaimed_nor_stolen(namespace: tuple[str, str]) -> None:
+    """§8.76.6 判据二:租约仍有效的 `claimed` Job 不被重领,也不进候选。"""
+
+    url, name = namespace
+    connection = _connect(url, name)
+    try:
+        _seed_bucket(connection, 6)
+        _seed_job(
+            connection,
+            "job-1",
+            bucket=6,
+            job_state="claimed",
+            claim_owner="worker-a",
+            claim_expires_at=NOW + timedelta(seconds=5),
+            claim_version=1,
+        )
+        connection.commit()
+
+        assert (
+            claim_batch(
+                connection,
+                owner_id="worker-b",
+                now=NOW,
+                lease_until=LEASE,
+                limit=4,
+                start_bucket=6,
+            )
+            == ()
+        )
+        connection.commit()
+        # 状态、owner、版本都没动:重领的谓词是 `claim_expires_at <= now`。
+        assert _claim_row(connection, "job-1") == ("claimed", "worker-a", Decimal(1))
+    finally:
+        connection.close()
+
+
+def test_the_reclaim_version_bump_fences_the_old_owner(namespace: tuple[str, str]) -> None:
+    """§8.76.6 判据三:重领后旧 owner 用原版本 CAS 必须失败。
+
+    「只靠状态」会被误读:重领后状态回到 `pending`,旧 owner 的 CAS 也会因为状态不符而失败。
+    所以这里先让新 owner 重新认领,把状态推回 `claimed`,再让旧 owner 用原版本写;此时唯一
+    不符的就是 `claim_version`,失败只能由版本推进解释。
+    """
+
+    url, name = namespace
+    connection = _connect(url, name)
+    try:
+        _seed_bucket(connection, 10)
+        _seed_job(
+            connection,
+            "job-1",
+            bucket=10,
+            job_state="claimed",
+            claim_owner="worker-a",
+            claim_expires_at=NOW - timedelta(seconds=1),
+            claim_version=0,
+        )
+        connection.commit()
+
+        assert reclaim_expired(connection, bucket_no=Decimal(10), now=NOW) == 1
+        connection.commit()
+        assert _claim_row(connection, "job-1") == ("pending", None, Decimal(1))
+
+        # 新 owner 用重领后的版本认领成功:当前是 (claimed, 2)。
+        assert claim_job(
+            connection,
+            job_id="job-1",
+            owner_id="worker-b",
+            expires_at=LEASE,
+            expected_version=Decimal(1),
+        )
+        connection.commit()
+        assert _claim_row(connection, "job-1") == ("claimed", "worker-b", Decimal(2))
+
+        # 旧 owner 的原版本:状态与它期望的一致(claimed),版本不是 —— CAS 必须失败。
+        assert not claim_job(
+            connection,
+            job_id="job-1",
+            owner_id="worker-a",
+            expires_at=LEASE + timedelta(seconds=10),
+            expected_version=Decimal(0),
+            expected_state="claimed",
+        )
+        connection.commit()
+        assert _claim_row(connection, "job-1") == ("claimed", "worker-b", Decimal(2))
+    finally:
+        connection.close()
+
+
+def test_reclaim_touches_only_the_named_bucket(namespace: tuple[str, str]) -> None:
+    """§8.76.6 判据四:重领只在指定桶内执行,不改别的桶的 Job,也不复活终态行。"""
+
+    url, name = namespace
+    connection = _connect(url, name)
+    try:
+        _seed_bucket(connection, 14)
+        _seed_bucket(connection, 15)
+        expired = NOW - timedelta(seconds=1)
+        _seed_job(
+            connection,
+            "job-here",
+            bucket=14,
+            job_state="claimed",
+            claim_owner="worker-a",
+            claim_expires_at=expired,
+            claim_version=0,
+        )
+        # 同一桶里的终态行带着一个过期的时间戳:状态谓词必须挡住它,不能复活。
+        _seed_job(
+            connection,
+            "job-done",
+            bucket=14,
+            state="succeeded",
+            job_state="succeeded",
+            claim_owner="worker-a",
+            claim_expires_at=expired,
+            claim_version=0,
+        )
+        # 另一个桶里同样是过期租约:它不在本次重领的作用域里。
+        _seed_job(
+            connection,
+            "job-elsewhere",
+            bucket=15,
+            job_state="claimed",
+            claim_owner="worker-a",
+            claim_expires_at=expired,
+            claim_version=0,
+        )
+        connection.commit()
+
+        assert reclaim_expired(connection, bucket_no=Decimal(14), now=NOW) == 1
+        connection.commit()
+
+        assert _claim_row(connection, "job-here") == ("pending", None, Decimal(1))
+        assert _claim_row(connection, "job-done") == ("succeeded", "worker-a", Decimal(0))
+        assert _claim_row(connection, "job-elsewhere") == ("claimed", "worker-a", Decimal(0))
     finally:
         connection.close()

@@ -1577,6 +1577,27 @@ workbench 的 13 个 `*_schema.py` 一直是「部署期制品却按业务 DML �
 不进业务 DML 基线)。剩下 5 条 `runtime-ddl` 全在 `node-controller` 的 SQLite intent store,属单机本地库,
 是另一条判定线。
 
+### 8.73 判定:node-controller 的本地 intent store 不迁移(节点本地状态,非产品库)
+
+剩下 5 条 `runtime-ddl` 全在 `node-controller/src/speechnexus_node_controller/infrastructure/sqlite_intent_store.py`,
+同文件另有 `sql-string-building` / `upsert` / `vendor-type` 各一条。判定是**不迁移**,证据:
+
+| 证据 | 位置 |
+| --- | --- |
+| 存储路径来自部署配置 | `deploy/cluster/compute/compose.yaml:72`、`deploy/images/node-controller.Dockerfile:75`(`SPEECHNEXUS_CONTROLLER_INTENT_STORE_PATH`) |
+| 装配点唯一 | `node-controller/src/speechnexus_node_controller/app.py:76` `SqliteIntentStore(settings.intent_path)` |
+| 参与就绪判定 | `node-controller/src/speechnexus_node_controller/app.py:104` 的 `IntentStoreReadinessProbe(store)` |
+| 设置项必填 | `node-controller/src/speechnexus_node_controller/settings.py:53` `intent_store_path: Path` |
+
+为什么不是「暂时没人调用」:它**在部署清单里、在就绪探针里、在必填设置里**,是活的节点本地状态。
+
+为什么仍不迁移:SQLite 的首启建表没有第二个执行点(没有迁移器),`INSERT OR REPLACE` 也是本地库
+的写法;受限方言约束的是**产品 DML**(PostgreSQL 权威库)。把节点本地 bootstrap 当作产品 DML
+来「迁移」,只会把它变成更绕的本地建表流程,不会减少任何方言风险。
+
+**这与「确定不使用的功能要删除」并不矛盾**:它不是不用的功能,是不能删的节点本地状态。五条在
+ledger 里以本表为理由登记。
+
 ### 8.74 #1100 剩余 196 条的真实构成:逐类说清「卡在什么上」
 
 基线停在 196 时,最容易犯的错是把「没做完」和「做不了」混为一谈。下表是**每一条都指向一个具体
@@ -1593,7 +1614,20 @@ workbench 的 13 个 `*_schema.py` 一直是「部署期制品却按业务 DML �
 | `session-tuning` / `vendor-lock` / `distinct-on` / `upsert` / `vendor-function` / `vendor-time` / `vendor-error-branch` / `aggregate-filter` / `pyformat` | 20 | 12 | 零散,各自需要一次独立判定;`session-tuning` 缺事务级只读/超时原语 |
 | `runtime-ddl` | 5 | 1 | node-controller 本地 SQLite(§8.73,判定不迁移) |
 
-结论:**16 条集中在同一处**,32 条共用同一个原语,51 条已判决。真正的下一刀是「把派发领取改接到
-`claims`」——它一次同时消掉 `cte`/`skip-locked`/`returning`/`format`,并为 32 条 `advisory-lock`
-开出一条可复制的路。这是协调事务变更,按仓库约定要先读 `speechnexus-coordination-change` 技能,
-并准备 bucket → Job → outbox 的锁序 oracle。
+结论:**16 条集中在同一处**,32 条共用同一个原语,51 条已判决。
+
+**但这 48 条不是 #1100 能自己消掉的**。核对后确认:`claims` 原语的语句全部落在
+`migrations/0003_portable_claim_buckets.sql` 定义的 canonical 表上(`coordination_jobs` 用
+`TIMESTAMP(6)`、`bucket_no` 是列、`job_events` 是连续 `event_seq`),而生产派发链路的
+`job_dispatch_postgres` 仍在草案表的 epoch 微秒列上跑。`0003` 的注释把两者之间的换算明确划给
+**数据搬迁(#1102)**:
+
+> Claim expiry is UTC TIMESTAMP(6); the draft schema stored epoch microseconds. The conversion
+> belongs to the data migration (#1102), not to this schema definition.
+
+所以「派发领取改接 `claims`」是 #1102 的切换动作,不是 #1100 的语句改写;`advisory-lock` 32 条同属
+这条切换线。**#1100 的可动面到此为止**:剩下的每一条要么已判决不是债,要么等 #1102 的
+canonical 切换。这条边界要认清,否则会拿「改接原语」当 #1100 的进度,而实际是在提前做 #1102。
+
+若将来启动这条切换,它是协调事务变更:先读 `speechnexus-coordination-change`,准备 bucket → Job →
+outbox 的锁序 oracle,并在切换前给出草案表到 canonical 表的列级换算与回退演练。

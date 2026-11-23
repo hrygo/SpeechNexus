@@ -10,10 +10,18 @@ import importlib
 import re
 from pathlib import Path
 
-from speechnexus_backend.speech.infrastructure import binding_lifecycle_postgres
+import pytest
+
+from speechnexus_backend.speech.infrastructure import (
+    binding_lifecycle_postgres,
+    voice_publications_postgres,
+)
 
 _INFRA = Path(binding_lifecycle_postgres.__file__).parent
-_MODULE = Path(binding_lifecycle_postgres.__file__).read_text(encoding="utf-8")
+_MODULES = {
+    "binding_lifecycle_postgres": Path(binding_lifecycle_postgres.__file__),
+    "voice_publications_postgres": Path(voice_publications_postgres.__file__),
+}
 
 
 def _schema_table_names() -> set[str]:
@@ -23,7 +31,8 @@ def _schema_table_names() -> set[str]:
     for path in _INFRA.glob("*schema*.py"):
         module = importlib.import_module(f"speechnexus_backend.speech.infrastructure.{path.stem}")
         for attribute, value in vars(module).items():
-            if (attribute == "TABLE" or attribute.endswith("_TABLE")) and isinstance(value, str):
+            exported = attribute == "TABLE" or attribute.endswith("_TABLE") or attribute == "JOBS"
+            if exported and isinstance(value, str):
                 names.add(value)
     return names
 
@@ -44,21 +53,26 @@ def _ddl_table_names() -> set[str]:
 
 _SCHEMA_TABLES = _schema_table_names() | _ddl_table_names()
 _KEYWORDS = {"SET"}
-_REFERENCED = {
-    name
-    for name in re.findall(r"(?:INSERT INTO|DELETE FROM|UPDATE|FROM|JOIN) \"?(\w+)\"?", _MODULE)
-    if name not in _KEYWORDS
-}
+
+
+def _referenced(path: Path) -> set[str]:
+    text = path.read_text(encoding="utf-8")
+    return {
+        name
+        for name in re.findall(r"(?:INSERT INTO|DELETE FROM|UPDATE|FROM|JOIN) \"?(\w+)\"?", text)
+        if name not in _KEYWORDS
+    }
 
 
 def test_the_schema_modules_name_tables() -> None:
     assert _SCHEMA_TABLES, "no schema table constant was found; the check would be vacuous"
 
 
-def test_every_table_the_lifecycle_module_names_is_a_schema_constant() -> None:
-    unknown = sorted(_REFERENCED - _SCHEMA_TABLES)
+@pytest.mark.parametrize("module", sorted(_MODULES))
+def test_every_table_a_literalised_module_names_is_a_schema_constant(module: str) -> None:
+    unknown = sorted(_referenced(_MODULES[module]) - _SCHEMA_TABLES)
     assert unknown == [], (
-        "these statements name tables no schema module exports: "
-        f"{unknown}. A misspelt literal survives the type checker and only fails at "
-        "runtime, so the schema constants are the fact source"
+        f"{module} names tables no schema module exports: {unknown}. A misspelt "
+        "literal survives the type checker and only fails at runtime, so the "
+        "schema constants are the fact source"
     )

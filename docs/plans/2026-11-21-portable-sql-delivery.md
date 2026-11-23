@@ -1186,3 +1186,21 @@ ledger**并注明理由,而不是让 `new` 悄悄落进基线。基线 **293 →
 属于物理 profile,不是 DML 收敛能改的;登记理由写进 ledger,不让它悄悄进基线。
 
 基线 **289 → 283**。PG oracle:`tests/integration/test_binding_lifecycle_pg.py` 13 passed。
+
+### 8.50 表名字面量化的通用判据,以及列清单为什么这一轮不动
+
+`test_lifecycle_table_literals.py` 从「只查一个模块」改成参数化的多模块检查:凡是被字面量化的模块,
+都要求它语句里 `INSERT INTO` / `DELETE FROM` / `UPDATE` / `FROM` / `JOIN` 后面的表名出现在
+`*schema*.py` 导出的常量值或 DDL 模板里。事实源有两类,都是代码:`*_TABLE` / `TABLE` / `JOBS`
+这类导出常量,以及 `CREATE TABLE …` 的模板文本(含 alembic 里的 `op.execute("CREATE TABLE …")`)。
+注入即红:把 `speech_voice_capability_evidence` 拼成 `…capabilty…` → `1 failed`。
+
+**列清单是另一回事,这一轮没有动。** `deletion_executions_postgres` 的 21 列 `_LEDGER_ROW_COLUMNS`
+在 5 处被插值;字面量化意味着把同一份 21 个列名写 5 遍,那比现在更糟。守卫的用意是「语句文本可静态
+登记」,而列清单常量在导入时就是一个确定值 —— 真正的分歧在守卫规则与 manifest 的登记粒度,不在
+这些调用点。所以本轮只处理**表名**插值,列清单留到能与 #1101 的 manifest 一起判断的时候。
+
+`voice_publications_postgres` 顺带把 `ON CONFLICT (key_digest) DO NOTHING` 换成 `insert_if_absent`,
+并让 `rowcount != 1` 的判据改读返回值 —— 又是 §8.41 那条(保存点会改写 `rowcount`)。
+
+基线 **283 → 279**。PG oracle:`test_profile_publications.py` + `test_binding_lifecycle_pg.py` 35 passed。

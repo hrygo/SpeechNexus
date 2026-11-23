@@ -745,14 +745,6 @@
     },
     {
       "rule": "sql-string-building",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/voice_publications_postgres.py",
-      "count": 6,
-      "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "sql-string-building",
       "path": "backend/src/speechnexus_backend/startup_privileges.py",
       "count": 6,
       "card": "#1100",
@@ -972,6 +964,12 @@
       "card": "#1102",
       "reason": "JSON 列改列式短字符串 + 对象存储读法",
       "release": "#1102 完成时删除本条目"
+    },
+    {
+      "rule": "vendor-json",
+      "path": "backend/src/speechnexus_backend/speech/infrastructure/voice_publications_postgres.py",
+      "card": "#1102",
+      "reason": "intent/result 与 document/material 列是 jsonb,绑定文本需要 CAST(? AS jsonb);列类型与 JSON 适配属物理 profile"
     },
     {
       "rule": "vendor-json",

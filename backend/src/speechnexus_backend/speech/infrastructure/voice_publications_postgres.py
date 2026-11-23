@@ -46,11 +46,6 @@ from speechnexus_backend.speech.domain.voice_capability_evidence import (
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.publications_sql import append_publication
-from speechnexus_backend.speech.infrastructure.voice_publication_schema import (
-    EVIDENCE_TABLE,
-    INTENT_TABLE,
-    REVISION_TABLE,
-)
 from speechnexus_portable_sql.clock import ClockReader, now_us
 from speechnexus_portable_sql.transaction import insert_if_absent, is_savepoint_control
 from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
@@ -67,12 +62,13 @@ _SELECT_EVIDENCE = (
     "SELECT evidence_id, draft_id, draft_revision, validation_job_id, validation_id, "
     "binding_revision_id, report_artifact_id, report_sha256, report_receipt_id, "
     "capabilities, coverage, material, evidence_digest, measured_by, measured_at_us "
-    f"FROM {EVIDENCE_TABLE} WHERE validation_job_id=?"
+    "FROM speech_voice_capability_evidence WHERE validation_job_id=?"
 )
 _SELECT_PUBLISHED = (
     "SELECT v.voice_id, v.revision, v.revision_id, v.document, e.validation_job_id, "
     "e.validation_id, v.published_at_us "
-    f"FROM {REVISION_TABLE} v JOIN {EVIDENCE_TABLE} e ON e.evidence_id=v.evidence_id "
+    "FROM speech_voice_revisions v JOIN speech_voice_capability_evidence e "
+    "ON e.evidence_id=v.evidence_id "
     "WHERE v.draft_id=? AND v.draft_revision=?"
 )
 
@@ -193,7 +189,8 @@ class PostgresVoicePublications:
 
         if key_digest is not None:
             cursor.execute(
-                f"SELECT request_digest, result FROM {INTENT_TABLE} WHERE key_digest=?",
+                "SELECT request_digest, result FROM speech_voice_publication_intents "
+                "WHERE key_digest=?",
                 (key_digest,),
             )
             receipts = cursor.fetchall()
@@ -323,7 +320,7 @@ class PostgresVoicePublications:
             raise VoicePublicationConflictError("publication_revision_exists")
 
         cursor.execute(
-            f"INSERT INTO {REVISION_TABLE} "
+            "INSERT INTO speech_voice_revisions "
             "(kind, voice_id, revision, revision_id, source_type, document, material, "
             "evidence_id, draft_id, draft_revision, published_at_us) "
             "VALUES ('voice', ?, ?, ?, 'cloned', CAST(? AS jsonb), CAST(? AS jsonb), ?, ?, ?, ?)",
@@ -370,12 +367,12 @@ class PostgresVoicePublications:
             published_at_us=published_at_us,
         )
         if key_digest is not None:
-            cursor.execute(
-                f"INSERT INTO {INTENT_TABLE} "
+            recorded = insert_if_absent(
+                cursor,
+                "INSERT INTO speech_voice_publication_intents "
                 "(key_digest, request_digest, intent, draft_id, draft_revision, "
                 "voice_id, voice_revision, result) "
-                "VALUES (?,?,CAST(? AS jsonb),?,?,?,?,CAST(? AS jsonb)) "
-                "ON CONFLICT (key_digest) DO NOTHING",
+                "VALUES (?,?,CAST(? AS jsonb),?,?,?,?,CAST(? AS jsonb))",
                 (
                     key_digest,
                     request_digest,
@@ -387,7 +384,7 @@ class PostgresVoicePublications:
                     json.dumps(body),
                 ),
             )
-            if cursor.rowcount != 1:
+            if not recorded:
                 raise VoicePublicationConflictError("idempotency_race")
         return body, True
 
@@ -414,8 +411,8 @@ class PostgresVoicePublications:
 
     def _next_revision(self, cursor: _Cursor, voice_id: str) -> str:
         cursor.execute(
-            f"SELECT COALESCE(MAX(CAST(revision AS numeric)), 0) AS current FROM {REVISION_TABLE} "
-            "WHERE voice_id=?",
+            "SELECT COALESCE(MAX(CAST(revision AS numeric)), 0) AS current "
+            "FROM speech_voice_revisions WHERE voice_id=?",
             (voice_id,),
         )
         rows = cursor.fetchall()

@@ -1469,3 +1469,24 @@ KeyError: 'intent-a'
 `LIMIT ?` 因此被守卫看见(1 条 `paging-limit`,有界页,登记)。
 
 基线 **246 → 244**。
+
+### 8.67 元数由运行期决定的占位符列表:补规则,而不是只改那一处
+
+`runtime_sql` 的 `engine_instances` 插入是仓库里最后一处 `", ".join(["%s"] * len(values))`:
+15 个基准列 + peak/steady/per_slot 各 6 个维度 = 33 列,列名和占位符都按长度拼。改成一条 33 列的
+字面量语句后,**守卫的数字没有变化(244)** —— 因为这条语句原本就没有被任何规则记录(它是 `+` 拼接,
+不是 f-string)。
+
+所以这一轮做的两件事要分开记:
+
+1. 语句本身:33 列写死,`?` 恰好 33 个。判据 `test_engine_instance_insert_statement.py` 从
+   `DIMENSIONS` 派生期望列序,注入即红(删 `peak_unified_physical_memory_bytes` → `2 failed`);
+2. **新增守卫规则 `dynamic-placeholder-list`**:`["?"] * len(...)` 与 `["%s"] * len(...)` 一律记为
+   一条发现。理由与 `ListMarker` 的存在理由相同 —— 占位符的元数是标记文法的职责,由驱动层摊开;
+   业务侧乘出长度就是 `sql-string-building` 的兄弟问题,只是不带 f-string 而已。
+
+守卫自检新增该规则的注入样本,`--selftest` 通过;在真实文件上临时回填这一写法,守卫立刻红
+(`UNREGISTERED dynamic-placeholder-list … runtime_sql.py`,退出码 1),随后回滚。
+
+**为什么值得加规则而不是只改一处**:这一处能改,是因为我恰好读到了它。规则让「元数拼接」从
+「读代码时靠眼力」变成「跑守卫就报」。基线不因它下降,但下一处会在 CI 里被拦下,而不是再等一轮人工巡检。

@@ -13,6 +13,7 @@
   vendor-error-branch 业务读 SQLSTATE / pgcode / errorcode 做分支
   brand-branch        按 `database` / `dialect` / `driver` 变量比较数据库品牌
   sql-string-building 用 f-string 或拼接构造 SQL 文本
+  dynamic-placeholder-list 按批次长度乘出占位符列表(`["?"] * len(rows)`),元数在运行期才定
   <subset 规则 id>    SQL 文本命中共同子集之外的构造(SKIP LOCKED、RETURNING、LIMIT、jsonb…)
 
 棘轮:现有实现是迁移输入,不是目标。`--baseline` 只对**基线之外**的问题变红;基线内的
@@ -121,6 +122,9 @@ SQL_SHAPE = re.compile(
     r"|CREATE\s+(?:TABLE|INDEX|UNIQUE|VIEW)\b|ALTER\s+TABLE\b|DROP\s+TABLE\b)",
     re.IGNORECASE,
 )
+
+#: 单个占位符字面量。乘上运行期长度就是「元数由批次决定」的拼接。
+PLACEHOLDER_LITERALS = frozenset({"?", "%s"})
 
 #: 语句起始关键字。`sql-string-building` 只看「文本里出现 SELECT」会把提示语也算进来
 #: (例如 `" no longer select a local inspection process; "`),所以判据要求字面量**以**一条
@@ -238,6 +242,19 @@ def scan_python(path: str, source: str) -> list[Finding]:
                 for operand in operands
             ):
                 findings.append(Finding("brand-branch", path))
+
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult):
+            # `["?"] * len(rows)` 把占位符元数交给运行期;受限契约要求定长列表走
+            # `ListMarker`,让驱动层展开,而不是在业务侧拼长度。
+            for factor in (node.left, node.right):
+                if (
+                    isinstance(factor, ast.List)
+                    and len(factor.elts) == 1
+                    and isinstance(factor.elts[0], ast.Constant)
+                    and factor.elts[0].value in PLACEHOLDER_LITERALS
+                ):
+                    findings.append(Finding("dynamic-placeholder-list", path))
+                    break
 
         if isinstance(node, ast.JoinedStr):
             literal = "".join(
@@ -480,6 +497,11 @@ def selftest() -> list[str]:
             "sql-string-building",
             "backend/src/bad.py",
             'sql = f"SELECT job_id FROM t WHERE job_id = {{value}}"',
+        ),
+        (
+            "dynamic-placeholder-list",
+            "backend/src/bad.py",
+            'marks = ", ".join(["?"] * len(rows))',
         ),
         (
             "skip-locked",

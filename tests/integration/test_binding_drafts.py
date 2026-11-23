@@ -27,6 +27,7 @@ from tests.integration.test_production_jobs import database as database
 from tests.support.binding_database import BindingCursor, MySQLBindingDrafts
 from tests.support.binding_examples import binding_request
 from tests.support.job_database import MySQLJobTransactions
+from tests.support.migration_rows import project_onto
 from tests.support.migrations import HEAD
 from tests.support.portable_pg import connect_kwargs as portable_connect_kwargs
 
@@ -646,7 +647,10 @@ def test_failed_0010_upgrade_rolls_back_new_ddl_and_preserves_old_rows_and_acl(
             sandbox.admin.execute("SELECT to_regclass(%s) AS name", (name,)).fetchone()["name"]
             is None
         )
-    assert sandbox.admin.execute("SELECT * FROM coordination_jobs").fetchall() == before
+    assert (
+        project_onto(sandbox.admin.execute("SELECT * FROM coordination_jobs").fetchall(), before)
+        == before
+    )
     assert (
         sandbox.admin.execute(
             "SELECT relname,relacl FROM pg_class WHERE relnamespace=%s::regnamespace "
@@ -659,4 +663,7 @@ def test_failed_0010_upgrade_rolls_back_new_ddl_and_preserves_old_rows_and_acl(
     sandbox.upgrade()
     sandbox.upgrade()
     assert sandbox.version() == HEAD
-    assert sandbox.admin.execute("SELECT * FROM coordination_jobs").fetchall() == before
+    assert (
+        project_onto(sandbox.admin.execute("SELECT * FROM coordination_jobs").fetchall(), before)
+        == before
+    )

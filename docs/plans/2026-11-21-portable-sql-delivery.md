@@ -1614,7 +1614,20 @@ ledger 里以本表为理由登记。
 | `session-tuning` / `vendor-lock` / `distinct-on` / `upsert` / `vendor-function` / `vendor-time` / `vendor-error-branch` / `aggregate-filter` / `pyformat` | 20 | 12 | 零散,各自需要一次独立判定;`session-tuning` 缺事务级只读/超时原语 |
 | `runtime-ddl` | 5 | 1 | node-controller 本地 SQLite(§8.73,判定不迁移) |
 
-结论:**16 条集中在同一处**,32 条共用同一个原语,51 条已判决。真正的下一刀是「把派发领取改接到
-`claims`」——它一次同时消掉 `cte`/`skip-locked`/`returning`/`format`,并为 32 条 `advisory-lock`
-开出一条可复制的路。这是协调事务变更,按仓库约定要先读 `speechnexus-coordination-change` 技能,
-并准备 bucket → Job → outbox 的锁序 oracle。
+结论:**16 条集中在同一处**,32 条共用同一个原语,51 条已判决。
+
+**但这 48 条不是 #1100 能自己消掉的**。核对后确认:`claims` 原语的语句全部落在
+`migrations/0003_portable_claim_buckets.sql` 定义的 canonical 表上(`coordination_jobs` 用
+`TIMESTAMP(6)`、`bucket_no` 是列、`job_events` 是连续 `event_seq`),而生产派发链路的
+`job_dispatch_postgres` 仍在草案表的 epoch 微秒列上跑。`0003` 的注释把两者之间的换算明确划给
+**数据搬迁(#1102)**:
+
+> Claim expiry is UTC TIMESTAMP(6); the draft schema stored epoch microseconds. The conversion
+> belongs to the data migration (#1102), not to this schema definition.
+
+所以「派发领取改接 `claims`」是 #1102 的切换动作,不是 #1100 的语句改写;`advisory-lock` 32 条同属
+这条切换线。**#1100 的可动面到此为止**:剩下的每一条要么已判决不是债,要么等 #1102 的
+canonical 切换。这条边界要认清,否则会拿「改接原语」当 #1100 的进度,而实际是在提前做 #1102。
+
+若将来启动这条切换,它是协调事务变更:先读 `speechnexus-coordination-change`,准备 bucket → Job →
+outbox 的锁序 oracle,并在切换前给出草案表到 canonical 表的列级换算与回退演练。

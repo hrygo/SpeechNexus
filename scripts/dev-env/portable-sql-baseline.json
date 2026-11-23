@@ -42,7 +42,6 @@
     "paging-limit::backend/src/speechnexus_backend/workbench/infrastructure/postgres_meetings.py": 1,
     "paging-limit::backend/src/speechnexus_backend/workbench/infrastructure/postgres_render_units.py": 2,
     "paging-limit::backend/src/speechnexus_backend/workbench/infrastructure/postgres_versions.py": 1,
-    "paging-limit::execution-gateway/src/speechnexus_gateway/infrastructure/abort_recovery_sql.py": 1,
     "pyformat::backend/src/speechnexus_backend/speech/infrastructure/readiness.py": 1,
     "returning::backend/src/speechnexus_backend/speech/infrastructure/job_dispatch_postgres.py": 5,
     "runtime-ddl::backend/src/speechnexus_backend/workbench/infrastructure/assistant_schema.py": 1,
@@ -155,6 +154,7 @@
     "vendor-type::backend/src/speechnexus_backend/workbench/infrastructure/teleprompter_schema.py": 1,
     "vendor-type::backend/src/speechnexus_backend/workbench/infrastructure/version_schema.py": 1,
     "vendor-type::execution-gateway/src/speechnexus_gateway/infrastructure/reader_authority.py": 1,
-    "vendor-type::node-controller/src/speechnexus_node_controller/infrastructure/sqlite_intent_store.py": 3
+    "vendor-type::node-controller/src/speechnexus_node_controller/infrastructure/sqlite_intent_store.py": 3,
+    "sql-string-building::execution-gateway/src/speechnexus_gateway/infrastructure/abort_recovery_sql.py": 3
   }
 }

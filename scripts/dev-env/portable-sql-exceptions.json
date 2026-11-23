@@ -52,10 +52,8 @@
     {
       "rule": "advisory-lock",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/admission_postgres.py",
-      "count": 1,
       "card": "#1095",
-      "reason": "由 claim bucket / bucket fencing 原语替代后失效",
-      "release": "#1095 完成时删除本条目"
+      "reason": "由 claim bucket / bucket fencing 原语替代后失效"
     },
     {
       "rule": "advisory-lock",
@@ -108,10 +106,8 @@
     {
       "rule": "advisory-lock",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/qualification_admission_postgres.py",
-      "count": 1,
       "card": "#1095",
-      "reason": "由 claim bucket / bucket fencing 原语替代后失效",
-      "release": "#1095 完成时删除本条目"
+      "reason": "由 claim bucket / bucket fencing 原语替代后失效"
     },
     {
       "rule": "advisory-lock",
@@ -501,14 +497,6 @@
       "rule": "sql-string-building",
       "path": "backend/src/speechnexus_backend/operator_attested_qualification.py",
       "count": 1,
-      "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "sql-string-building",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/admission_postgres.py",
-      "count": 4,
       "card": "#1100",
       "reason": "按语句族重写成常量语句 + 派发表",
       "release": "#1100 完成时删除本条目"
@@ -944,10 +932,8 @@
     {
       "rule": "vendor-json",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/qualification_admission_postgres.py",
-      "count": 3,
       "card": "#1102",
-      "reason": "JSON 列改列式短字符串 + 对象存储读法",
-      "release": "#1102 完成时删除本条目"
+      "reason": "准入证据列是 jsonb,绑定文本需要 CAST;列类型属物理 profile"
     },
     {
       "rule": "vendor-json",
@@ -1174,10 +1160,8 @@
     {
       "rule": "vendor-type",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/qualification_admission_postgres.py",
-      "count": 3,
       "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
+      "reason": "准入语句的 BIGINT/时间类型转换属物理 profile"
     },
     {
       "rule": "vendor-type",

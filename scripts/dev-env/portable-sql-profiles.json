@@ -40,10 +40,11 @@
     "backend/src/speechnexus_backend/speech/infrastructure/workspace_schema.py"
   ],
   "deploy": [
-    "backend/src/speechnexus_backend/speech/infrastructure/qualification_admission_grants.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/admission_grants.py",
     "backend/src/speechnexus_backend/speech/infrastructure/builtin_voice_grants.py",
-    "backend/src/speechnexus_backend/speech/infrastructure/gateway_query_grants.py",
     "backend/src/speechnexus_backend/speech/infrastructure/coordination_grants.py",
-    "backend/src/speechnexus_backend/speech/infrastructure/public_job_admission_grants.py"
+    "backend/src/speechnexus_backend/speech/infrastructure/gateway_query_grants.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/public_job_admission_grants.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/qualification_admission_grants.py"
   ]
 }

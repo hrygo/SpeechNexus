@@ -3,7 +3,7 @@ import os
 import psycopg
 from psycopg import sql
 
-from speechnexus_backend.speech.infrastructure.admission_postgres import (
+from speechnexus_backend.speech.infrastructure.admission_grants import (
     binding_disable_admission_grants,
 )
 from speechnexus_backend.speech.infrastructure.artifact_schema import (

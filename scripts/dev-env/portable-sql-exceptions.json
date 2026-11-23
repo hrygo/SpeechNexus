@@ -319,14 +319,6 @@
     },
     {
       "rule": "returning",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/deletion_executions_postgres.py",
-      "count": 2,
-      "card": "#1100",
-      "reason": "写后按主键读回,与所属语句族同批迁移",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "returning",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/job_dispatch_postgres.py",
       "count": 5,
       "card": "#1100",
@@ -568,10 +560,8 @@
     {
       "rule": "sql-string-building",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/deletion_executions_postgres.py",
-      "count": 7,
       "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
+      "reason": "授权探针的 VALUES 行由 schema 常量派生(列级 GRANT 必须跟着 DDL 走),行数决定占位符个数;字面化会让列清单在此处再写一遍"
     },
     {
       "rule": "sql-string-building",

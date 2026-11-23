@@ -13,6 +13,9 @@ from speechnexus_backend.speech.infrastructure.claim_bucket_schema import (
 )
 from speechnexus_backend.speech.infrastructure.execution_release_schema import release_guard_grants
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
+from speechnexus_backend.speech.infrastructure.job_writer_columns import (
+    COORDINATION_JOB_INSERT_COLUMNS,
+)
 
 DIMENSIONS = (
     "unified_physical_memory_bytes",
@@ -73,13 +76,23 @@ CONTROL_PLANE_TABLES = frozenset({"resource_pools", "workspace_quotas", "host_no
 PRIVATE_SPEECH_TABLES = frozenset(
     {"admission_operations", "admission_requests", "runtime_intent_deliveries"}
 )
-INSERT_COLUMNS = {
-    "coordination_jobs": (
-        "job_id operation_id attempt_id initial_event_id initial_event_digest request_digest "
-        "bucket_no"
+INSERT_COLUMNS: dict[str, tuple[str, ...]] = {
+    # The Job writer's own insertion surface, from the one declaration (#1181): a
+    # column added there reaches this role's GRANT without a second edit here.
+    "coordination_jobs": COORDINATION_JOB_INSERT_COLUMNS,
+    # Not the writer's surface, and deliberately wider: the runtime role appends
+    # runtime-intent events with the three columns ``runtime_intent_schema`` adds
+    # (``event_kind``, ``target_node_id``, ``intent_id``), while a Job event is
+    # exactly the writer's three columns.
+    "coordination_outbox": (
+        "event_id",
+        "job_id",
+        "event_digest",
+        "event_kind",
+        "target_node_id",
+        "intent_id",
     ),
-    "coordination_outbox": "event_id job_id event_digest event_kind target_node_id intent_id",
-    "runtime_intent_deliveries": "event_id delivery_phase created_at_us updated_at_us",
+    "runtime_intent_deliveries": ("event_id", "delivery_phase", "created_at_us", "updated_at_us"),
 }
 SPEECH_NARROW_SELECT = {
     "submit_intents": (
@@ -132,7 +145,7 @@ def coordination_runtime_grants(
             grants.append(f'GRANT {readable} ON {target} TO "{role}"')
             if table in owned:
                 if table not in CONTROL_PLANE_TABLES and table not in SEEDED_SPEECH_TABLES:
-                    columns = ", ".join(INSERT_COLUMNS.get(table, "").split())
+                    columns = ", ".join(INSERT_COLUMNS.get(table, ()))
                     insert = f"INSERT ({columns})" if columns else "INSERT"
                     grants.append(f'GRANT {insert} ON {target} TO "{role}"')
                 if updates:

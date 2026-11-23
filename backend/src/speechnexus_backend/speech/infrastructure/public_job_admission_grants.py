@@ -12,6 +12,8 @@ from speechnexus_backend.speech.infrastructure.coordination_grants import DIMENS
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 from speechnexus_backend.speech.infrastructure.job_writer_columns import (
     ADMISSION_OPERATION_INSERT_COLUMNS,
+    COORDINATION_JOB_INSERT_COLUMNS,
+    COORDINATION_OUTBOX_INSERT_COLUMNS,
 )
 
 _READ_TABLES = (
@@ -49,7 +51,26 @@ _READ_TABLES = (
     "coordination_jobs",
     "coordination_outbox",
 )
-_INSERT_COLUMNS = {
+#: One INSERT surface: either a declaration tuple owned by ``job_writer_columns``
+#: or the space-joined shorthand this module has always used for the rest.
+_DeclaredSurface = str | tuple[str, ...]
+
+
+def _declared_columns(surface: _DeclaredSurface) -> tuple[str, ...]:
+    """A declaration passes through; the shorthand splits on spaces, as before."""
+    return surface if isinstance(surface, tuple) else tuple(surface.split())
+
+
+# The relations this role may insert, in the order the grants are emitted. The
+# coordination pair and the admission operation are the declarations the writer
+# and provisioning already share (#1181): a column added there reaches this GRANT
+# without a second edit. The other entries stay as written here because this
+# role's surface is not the writer's own -- `speech_job_events` is four columns
+# rather than eight, `speech_jobs` orders `retry_of_job_id` before the state
+# columns, and the admission attempt/request/lease relations have no writer
+# declaration -- and the grant text is part of the contract. The remaining
+# identical overlaps with a writer declaration are a smaller, separate cleanup.
+_INSERT_COLUMNS: dict[str, _DeclaredSurface] = {
     "speech_jobs": (
         "job_id workspace_id kind model_id request_digest idempotency_key_digest "
         "retry_of_job_id state status_version result_json error_code created_at_us updated_at_us"
@@ -67,10 +88,7 @@ _INSERT_COLUMNS = {
     "speech_voice_draft_revisions": (
         "draft_id revision kind generation_job_id input_json binding_json created_at_us"
     ),
-    "admission_operations": (
-        "operation_id workspace_id request_digest request_document initial_attempt_id "
-        "current_attempt_id recorded_at_us"
-    ),
+    "admission_operations": ADMISSION_OPERATION_INSERT_COLUMNS,
     "admission_attempts": (
         "operation_id attempt_id workspace_id binding_revision_id manifest_id recipe_digest "
         "policy_revision_id service_class request_digest required_stage_ids"
@@ -83,11 +101,8 @@ _INSERT_COLUMNS = {
         "pool_id gateway_id fencing_token reserved_slots deadline_at_us "
         + " ".join("reserved_" + dimension for dimension in DIMENSIONS)
     ),
-    "coordination_jobs": (
-        "job_id operation_id attempt_id initial_event_id initial_event_digest request_digest "
-        "bucket_no"
-    ),
-    "coordination_outbox": "event_id job_id event_digest",
+    "coordination_jobs": COORDINATION_JOB_INSERT_COLUMNS,
+    "coordination_outbox": COORDINATION_OUTBOX_INSERT_COLUMNS,
 }
 _UPDATE_COLUMNS = {
     "workspace_quotas": "held_attempts version",
@@ -111,12 +126,8 @@ def public_job_admission_grants(schema: str, role: str) -> tuple[str, ...]:
     grants = [f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"']
     for table in _READ_TABLES:
         grants.append(f'GRANT SELECT ON "{schema}".{table} TO "{role}"')
-    for table, columns in _INSERT_COLUMNS.items():
-        declared = (
-            ADMISSION_OPERATION_INSERT_COLUMNS
-            if table == "admission_operations"
-            else tuple(columns.split())
-        )
+    for table, surface in _INSERT_COLUMNS.items():
+        declared = _declared_columns(surface)
         grants.append(f'GRANT INSERT ({", ".join(declared)}) ON "{schema}".{table} TO "{role}"')
     for table, columns in _UPDATE_COLUMNS.items():
         listed = ", ".join(columns.split())

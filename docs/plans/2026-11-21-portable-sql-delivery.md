@@ -1734,3 +1734,44 @@ fence 复核与 Job CAS 在同一事务,旧 dispatcher 拿到的过期 fence 版
 | lane 过滤 | 队列里混入别的 `kind`,本轮只认领本 lane 的 |
 | 准入锚点 | 缺 `request_document` / lease 非 reserved-executing 的行不被认领 |
 | 租约释放 | 认领后桶可被另一 owner 立即拿到,不残留租约 |
+
+#### 8.76.6 到期重领:用一个显式语句,不把语义压进候选谓词
+
+§8.76.5 的 C 指出候选语句与生产 `WHERE` 不等价。查清之后,两边的差别其实是一条**语义**,
+不是一条谓词:
+
+| | 草案(生产今天) | canonical |
+| --- | --- | --- |
+| 认领时改什么 | `claim_owner_id`、`claim_version`、`claim_expires_at_us`,**`job_state` 不动** | `job_state = 'claimed'` |
+| 什么决定「可再领」 | `claim_expires_at_us <= now` | `job_state = 'pending'`(候选谓词) |
+
+两边都能保证「同一时刻只有一个 owner」,但**存活含义不同**:草案里租约一过期,任一派发就能
+重领;canonical 里 Job 停在 `claimed`,没人会再碰它——**崩溃 worker 的 Job 会永久卡住**。
+
+三种收敛方式:
+
+| 方案 | 做法 | 问题 |
+| --- | --- | --- |
+| 1 保留草案语义 | 认领时也传 `next_state='pending'`,靠 `claim_expires_at_us <= now` 决定可领 | 候选语句要新增到期谓词,canonical 的 `claimed` 状态形同虚设 |
+| 2 把到期折进候选 | 候选改成 `pending AND due_at<=now OR (claimed AND claim_expires_at<=now)` | `OR` 与 keyset 游标混在一起,分页边界难证明;一条语句承担两种判定 |
+| 3 显式重领语句 | 认领批次开始前,先在该桶执行一条 `job.reclaim` | 多一条语句、多一次写 |
+
+**采用 3。** `job.reclaim`:`job_state='claimed' AND claim_expires_at <= ?` →
+`job_state='pending'`,清空 `claim_owner_id`,并**把 `claim_version` 加一**。理由是它把两件事
+分开:候选语句继续只回答「哪些 Job 到期可派」,重领只回答「哪些租约已经死了」。
+
+`claim_version` 加一是关键,不是顺手:草案里**过期本身就是 fence**(旧 owner 的 CAS 里带
+`claim_expires_at_us <= now`,过期必然失败);canonical 里旧 owner 的 CAS 带
+`claim_version = ?` 与 `job_state='claimed'`,若不涨版本,重领后旧 owner 仍可能写成功。
+涨版本让「重领」对旧持有者等价于一次 fence 失效。
+
+判据(真库,注入即红):
+
+| 场景 | 判据 |
+| --- | --- |
+| 过期可重领 | 租约过期的 `claimed` Job 在下一轮被重领,`claim_version` 连涨两次 |
+| 未过期不可抢 | 租约仍有效的 `claimed` Job 不被重领 |
+| 旧 owner 被 fence | 重领后旧 owner 用原版本 CAS 必须失败 |
+| 重领不越桶 | 只在当前持有桶内执行,不改别的桶的 Job |
+
+这条与 §8.76.1 第 2 步的顺序固定成:**读 fence → 拿桶 → 复核 → 重领该桶 → 取候选 → 认领**。

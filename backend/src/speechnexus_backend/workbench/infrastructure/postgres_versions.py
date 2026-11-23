@@ -159,6 +159,24 @@ class _ViewRevisionRow(_RevisionRow):
     head_revision: Decimal
 
 
+#: Cleanup moves receipts atomically, so both tables are read in one statement and
+#: READ COMMITTED cannot observe a gap between two snapshots. Erased receipts carry no
+#: project/transcript identity: their bare NULLs take the type from the first arm's
+#: columns, which is the only spelling every engine accepts for a NULL arm.
+_RECEIPT_UNION = """
+            SELECT * FROM (
+                SELECT intent_digest, project_id, project_revision, transcript_id,
+                    transcript_revision, false AS erased
+                FROM {s}.mutation_receipts
+                WHERE operation = ? AND scope_id = ? AND key_digest = ?
+                UNION ALL
+                SELECT intent_digest, NULL, NULL, NULL, NULL, true AS erased
+                FROM {s}.erased_mutation_receipts
+                WHERE operation = ? AND scope_id = ? AND key_digest = ?
+            ) AS candidates ORDER BY erased DESC LIMIT 1
+        """
+
+
 @dataclass(frozen=True)
 class _ReceiptRow:
     intent_digest: str
@@ -765,23 +783,11 @@ class _Session:
         lock_id = int.from_bytes(lock_bytes, signed=True)
         await self._execute("SELECT pg_advisory_xact_lock(?)", (lock_id,))
         self._claims.add((scope, digest))
-        # Cleanup moves receipts atomically. Read both tables in one statement so
-        # READ COMMITTED cannot observe a gap between two different snapshots.
+        # Erased receipts carry no project/transcript identity, so their NULL arms need
+        # no type name; see `_RECEIPT_UNION`.
         row = await self._one(
             _ReceiptRow,
-            """
-            SELECT * FROM (
-                SELECT intent_digest, project_id, project_revision, transcript_id,
-                    transcript_revision, false AS erased
-                FROM {s}.mutation_receipts
-                WHERE operation = ? AND scope_id = ? AND key_digest = ?
-                UNION ALL
-                SELECT intent_digest, CAST(NULL AS text), CAST(NULL AS numeric), CAST(NULL AS text),
-                    CAST(NULL AS numeric), true AS erased
-                FROM {s}.erased_mutation_receipts
-                WHERE operation = ? AND scope_id = ? AND key_digest = ?
-            ) AS candidates ORDER BY erased DESC LIMIT 1
-        """,
+            _RECEIPT_UNION,
             (*scope, digest, *scope, digest),
         )
         if row is None:

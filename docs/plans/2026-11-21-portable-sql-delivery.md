@@ -1528,3 +1528,25 @@ current.replace("CURRENT_USER", "CAST(? AS name)") == named
 注入即红:从退休谓词里删掉 `retired.object_id = p.object_id` → `1 failed, 2 passed`。
 
 基线 **230 → 228**。
+
+### 8.70 判定:workbench 的 `{s}` 不是债,是配置项(4 条不迁移)
+
+用户口径要求「先判定再动手,判定要给出代码证据」。对 workbench 里的 `{s}.表名` 这类语句,本次判定是
+**不迁移**,证据如下:
+
+| 证据 | 位置 |
+| --- | --- |
+| schema 名是必填配置字段 | `workbench/runtime_settings.py:31` `database_schema: str` |
+| 该配置经标识符校验 | `runtime_settings.py:257` `workbench_namespace` 调 `schema_identifier(value)` |
+| 且显式拒绝与语音底座同名 | 同处:`if value == "speech": raise ValueError("workbench requires its own namespace")` |
+| 语句经标识符组合而非文本拼接 | `workbench/infrastructure/postgres_versions.py:338` `sql.SQL(query).format(s=self._schema)` |
+| schema 从配置装配 | `workbench/runtime.py:645,661` `schema=settings.database_schema` |
+
+结论:把这些语句改成字面量,等于把 schema 钉死成某个常量,即**删除「workbench 可配置命名空间」这项已支持能力**。
+涉及 4 条(`postgres_saved_assets` 1、`postgres_assistant_turns` 1、`postgres_exports` 2),在 ledger 里以
+上述证据为理由登记为不迁移,而不是当作待偿债务。
+
+判定与「暂时没人调用」的区别正在这里:不是没人用,而是**它和第 1098 号设计并不冲突** —— 受限方言限制的是
+品牌分支与供应商原语,不是「标识符按配置组合」。真正的约束是「不得按品牌命名构造语句」,这四处都不涉及。
+
+同类的 `{_COLUMNS}` 投影常量仍按 8.5x 的做法字面量化,因为列集合是代码事实,不是部署输入。

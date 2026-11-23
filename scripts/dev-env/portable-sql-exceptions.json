@@ -535,14 +535,6 @@
     },
     {
       "rule": "sql-string-building",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/binding_disable_targets_postgres.py",
-      "count": 5,
-      "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "sql-string-building",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/binding_drafts_sql.py",
       "count": 1,
       "card": "#1100",
@@ -1103,14 +1095,6 @@
       "rule": "vendor-type",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/binding_disable_coordinator_postgres.py",
       "count": 1,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/binding_disable_targets_postgres.py",
-      "count": 2,
       "card": "#1102",
       "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
       "release": "#1102 完成时删除本条目"

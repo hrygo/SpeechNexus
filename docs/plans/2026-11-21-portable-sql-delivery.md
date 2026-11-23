@@ -1309,3 +1309,27 @@ SELECT 1 FROM speech_workspaces, workspace_quotas, … WHERE 1=0
 
 基线 **268 → 261**。PG oracle:`test_speech_deletion_read_pg.py` + `test_speech_deletion_execute_pg.py`
 37 passed,`test_speech_deletion_plans_pg.py` 另 41 passed。
+
+### 8.58 空值哨兵换成「空串 = 第一页」的单点定义
+
+`binding_disable_targets_postgres` 用 `CAST(? AS text) IS NULL OR submit_intent_id > ?` 表达「可选起点」。
+这是两件事叠在一起:一个厂商类型转换,和一个把 NULL 当「未设置」的哨兵。改成**空串哨兵**:
+
+- `after or _FIRST_PAGE`,`_FIRST_PAGE = ""` 是这一语义的唯一写法;
+- 谓词恒为 `submit_intent_id > ?` —— 任何合法标识符都大于空串,所以「第一页」自然成立。
+
+网关/节点范围不是同一种哨兵(空串参与相等比较会变成「只匹配空网关」),所以那两处按 Python 侧分支:
+无范围走不带范围谓词的语句,有范围走带 `gateway_id=? AND host_node_id=?` 的语句。
+
+### 8.59 一个文件清零,代价是同一段投影写三遍
+
+`binding_disable_targets_postgres` 的 5 条 `sql-string-building` 与 2 条 `vendor-type` 一起清零:
+投影列从 `", ".join(_FIELDS)` 变成字面量。17 列的投影因此在三条读语句里各写一遍,
+`_INSERT_TARGET` 再写一遍 —— 换来的是每条语句可静态登记,而列序的正确性由
+`test_binding_disable_targets_statements.py` 对着 `_FIELDS` 钉住(注入加一列 → `1 failed`)。
+
+`ON CONFLICT … DO NOTHING RETURNING event_id` 换成 `insert_if_absent` 的布尔返回:
+「这一次是不是我插进去的」正是它要回答的问题,不需要把行读回来。
+
+基线 **261 → 254**。PG oracle:`test_binding_disable_capture_scope_pg.py` +
+`test_binding_disable_intent_pg.py` + `test_transcription_disable_barrier_pg.py` 12 passed。

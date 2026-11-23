@@ -28,6 +28,7 @@ from speechnexus_backend.workbench.infrastructure.postgres_versions import (
     VersionStoreError,
     _Session,
 )
+from speechnexus_portable_sql.contract import ConflictError, StorageError
 
 pytestmark = pytest.mark.integration
 NOW = datetime(2026, 10, 23, tzinfo=UTC)
@@ -141,7 +142,10 @@ async def test_transcript_metadata_pagination_preserves_source_and_never_needs_t
         await store.app.list_transcripts(project_id=other.id, after=first.next_position)
     with pytest.raises(VersionStoreError) as denied:
         await store.app.get_transcript(rows[0].id)
-    assert denied.value.sqlstate == "42501"
+    failure = denied.value.failure
+    assert isinstance(failure, StorageError)
+    assert not isinstance(failure, ConflictError)
+    assert failure.reason == "permission_denied"
 
 
 async def test_project_tombstone_filters_before_limit_and_cleaned_anchor_can_continue(

@@ -12,6 +12,7 @@ from speechnexus_backend.workbench.application.transcript_sources import Transcr
 from speechnexus_backend.workbench.application.versions import WorkbenchVersions
 from speechnexus_backend.workbench.infrastructure.postgres_versions import VersionStoreError
 from speechnexus_backend.workbench.interfaces.http_versions import create_workbench_app
+from speechnexus_portable_sql.contract import StorageError
 from tests.fake.workbench_versions import MemoryVersionUnitOfWork
 
 
@@ -259,7 +260,7 @@ async def test_disabled_service_and_commit_unknown_never_retry_or_leak() -> None
 
         async def create_project(self, **kw: Any) -> Any:
             self.calls += 1
-            raise VersionStoreError(sqlstate="08006", commit_unknown=True)
+            raise VersionStoreError(failure=StorageError("private-synthetic"), commit_unknown=True)
 
     store, _ = setup()
     service = Failed(store)

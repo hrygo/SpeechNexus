@@ -64,8 +64,6 @@
     "sql-string-building::execution-gateway/src/speechnexus_gateway/infrastructure/cancellation_fence_sql.py": 1,
     "sql-string-building::execution-gateway/src/speechnexus_gateway/infrastructure/reader_authority.py": 1,
     "sql-string-building::node-controller/src/speechnexus_node_controller/infrastructure/sqlite_intent_store.py": 1,
-    "vendor-error-branch::backend/src/speechnexus_backend/workbench/application/version_ports.py": 2,
-    "vendor-error-branch::backend/src/speechnexus_backend/workbench/infrastructure/postgres_versions.py": 1,
     "vendor-function::backend/src/speechnexus_backend/speech/infrastructure/readiness.py": 2,
     "vendor-function::backend/src/speechnexus_backend/speech/infrastructure/resource_pools_postgres.py": 1,
     "vendor-json::backend/src/speechnexus_backend/builtin_voice_publication.py": 2,

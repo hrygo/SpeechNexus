@@ -48,6 +48,11 @@ CANONICAL_JOB_DDL: tuple[str, ...] = (
     # 0064 added ``due_at`` in the same way; the writer now fills it, so the InnoDB
     # verification schema must carry the column too or the shared INSERT fails only there.
     "ALTER TABLE coordination_jobs ADD COLUMN due_at TIMESTAMP(6)",
+    # The claim path now writes the canonical lease (``claim_expires_at``) instead of the
+    # draft epoch column, so a schema built from this declaration must have it; otherwise
+    # the same 派发 code would work on a migrated PostgreSQL and fail on the verification
+    # schema with an unknown column (#1176 段 B2).
+    "ALTER TABLE coordination_jobs ADD COLUMN claim_expires_at TIMESTAMP(6)",
 )
 
 
@@ -195,6 +200,15 @@ def job_dispatch_grants(schema: str, role: str) -> tuple[str, ...]:
         f'GRANT SELECT ON "{schema}".speech_job_intents TO "{role}"',
         f"GRANT INSERT ({', '.join(JOB_INTENT_INSERT_COLUMNS)}) "
         f'ON "{schema}".speech_job_intents TO "{role}"',
+        # The claim path takes a bucket lease before it touches a Job row
+        # (``claims.claim_batch``): SELECT to read the fence, UPDATE on the three
+        # lease columns. Rows are seeded by migration 0066, so no INSERT/DELETE and
+        # no UPDATE on ``bucket_no``. ``job_dispatch_grants`` is the only place
+        # that grants this table to the dispatcher identity; the speech role has
+        # its own copy in ``coordination_runtime_grants``.
+        f'GRANT SELECT ON "{schema}".coordination_claim_buckets TO "{role}"',
+        f"GRANT UPDATE (claim_owner_id, lease_until, version) "
+        f'ON "{schema}".coordination_claim_buckets TO "{role}"',
         *artifact_publisher_grants(schema, role),
         *cancellation_not_submitted_grants(schema, role),
     )

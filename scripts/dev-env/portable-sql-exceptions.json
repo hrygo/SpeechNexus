@@ -183,14 +183,6 @@
     },
     {
       "rule": "aggregate-filter",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/job_dispatch_postgres.py",
-      "count": 1,
-      "card": "#1100",
-      "reason": "FILTER 改 CASE 聚合",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "aggregate-filter",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/resource_pools_postgres.py",
       "count": 1,
       "card": "#1100",
@@ -201,14 +193,6 @@
       "rule": "cte",
       "path": "backend/src/speechnexus_backend/model_catalog_runtime.py",
       "count": 1,
-      "card": "#1100",
-      "reason": "拆成多条语句或派生表,逐条判断",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "cte",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/job_dispatch_postgres.py",
-      "count": 7,
       "card": "#1100",
       "reason": "拆成多条语句或派生表,逐条判断",
       "release": "#1100 完成时删除本条目"
@@ -235,14 +219,6 @@
       "count": 1,
       "card": "#1100",
       "reason": "DISTINCT ON 改键集去重",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "format",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/job_dispatch_postgres.py",
-      "count": 1,
-      "card": "#1100",
-      "reason": "字面量格式化改参数绑定",
       "release": "#1100 完成时删除本条目"
     },
     {
@@ -316,14 +292,6 @@
       "release": "#1100 完成时删除本条目"
     },
     {
-      "rule": "returning",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/job_dispatch_postgres.py",
-      "count": 5,
-      "card": "#1100",
-      "reason": "写后按主键读回,与所属语句族同批迁移",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
       "rule": "runtime-ddl",
       "path": "node-controller/src/speechnexus_node_controller/infrastructure/sqlite_intent_store.py",
       "card": "#1100",
@@ -336,14 +304,6 @@
       "card": "#1100",
       "reason": "会话参数改由部署配置统一设置",
       "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "skip-locked",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/job_dispatch_postgres.py",
-      "count": 1,
-      "card": "#1095",
-      "reason": "派发队列领取沿用 bucket fencing 决定",
-      "release": "#1095 完成时删除本条目"
     },
     {
       "rule": "sql-string-building",
@@ -420,8 +380,8 @@
       "path": "backend/src/speechnexus_backend/speech/infrastructure/job_dispatch_postgres.py",
       "count": 1,
       "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
+      "reason": "唯一一条:f-string 里嵌的只是表名常量 NOT_SUBMITTED_TABLE;把表名内联进 SQL 就等于给这张表第二份定义点,所以本条目随该常量的删除而消失",
+      "release": "NOT_SUBMITTED_TABLE 不再需要单一常量定义时删除本条目"
     },
     {
       "rule": "sql-string-building",
@@ -705,14 +665,6 @@
       "rule": "vendor-lock",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/public_job_admission.py",
       "count": 2,
-      "card": "#1100",
-      "reason": "随所属语句族重写",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-operator",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/job_dispatch_postgres.py",
-      "count": 1,
       "card": "#1100",
       "reason": "随所属语句族重写",
       "release": "#1100 完成时删除本条目"

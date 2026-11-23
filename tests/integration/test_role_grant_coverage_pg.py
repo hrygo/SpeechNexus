@@ -815,7 +815,15 @@ SURFACES: tuple[Surface, ...] = (
             Read("coordination_jobs"),
             Read(
                 "coordination_jobs",
-                ("claim_owner_id", "claim_version", "claim_expires_at_us"),
+                # canonical 认领把状态推成 claimed,旧草案认领不写状态列。
+                ("claim_owner_id", "claim_version", "claim_expires_at", "job_state"),
+                "UPDATE",
+            ),
+            # 认领先取桶租约,桶行在 Job 行之前(#1187 建表,0066 播种)。
+            Read("coordination_claim_buckets"),
+            Read(
+                "coordination_claim_buckets",
+                ("claim_owner_id", "lease_until", "version"),
                 "UPDATE",
             ),
             Read("speech_jobs"),

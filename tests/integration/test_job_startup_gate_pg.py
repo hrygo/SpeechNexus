@@ -98,8 +98,9 @@ RESULT_BUCKET = "speechnexus-staging"
 GATEWAY_LANES = ("asr", "tts")
 
 # The four columns the dispatcher writes when it claims, renews or terminates a
-# lease on `coordination_jobs`. Case 2 revokes exactly these.
-CLAIM_COLUMNS = ("claim_owner_id", "claim_expires_at_us", "claim_version", "job_state")
+# lease on `coordination_jobs` (#1176 段 B2: the canonical `claim_expires_at`, not the
+# draft epoch column). Case 2 revokes exactly these.
+CLAIM_COLUMNS = ("claim_owner_id", "claim_expires_at", "claim_version", "job_state")
 # The grant groups the gate tells an operator to install, spelled out here rather
 # than read back from the gate so a silently shrunk hint is red.
 GRANT_GROUPS = (

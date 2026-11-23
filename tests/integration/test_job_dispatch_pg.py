@@ -23,6 +23,7 @@ from psycopg.rows import dict_row
 from pydantic import SecretStr
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
+from tests.support.claim_bucket_grants import claim_bucket_grants
 from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.speech.application.job_dispatcher import JobDispatcher
@@ -56,6 +57,7 @@ from speechnexus_backend.speech.infrastructure.public_job_submission_schema impo
 )
 from speechnexus_backend.speech.infrastructure.public_jobs_postgres import PostgresPublicJobs
 from speechnexus_backend.speech.infrastructure.publications_sql import append_publication
+from speechnexus_portable_sql.clock import to_epoch_us
 
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
@@ -138,7 +140,11 @@ def dispatch_db() -> Iterator[DispatchSandbox]:
             *public_job_grants(schema, role),
             *public_job_submission_grants(schema, role),
             f'GRANT SELECT ON "{schema}".admission_operations TO "{role}"',
-            f"GRANT UPDATE (claim_owner_id, claim_expires_at_us, claim_version, job_state) "
+            # The dispatch role writes the canonical lease (``claim_expires_at``); the
+            # draft epoch column stays granted until the draft columns are retired.
+            *claim_bucket_grants(schema, role),
+            f"GRANT UPDATE (claim_owner_id, claim_expires_at, claim_expires_at_us, "
+            f"claim_version, job_state) "
             f'ON "{schema}".coordination_jobs TO "{role}"',
             f"GRANT SELECT ON speech_workspaces, speech_publications, "
             f"speech_publication_heads, speech_catalog_state, speech_publication_retirements, "
@@ -163,6 +169,16 @@ def dispatch_db() -> Iterator[DispatchSandbox]:
         admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
         admin.execute(f'DROP ROLE IF EXISTS "{role}"')
         admin.close()
+
+
+def _canonical_lease(db: DispatchSandbox, job_id: str) -> datetime:
+    """The stored canonical lease; the dispatcher no longer writes the draft epoch column."""
+
+    rows = db.query("SELECT claim_expires_at FROM coordination_jobs WHERE job_id = %s", (job_id,))
+    assert len(rows) == 1, rows
+    lease = rows[0]["claim_expires_at"]
+    assert isinstance(lease, datetime), lease
+    return lease
 
 
 def _future_deadline() -> str:
@@ -338,6 +354,9 @@ async def test_concurrent_claim_executes_one_submission_and_closes_once(
             "events": 3,
         }
     ]
+    # 终止把 `job_state` 推成终态并留下租约那一刻:canonical 一旦写下就不再被清空,
+    # 它是「哪一份租约结束了这个 Job」的唯一证据(0065 的 fill-if-null 依赖这一点)。
+    _canonical_lease(dispatch_db, created.job_id)
     result = json.loads(rows[0]["result_json"])
     assert result == {
         "kind": "tts",
@@ -359,15 +378,23 @@ async def test_cross_lease_takeover_renews_only_the_new_owner(
     assert len(first_claims) == 1
     first = replace(first_claims[0], job=await states.mark_running(first_claims[0].job))
 
+    # Expire the canonical lease: it is the only column the new claim path consults, so
+    # zeroing the draft epoch column would no longer release anything.
     dispatch_db.query(
-        "UPDATE coordination_jobs SET claim_expires_at_us = 0 "
+        "UPDATE coordination_jobs SET claim_expires_at = %s "
         "WHERE job_id = %s AND claim_version = %s",
-        (created.job_id, first.claim_version),
+        (
+            datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=1),
+            created.job_id,
+            first.claim_version,
+        ),
     )
     second_claims = await queue.claim_due("worker-synthetic-b", 30_000, 1)
     assert len(second_claims) == 1
     second = second_claims[0]
-    assert second.claim_version == 2 and second.job.state == "running"
+    # claim 0->1, ``job.reclaim`` 1->2 (the dead lease), takeover 2->3: the reclaim bump is
+    # the fence that makes the old owner's next write fail.
+    assert second.claim_version == 3 and second.job.state == "running"
 
     assert await states.renew(first, 30_000) is None
     renewed = await states.renew(second, 30_000)
@@ -380,6 +407,8 @@ async def test_cross_lease_takeover_renews_only_the_new_owner(
         },
         separators=(",", ":"),
     )
+    # `renew` 交回调用方的到期时刻就是它写进 canonical 列的那个:逐微秒相同,后续守卫才对得上。
+    assert to_epoch_us(_canonical_lease(dispatch_db, created.job_id)) == renewed.lease_expires_at_us
     terminal = await states.finish(renewed, "succeeded", result_json=result_json, error_code=None)
     assert terminal.state == "succeeded" and terminal.status_version == 3
 
@@ -399,7 +428,7 @@ async def test_cross_lease_takeover_renews_only_the_new_owner(
             "state": "succeeded",
             "status_version": 3,
             "result_json": result_json,
-            "claim_version": 2,
+            "claim_version": 3,
             "job_state": "succeeded",
             "claim_expires_at_us": 0,
             "events": 3,

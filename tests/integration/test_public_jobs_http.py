@@ -22,6 +22,7 @@ from psycopg.rows import dict_row
 from pydantic import SecretStr
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
+from tests.support.claim_bucket_grants import claim_bucket_grants
 from tests.support.portable_pg import connect as portable_pg_connect
 from tests.unit.backend.test_health import _settings
 
@@ -153,8 +154,11 @@ def jobs_db() -> Iterator[JobSandbox]:
             *deletion_plan_grants(schema, role),
             f'GRANT SELECT ON "{schema}".admission_operations, "{schema}".coordination_jobs '
             f'TO "{role}"',
-            f"GRANT UPDATE (claim_owner_id, claim_expires_at_us, claim_version, job_state) "
+            # #1176 段 B2: the claim takes a canonical lease and a bucket lease.
+            f"GRANT UPDATE (claim_owner_id, claim_expires_at, claim_expires_at_us, "
+            f"claim_version, job_state) "
             f'ON "{schema}".coordination_jobs TO "{role}"',
+            *claim_bucket_grants(schema, role),
             f"GRANT SELECT ON speech_workspaces, speech_publications, "
             f"speech_publication_heads, speech_catalog_state, speech_publication_retirements, "
             f"speech_binding_revisions, speech_assets, speech_pronunciation_revisions "

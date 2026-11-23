@@ -50,6 +50,8 @@ DIGEST = "sha256:" + "a" * 64
 MOMENT = datetime(2026, 11, 23, 12, 0, 0, tzinfo=UTC)
 MOMENT_US = int(MOMENT.timestamp()) * 1_000_000
 NAIVE_MOMENT = datetime(2026, 11, 23, 12, 0, 0)
+#: A canonical lease the claim path already wrote; the draft epoch column stays at 0.
+NAIVE_LEASE = datetime(2026, 11, 23, 13, 0, 0)
 PRE_BACKFILL = "0063_deletion_targets_blocked"
 PREVIOUS = "0064_canonical_jobs_columns"
 REVISION = "0065_canonical_jobs_reconcile"
@@ -225,6 +227,24 @@ def test_0065_backfills_the_event_head_and_rows_written_after_0064() -> None:
         late = _canonical_row(admin, "job-0065-after-0064")
         assert late[0] is None and late[2] is None and late[3] == 0
 
+        # A row the claim path already wrote before this revision re-runs: the canonical
+        # lease and due_at exist and are *newer* than the draft epoch column, which the
+        # canonical path stopped mirroring. 0065 is fill-if-null, so it must leave both
+        # canonical values alone -- the old whole-table recompute would have overwritten the
+        # live lease with the stale draft value and let the next migration erase a claim the
+        # worker still holds.
+        _insert_draft_job(
+            admin,
+            job_id="job-0065-canonical-lease",
+            claim_expires_at_us=MOMENT_US,
+            speech_created_at_us=MOMENT_US,
+        )
+        admin.execute(
+            "UPDATE coordination_jobs SET claim_expires_at = %s, due_at = %s, "
+            "job_state = 'claimed' WHERE job_id = 'job-0065-canonical-lease'",
+            (NAIVE_LEASE, NAIVE_LEASE),
+        )
+
         with engine.connect() as connection:
             config.attributes["connection"] = connection
             command.upgrade(config, REVISION)
@@ -253,6 +273,17 @@ def test_0065_backfills_the_event_head_and_rows_written_after_0064() -> None:
         for moment in (late[1], late[2], three[1], three[2]):
             assert isinstance(moment, datetime)
             assert moment.tzinfo is None
+
+        # Fill-if-null: canonical wins over both the draft epoch column and speech_jobs.
+        canonical_lease = _canonical_row(admin, "job-0065-canonical-lease")
+        assert canonical_lease[2] == NAIVE_LEASE, canonical_lease[2]
+        assert canonical_lease[1] == NAIVE_LEASE, canonical_lease[1]
+        # The draft column keeps the stale 0064-era value: the export is canonical, and the
+        # backfill writes only the canonical side of the pair.
+        assert canonical_lease[4] == MOMENT_US
+        assert admin.execute(
+            "SELECT job_state FROM coordination_jobs WHERE job_id = 'job-0065-canonical-lease'"
+        ).fetchone() == ("claimed",)
 
         # Re-running the pair (downgrade then upgrade) must close a second window too:
         # this is the version-stamped re-entry pattern from ``tests/support/migrations``,

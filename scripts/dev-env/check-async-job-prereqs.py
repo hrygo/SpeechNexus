@@ -181,7 +181,7 @@ DISPATCH_WRITE_PROBES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "coordination_jobs",
         "UPDATE",
-        ("claim_owner_id", "claim_expires_at_us", "claim_version", "job_state"),
+        ("claim_owner_id", "claim_expires_at", "claim_version", "job_state"),
     ),
     (
         "speech_job_events",
@@ -347,10 +347,13 @@ WRITER_UPDATE_COLUMNS: dict[str, tuple[str, ...]] = {
     ),
     "coordination_jobs": (
         "claim_owner_id",
+        "claim_expires_at",
         "claim_expires_at_us",
         "claim_version",
         "job_state",
     ),
+    # 桶租约行:``claim_batch`` 用它做 256 路轮转与同桶死租约回收。
+    "coordination_claim_buckets": ("claim_owner_id", "lease_until", "version"),
     "speech_job_cancellation_reconciliations": (
         "attempts",
         "next_check_at_us",

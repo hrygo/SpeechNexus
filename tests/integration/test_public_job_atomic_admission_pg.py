@@ -765,6 +765,15 @@ async def test_created_job_is_visible_to_the_a3_claim_join(
     assert row["attempt_id"] == row["initial_attempt_id"]
     pool = admission_database.runtime.pool
     assert pool is not None
+    # 认领只取 `due_at <= now`(canonical_source_map 把 due_at 定为创建时刻),而这个 fixture
+    # 的合成时钟落在未来:先确认它此刻不因「已经写好了」就被提前认领,再把 due_at 拉到数据库
+    # 时钟。两步合起来才是「到期才可派」,而不是「创建即可派」。
+    assert await PostgresDispatchQueue(pool).claim_due("worker-a3", 1000, 1) == []
+    db.query(
+        "UPDATE coordination_jobs SET due_at = clock_timestamp() AT TIME ZONE 'UTC' "
+        "WHERE job_id = %s",
+        (result.job.job_id,),
+    )
     claims = await PostgresDispatchQueue(pool).claim_due("worker-a3", 1000, 1)
     assert len(claims) == 1
     claimed = claims[0].job

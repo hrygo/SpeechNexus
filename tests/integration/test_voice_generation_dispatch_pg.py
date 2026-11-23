@@ -12,6 +12,7 @@ import json
 import os
 import time
 from collections.abc import Iterator, Mapping
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -540,8 +541,12 @@ async def test_dispatcher_timeout_leaves_the_job_running_and_unknown(
     stored = _job_row(db, created.job_id)
     assert stored["state"] == "running"
     assert stored["error_code"] is None
-    pending = db.query("SELECT job_state FROM coordination_jobs WHERE job_id=%s", (created.job_id,))
-    assert pending == [{"job_state": "pending"}]
+    # 超时把公开行留在 running、把结果记成 unknown,但协调行仍是 claimed:租约还没到期,
+    # 终止写入只发生在 `finish`,重领也只处理租约已死的行。
+    coordination = db.query(
+        "SELECT job_state FROM coordination_jobs WHERE job_id=%s", (created.job_id,)
+    )
+    assert coordination == [{"job_state": "claimed"}]
     read = await _draft_read(db, draft["id"])
     assert read.status_code == 200, read.text
     assert read.json()["revision"]["status"] == "generating"
@@ -641,11 +646,12 @@ async def test_default_and_voice_lanes_do_not_cross_claim(
     assert [claim.job.job_id for claim in default_claims] == [tts.job_id]
     assert [claim.job.kind for claim in voice_claims] == ["voice_design"]
     assert [claim.job.job_id for claim in voice_claims] == [created.job_id]
-    pending = db.query(
+    coordination = db.query(
         "SELECT job_id, job_state FROM coordination_jobs WHERE job_id=%s",
         (created.job_id,),
     )
-    assert pending == [{"job_id": created.job_id, "job_state": "pending"}]
+    # 只有本 lane 认领了它:canonical 行是 claimed,不是 pending。
+    assert coordination == [{"job_id": created.job_id, "job_state": "claimed"}]
 
 
 async def test_lease_takeover_on_a_voice_job(voice_dispatch_db: JobSandbox) -> None:
@@ -659,15 +665,21 @@ async def test_lease_takeover_on_a_voice_job(voice_dispatch_db: JobSandbox) -> N
     first = first_claims[0]
     await states.mark_running(first.job)
 
+    # 过期的是 canonical 租约:草案 epoch 列不再是认领判据,置 0 不会释放任何东西。
     db.query(
-        "UPDATE coordination_jobs SET claim_expires_at_us = 0 "
+        "UPDATE coordination_jobs SET claim_expires_at = %s "
         "WHERE job_id = %s AND claim_version = %s",
-        (created.job_id, first.claim_version),
+        (
+            datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=1),
+            created.job_id,
+            first.claim_version,
+        ),
     )
     second_claims = await queue.claim_due("worker-voice-b", 30_000, 1)
     assert len(second_claims) == 1
     second = second_claims[0]
-    assert second.claim_version == 2 and second.job.state == "running"
+    # 0 -> 1 认领、1 -> 2 重领死租约、2 -> 3 接管:重领那一步是让旧 owner 下次写入失败的栅栏。
+    assert second.claim_version == 3 and second.job.state == "running"
 
     assert await states.renew(first, 30_000) is None
     renewed = await states.renew(second, 30_000)

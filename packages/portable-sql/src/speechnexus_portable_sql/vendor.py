@@ -12,7 +12,7 @@ from __future__ import annotations
 import psycopg
 from psycopg import IsolationLevel, sql
 from psycopg.conninfo import conninfo_to_dict
-from psycopg.rows import class_row, dict_row
+from psycopg.rows import class_row, dict_row, tuple_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool, PoolClosed, PoolTimeout, TooManyRequests
 
@@ -28,4 +28,5 @@ __all__ = [
     "dict_row",
     "psycopg",
     "sql",
+    "tuple_row",
 ]

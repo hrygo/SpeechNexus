@@ -41,6 +41,7 @@ SPEECH_UPDATES = {
     ),
     "coordination_jobs": "claim_owner_id claim_expires_at_us claim_version job_state",
     "coordination_outbox": "delivered_at_us",
+    "coordination_claim_buckets": "claim_owner_id lease_until version",
 }
 GATEWAY_UPDATES = {
     "gateway_fencing_barriers": "min_fencing_token sealed_evidence_digest version",
@@ -66,6 +67,10 @@ GATEWAY_NARROW_SELECT = {
         "intent_state error_code version"
     ),
 }
+# Buckets are seeded by the schema revision and owned by the speech side; the gateway
+# has nothing to read there. Keep this list equal to coordination_grants.py: the
+# contract test compares both copies against the same DDL.
+SEEDED_SPEECH_TABLES = frozenset({"coordination_claim_buckets"})
 _CONTRACT = (
     Path(__file__).resolve().parents[2] / "contracts/internal/coordination-transactions.schema.json"
 )
@@ -100,6 +105,8 @@ def statements(dialect: str, namespace: str, speech_role: str, gateway_role: str
         if dialect == "postgresql":
             grants.append(f'GRANT USAGE ON SCHEMA "{namespace}" TO {recipient}')
         for table in updates:
+            if table in SEEDED_SPEECH_TABLES and table not in owned:
+                continue
             target = f"{quote}{namespace}{quote}.{quote}{table}{quote}"
             readable = narrow.get(table, "")
             if readable:
@@ -108,7 +115,8 @@ def statements(dialect: str, namespace: str, speech_role: str, gateway_role: str
             else:
                 grants.append(f"GRANT SELECT ON {target} TO {recipient}")
             if table in owned:
-                grants.append(f"GRANT INSERT ON {target} TO {recipient}")
+                if table not in SEEDED_SPEECH_TABLES:
+                    grants.append(f"GRANT INSERT ON {target} TO {recipient}")
                 if updates[table]:
                     columns = ", ".join(updates[table].split())
                     grants.append(f"GRANT UPDATE ({columns}) ON {target} TO {recipient}")

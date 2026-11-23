@@ -7,6 +7,10 @@ Application transactions enforce cross-record rules; grants do not replace them.
 
 from __future__ import annotations
 
+from speechnexus_backend.speech.infrastructure.claim_bucket_schema import (
+    CLAIM_BUCKET_TABLE,
+    CLAIM_BUCKET_UPDATE_COLUMNS,
+)
 from speechnexus_backend.speech.infrastructure.execution_release_schema import release_guard_grants
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 
@@ -50,6 +54,7 @@ SPEECH_UPDATES = {
     "coordination_jobs": "claim_owner_id claim_expires_at_us claim_version job_state",
     "coordination_outbox": "delivered_at_us",
     "runtime_intent_deliveries": "",
+    CLAIM_BUCKET_TABLE: " ".join(CLAIM_BUCKET_UPDATE_COLUMNS),
 }
 GATEWAY_UPDATES = {
     "gateway_fencing_barriers": "min_fencing_token sealed_evidence_digest version",
@@ -87,6 +92,12 @@ GATEWAY_NARROW_SELECT = {
         "intent_state error_code version"
     )
 }
+#: Rows are created by the schema revision that seeds ``BUCKETS`` buckets, never by a
+#: runtime identity: the bucket set is fixed, so the owner role gets no ``INSERT``.
+#: The bucket fence is speech-side coordination state the gateway never reads, so the
+#: gateway role gets no privilege on this table at all -- not even ``SELECT`` or the
+#: ``UPDATE (version)`` row-lock allowance every other coordination table gives it.
+SEEDED_SPEECH_TABLES = frozenset({CLAIM_BUCKET_TABLE})
 
 
 def coordination_runtime_grants(
@@ -112,12 +123,15 @@ def coordination_runtime_grants(
                 # No gateway read or UPDATE(version) grant: this is A's private
                 # original business command and admission identity authority.
                 continue
+            if table in SEEDED_SPEECH_TABLES and table not in owned:
+                # Seeded rows, speech-owned state: the gateway has nothing to read.
+                continue
             target = f'"{schema}"."{table}"'
             columns = ", ".join(narrow.get(table, "").split())
             readable = f"SELECT ({columns})" if columns else "SELECT"
             grants.append(f'GRANT {readable} ON {target} TO "{role}"')
             if table in owned:
-                if table not in CONTROL_PLANE_TABLES:
+                if table not in CONTROL_PLANE_TABLES and table not in SEEDED_SPEECH_TABLES:
                     columns = ", ".join(INSERT_COLUMNS.get(table, "").split())
                     insert = f"INSERT ({columns})" if columns else "INSERT"
                     grants.append(f'GRANT {insert} ON {target} TO "{role}"')

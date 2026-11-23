@@ -26,12 +26,12 @@
 
 ## 运维必须做
 
-### 1. 迁移到 `0065_canonical_jobs_reconcile`
+### 1. 迁移到 `0066_claim_bucket_table`
 
 #### 部署顺序：迁移（含授权重放）先于新构建
 
-顺序是硬约束，不是建议：先把库迁到 `0064_canonical_jobs_columns` 之上（当前 head 是
-`0065_canonical_jobs_reconcile`），重放下节三个身份的 `coordination_jobs` INSERT 授权，
+顺序是硬约束，不是建议：先把库迁到 head（当前是 `0066_claim_bucket_table`，它包含
+`0064` 加上的 `bucket_no` 与 `due_at`），重放下节三个身份的 `coordination_jobs` INSERT 授权，
 **再**启动新构建。新构建的 Job 写入在 INSERT 里固定提供 `bucket_no` 与 `due_at`
 （`backend/src/speechnexus_backend/speech/infrastructure/job_writer_columns.py:29`），
 这两列都由 `0064` 添加；写入者不做「列不在就换一种 INSERT」的探测，也不保留第二套
@@ -50,7 +50,7 @@ for table coordination_jobs`（见下节），所以迁移与授权重放必须�
 之后不要回退到 `0064` 以下再运行新构建，否则同样是这个错误。
 
 `v0.1.0` 的目录树停在 `0057_asr_settlement`（发布说明写的 head 是
-`0056_debt_probe_live_state_index`，但 tag 里已经有 0057），此后新增八个 revision：
+`0056_debt_probe_live_state_index`，但 tag 里已经有 0057），此后新增九个 revision：
 
 | 迁移 | 做什么 |
 | --- | --- |
@@ -62,6 +62,7 @@ for table coordination_jobs`（见下节），所以迁移与授权重放必须�
 | `0063_deletion_targets_blocked` | 删除账本的 `target_kind` 加 `artifact`、`voice_revision`，`status` 加 `blocked`、`failed`，并新增 `error` JSONB 列（与这两个状态一一对应） |
 | `0064_canonical_jobs_columns` | `coordination_jobs` 加 canonical 列 `bucket_no`、`due_at`、`claim_expires_at`、`last_event_seq` 并按既有 epoch 列回填（`0` → `NULL`、UTC 墙上时间、`bucket_for(job_id)`）；纯加法，无读取者，`downgrade` 只删这四列 |
 | `0065_canonical_jobs_reconcile` | 重跑 0064 的三条回填，覆盖 0064 之后写入、只有草案列的行；按 `MAX(speech_job_events.event_seq)` 回填 `last_event_seq`（无事件为 `0`）；提交前对账四条不变量（含「每行都有 `bucket_no`」）。**不收紧 `bucket_no`**：写入切换（#1176）已让两个写入者在 INSERT 时提供 `bucket_for(job_id)`，但 `NOT NULL` 仍由后续修订落地；`downgrade` 把 `last_event_seq` 归零并防御性清掉 `NOT NULL`，不删列 |
+| `0066_claim_bucket_table` | 建 `coordination_claim_buckets`（`bucket_no` `DECIMAL(38,0)` 主键、`claim_owner_id` `VARCHAR(128)`、`lease_until` `TIMESTAMP(6)`、`version` `DECIMAL(38,0)` NOT NULL，即 `migrations/0003_portable_claim_buckets.sql` 的 canonical 形状），并按 Python 的 `BUCKETS` 常量（256）播种 256 个 `version = 0`、无 owner、无租约的空桶；已存在的桶不重写，重入只补缺失的那些；`downgrade` 只 DROP 这张表 |
 | `0008_runtime_delivery` | 参数标记迁到 `?` 契约后，迁移把唯一的占位符内联成迁移事务时间戳；行为不变，仍给旧 outbox 行补 `unknown` 投递相位 |
 | `0023_publication_lifecycle`（视图定义） | 视图里的 `::numeric` 改成标准 `CAST(... AS numeric)`，语义等价；只在重新 bootstrap 时生效，不新增迁移 |
 
@@ -73,12 +74,14 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
   'select version_num from speech.alembic_version'
 ```
 
-第二段的期望输出是 `0065_canonical_jobs_reconcile`。迁移身份是独立 DDL 身份
+第二段的期望输出是 `0066_claim_bucket_table`。迁移身份是独立 DDL 身份
 （`SPEECHNEXUS_MIGRATION_DATABASE_URL`），不要用 `sn_api`。`0058`–`0063` 六个 revision 的
 `downgrade` 全部显式 `raise`（计划是删除凭据、账本是删除事实、索引是轮询读的访问路径），
 回退没有 `alembic downgrade` 这条路径，只能显式处理数据后手工回收。`0064` 只删自己加的
 canonical 列，`0065` 把 `last_event_seq` 归零（并防御性清掉 `bucket_no` 上可能存在的
 `NOT NULL`）而不删列：这两列当前没有任何读取者，回到 0064 语义不改变生产行为，也不丢证据。
+`0066` 的 `downgrade` 只 DROP `coordination_claim_buckets`：种子是表的内容，回到 0065 时这张表
+本该不存在，其余协调对象与行都不动。
 
 核实：**实跑 + 读代码**。2026-11-20 在临时 PostgreSQL 18.6 上以
 `SPEECHNEXUS_MIGRATION_DATABASE_URL` 跑 `speechnexus-job-migrate --schema speech`，
@@ -92,6 +95,15 @@ canonical 列，`0065` 把 `last_event_seq` 归零（并防御性清掉 `bucket_
 `tests/integration/test_canonical_jobs_0065_pg.py` 在 `Asia/Shanghai` 会话下实跑，
 覆盖 `MAX(event_seq)` 事件头、0064 之后写入窗口行的二次回填、`AT TIME ZONE 'UTC'`
 的墙上时间、`downgrade` 回 0064 三类判据。
+
+`0066` 的补充核实（2026-11-23，本机 PostgreSQL 18.6，`SPEECHNEXUS_TEST_DATABASE_URL`）：
+空 schema 上 `alembic upgrade head` 后 `coordination_claim_buckets` 为 256 行、桶号恰好
+`0..255`、`SUM(version) = 0` 且 `claim_owner_id`／`lease_until` 全为 `NULL`；同一 schema 上
+把 `alembic_version` 戳回 `0065` 再 `upgrade head`（`step_below_*` 的形态）只补回被删掉的桶，
+已有租约保持原值；`downgrade 0065` 后表消失、`coordination_jobs` 行仍在。
+`tests/integration/test_claim_bucket_table_0066_pg.py` 实跑：迁移前 `read_fence`／`claim_batch`
+以 `42P01` 失败，迁移后同一条 `claim_batch` 认领到期 Job；授权身份核对
+`has_table_privilege`／`has_column_privilege`。
 
 #### 同一部署要重跑 Job 写入/受理/派发三个身份的 `coordination_jobs` INSERT 授权
 
@@ -327,7 +339,7 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 | `deletion_plan_grants` | `job_schema.py` | **新增**，见第 3 条 |
 | `deletion_execution_grants` | `job_schema.py` | **新增**，见第 3 条 |
 | `job_runtime_grants` | `job_schema.py` | **变**：`coordination_jobs` 的 INSERT 授权随 `COORDINATION_JOB_INSERT_COLUMNS` 自动加 `bucket_no`、`due_at`（函数体未改，见第 1 条） |
-| `coordination_runtime_grants` | `coordination_grants.py` | **变**：`coordination_jobs` 的 INSERT 列加 `bucket_no`、`due_at`，见第 1 条 |
+| `coordination_runtime_grants` | `coordination_grants.py` | **变**：`coordination_jobs` 的 INSERT 列加 `bucket_no`、`due_at`（见第 1 条）；另给 speech 角色 `coordination_claim_buckets` 的 `SELECT` 与 `claim_owner_id`／`lease_until`／`version` 三列 `UPDATE`，不给 `INSERT`／`DELETE`，gateway 侧一条都没有。迁移后重放一次即可（`provision-job-roles.py` 会带上） |
 | `public_job_admission_grants` | `public_job_admission_grants.py` | **变**：`coordination_jobs` 的 INSERT 列加 `bucket_no`、`due_at`，见第 1 条 |
 | `binding_disable_admission_grants` | `admission_postgres.py` | 未变（SQL 参数标记迁到 `?`，授权列未动） |
 | `tts_voice_admission_grants` | `admission_postgres.py` | 未变（同文件，参数标记迁移） |

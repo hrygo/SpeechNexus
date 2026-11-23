@@ -711,12 +711,6 @@
     },
     {
       "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/postgres_versions.py",
-      "card": "#1100",
-      "reason": "参数标记与行工厂第三方类型,见 #1102"
-    },
-    {
-      "rule": "vendor-type",
       "path": "execution-gateway/src/speechnexus_gateway/infrastructure/reader_authority.py",
       "count": 1,
       "card": "#1102",

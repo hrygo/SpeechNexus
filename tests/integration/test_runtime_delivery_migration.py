@@ -34,17 +34,37 @@ def test_upgrade_failure_is_atomic_then_legacy_runtime_adoption_is_conservative(
             "VALUES (%s,%s,'runtime','host-test','runtime-test',%s)",
             (event, DIGEST, delivered),
         )
-    before = {
-        name: sandbox.admin.execute("SELECT * FROM " + name + " ORDER BY 1").fetchall()
-        for name in (
-            "coordination_jobs",
-            "coordination_outbox",
-            "runtime_instance_intents",
-            "host_nodes",
-            "engine_instances",
-            "runtime_instance_heads",
-        )
+    watched = (
+        "coordination_jobs",
+        "coordination_outbox",
+        "runtime_instance_intents",
+        "host_nodes",
+        "engine_instances",
+        "runtime_instance_heads",
+    )
+    # 只快照升级前就存在的列:0064 是**有意的回填迁移**(给 coordination_jobs 补 canonical
+    # 列并填值),所以「升级不改既有行」这条不变量只对既有列成立。比较 `SELECT *` 会把
+    # 新增列算进差异,让这条判据变成「不许加列」——那是另一条规矩,不是本测试的目的。
+    before_columns = {
+        name: [
+            str(row["column_name"])
+            for row in sandbox.admin.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = %s AND table_name = %s ORDER BY ordinal_position",
+                (sandbox.schema, name),
+            ).fetchall()
+        ]
+        for name in watched
     }
+
+    def snapshot(name: str) -> list[dict[str, object]]:
+        projection = ",".join(before_columns[name])
+        rows: list[dict[str, object]] = sandbox.admin.execute(
+            f"SELECT {projection} FROM {name} ORDER BY 1"
+        ).fetchall()
+        return rows
+
+    before = {name: snapshot(name) for name in watched}
     role = sandbox.schema + "_old_reader"
     sandbox.admin.execute(f'CREATE ROLE "{role}"')
     try:
@@ -69,10 +89,7 @@ def test_upgrade_failure_is_atomic_then_legacy_runtime_adoption_is_conservative(
         assert sandbox.admin.execute(
             "SELECT to_regclass('runtime_intent_deliveries') AS target"
         ).fetchone() == {"target": None}
-        assert {
-            name: sandbox.admin.execute("SELECT * FROM " + name + " ORDER BY 1").fetchall()
-            for name in before
-        } == before
+        assert {name: snapshot(name) for name in before} == before
         sandbox.admin.execute("DROP TABLE idx_runtime_delivery_due")
         sandbox.upgrade()
         rows = sandbox.admin.execute("SELECT * FROM runtime_intent_deliveries").fetchall()
@@ -89,10 +106,7 @@ def test_upgrade_failure_is_atomic_then_legacy_runtime_adoption_is_conservative(
         sandbox.upgrade()
         assert sandbox.version() == HEAD
         assert sandbox.admin.execute("SELECT * FROM runtime_intent_deliveries").fetchall() == rows
-        assert {
-            name: sandbox.admin.execute("SELECT * FROM " + name + " ORDER BY 1").fetchall()
-            for name in before
-        } == before
+        assert {name: snapshot(name) for name in before} == before
         assert sandbox.admin.execute(acl).fetchone() == old_acl
         assert sandbox.admin.execute(cols).fetchall() == old_cols
         assert sandbox.admin.execute(

@@ -1,0 +1,146 @@
+{
+  "$comment": "canonical 列 -> 草案来源。kind: identity(同名列直传) / convert(需要换算) / derive(需要派生) / seed(建表时写入) / gap(来源尚未确定,必须写明 reason)。claim_buckets 的「来源」是先建桶再回填 jar。",
+  "revision": "0003",
+  "tables": {
+    "coordination_jobs": {
+      "canonical": "migrations/0003_portable_claim_buckets.sql",
+      "columns": {
+        "job_id": {
+          "kind": "identity",
+          "source": "job_id"
+        },
+        "operation_id": {
+          "kind": "identity",
+          "source": "operation_id"
+        },
+        "attempt_id": {
+          "kind": "identity",
+          "source": "attempt_id"
+        },
+        "request_digest": {
+          "kind": "identity",
+          "source": "request_digest"
+        },
+        "job_state": {
+          "kind": "identity",
+          "source": "job_state"
+        },
+        "claim_owner_id": {
+          "kind": "identity",
+          "source": "claim_owner_id"
+        },
+        "claim_version": {
+          "kind": "identity",
+          "source": "claim_version"
+        },
+        "claim_expires_at": {
+          "kind": "convert",
+          "source": "claim_expires_at_us",
+          "rule": "epoch microseconds -> UTC TIMESTAMP(6); 0 表示「未领取」,换算后必须是 NULL 而不是 1970"
+        },
+        "bucket_no": {
+          "kind": "derive",
+          "source": "job_id",
+          "rule": "portable_sql.claims.bucket_for(job_id) -> 0..255; 与求职者读取时的分桶一致"
+        },
+        "due_at": {
+          "kind": "derive",
+          "source": "speech_jobs.created_at_us",
+          "rule": "same epoch -> TIMESTAMP(6) conversion as claim_expires_at; 暂无独立 due 列,须在搬迁时冻结"
+        },
+        "last_event_seq": {
+          "kind": "derive",
+          "source": "speech_job_events.event_seq",
+          "rule": "每个 job_id 取 MAX(event_seq); 无事件时为 0,保证 SSE 序号连续"
+        }
+      },
+      "anchor": {
+        "kind": "symbol",
+        "file": "backend/src/speechnexus_backend/speech/infrastructure/job_schema.py",
+        "symbol": "JOB_DDL",
+        "draft_table": "coordination_jobs"
+      },
+      "draft_table": "coordination_jobs"
+    },
+    "coordination_outbox": {
+      "canonical": "migrations/0003_portable_claim_buckets.sql",
+      "columns": {
+        "event_id": {
+          "kind": "identity",
+          "source": "event_id"
+        },
+        "job_id": {
+          "kind": "identity",
+          "source": "job_id"
+        },
+        "event_digest": {
+          "kind": "identity",
+          "source": "event_digest"
+        },
+        "delivered_at": {
+          "kind": "convert",
+          "source": "delivered_at_us",
+          "rule": "epoch microseconds -> UTC TIMESTAMP(6); NULL 保持 NULL"
+        }
+      },
+      "anchor": {
+        "kind": "symbol",
+        "file": "backend/src/speechnexus_backend/speech/infrastructure/job_schema.py",
+        "symbol": "JOB_DDL",
+        "draft_table": "coordination_outbox"
+      },
+      "draft_table": "coordination_outbox"
+    },
+    "coordination_claim_buckets": {
+      "canonical": "migrations/0003_portable_claim_buckets.sql",
+      "source": null,
+      "columns": {
+        "bucket_no": {
+          "kind": "seed",
+          "rule": "0..255 全量建行,搬迁前一次性写入"
+        },
+        "claim_owner_id": {
+          "kind": "seed",
+          "rule": "NULL"
+        },
+        "lease_until": {
+          "kind": "seed",
+          "rule": "NULL"
+        },
+        "version": {
+          "kind": "seed",
+          "rule": "0"
+        }
+      }
+    },
+    "job_events": {
+      "canonical": "migrations/0003_portable_claim_buckets.sql",
+      "source": "backend/src/speechnexus_backend/speech/infrastructure/public_job_progress_schema.py",
+      "columns": {
+        "job_id": {
+          "kind": "identity",
+          "source": "job_id"
+        },
+        "event_seq": {
+          "kind": "identity",
+          "source": "event_seq"
+        },
+        "event_digest": {
+          "kind": "gap",
+          "source": null,
+          "reason": "speech_job_events 只有 state/occurred_at_us/progress_*,没有摘要列;搬迁要么按行计算规范摘要,要么在切换前补一列。这是切换的未决项"
+        },
+        "payload_ref": {
+          "kind": "gap",
+          "source": null,
+          "reason": "草案表不存 payload 引用;首个版本可以全 NULL,但要显式决定而不是默认"
+        }
+      },
+      "anchor": {
+        "kind": "insert",
+        "file": "backend/src/speechnexus_backend/speech/infrastructure/job_dispatch_postgres.py",
+        "pattern": "INSERT INTO speech_job_events \\(([^)]*)\\)"
+      }
+    }
+  }
+}

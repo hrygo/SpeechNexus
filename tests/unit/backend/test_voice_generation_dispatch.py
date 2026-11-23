@@ -237,15 +237,31 @@ def test_queue_rejects_an_invalid_lane(kinds: tuple[str, ...], message: str) -> 
         _queue(kinds)
 
 
-def test_claim_uses_the_instance_lane_not_the_module_default() -> None:
-    queue, pool = _queue(VOICE_GENERATION_JOB_KINDS)
+def test_claim_uses_the_instance_lane_not_the_module_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The lane the instance was built with must reach ``claim_batch`` unchanged.
+
+    The SQL-level behaviour (which rows that lane actually selects) is judged on a
+    real database in ``tests/integration/test_dispatch_canonical_claim_pg.py``; this
+    test only pins the wiring, so it stubs the claim call instead of emulating a
+    psycopg connection.
+    """
+    queue, _pool = _queue(VOICE_GENERATION_JOB_KINDS)
+    seen: list[dict[str, Any]] = []
+
+    def _record(_connection: object, **kwargs: object) -> list[object]:
+        seen.append(kwargs)
+        return []
+
+    monkeypatch.setattr(
+        "speechnexus_backend.speech.infrastructure.job_dispatch_postgres.claim_batch",
+        _record,
+    )
 
     assert queue._claim("worker-synthetic", 30_000, 4) == []
-    claim_parameters = pool.connection_log.parameters[-1]
-
-    # 第一个参数是这次领取共用的「现在」,第二个才是车道过滤。
-    assert claim_parameters[0] == 1_000_000
-    assert claim_parameters[1] == list(VOICE_GENERATION_JOB_KINDS)
+    assert seen
+    assert tuple(seen[0]["kinds"]) == VOICE_GENERATION_JOB_KINDS
 
 
 @dataclass

@@ -33,7 +33,6 @@ from speechnexus_backend.speech.infrastructure.binding_disable_barrier import (
     lock_binding,
     revision_is_disabled,
 )
-from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 from speechnexus_backend.speech.infrastructure.leases_postgres import (
     _BudgetExpiredError,
     _DeadlineCursor,
@@ -48,28 +47,6 @@ from speechnexus_portable_sql.psycopg_driver import portable_error
 from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 _LOGGER = logging.getLogger(__name__)
-
-
-def binding_disable_admission_grants(schema: str, role: str) -> tuple[str, ...]:
-    """Least-privilege provisioning for the synchronous admission barrier."""
-    schema, role = checked_sql_name(schema), checked_sql_name(role)
-    return (
-        f'GRANT SELECT (binding_id, revision_id) ON "{schema}".speech_binding_revisions '
-        f'TO "{role}"',
-        f"GRANT SELECT (kind, object_id, revision_id, mode) "
-        f'ON "{schema}".speech_publication_retirements TO "{role}"',
-    )
-
-
-def tts_voice_admission_grants(schema: str, role: str) -> tuple[str, ...]:
-    """Read only the publication identities needed under the voice lock."""
-    schema, role = checked_sql_name(schema), checked_sql_name(role)
-    return (
-        f"GRANT SELECT (kind, object_id, revision, revision_id) "
-        f'ON "{schema}".speech_publications TO "{role}"',
-        f"GRANT SELECT (kind, object_id, revision, revision_id) "
-        f'ON "{schema}".speech_publication_retirements TO "{role}"',
-    )
 
 
 def _is_tts_business(body: dict[str, object]) -> bool:

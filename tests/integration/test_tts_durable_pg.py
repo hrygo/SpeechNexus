@@ -33,9 +33,11 @@ from tests.unit.backend.test_tts_durable_intent import plan
 
 from speechnexus_backend.speech.application.admission import AdmissionService
 from speechnexus_backend.speech.application.speech_synthesis import SpeechUnavailableError
+from speechnexus_backend.speech.infrastructure.admission_grants import (
+    tts_voice_admission_grants,
+)
 from speechnexus_backend.speech.infrastructure.admission_postgres import (
     PostgresAdmissionTransactions,
-    tts_voice_admission_grants,
 )
 from speechnexus_backend.speech.infrastructure.job_schema import (
     job_dispatch_grants,

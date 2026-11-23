@@ -10,7 +10,7 @@ from speechnexus_backend.speech.domain.publications import (
     PublicationKind,
     PublicationUnavailableError,
 )
-from speechnexus_backend.speech.infrastructure.admission_postgres import (
+from speechnexus_backend.speech.infrastructure.admission_grants import (
     binding_disable_admission_grants,
     tts_voice_admission_grants,
 )

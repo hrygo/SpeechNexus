@@ -65,7 +65,6 @@
     "sql-string-building::backend/src/speechnexus_backend/builtin_voice_revocation.py": 3,
     "sql-string-building::backend/src/speechnexus_backend/job_cancellation_runtime.py": 1,
     "sql-string-building::backend/src/speechnexus_backend/operator_attested_qualification.py": 1,
-    "sql-string-building::backend/src/speechnexus_backend/speech/infrastructure/admission_postgres.py": 4,
     "sql-string-building::backend/src/speechnexus_backend/speech/infrastructure/admission_sql.py": 2,
     "sql-string-building::backend/src/speechnexus_backend/speech/infrastructure/artifacts_postgres.py": 2,
     "sql-string-building::backend/src/speechnexus_backend/speech/infrastructure/asr_settlement_debt.py": 2,

@@ -28,9 +28,11 @@ from speechnexus_backend.speech.application.admission import AdmissionService
 from speechnexus_backend.speech.application.transcription import TranscriptionUnavailableError
 from speechnexus_backend.speech.domain.binding_lifecycle import BindingRetirementCommand
 from speechnexus_backend.speech.infrastructure import admission_postgres
+from speechnexus_backend.speech.infrastructure.admission_grants import (
+    binding_disable_admission_grants,
+)
 from speechnexus_backend.speech.infrastructure.admission_postgres import (
     PostgresAdmissionTransactions,
-    binding_disable_admission_grants,
 )
 from speechnexus_backend.speech.infrastructure.binding_disable_barrier import lock_binding
 from speechnexus_backend.speech.infrastructure.binding_lifecycle_postgres import (

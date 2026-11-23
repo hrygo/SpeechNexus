@@ -1204,3 +1204,28 @@ ledger**并注明理由,而不是让 `new` 悄悄落进基线。基线 **293 →
 并让 `rowcount != 1` 的判据改读返回值 —— 又是 §8.41 那条(保存点会改写 `rowcount`)。
 
 基线 **283 → 279**。PG oracle:`test_profile_publications.py` + `test_binding_lifecycle_pg.py` 35 passed。
+
+### 8.51 部署期 DCL 从运行时模块里搬出去,而不是重写
+
+`admission_postgres.py` 里夹着两个授权生产者(`binding_disable_admission_grants` /
+`tts_voice_admission_grants`),它们是 `GRANT SELECT (…) ON "schema".table TO "role"` ——
+schema 与 role 是标识符,不能绑定成参数。按 DML 口径改造它们没有出路;**按 deploy 口径登记才对**。
+
+问题是 `deploy` 类别按文件登记,而这两个函数住在运行期 DML 模块里。所以做的不是重写,是**搬家**:
+新建 `admission_grants.py`,与既有的 `qualification_admission_grants.py` / `builtin_voice_grants.py` /
+`gateway_query_grants.py` 同一约定(授权生产者单独成文件,运行时模块不携带 DCL),然后把文件放进
+`portable-sql-profiles.json` 的 `deploy` 列表。
+
+调用点跟着改:`deploy/cluster/provision-roles.py`、`qualified_speech_facts_postgres.py`、两个集成用例。
+注入即红:把 `admission_grants.py` 从 `deploy` 清单移除 → `UNREGISTERED sql-string-building …admission_grants.py`。
+
+### 8.52 一次测量否掉了一个想改守卫的念头
+
+我本来打算修改守卫规则:允许「只插值模块级字符串常量」的 f-string,理由是这类语句文本仍是确定的。
+先量了一遍:当前 99 条 `sql-string-building` 里,**只有 12 条**是常量插值,**87 条是真动态**(列清单、
+谓词拼接、`%s`、schema 标识符、`GRANT`)。改规则最多让 12 条消失,却会把「列清单拼装」一起放进来 ——
+那正是 `deletion_executions_postgres` 里最该留在守卫视野内的形状。
+
+所以规则不动。这个数字(12 / 87)也解释了为什么这项收敛只能逐个调用点做,不能靠一次规则调整。
+
+基线 **279 → 275**。PG oracle:`test_tts_durable_pg.py` + `test_transcription_disable_barrier_pg.py` 13 passed。

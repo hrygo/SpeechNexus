@@ -1333,3 +1333,26 @@ SELECT 1 FROM speech_workspaces, workspace_quotas, … WHERE 1=0
 
 基线 **261 → 254**。PG oracle:`test_binding_disable_capture_scope_pg.py` +
 `test_binding_disable_intent_pg.py` + `test_transcription_disable_barrier_pg.py` 12 passed。
+
+### 8.60 运行期拼谓词的读语句:把 2×2 种形状写成四条完整语句
+
+`audit_events_postgres.statement()` 原来按 `after` / `action` 组合拼 `_BASE + 谓词 + _ORDER`。
+组合只有四种,于是写成四条**完整**语句,`statement()` 只做一次查表,不再拼字符串:
+
+| after | action | 语句 |
+| --- | --- | --- |
+| 无 | 无 | `_PAGE_FIRST` |
+| 有 | 无 | `_PAGE_AFTER_ORDER` |
+| 无 | 有 | `_PAGE_ACTION_ORDER` |
+| 有 | 有 | `_PAGE_AFTER_ACTION_ORDER` |
+
+参数顺序仍是「先 after 再 action」,由构造函数的追加顺序决定,查表不动它。
+
+判据 `test_audit_event_statements.py`:四条语句的投影列序 == `_COLUMNS`、每条恰好一个 `ORDER BY`;
+`statement()` 对四种查询各自返回对应那一条。注入即红:从 `_PAGE_ACTION_ORDER` 删掉
+`credential_label` → `1 failed`。
+
+同一轮顺手把 `binding_disable_barrier` 的表名改成字面量。改动让守卫**看见**了该文件里既有的
+`pg_advisory_xact_lock`(此前被前一条规则掩盖),按 #1095 登记 —— 这不是新引入的构造,是原本就在的。
+
+基线 **254 → 252**。PG oracle:`tests/integration -k audit` 11 passed、`-k audit`(unit)115 passed。

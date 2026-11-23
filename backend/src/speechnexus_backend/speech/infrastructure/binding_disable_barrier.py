@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from speechnexus_backend.speech.domain.runtime_intents import identifier
-from speechnexus_backend.speech.infrastructure.catalog_revision_schema import RETIREMENT_TABLE
 
 
 class BindingLockExecutor(Protocol):
@@ -31,7 +30,7 @@ def revision_is_disabled(cursor: BindingBarrierCursor, binding_id: str, revision
     identifier(binding_id)
     identifier(revision_id)
     cursor.execute(
-        f"SELECT 1 AS disabled FROM {RETIREMENT_TABLE} "
+        "SELECT 1 AS disabled FROM speech_publication_retirements "
         "WHERE kind='binding' AND object_id=? AND revision_id=? AND mode='disable'",
         (binding_id, revision_id),
     )

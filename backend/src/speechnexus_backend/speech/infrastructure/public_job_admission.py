@@ -1365,11 +1365,21 @@ def _readiness_candidates(cursor: _Cursor) -> list[dict[str, Any]]:
     definition, or a stored plan the binding disagrees with) is dropped by the caller
     through ``binding_gate``: a create naming it is refused with the request-shaped
     ``job_binding_incomplete`` before admission, and reporting that as
-    ``capacity_exhausted`` would name a class no create returns. The rows come back in
+    ``capacity_exhausted`` would name a class no create returns.
+
+    The statement returns one row per (head, ready sibling) instead of one row per
+    head: ``DISTINCT ON`` is outside the four-engine subset, so the de-duplication
+    happens in ``_first_per_binding`` over the ordered rows. The order is
+    ``(revision_id, instance_id, instance_generation, kind, object_id, revision)``:
+    ``speech_binding_revisions.revision_id`` is UNIQUE and
+    ``runtime_instance_heads.instance_id`` is the head's primary key, so a head
+    contributes exactly one row per ready sibling and the trailing publication keys
+    can only break ties between rows of one revision -- which makes the order total
+    and keeps the chosen row independent of the plan. The rows come back in
     ``binding_revision_id`` order so the reported cause is deterministic.
     """
     cursor.execute(
-        "SELECT DISTINCT ON (p.revision_id) p.revision_id AS binding_revision_id, "
+        "SELECT p.revision_id AS binding_revision_id, "
         "r.definition_json, i.instance_id, i.instance_generation, i.host_node_id, i.pool_id "
         "FROM speech_publications AS p "
         "JOIN speech_binding_revisions AS r ON r.binding_id = p.object_id "
@@ -1399,9 +1409,25 @@ def _readiness_candidates(cursor: _Cursor) -> list[dict[str, Any]]:
         "SELECT 1 FROM speech_publication_heads AS head "
         "WHERE head.kind = p.kind AND head.object_id = p.object_id "
         "AND head.revision = p.revision AND head.revision_id = p.revision_id)"
-        "ORDER BY p.revision_id, i.instance_id, i.instance_generation"
+        "ORDER BY p.revision_id, i.instance_id, i.instance_generation, "
+        "p.kind, p.object_id, p.revision"
     )
-    return list(cursor.fetchall())
+    return _first_per_binding(list(cursor.fetchall()))
+
+
+def _first_per_binding(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep the first row of every ``binding_revision_id`` run, in statement order.
+
+    Rows of one binding are contiguous because ``binding_revision_id`` is the
+    statement's first ordering key, so the first row of a run is the one the server
+    sorted first -- the same row the ``DISTINCT ON`` de-duplication used to pick.
+    A head with no ready instance is a run of one NULL row, so it survives.
+    """
+    selected: list[dict[str, Any]] = []
+    for row in rows:
+        if not selected or selected[-1]["binding_revision_id"] != row["binding_revision_id"]:
+            selected.append(row)
+    return selected
 
 
 def _parse_definition(definition_json: Any) -> dict[str, Any] | None:

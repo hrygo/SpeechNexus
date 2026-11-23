@@ -89,6 +89,14 @@ POOL_INSERT = (
     "owner_expires_at_us, owner_state) VALUES (?, ?, 'active', NULL, 0, 0, "
     "'reconciling_takeover')"
 )
+# 「插入即读」:配额行由这个工作区的第一次注册建立,之后每次注册都读同一行并锁住它。
+# 语句里没有 `ON CONFLICT`:竞争下较晚的写者撞唯一索引,由 `insert_if_absent` 的保存点吸掉,
+# 事务继续可用,随后的 `SELECT ... FOR UPDATE` 等在先到者提交后读到它那一行。
+QUOTA_INSERT = (
+    "INSERT INTO workspace_quotas "
+    "(workspace_id, max_attempts, held_attempts, quarantined_attempts, policy_revision) "
+    "VALUES (?, ?, 0, 0, ?)"
+)
 
 type Row = dict[str, Any]
 
@@ -501,10 +509,9 @@ def _ensure_pool(
 
 
 def _ensure_quota(cursor: _Cursor, spec: RegistrationSpec) -> Row:
-    cursor.execute(
-        "INSERT INTO workspace_quotas "
-        "(workspace_id, max_attempts, held_attempts, quarantined_attempts, "
-        "policy_revision) VALUES (?, ?, 0, 0, ?) ON CONFLICT (workspace_id) DO NOTHING",
+    insert_if_absent(
+        cursor,
+        QUOTA_INSERT,
         (spec.workspace_id, spec.max_attempts, spec.policy_revision_id),
     )
     row = _one(
@@ -541,7 +548,7 @@ def _require_capacity(cursor: _Cursor, spec: RegistrationSpec) -> None:
             f"need at least {_vector_text(required)} beyond current holds "
             f"(allocatable {_vector_text(capacity)}, held+quarantined {_vector_text(occupied)}). "
             "This command cannot enlarge host_nodes.allocatable_* after the first registration "
-            "on a node inserted it (ON CONFLICT DO NOTHING), and the runtime role cannot update "
+            "on a node inserted it (insert-if-absent), and the runtime role cannot update "
             "those columns either. First check whether the held or quarantined part can be "
             "released; otherwise raise the allocatable vector in a reviewed change, or rebuild "
             "the data volume and pass an explicit --host-capacity when the first registration "

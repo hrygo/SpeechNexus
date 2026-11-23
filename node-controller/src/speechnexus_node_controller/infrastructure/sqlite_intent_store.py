@@ -36,8 +36,16 @@ from speechnexus_node_controller.domain.stop_checkpoint import (
     parse_stop_checkpoint,
     stop_checkpoint_payload,
 )
+from speechnexus_portable_sql.transaction import savepoint
 
 SCHEMA_VERSION: Final = "2"
+
+#: meta 行的写入是**真 upsert**(改已有值),不是「插入即读」。三步放在同一事务里:
+#: 先 `UPDATE`,只有 `rowcount == 0`(行还不存在)才 `INSERT`;插入这一步包在保存点里,
+#: 这样撞唯一键时只回滚这一步,事务回到可用状态后可以再写一次。
+_META_UPDATE: Final = "UPDATE runtime_intent_store_meta SET value = ? WHERE key = ?"
+_META_INSERT: Final = "INSERT INTO runtime_intent_store_meta (key, value) VALUES (?, ?)"
+_META_SAVEPOINT: Final = "runtime_intent_store_meta_upsert"
 
 _SCHEMA: Final = (
     """
@@ -75,6 +83,29 @@ _SCHEMA: Final = (
 
 class IntentStoreError(Exception):
     """The durable intent record could not be read or written."""
+
+
+def _upsert_meta(connection: sqlite3.Connection, key: str, value: str) -> None:
+    """把 meta 行写成 `value`:先改,行不存在才插.
+
+    为什么不是「插入即读」:`schema_version` 这一行必须跟随本进程的 ``SCHEMA_VERSION``;
+    `INSERT ... DO NOTHING` 在行已存在时会留下旧值,把升级静默吞掉。
+
+    为什么这里没有 `SELECT ... FOR UPDATE`:SQLite 没有行锁,写者由 ``BEGIN IMMEDIATE``
+    的库级写锁串行化(见 ``_Transaction``),所以顺序是「先改后插」而不是「先锁后改」。
+    插入仍包在保存点里:两步之间若另一个写者先插入同一个键,撞唯一键只会回滚这一步,
+    事务回到可用状态后重写一次就收敛到同一个值 —— 这正是 ``savepoint`` 文档描述的形状。
+    """
+
+    cursor = connection.cursor()
+    if cursor.execute(_META_UPDATE, (value, key)).rowcount:
+        return
+    try:
+        with savepoint(cursor, _META_SAVEPOINT):
+            cursor.execute(_META_INSERT, (key, value))
+    except sqlite3.IntegrityError:
+        if cursor.execute(_META_UPDATE, (value, key)).rowcount != 1:
+            raise
 
 
 def _checkpoint_errors[**P, R](function: Callable[P, R]) -> Callable[P, R]:
@@ -267,11 +298,7 @@ class SqliteIntentStore:
                 raise IntentStoreError("the runtime intent store schema version is not usable")
             for statement in _SCHEMA[1:]:
                 self._connection.execute(statement)
-            self._connection.execute(
-                "INSERT INTO runtime_intent_store_meta (key, value) VALUES ('schema_version', ?) "
-                "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-                (SCHEMA_VERSION,),
-            )
+            _upsert_meta(self._connection, "schema_version", SCHEMA_VERSION)
         self.probe()
 
     def _transaction(self) -> _Transaction:

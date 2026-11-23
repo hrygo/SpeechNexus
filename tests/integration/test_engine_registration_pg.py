@@ -16,7 +16,14 @@ from tests.integration.test_production_jobs import JobDatabase
 from tests.integration.test_production_jobs import database as database
 
 from speechnexus_backend import engine_readiness
-from speechnexus_backend.engine_registration import EXIT_UNAVAILABLE
+from speechnexus_backend.engine_registration import (
+    EXIT_UNAVAILABLE,
+    RegistrationResult,
+    RegistrationSpec,
+    _spec_from_recipe,
+    _vector,
+    register_engine,
+)
 from speechnexus_backend.engine_registration import main as register_main
 from speechnexus_backend.speech.application.admission import AdmissionService
 from speechnexus_backend.speech.application.transcription import AdmittedExecution, StagedAudio
@@ -87,6 +94,7 @@ def _recipe_document(
     instance_id: str = "instance-reg-1",
     model_id: str = "asr-quality",
     node_id: str = "node-reg-1",
+    pool_id: str = "asr-batch",
     max_slots: int = 2,
     steady_device_memory_bytes: int | None = None,
 ) -> dict[str, Any]:
@@ -132,7 +140,7 @@ def _recipe_document(
         "runtime_plan": {
             "binding": {
                 "target_node_id": node_id,
-                "pool_id": "asr-batch",
+                "pool_id": pool_id,
                 "gateway_id": "gateway-reg-1",
                 "approved_template_id": "template-1",
                 "binding_revision_id": "binding-revision-1",
@@ -657,3 +665,215 @@ def test_the_report_and_the_renewal_expose_an_expiring_then_expired_receipt(
     )
     assert "warning: readiness expiring for instance-reg-1 g1" in stderr
     assert short["readiness"]["verified_at_us"] <= warning_ready["readiness"]["verified_at_us"]
+
+
+def _widened_insert_window(database: JobDatabase) -> None:
+    """把两个注册者的竞争窗口拉宽,并留下可复算的「真的同时到过」证据.
+
+    - `workspace_quotas` 的 `BEFORE INSERT` 先 `nextval` 再睡 0.5 s:两个人同时进触发器,
+      睡醒后同时撞唯一索引,较晚那位才需要走冲突路径;`nextval` 不随回滚撤销,所以事后
+      读到的序列值就是「物理执行过这条 INSERT 的会话数」。
+    - `engine_instances` 的 `BEFORE INSERT` 再睡 1 s:把先到者的提交推后,较晚者的
+      `SELECT ... FOR UPDATE` 因此有一段可被 `pg_stat_activity` 观察到的真实锁等待。
+    """
+
+    database.query("CREATE SEQUENCE quota_insert_attempts")
+    database.query(
+        "CREATE OR REPLACE FUNCTION quota_insert_probe() RETURNS trigger AS $$ "
+        "BEGIN PERFORM nextval('quota_insert_attempts'); PERFORM pg_sleep(0.5); RETURN NEW; END; "
+        "$$ LANGUAGE plpgsql"
+    )
+    database.query(
+        "CREATE TRIGGER workspace_quotas_insert_probe BEFORE INSERT ON workspace_quotas "
+        "FOR EACH ROW EXECUTE FUNCTION quota_insert_probe()"
+    )
+    database.query(
+        "CREATE OR REPLACE FUNCTION instance_insert_pause() RETURNS trigger AS $$ "
+        "BEGIN PERFORM pg_sleep(1.0); RETURN NEW; END; $$ LANGUAGE plpgsql"
+    )
+    database.query(
+        "CREATE TRIGGER engine_instances_insert_pause BEFORE INSERT ON engine_instances "
+        "FOR EACH ROW EXECUTE FUNCTION instance_insert_pause()"
+    )
+
+
+def _await_quota_lock_wait(database: JobDatabase) -> int:
+    """等到一个真的被配额行挡住的后端,返回观察到的并发等待数."""
+
+    import time
+
+    deadline = time.monotonic() + 20
+    peak = 0
+    while time.monotonic() < deadline:
+        rows = database.query(
+            "SELECT count(*) AS n FROM pg_stat_activity "
+            "WHERE cardinality(pg_blocking_pids(pid)) > 0 "
+            "AND query LIKE '%workspace_quotas%'"
+        )
+        peak = max(peak, int(rows[0]["n"]))
+        if peak:
+            return peak
+        time.sleep(0.01)
+    return peak
+
+
+def test_concurrent_registrations_share_one_locked_quota_row(
+    database: JobDatabase, engine_origin: str, tmp_path: Path
+) -> None:
+    """同一工作区的两个并发注册:只有一个配额行,两边拿到的是同一行.
+
+    两个注册者落在不同的 node / pool / instance 上,唯一的共享行就是 `workspace_quotas` ——
+    否则他们会先在 `host_nodes` 或 `resource_pools` 的行锁上排队,测到的是别的锁。
+    """
+
+    _widened_insert_window(database)
+    specs: list[RegistrationSpec] = []
+    for suffix, pool_id in (("a", "asr-batch"), ("b", "tts-batch")):
+        recipe = load_transcription_recipe(
+            _write_recipe(
+                tmp_path / f"recipe-race-{suffix}.json",
+                _recipe_document(
+                    instance_id=f"instance-race-{suffix}",
+                    node_id=f"node-race-{suffix}",
+                    pool_id=pool_id,
+                ),
+            )
+        )
+        specs.append(
+            _spec_from_recipe(
+                recipe,
+                generation=1,
+                workspace_id=WORKSPACE,
+                max_attempts=8,
+                host_capacity=_vector(TWO_INSTANCE_CAPACITY),
+                overrides={},
+            )
+        )
+
+    barrier = threading.Barrier(len(specs))
+    results: list[RegistrationResult] = []
+    failures: list[BaseException] = []
+    guard = threading.Lock()
+
+    def run(spec: RegistrationSpec) -> None:
+        try:
+            barrier.wait(timeout=10)
+            outcome = register_engine(
+                database_url=database.url,
+                schema=database.schema,
+                spec=spec,
+                engine_url=engine_origin,
+                transaction_timeout_seconds=20,
+            )
+        except BaseException as error:
+            with guard:
+                failures.append(error)
+            return
+        with guard:
+            results.append(outcome)
+
+    threads = [threading.Thread(target=run, args=(spec,), daemon=True) for spec in specs]
+    for thread in threads:
+        thread.start()
+    try:
+        observed_wait = _await_quota_lock_wait(database)
+    finally:
+        for thread in threads:
+            thread.join(timeout=120)
+
+    assert not any(thread.is_alive() for thread in threads), "a registration deadlocked"
+    assert failures == [], [repr(error) for error in failures]
+    assert observed_wait >= 1, "no backend was ever blocked on the quota row"
+    quota = database.query(
+        "SELECT workspace_id, max_attempts, held_attempts, quarantined_attempts, "
+        "policy_revision FROM workspace_quotas"
+    )
+    assert quota == [
+        {
+            "workspace_id": WORKSPACE,
+            "max_attempts": 8,
+            "held_attempts": 0,
+            "quarantined_attempts": 0,
+            "policy_revision": "policy-revision-1",
+        }
+    ]
+    assert len(results) == 2
+    assert {result.outcome for result in results} == {"registered"}
+    first, second = results
+    assert first.rows["workspace_quotas"] == second.rows["workspace_quotas"]
+    attempts = database.query("SELECT last_value FROM quota_insert_attempts")[0]["last_value"]
+    assert attempts == 2, "both registrations must have physically executed the quota insert"
+
+
+def _register_one(
+    database: JobDatabase, engine_origin: str, tmp_path: Path, suffix: str, pool_id: str
+) -> RegistrationResult:
+    recipe = load_transcription_recipe(
+        _write_recipe(
+            tmp_path / f"recipe-{suffix}.json",
+            _recipe_document(
+                instance_id=f"instance-{suffix}",
+                node_id=f"node-{suffix}",
+                pool_id=pool_id,
+            ),
+        )
+    )
+    spec = _spec_from_recipe(
+        recipe,
+        generation=1,
+        workspace_id=WORKSPACE,
+        max_attempts=8,
+        host_capacity=_vector(TWO_INSTANCE_CAPACITY),
+        overrides={},
+    )
+    return register_engine(
+        database_url=database.url,
+        schema=database.schema,
+        spec=spec,
+        engine_url=engine_origin,
+        transaction_timeout_seconds=20,
+    )
+
+
+def test_the_quota_re_read_waits_for_the_row_lock(
+    database: JobDatabase, engine_origin: str, tmp_path: Path
+) -> None:
+    """配额行已存在时,注册必须在 `SELECT ... FOR UPDATE` 上等锁,而不是读一份快照.
+
+    第一次建行的竞争由插入本身挡住:PostgreSQL 让较晚的写者在唯一索引上等先到者的事务,
+    提交后它才看到冲突。所以「同一个锁住的行」这半条保证只能这样证明 —— 第三方持有配额行
+    的锁,注册者必须停在那里,直到那把锁释放。
+    """
+
+    _register_one(database, engine_origin, tmp_path, "lock-a", "asr-batch")
+
+    locker = cast(Any, database.blocker())
+    try:
+        locker.execute(
+            "SELECT * FROM workspace_quotas WHERE workspace_id = %s FOR UPDATE", (WORKSPACE,)
+        )
+        result: list[RegistrationResult] = []
+        failures: list[BaseException] = []
+
+        def register() -> None:
+            try:
+                outcome = _register_one(database, engine_origin, tmp_path, "lock-b", "tts-batch")
+            except BaseException as error:
+                failures.append(error)
+                return
+            result.append(outcome)
+
+        thread = threading.Thread(target=register, daemon=True)
+        thread.start()
+        try:
+            blocked = _await_quota_lock_wait(database)
+        finally:
+            locker.rollback()
+        thread.join(timeout=120)
+    finally:
+        locker.close()
+
+    assert not thread.is_alive(), "the registration never returned after the lock was released"
+    assert failures == [], [repr(error) for error in failures]
+    assert blocked >= 1, "the registration did not wait on the quota row lock"
+    assert [outcome.outcome for outcome in result] == ["registered"]

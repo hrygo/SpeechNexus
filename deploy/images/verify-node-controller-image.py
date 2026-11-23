@@ -83,31 +83,41 @@ def assert_tls_failure(output: str, url: str, *, hostname: bool = False) -> None
     raise RuntimeError(f"No matching TLS rejection for target request {url}\n{output}")
 
 
+def context_inputs() -> list[str]:
+    """Read the build context out of the Dockerfile instead of repeating it here.
+
+    Same reason the coordination column lists live in one place: a second list of
+    the Dockerfile's inputs drifts the moment a COPY is added, and the drift only
+    shows up as a checksum failure on a runner. `--from=<stage>` lines copy from
+    another stage and contribute nothing to the context.
+    """
+
+    sources: list[str] = []
+    text = (ROOT / DOCKERFILE).read_text()
+    for line in text.splitlines():
+        match = re.fullmatch(r"COPY\s+(.*)", line.strip())
+        if match is None:
+            continue
+        parts = match.group(1).split()
+        if any(part.startswith("--from=") for part in parts):
+            continue
+        parts = [part for part in parts if not part.startswith("--")]
+        for source in parts[:-1]:
+            if source not in sources:
+                sources.append(source)
+    return sources
+
+
 def negative_context(destination: Path) -> None:
-    # Copy exactly the metadata and sources used by the Dockerfile, not user data.
-    files = [
-        "pyproject.toml",
-        "uv.lock",
-        "backend/README.md",
-        "backend/pyproject.toml",
-        "execution-gateway/README.md",
-        "execution-gateway/pyproject.toml",
-        "packages/contracts/pyproject.toml",
-        "packages/media/README.md",
-        "packages/media/pyproject.toml",
-        "packages/portable-sql/README.md",
-        "packages/portable-sql/pyproject.toml",
-        "node-controller/README.md",
-        "node-controller/pyproject.toml",
-        DOCKERFILE,
-        CONSTRAINTS,
-        "deploy/images/node-controller-with-ca.sh",
-    ]
-    for relative in files:
+    # Copy exactly the sources the Dockerfile reads, not user data.
+    for relative in [DOCKERFILE, *context_inputs()]:
+        source = ROOT / relative
         target = destination / relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(ROOT / relative, target)
-    shutil.copytree(ROOT / "node-controller/src", destination / "node-controller/src")
+        if source.is_dir():
+            shutil.copytree(source, target)
+        else:
+            shutil.copyfile(source, target)
 
 
 def make_ca(directory: Path, prefix: str) -> tuple[Path, Path]:

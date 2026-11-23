@@ -15,6 +15,9 @@ COPY execution-gateway/README.md execution-gateway/pyproject.toml execution-gate
 COPY packages/contracts/pyproject.toml packages/contracts/
 COPY packages/media/README.md packages/media/pyproject.toml packages/media/
 COPY packages/portable-sql/README.md packages/portable-sql/pyproject.toml packages/portable-sql/
+COPY packages/portable-sql/src packages/portable-sql/src
+COPY packages/portable-sql/schema packages/portable-sql/schema
+COPY packages/portable-sql/statements packages/portable-sql/statements
 COPY node-controller/README.md node-controller/pyproject.toml node-controller/
 COPY node-controller/src node-controller/src
 COPY deploy/images/node-controller-build-constraints.txt /tmp/node-controller-build-constraints.txt
@@ -23,6 +26,8 @@ COPY deploy/images/node-controller-with-ca.sh /tmp/node-controller-with-ca.sh
 RUN --mount=type=secret,id=proxy_ca \
     sh /tmp/node-controller-with-ca.sh sh -ec '\
       uv build --no-cache --wheel node-controller --out-dir /tmp/controller-wheel \
+        --build-constraints /tmp/node-controller-build-constraints.txt --require-build-hashes; \
+      uv build --no-cache --wheel packages/portable-sql --out-dir /tmp/controller-wheel \
         --build-constraints /tmp/node-controller-build-constraints.txt --require-build-hashes; \
       uv sync --no-cache --frozen --package speechnexus-node-controller \
         --no-dev --no-default-groups --no-install-workspace --no-build; \

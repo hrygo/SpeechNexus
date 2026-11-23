@@ -10,6 +10,7 @@ dependencies = [
   "httpx>=0.28.1,<0.29",
   "pydantic>=2.14.1,<3",
   "pydantic-settings>=2.16.1,<3",
+  "speechnexus-portable-sql",
   "uvicorn[standard]>=0.54,<0.55",
 ]
 
@@ -22,3 +23,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/speechnexus_node_controller"]
+
+[tool.uv.sources]
+speechnexus-portable-sql = { workspace = true }

@@ -31,7 +31,7 @@ def _schema_table_names() -> set[str]:
     for path in _INFRA.glob("*schema*.py"):
         module = importlib.import_module(f"speechnexus_backend.speech.infrastructure.{path.stem}")
         for attribute, value in vars(module).items():
-            exported = attribute == "TABLE" or attribute.endswith("_TABLE") or attribute == "JOBS"
+            exported = attribute in {"TABLE", "JOBS", "SUBMISSIONS"} or attribute.endswith("_TABLE")
             if exported and isinstance(value, str):
                 names.add(value)
     return names
@@ -76,3 +76,20 @@ def test_every_table_a_literalised_module_names_is_a_schema_constant(module: str
         "literal survives the type checker and only fails at runtime, so the "
         "schema constants are the fact source"
     )
+
+
+def test_the_startup_read_probes_name_only_schema_tables() -> None:
+    """启动探针是一条静态语句:它列的每个关系都必须来自 schema 常量或 DDL。"""
+
+    from speechnexus_backend import admission_watch_runtime, job_cancellation_runtime
+
+    for statement in (
+        admission_watch_runtime.READ_PROBE,
+        job_cancellation_runtime.CANCELLATION_READ_PROBE,
+    ):
+        assert statement.endswith("WHERE 1=0")
+        names = {
+            name.strip()
+            for name in statement.split(" FROM ", 1)[1].split(" WHERE ", 1)[0].split(",")
+        }
+        assert names <= _SCHEMA_TABLES, sorted(names - _SCHEMA_TABLES)

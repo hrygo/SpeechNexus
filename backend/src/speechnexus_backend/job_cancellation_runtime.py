@@ -57,17 +57,20 @@ from speechnexus_backend.speech.infrastructure.gateway_cancellation_confirmation
 from speechnexus_backend.speech.infrastructure.gateway_job_cancellation import (
     GatewayJobCancellationStopper,
 )
-from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
-    NOT_SUBMITTED_TABLE,
-)
 from speechnexus_backend.speech.infrastructure.job_cancellation_reconciliation_postgres import (
     PostgresCancellationReconciliationStore,
 )
 from speechnexus_backend.speech.infrastructure.job_dispatch_postgres import PostgresLeaseSettler
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool, speech_pool
-from speechnexus_backend.speech.infrastructure.public_job_submission_schema import SUBMISSIONS
 from speechnexus_backend.speech.infrastructure.public_jobs_postgres import (
     PostgresPublicJobs,
+)
+
+# 零行探针:一条静态语句同时验证取消运行时读的关系存在且可读。
+CANCELLATION_READ_PROBE = (
+    "SELECT 1 FROM speech_jobs, speech_job_submissions, speech_job_cancellations, "
+    "speech_job_cancellation_fences, speech_job_cancellation_reconciliations, "
+    "speech_job_cancellation_not_submitted WHERE 1=0"
 )
 
 
@@ -422,16 +425,8 @@ class JobCancellationRuntime:
         pool.open()
         try:
             with pool.connection(timeout=settings.transaction_timeout_seconds) as connection:
-                for table in (
-                    "speech_jobs",
-                    SUBMISSIONS,
-                    "speech_job_cancellations",
-                    "speech_job_cancellation_fences",
-                    "speech_job_cancellation_reconciliations",
-                    NOT_SUBMITTED_TABLE,
-                ):
-                    # 零行探针:验证表可读即可,方言没有 `LIMIT`,这里也没有分页语义。
-                    connection.execute(f"SELECT 1 FROM {table} WHERE 1=0")
+                # 与 admission-watch 同一做法:一条静态零行探针同时验证这些关系可读。
+                connection.execute(CANCELLATION_READ_PROBE)
             adapter = PostgresPublicJobs(pool, timeout_seconds=settings.transaction_timeout_seconds)
             jobs = PublicJobs(adapter, adapter)
             store = PostgresCancellationReconciliationStore(

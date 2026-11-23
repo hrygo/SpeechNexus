@@ -35,13 +35,6 @@ def revoke_builtin_voice(
     ):
         raise BuiltinVoiceRevocationRejectedError("invalid_request")
     source = kind == "source"
-    approvals = (
-        "speech_builtin_voice_source_approvals" if source else "speech_builtin_voice_approvals"
-    )
-    revocations = (
-        "speech_builtin_voice_source_revocations" if source else "speech_builtin_voice_revocations"
-    )
-    identity_column = "source_approval_id" if source else "approval_id"
 
     def operation(cursor: PublicationCursor) -> dict[str, str]:
         cursor.execute(
@@ -56,9 +49,18 @@ def revoke_builtin_voice(
             "installation_id": installation_id,
         }:
             raise BuiltinVoiceRevocationRejectedError("target_changed")
-        cursor.execute(
-            f"SELECT voice_id FROM {approvals} WHERE {identity_column}=%s", (approval_id,)
-        )
+        # 两个身份各自写死:表名与身份列由 kind 决定,而受限方言不允许把标识符拼进语句。
+        if source:
+            cursor.execute(
+                "SELECT voice_id FROM speech_builtin_voice_source_approvals "
+                "WHERE source_approval_id=?",
+                (approval_id,),
+            )
+        else:
+            cursor.execute(
+                "SELECT voice_id FROM speech_builtin_voice_approvals WHERE approval_id=?",
+                (approval_id,),
+            )
         approvals_found = cursor.fetchall()
         if len(approvals_found) != 1:
             raise BuiltinVoiceRevocationRejectedError("approval_not_found")
@@ -67,18 +69,33 @@ def revoke_builtin_voice(
             "'speechnexus:catalog:' || current_schema() || ':voice:' || ?, 0))",
             (approvals_found[0]["voice_id"],),
         )
-        cursor.execute(
-            f"SELECT reason FROM {revocations} WHERE {identity_column}=%s", (approval_id,)
-        )
+        if source:
+            cursor.execute(
+                "SELECT reason FROM speech_builtin_voice_source_revocations "
+                "WHERE source_approval_id=?",
+                (approval_id,),
+            )
+        else:
+            cursor.execute(
+                "SELECT reason FROM speech_builtin_voice_revocations WHERE approval_id=?",
+                (approval_id,),
+            )
         existing = cursor.fetchall()
         if existing:
             if len(existing) != 1 or existing[0]["reason"] != reason:
                 raise BuiltinVoiceRevocationRejectedError("intent_conflict")
             return {"outcome": "replayed", "kind": kind, "approval_id": approval_id}
-        cursor.execute(
-            f"INSERT INTO {revocations} ({identity_column}, reason) VALUES (?,?)",
-            (approval_id, reason),
-        )
+        if source:
+            cursor.execute(
+                "INSERT INTO speech_builtin_voice_source_revocations "
+                "(source_approval_id, reason) VALUES (?,?)",
+                (approval_id, reason),
+            )
+        else:
+            cursor.execute(
+                "INSERT INTO speech_builtin_voice_revocations (approval_id, reason) VALUES (?,?)",
+                (approval_id, reason),
+            )
         return {"outcome": "revoked", "kind": kind, "approval_id": approval_id}
 
     return store._run(operation, preserve=(BuiltinVoiceRevocationRejectedError,))

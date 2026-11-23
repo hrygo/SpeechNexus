@@ -155,6 +155,7 @@
     "admission_attempts": "A",
     "admission_leases": "A",
     "coordination_jobs": "A",
+    "coordination_claim_buckets": "A",
     "coordination_outbox": "A",
     "runtime_instance_heads": "A",
     "runtime_instance_intents": "A",

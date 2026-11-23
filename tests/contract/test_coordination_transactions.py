@@ -114,7 +114,7 @@ def test_active_ddl_has_no_replaced_pg_business_mechanisms() -> None:
 
     active = COORDINATION_DDL_TEXT
     legacy = (ROOT / "tests/fixtures/coordination/legacy_postgresql.sql").read_text()
-    assert len(re.findall(r"^CREATE TABLE ", active, re.MULTILINE)) == 15
+    assert len(re.findall(r"^CREATE TABLE ", active, re.MULTILINE)) == 16
     for mechanism in (
         r"CREATE (?:CONSTRAINT )?TRIGGER",
         r"CREATE FUNCTION",
@@ -157,10 +157,14 @@ def _ddl_columns() -> dict[str, set[str]]:
 
     ddl = COORDINATION_DDL_TEXT
     # 缩进随生成器而变,列检测只看「标识符 + 类型」,不锁死空格数。
-    column = re.compile(r"\s+([a-z][a-z0-9_]*) (?:VARCHAR|BIGINT|TEXT|INT|SMALLINT)\b")
+    column = re.compile(
+        r"\s+([a-z][a-z0-9_]*) (?:VARCHAR|BIGINT|TEXT|INT|SMALLINT|DECIMAL|TIMESTAMP)\b"
+    )
     return {
         table: {match.group(1) for line in body.splitlines() if (match := column.match(line))}
-        for table, body in re.findall(r"CREATE TABLE (\w+) \((.*?)\n\s*\);?", ddl, re.DOTALL)
+        for table, body in re.findall(
+            r"CREATE TABLE (?:IF NOT EXISTS )?(\w+) \((.*?)\n\s*\);?", ddl, re.DOTALL
+        )
     }
 
 
@@ -170,7 +174,7 @@ def test_runtime_grants_match_the_ddl_and_protect_configuration() -> None:
     grants: Any = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(grants)
     columns = _ddl_columns()
-    assert len(columns) == 15
+    assert len(columns) == 16
     assert set(columns) == set(grants.SPEECH_UPDATES) | set(grants.GATEWAY_UPDATES)
     for granted in (
         grants.SPEECH_UPDATES,

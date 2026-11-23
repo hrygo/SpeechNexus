@@ -33,7 +33,9 @@ class TimedPool(Pool):
         self.elapsed += self.commit_cost
 
     def execute(self, query: str, parameters: tuple[object, ...] = ()) -> Rows:
-        if "speechnexus:public-job-key:" in query:
+        if "speechnexus:catalog:" in query:
+            # The binding lock is the only cross-transaction wait a create makes;
+            # waiting on it is how a transaction can burn most of its budget.
             self.elapsed += 2.8
         elif "set_config" in query:
             self.elapsed += self.control_cost

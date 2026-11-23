@@ -11,7 +11,6 @@
     "advisory-lock::backend/src/speechnexus_backend/speech/infrastructure/admission_postgres.py": 1,
     "advisory-lock::backend/src/speechnexus_backend/speech/infrastructure/binding_disable_barrier.py": 1,
     "advisory-lock::backend/src/speechnexus_backend/speech/infrastructure/binding_lifecycle_postgres.py": 1,
-    "advisory-lock::backend/src/speechnexus_backend/speech/infrastructure/public_jobs_postgres.py": 2,
     "advisory-lock::backend/src/speechnexus_backend/speech/infrastructure/publications_postgres.py": 2,
     "advisory-lock::backend/src/speechnexus_backend/speech/infrastructure/publications_sql.py": 2,
     "advisory-lock::backend/src/speechnexus_backend/speech/infrastructure/qualification_admission_postgres.py": 1,

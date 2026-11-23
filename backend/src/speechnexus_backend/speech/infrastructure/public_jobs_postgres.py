@@ -555,14 +555,23 @@ class PostgresPublicJobs:
         key_digest: str,
         request_digest: str,
         retry_of_job_id: str | None,
+        *,
+        binding_id: str | None,
     ) -> JobCreateResult | None:
+        """Read one keyed Job, optionally settling its writer first.
+
+        ``binding_id`` names the lock a writer of this intent holds until it
+        commits; a rejection reconciliation passes it so an in-flight original is
+        observed instead of reported absent. ``None`` is the best-effort read
+        used by the early replay path, which must not wait.
+        """
         identifier(workspace_id)
         rows = self._read(
             "SELECT " + _JOB_COLUMNS + " FROM speech_jobs AS j "
             "LEFT JOIN speech_job_submissions AS s ON s.job_id = j.job_id "
             "WHERE j.workspace_id = ? AND j.idempotency_key_digest = ?",
             (workspace_id, key_digest),
-            submission_key=(workspace_id, key_digest),
+            binding_lock=binding_id,
         )
         if not rows:
             return None
@@ -649,10 +658,11 @@ class PostgresPublicJobs:
                     else self._transaction
                 )
                 with transaction(deadline) as connection:
+                    # Key replay is decided by the unique constraint on
+                    # (workspace_id, idempotency_key_digest); the post-lock lookup
+                    # below settles an in-flight writer of the same binding. No
+                    # transaction is serialized on the key before that point.
                     if job.idempotency_key_digest is not None:
-                        _lock_submission_key(
-                            connection, job.workspace_id, job.idempotency_key_digest
-                        )
                         existing = _existing_by_key(connection, job)
                         if existing is not None:
                             return _replay_or_conflict(existing, job)
@@ -786,7 +796,9 @@ class PostgresPublicJobs:
             )
             with transaction(deadline) as connection:
                 if job.idempotency_key_digest is not None:
-                    _lock_submission_key(connection, job.workspace_id, job.idempotency_key_digest)
+                    # The unique constraint on (workspace_id, idempotency_key_digest)
+                    # decides this key; the binding lock taken below settles a
+                    # concurrent identical append before this lookup is repeated.
                     existing = _existing_by_key(connection, job)
                     if existing is not None:
                         replayed = _replay_digest(existing, job.request_digest, job.retry_of_job_id)
@@ -899,119 +911,142 @@ class PostgresPublicJobs:
         if workspace_id is not None:
             identifier(workspace_id)
         deadline = time.monotonic() + self._timeout
-        try:
-            with self._transaction(deadline) as connection:
-                # Fixed lock order is canonical Job row -> public Job row. The fence
-                # writer must own the canonical row before it touches `speech_jobs`,
-                # because terminal transitions take the same row first; the gateway
-                # takes it too before it reads the fence, which is what orders
-                # acceptance against submit. `job_id` is the argument, so a caller
-                # naming another workspace locks a row it then refuses to read.
-                lock_cancellation_fence(connection, job_id)
-                job_row = _lock_cancel_target(connection, job_id, workspace_id)
-                if job_row is None:
-                    return JobCancellationResult("not_found")
-                job = _job(job_row)
-                operation_id, attempt_id = job_row.get("operation_id"), job_row.get("attempt_id")
-                if operation_id is None or attempt_id is None:
-                    return JobCancellationResult("unknown")
-                if key_digest is not None:
-                    _lock_cancellation_key(connection, job.workspace_id, key_digest)
-                    key_row = _cancellation_by_key(connection, job.workspace_id, key_digest)
-                    if key_row is not None and (
-                        key_row["job_id"] != job.job_id
-                        or key_row["request_digest"] != request_digest
-                    ):
-                        return JobCancellationResult("conflict")
-                # A terminal failure whose execution never confirmed stop holds
-                # capacity and must not be reported as a clean cancellation.
-                if job.state == "failed" and job.error_code == CANCELLATION_UNCONFIRMED:
-                    return JobCancellationResult("cleanup_pending")
-                receipt_row = _cancellation_by_job(connection, job.job_id)
-                if receipt_row is not None:
-                    return JobCancellationResult(
-                        "replayed" if _job_is_terminal(job) is False else "terminal",
-                        job,
-                        _cancellation(receipt_row),
+        for attempt in range(2):
+            try:
+                with self._transaction(deadline) as connection:
+                    # Fixed lock order is canonical Job row -> public Job row. The
+                    # fence writer must own the canonical row before it touches
+                    # `speech_jobs`, because terminal transitions take the same row
+                    # first; the gateway takes it too before it reads the fence,
+                    # which is what orders acceptance against submit. `job_id` is
+                    # the argument, so a caller naming another workspace locks a
+                    # row it then refuses to read. Each attempt is its own
+                    # transaction, so the retry takes the row again.
+                    lock_cancellation_fence(connection, job_id)
+                    job_row = _lock_cancel_target(connection, job_id, workspace_id)
+                    if job_row is None:
+                        return JobCancellationResult("not_found")
+                    job = _job(job_row)
+                    operation_id, attempt_id = (
+                        job_row.get("operation_id"),
+                        job_row.get("attempt_id"),
                     )
-                accepted = job.state in ("pending", "running", "cancelling")
-                target = {"pending": "cancelled", "running": "cancelling"}.get(job.state)
-                # 整条取消路径共用一个时间点:状态迁移、事件与回执的时戳必须一致.
-                now = _database_now_us(connection)
-                if target is not None:
-                    guarded = connection.execute(
-                        "UPDATE speech_jobs SET state = ?, "
-                        "status_version = status_version + 1, updated_at_us = ? "
-                        "WHERE job_id = ? AND status_version = ? AND state = ?",
-                        (target, now, job.job_id, job.status_version, job.state),
-                    )
-                    if guarded.rowcount != 1:
-                        raise PublicJobConflictError("Public Job cancellation lost its guard")
-                    connection.execute(
-                        "INSERT INTO speech_job_events "
-                        "(job_id, event_seq, state, occurred_at_us) "
-                        "SELECT ?, COALESCE(MAX(event_seq), -1) + 1, ?, ? "
-                        "FROM speech_job_events WHERE job_id = ?",
-                        (job.job_id, target, now, job.job_id),
-                    )
-                requested_at_us = now
-                connection.execute(
-                    "INSERT INTO speech_job_cancellations "
-                    "(job_id, workspace_id, operation_id, attempt_id, request_id, "
-                    "request_digest, idempotency_key_digest, accepted, requested_at_us) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        job.job_id,
-                        job.workspace_id,
-                        operation_id,
-                        attempt_id,
-                        request_id,
-                        request_digest,
-                        key_digest,
-                        accepted,
-                        requested_at_us,
-                    ),
-                )
-                updated = _select_job(connection, job.job_id)
-                inserted = _cancellation_by_job(connection, job.job_id)
-                if accepted:
-                    # The canonical Job row is the row the claim reads, so the
-                    # accepted cancellation has to close its dispatch disposition in
-                    # this same commit: otherwise a pending Job stays claimable
-                    # (`job_state = 'pending'`) after its fence is committed, and
-                    # every claim of it is skipped on the public state forever. The
-                    # public state keeps `cancelling` until a verified stop; this
-                    # column is the dispatch disposition, not stop evidence.
-                    closed = connection.execute(
-                        "UPDATE coordination_jobs SET job_state = 'cancelled' WHERE job_id = ?",
-                        (job.job_id,),
-                    )
-                    if closed.rowcount != 1:
-                        raise PublicJobConflictError(
-                            "Public Job cancellation lost its dispatch row"
+                    if operation_id is None or attempt_id is None:
+                        return JobCancellationResult("unknown")
+                    if key_digest is not None:
+                        # One cancellation key per workspace is the receipt's unique
+                        # constraint; this read answers the settled cases, and a writer that
+                        # commits after it loses on the insert below and is re-read by the
+                        # retry.
+                        key_row = _cancellation_by_key(connection, job.workspace_id, key_digest)
+                        if key_row is not None and (
+                            key_row["job_id"] != job.job_id
+                            or key_row["request_digest"] != request_digest
+                        ):
+                            return JobCancellationResult("conflict")
+                    # A terminal failure whose execution never confirmed stop holds
+                    # capacity and must not be reported as a clean cancellation.
+                    if job.state == "failed" and job.error_code == CANCELLATION_UNCONFIRMED:
+                        return JobCancellationResult("cleanup_pending")
+                    receipt_row = _cancellation_by_job(connection, job.job_id)
+                    if receipt_row is not None:
+                        return JobCancellationResult(
+                            "replayed" if _job_is_terminal(job) is False else "terminal",
+                            job,
+                            _cancellation(receipt_row),
                         )
-                    # Last write of acceptance, under the Job row already held:
-                    # submit takes the same row lock before it creates an execution.
-                    write_cancellation_fence(
-                        connection,
-                        job_id=job.job_id,
-                        request_id=request_id,
-                        accepted_at_us=requested_at_us,
+                    accepted = job.state in ("pending", "running", "cancelling")
+                    target = {"pending": "cancelled", "running": "cancelling"}.get(job.state)
+                    # 整条取消路径共用一个时间点:状态迁移、事件与回执的时戳必须一致.
+                    now = _database_now_us(connection)
+                    if target is not None:
+                        guarded = connection.execute(
+                            "UPDATE speech_jobs SET state = ?, "
+                            "status_version = status_version + 1, updated_at_us = ? "
+                            "WHERE job_id = ? AND status_version = ? AND state = ?",
+                            (target, now, job.job_id, job.status_version, job.state),
+                        )
+                        if guarded.rowcount != 1:
+                            raise PublicJobConflictError("Public Job cancellation lost its guard")
+                        connection.execute(
+                            "INSERT INTO speech_job_events "
+                            "(job_id, event_seq, state, occurred_at_us) "
+                            "SELECT ?, COALESCE(MAX(event_seq), -1) + 1, ?, ? "
+                            "FROM speech_job_events WHERE job_id = ?",
+                            (job.job_id, target, now, job.job_id),
+                        )
+                    requested_at_us = now
+                    connection.execute(
+                        "INSERT INTO speech_job_cancellations "
+                        "(job_id, workspace_id, operation_id, attempt_id, request_id, "
+                        "request_digest, idempotency_key_digest, accepted, requested_at_us) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            job.job_id,
+                            job.workspace_id,
+                            operation_id,
+                            attempt_id,
+                            request_id,
+                            request_digest,
+                            key_digest,
+                            accepted,
+                            requested_at_us,
+                        ),
                     )
-            if updated is None or inserted is None:
+                    updated = _select_job(connection, job.job_id)
+                    inserted = _cancellation_by_job(connection, job.job_id)
+                    if accepted:
+                        # The canonical Job row is the row the claim reads, so the
+                        # accepted cancellation has to close its dispatch disposition
+                        # in this same commit: otherwise a pending Job stays claimable
+                        # (`job_state = 'pending'`) after its fence is committed, and
+                        # every claim of it is skipped on the public state forever.
+                        # The public state keeps `cancelling` until a verified stop;
+                        # this column is the dispatch disposition, not stop evidence.
+                        closed = connection.execute(
+                            "UPDATE coordination_jobs SET job_state = 'cancelled' WHERE job_id = ?",
+                            (job.job_id,),
+                        )
+                        if closed.rowcount != 1:
+                            raise PublicJobConflictError(
+                                "Public Job cancellation lost its dispatch row"
+                            )
+                        # Last write of acceptance, under the Job row already held:
+                        # submit takes the same row lock before it creates an
+                        # execution.
+                        write_cancellation_fence(
+                            connection,
+                            job_id=job.job_id,
+                            request_id=request_id,
+                            accepted_at_us=requested_at_us,
+                        )
+                if updated is None or inserted is None:
+                    return JobCancellationResult("unknown")
+                current = _job(updated)
+                return JobCancellationResult(
+                    "accepted" if accepted else "terminal",
+                    current,
+                    _cancellation(inserted),
+                )
+            except PublicJobConflictError, PublicJobUnavailableError:
+                raise
+            except psycopg.errors.UniqueViolation:
+                # Only the receipt's (workspace_id, idempotency_key_digest)
+                # constraint can name a committed winner here: _lock_cancel_target
+                # holds the public Job row FOR UPDATE, so a same-Job duplicate
+                # cannot reach this insert, and the fence insert runs under the
+                # canonical row lock it re-takes and ignores its own conflict. The
+                # winning inserter has therefore committed by the time the index
+                # reports the conflict, and one retry reads its receipt and
+                # answers the same conflict the removed key lock produced.
+                if attempt == 0:
+                    continue
                 return JobCancellationResult("unknown")
-            current = _job(updated)
-            return JobCancellationResult(
-                "accepted" if accepted else "terminal",
-                current,
-                _cancellation(inserted),
-            )
-        except PublicJobConflictError, PublicJobUnavailableError:
-            raise
-        except psycopg.errors.QueryCanceled, psycopg.OperationalError, psycopg.InterfaceError:
-            return JobCancellationResult("unknown")
-        except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
-            return JobCancellationResult("unknown")
+            except psycopg.errors.QueryCanceled, psycopg.OperationalError, psycopg.InterfaceError:
+                return JobCancellationResult("unknown")
+            except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
+                return JobCancellationResult("unknown")
+        return JobCancellationResult("unknown")
 
     def settle_cancelled(
         self, job_id: str, *, expected_version: int, now_us: int
@@ -1094,15 +1129,19 @@ class PostgresPublicJobs:
         query: str,
         parameters: tuple[object, ...],
         *,
-        submission_key: tuple[str, str] | None = None,
+        binding_lock: str | None = None,
         page_size: int | None = None,
     ) -> list[dict[str, Any]]:
         deadline = time.monotonic() + self._timeout
         try:
             with self._transaction(deadline) as connection:
                 connection.execute("SET TRANSACTION READ ONLY")
-                if submission_key is not None:
-                    _lock_submission_key(connection, *submission_key)
+                if binding_lock is not None:
+                    # Settlement, not exclusion: a same-key writer takes this same
+                    # binding lock before it re-checks its key and holds it until
+                    # commit, so waiting here makes the lookup observe that writer
+                    # instead of reporting absence against an uncommitted row.
+                    lock_binding(connection, binding_lock)
                 cursor = connection.execute(query, parameters)
                 # 页大小不进 SQL:方言没有 `LIMIT`,keyset 谓词已把扫描面收窄。
                 rows = cursor.fetchall() if page_size is None else cursor.fetchmany(page_size)
@@ -1196,16 +1235,6 @@ def _lock_cancel_target(
     if len(rows) > 1:
         raise PublicJobUnavailableError
     return rows[0] if rows else None
-
-
-def _lock_cancellation_key(connection: _Executor, workspace_id: str, key_digest: str) -> None:
-    # Cancellation keys are scoped by workspace and never share the create
-    # namespace. Acquire this lock before any receipt row write.
-    connection.execute(
-        "SELECT pg_advisory_xact_lock(hashtextextended("
-        "'speechnexus:public-job-cancel-key:' || current_schema() || ':' || ?, 0))",
-        (json.dumps([workspace_id, key_digest], separators=(",", ":")),),
-    )
 
 
 def _cancellation_by_key(
@@ -1312,17 +1341,6 @@ def _pinned_binding(rows: list[dict[str, Any]]) -> BindingFact | None:
         return BindingFact(_publication(row), definition, row["is_current"], row["is_retired"])
     except ValueError, TypeError, KeyError, RecursionError:
         raise PublicJobUnavailableError from None
-
-
-def _lock_submission_key(connection: _Executor, workspace_id: str, key_digest: str) -> None:
-    # Serialize all keyed public creates and rejection reconciliation, including
-    # keyless-binding requests. Never acquire this lock under a catalogue lock.
-    # Canonical tuple encoding prevents ambiguous workspace/key concatenation.
-    connection.execute(
-        "SELECT pg_advisory_xact_lock(hashtextextended("
-        "'speechnexus:public-job-key:' || current_schema() || ':' || ?, 0))",
-        (json.dumps([workspace_id, key_digest], separators=(",", ":")),),
-    )
 
 
 def _locked_artifact_reader(

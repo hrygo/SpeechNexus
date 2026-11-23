@@ -1406,12 +1406,12 @@ SELECT 1 FROM speech_workspaces, workspace_quotas, … WHERE 1=0
 
 ### 8.64 剩余 244 条的构成与「能不能动」的判定
 
-按规则统计(2026-11-23,基线 244):
+按规则统计(2026-11-23,基线 230):
 
 | 规则 | 条数 | 归属 | 能否现在动 |
 | --- | ---: | --- | --- |
-| `sql-string-building` | 65 | #1100 | 能;但字面量化会暴露被掩盖的 `paging-limit` / `vendor-json` |
-| `vendor-type` | 47 | #1102 | 不能:厂商类型名(`jsonb`/`text`)要等 bootstrap 与 profile |
+| `sql-string-building` | 55 | #1100 | 能;但字面量化会暴露被掩盖的 `paging-limit` / `vendor-json` |
+| `vendor-type` | 45 | #1102 | 不能:厂商类型名(`jsonb`/`text`)要等 bootstrap 与 profile |
 | `vendor-json` | 33 | #1102 | 不能:JSONB 运算符与 `->>` 取值的替代需要契约层先定 |
 | `advisory-lock` | 32 | 无卡 | **不能**:见下 |
 | `runtime-ddl` | 18 | #1102 | 不能:workbench 在运行期建表,bootstrap 改由迁移承担后才消失 |
@@ -1490,3 +1490,28 @@ KeyError: 'intent-a'
 
 **为什么值得加规则而不是只改一处**:这一处能改,是因为我恰好读到了它。规则让「元数拼接」从
 「读代码时靠眼力」变成「跑守卫就报」。基线不因它下降,但下一处会在 CI 里被拦下,而不是再等一轮人工巡检。
+
+### 8.68 启动权限探针:`CURRENT_USER` 与具名角色的分支(六个站点一次清掉)
+
+`startup_privileges` 的六个探针都用了同一个 `_role_argument()`:身份为空时插 `CURRENT_USER`,
+否则插 `CAST(%s AS name)`,再把结果拼进 `pg_catalog.has_*_privilege(...)`。这是「身份分支藏在文本里」,
+与 8.44 记录的同一类问题。
+
+改法是把它变成**成对的完整语句**:`_X_CURRENT` 与 `_X_NAMED`,共 12 条。判据
+`test_startup_privilege_statements.py` 的核心不是逐条比对文本,而是**两两等价**:
+
+```
+current.replace("CURRENT_USER", "CAST(? AS name)") == named
+```
+
+这条断言同时挡住两种退化:一边改了权限面另一边没改(注入把一个 `'CREATE'` 改成 `'USAGE'` → red),
+以及有人「顺手统一」两句导致身份参数错位。
+
+另外三处顺带收掉,都是别处的缩减而不是这一卡的发明:
+
+- `LIMIT 1` 去掉:调用方本来就 `fetchone()` 只取一行,`LIMIT` 是可移植子集里的受限写法;
+- `<> ALL(CAST(? AS text[]))` 改成 `NOT IN (?)` + `ListMarker`:数组转换消失(驱动层摊开标记);
+- `_role_argument()`、`_TABLE_SURFACE`、`_COLUMN_SURFACE`、`_SEQUENCE_SURFACE` 变成死代码后删除
+  (权限面已写在字面量里)。
+
+净变化 **244 → 230**(−6 `sql-string-building` −2 `vendor-type`),且这一项没有把任何发现「转化」成新规则。

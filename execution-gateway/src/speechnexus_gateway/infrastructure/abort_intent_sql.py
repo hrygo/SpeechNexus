@@ -80,9 +80,20 @@ def _row_drifted(row: Mapping[str, Any], intent: SubmissionIntent) -> bool:
     )
 
 
+# 回执投影写死;列序由 test_literalized_statements 对着 `_RECEIPT_COLUMNS` 核对。
+_RECEIPT_SELECT = (
+    "SELECT submit_intent_id, operation_id, attempt_id, fencing_token, reason, "
+    "wait_timeout_ms, received_at_us, dispatched_at_us, instance_id, "
+    "instance_generation, dispatch_attempt_id, dispatch_started_at_us, "
+    "dispatch_deadline_at_us, dispatch_outcome, dispatch_outcome_at_us, "
+    "dispatch_attempts FROM gateway_abort_intents "
+    "WHERE submit_intent_id=? FOR UPDATE"
+)
+
+
 def _receipt(cursor: SubmitCursor, request: AbortExecutionRequest) -> dict[str, Any] | None:
     cursor.execute(
-        f"SELECT {_RECEIPT_COLUMNS} FROM gateway_abort_intents WHERE submit_intent_id=? FOR UPDATE",
+        _RECEIPT_SELECT,
         (request.submit_intent_id,),
     )
     rows = cursor.fetchall()

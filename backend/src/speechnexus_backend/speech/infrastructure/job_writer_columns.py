@@ -23,6 +23,10 @@ COORDINATION_JOB_INSERT_COLUMNS = (
     "initial_event_id",
     "initial_event_digest",
     "request_digest",
+    # The canonical bucket is supplied at INSERT time by ``bucket_for(job_id)``,
+    # so the column grant has to cover it too. It stays nullable until the later
+    # revision that owns the NOT NULL constraint.
+    "bucket_no",
 )
 COORDINATION_OUTBOX_INSERT_COLUMNS = ("event_id", "job_id", "event_digest")
 ADMISSION_OPERATION_INSERT_COLUMNS = (

@@ -26,7 +26,9 @@ from pymysql.cursors import DictCursor
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 from tests.support.cancellation_fence_schema import ensure_cancellation_fence_schema
+from tests.support.historical_grants import apply_declared_grants
 from tests.support.job_database import MySQLJobTransactions
+from tests.support.legacy_jobs import seed_legacy_job
 from tests.support.migrations import DELETION_LEDGER_REVISION
 from tests.support.portable_pg import connect as portable_pg_connect
 from tests.support.portable_pg import connect_kwargs as portable_connect_kwargs
@@ -34,9 +36,14 @@ from tests.support.portable_pg import connect_kwargs as portable_connect_kwargs
 from speechnexus_backend.speech.application.jobs import CreateJobService, JobTransactions
 from speechnexus_backend.speech.domain.jobs import CreateJob
 from speechnexus_backend.speech.infrastructure.job_schema import (
+    CANONICAL_JOB_DDL,
     JOB_DDL,
     job_dispatch_grants,
     job_runtime_grants,
+)
+from speechnexus_backend.speech.infrastructure.job_writer_columns import (
+    COORDINATION_JOB_INSERT_COLUMNS,
+    COORDINATION_OUTBOX_INSERT_COLUMNS,
 )
 from speechnexus_backend.speech.infrastructure.jobs_postgres import (
     JobPool,
@@ -142,8 +149,8 @@ def database(request: pytest.FixtureRequest) -> Iterator[JobDatabase]:
         admin.execute(f'SET search_path TO "{schema}", pg_catalog')
         admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD 'synthetic_job_test'")
 
-        def admin_query(statement: str) -> list[Any]:
-            cursor = admin.execute(statement)
+        def admin_query(statement: str, parameters: tuple[object, ...] = ()) -> list[Any]:
+            cursor = admin.execute(statement, parameters or None)
             return cast(list[Any], cursor.fetchall()) if cursor.description else []
 
         # Historical revisions predate the Public Job and cancellation schemas.
@@ -156,8 +163,10 @@ def database(request: pytest.FixtureRequest) -> Iterator[JobDatabase]:
         # grants refer to artifacts introduced after those tested revisions.
         if migration_revision == "head":
             grants += job_dispatch_grants(schema, role)
-        for grant in grants:
-            admin.execute(grant)
+        # The declared grant surface is today's; a revision below 0064 has no
+        # ``bucket_no`` and PostgreSQL refuses the whole column-level GRANT there.
+        # The historical ACL is that declaration over the columns the revision has.
+        apply_declared_grants(admin_query, grants, schema=schema)
         pool = job_pool(make_conninfo(url, user=role, password="synthetic_job_test"), schema=schema)
         pool.open()
         port: JobTransactions = PostgresJobTransactions(pool)
@@ -177,16 +186,14 @@ def database(request: pytest.FixtureRequest) -> Iterator[JobDatabase]:
                 f"CREATE DATABASE `{schema}` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin"
             )
             cursor.execute(f"USE `{schema}`")
-            for ddl in JOB_DDL:
+            for ddl in (*JOB_DDL, *CANONICAL_JOB_DDL):
                 cursor.execute(ddl.replace('COLLATE "C"', "COLLATE utf8mb4_0900_bin"))
             cursor.execute(f"CREATE USER '{role}'@'%' IDENTIFIED BY 'synthetic_job_test'")
+            # 列清单直接取写入者声明,不在这里手写第五份副本:漏一列的后果是运行期
+            # ``42501``(列级授权缺列时 MySQL/PG 的错误都不点名缺哪列)。
             for table, columns in (
-                (
-                    "coordination_jobs",
-                    "job_id,operation_id,attempt_id,initial_event_id,"
-                    "initial_event_digest,request_digest",
-                ),
-                ("coordination_outbox", "event_id,job_id,event_digest"),
+                ("coordination_jobs", ",".join(COORDINATION_JOB_INSERT_COLUMNS)),
+                ("coordination_outbox", ",".join(COORDINATION_OUTBOX_INSERT_COLUMNS)),
             ):
                 cursor.execute(
                     f"GRANT SELECT, INSERT ({columns}) ON `{schema}`.{table} TO '{role}'@'%'"
@@ -485,7 +492,11 @@ def test_versioned_migration_cli_is_idempotent_and_downgrade_preserves_history(
     "database", [("postgresql", "0024_binding_publish_intents")], indirect=True
 )
 def test_0024_downgrade_guard_preserves_job_history(database: JobDatabase) -> None:
-    assert database.port.create_job(REQUEST).outcome == "committed"
+    # 0024 predates 0064's ``bucket_no``; the production writer is only supported
+    # at >= 0064, so seed the revision's own six-column shape directly. What this
+    # test proves is the downgrade guard refusing while Job history exists.
+    seed_legacy_job(database.query, REQUEST)
+    assert database.counts() == (1, 1)
     engine = create_engine(
         database.url.replace("postgresql://", "postgresql+psycopg://", 1),
         poolclass=NullPool,

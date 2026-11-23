@@ -15,6 +15,7 @@ from speechnexus_backend.speech.domain.jobs import (
     replay_result,
     unknown_result,
 )
+from speechnexus_portable_sql.claims import bucket_for
 
 
 class JobCursor(Protocol):
@@ -69,8 +70,8 @@ def create_in_transaction(cursor: JobCursor, request: CreateJob) -> JobResult:
     cursor.execute(
         """INSERT INTO coordination_jobs
            (job_id, operation_id, attempt_id, initial_event_id,
-            initial_event_digest, request_digest)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+            initial_event_digest, request_digest, bucket_no)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (
             request.job_id,
             request.operation_id,
@@ -78,6 +79,7 @@ def create_in_transaction(cursor: JobCursor, request: CreateJob) -> JobResult:
             request.event_id,
             request.event_digest,
             request.request_digest,
+            int(bucket_for(request.job_id)),
         ),
     )
     cursor.execute(

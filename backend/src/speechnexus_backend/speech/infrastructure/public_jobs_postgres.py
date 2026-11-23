@@ -80,6 +80,7 @@ from speechnexus_backend.speech.infrastructure.public_job_admission import (
     load_admission_readiness,
     rejection_code,
 )
+from speechnexus_portable_sql.claims import bucket_for
 from speechnexus_portable_sql.clock import ClockReader, now_us
 from speechnexus_portable_sql.psycopg_driver import portable_error
 from speechnexus_portable_sql.transaction import is_savepoint_control
@@ -1666,7 +1667,7 @@ def _insert_job_rows(connection: _Executor, job: NewPublicJob, *, admitted: bool
         connection.execute(
             "INSERT INTO coordination_jobs "
             "(job_id, operation_id, attempt_id, initial_event_id, initial_event_digest, "
-            "request_digest) VALUES (?, ?, ?, ?, ?, ?)",
+            "request_digest, bucket_no) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 job.job_id,
                 job.job_id,
@@ -1674,6 +1675,7 @@ def _insert_job_rows(connection: _Executor, job: NewPublicJob, *, admitted: bool
                 job.job_id + "-queued",
                 job.initial_event_digest,
                 job.request_digest,
+                int(bucket_for(job.job_id)),
             ),
         )
         connection.execute(

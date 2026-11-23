@@ -84,7 +84,8 @@ _INSERT_COLUMNS = {
         + " ".join("reserved_" + dimension for dimension in DIMENSIONS)
     ),
     "coordination_jobs": (
-        "job_id operation_id attempt_id initial_event_id initial_event_digest request_digest"
+        "job_id operation_id attempt_id initial_event_id initial_event_digest request_digest "
+        "bucket_no"
     ),
     "coordination_outbox": "event_id job_id event_digest",
 }

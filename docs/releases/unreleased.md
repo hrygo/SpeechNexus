@@ -28,6 +28,26 @@
 
 ### 1. 迁移到 `0065_canonical_jobs_reconcile`
 
+#### 部署顺序：迁移（含授权重放）先于新构建
+
+顺序是硬约束，不是建议：先把库迁到 `0064_canonical_jobs_columns` 之上（当前 head 是
+`0065_canonical_jobs_reconcile`），重放下节三个身份的 `coordination_jobs` INSERT 授权，
+**再**启动新构建。新构建的 Job 写入在 INSERT 里固定提供 `bucket_no`
+（`backend/src/speechnexus_backend/speech/infrastructure/job_writer_columns.py:29`），
+这一列由 `0064` 添加；写入者不做「列不在就换一种 INSERT」的探测，也不保留第二套
+支持的 schema。
+
+新构建先启动、迁移后跑时，每一次新建 Job 都在 INSERT 处以
+`psycopg.errors.UndefinedColumn: column "bucket_no" of relation coordination_jobs
+does not exist`（SQLSTATE `42703`）失败：公开创建面把它归为 `storage_rejected`
+的拒绝（`backend/src/speechnexus_backend/speech/infrastructure/public_jobs_postgres.py:750`），
+协调写入者把它归为 `reconciliation_required`
+（`backend/src/speechnexus_backend/speech/infrastructure/jobs_postgres.py:100`）。
+两者都不是数据问题，重试和 `recover_create_job` 都绕不过去：语句引用了不存在的列。
+授权未重放是同一位置、同为「新建 Job 必失败」的另一种形态——`42501 permission denied
+for table coordination_jobs`（见下节），所以迁移与授权重放必须一起早于新构建。迁移完成
+之后不要回退到 `0064` 以下再运行新构建，否则同样是这个错误。
+
 `v0.1.0` 的目录树停在 `0057_asr_settlement`（发布说明写的 head 是
 `0056_debt_probe_live_state_index`，但 tag 里已经有 0057），此后新增八个 revision：
 
@@ -40,7 +60,7 @@
 | `0062_lease_debt_index` | 删掉 0061 的索引，改建 `speech_job_cancellation_lease_debt_scan`：永久取消债的界从「失败历史」换成「仍持有容量的租约」 |
 | `0063_deletion_targets_blocked` | 删除账本的 `target_kind` 加 `artifact`、`voice_revision`，`status` 加 `blocked`、`failed`，并新增 `error` JSONB 列（与这两个状态一一对应） |
 | `0064_canonical_jobs_columns` | `coordination_jobs` 加 canonical 列 `bucket_no`、`due_at`、`claim_expires_at`、`last_event_seq` 并按既有 epoch 列回填（`0` → `NULL`、UTC 墙上时间、`bucket_for(job_id)`）；纯加法，无读取者，`downgrade` 只删这四列 |
-| `0065_canonical_jobs_reconcile` | 重跑 0064 的三条回填，覆盖 0064 之后写入、只有草案列的行；按 `MAX(speech_job_events.event_seq)` 回填 `last_event_seq`（无事件为 `0`）；提交前对账四条不变量（含「每行都有 `bucket_no`」）。**不收紧 `bucket_no`**：写入者只提供六个草案列，`NOT NULL` 会让新建 Job 以 `23502` 失败，收紧必须与写入切换同一修订落地；`downgrade` 把 `last_event_seq` 归零并防御性清掉 `NOT NULL`，不删列 |
+| `0065_canonical_jobs_reconcile` | 重跑 0064 的三条回填，覆盖 0064 之后写入、只有草案列的行；按 `MAX(speech_job_events.event_seq)` 回填 `last_event_seq`（无事件为 `0`）；提交前对账四条不变量（含「每行都有 `bucket_no`」）。**不收紧 `bucket_no`**：写入切换（#1176）已让两个写入者在 INSERT 时提供 `bucket_for(job_id)`，但 `NOT NULL` 仍由后续修订落地；`downgrade` 把 `last_event_seq` 归零并防御性清掉 `NOT NULL`，不删列 |
 | `0008_runtime_delivery` | 参数标记迁到 `?` 契约后，迁移把唯一的占位符内联成迁移事务时间戳；行为不变，仍给旧 outbox 行补 `unknown` 投递相位 |
 | `0023_publication_lifecycle`（视图定义） | 视图里的 `::numeric` 改成标准 `CAST(... AS numeric)`，语义等价；只在重新 bootstrap 时生效，不新增迁移 |
 
@@ -71,6 +91,60 @@ canonical 列，`0065` 把 `last_event_seq` 归零（并防御性清掉 `bucket_
 `tests/integration/test_canonical_jobs_0065_pg.py` 在 `Asia/Shanghai` 会话下实跑，
 覆盖 `MAX(event_seq)` 事件头、0064 之后写入窗口行的二次回填、`AT TIME ZONE 'UTC'`
 的墙上时间、`downgrade` 回 0064 三类判据。
+
+#### 同一部署要重跑 Job 写入/受理/派发三个身份的 `coordination_jobs` INSERT 授权
+
+写入切换 #1176 在两个写入者的 INSERT 里加了 `bucket_no`，并把该列放进
+`COORDINATION_JOB_INSERT_COLUMNS`。`job_runtime_grants`、`coordination_runtime_grants`
+与 `public_job_admission_grants` 生成的授权语句因此都多了一列。停在旧六列授权上的部署，
+**每一次新建 Job 都会以 `42501 permission denied for table coordination_jobs` 失败**
+（列级授权缺列时 PostgreSQL 只报表名），公开创建面报 `role_privileges_missing`。迁移本身
+不改授权，必须重放这三个身份的函数：
+
+```bash
+set -a; . deploy/compose.env; set +a
+export SN_ADMIN_DSN='<owner/DDL 身份的 DSN，经批准的秘密渠道提供>'
+uv run --all-packages python - <<'PY'
+import os
+from urllib.parse import unquote, urlsplit
+
+import psycopg
+
+from speechnexus_backend.speech.infrastructure.job_schema import job_runtime_grants
+from speechnexus_backend.speech.infrastructure.public_job_admission_grants import (
+    public_job_admission_grants,
+)
+
+schema = os.environ.get("SN_SCHEMA", "speech")
+
+
+def role(key: str) -> str:
+    parts = urlsplit(os.environ[key])
+    name = unquote(parts.username or "")
+    if not name:
+        raise SystemExit(f"{key} does not name a role")
+    return name
+
+
+statements = [
+    *job_runtime_grants(schema, role("SPEECHNEXUS_JOB_WRITER_DATABASE_URL")),
+    *job_runtime_grants(schema, role("SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL")),
+    *public_job_admission_grants(schema, role("SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL")),
+]
+with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as connection:
+    for statement in statements:
+        connection.execute(statement)
+print(len(statements), "grant statements replayed")
+PY
+```
+
+派发身份同时从 `job_runtime_grants` 与 `coordination_runtime_grants` 得到 INSERT 权限，
+`GRANT` 是并集，所以重放 `job_runtime_grants` 已覆盖新增列；`coordination_runtime_grants`
+的声明也已同步，下一次 `provision-job-roles.py` 会带上它。核实：**实跑 + 读代码**。
+2026-11-23 在 `PostgreSQL 18.6`（`SPEECHNEXUS_TEST_DATABASE_URL`）上以
+`tests/integration/test_job_writer_bucket_no_pg.py` 分别用写入者身份走 admission-less
+fallback、用受理身份走 `create_in_transaction`，两行 `bucket_no` 都等于
+`bucket_for(job_id)`；把写入者改回写 `0` 时该用例转红。
 
 ### 2. 重跑 `cancellation_debt_reader_grants`：账本授权从 4 列扩到 5 列
 
@@ -251,7 +325,9 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 | `gateway_cancellation_fence_grants` | `job_cancellation_fence_schema.py` | 未变 |
 | `deletion_plan_grants` | `job_schema.py` | **新增**，见第 3 条 |
 | `deletion_execution_grants` | `job_schema.py` | **新增**，见第 3 条 |
-| `job_runtime_grants` | `job_schema.py` | 未变 |
+| `job_runtime_grants` | `job_schema.py` | **变**：`coordination_jobs` 的 INSERT 授权随 `COORDINATION_JOB_INSERT_COLUMNS` 自动加 `bucket_no`（函数体未改，见第 1 条） |
+| `coordination_runtime_grants` | `coordination_grants.py` | **变**：`coordination_jobs` 的 INSERT 列加 `bucket_no`，见第 1 条 |
+| `public_job_admission_grants` | `public_job_admission_grants.py` | **变**：`coordination_jobs` 的 INSERT 列加 `bucket_no`，见第 1 条 |
 | `binding_disable_admission_grants` | `admission_postgres.py` | 未变（SQL 参数标记迁到 `?`，授权列未动） |
 | `tts_voice_admission_grants` | `admission_postgres.py` | 未变（同文件，参数标记迁移） |
 | `speech_synthesis_reader_grants` | `qualified_speech_facts_postgres.py` | 未变（参数标记迁移） |

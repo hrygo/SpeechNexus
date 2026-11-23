@@ -38,6 +38,16 @@ JOB_DDL: tuple[str, ...] = (
 )
 
 
+#: 加在 ``JOB_DDL`` 之后的 canonical 列增量。生产由 alembic ``0064`` 加列,InnoDB 验证
+#: schema 由 ``JOB_DDL`` 直接建表,所以需要同一份增量,否则「PG 有列、InnoDB 没有」会让
+#: 同一段写入代码只在一边可用——那正是 #1176 段 B1 在 CI 上撞到的东西。
+#: 单独成元组而不是改 ``JOB_DDL``:``JOB_DDL`` 被历史迁移 ``0001_jobs.py`` 引用,改它等于
+#: 改写已发布迁移的行为。
+CANONICAL_JOB_DDL: tuple[str, ...] = (
+    "ALTER TABLE coordination_jobs ADD COLUMN bucket_no SMALLINT",
+)
+
+
 def checked_sql_name(value: str) -> str:
     if not re.fullmatch(r"[a-z][a-z0-9_]{2,62}", value):
         raise ValueError("Invalid database object name")

@@ -1,5 +1,5 @@
 {
-  "$comment": "canonical 列 -> 草案来源。kind: identity(同名列直传) / convert(需要换算) / derive(需要派生) / seed(建表时写入) / gap(来源尚未确定,必须写明 reason)。claim_buckets 的「来源」是先建桶再回填 jar。",
+  "$comment": "canonical 列 -> 草案来源。kind: identity(同名列直传) / convert(需要换算) / derive(需要派生) / seed(建表时写入) / gap(来源尚未确定,必须写明 reason);event_digest 的派生规则已固定在 portable_sql.claims.event_digest,由 tests/unit/portable_sql/test_event_digest.py 的定长向量守住。claim_buckets 的「来源」是先建桶再回填 jar。",
   "revision": "0003",
   "tables": {
     "coordination_jobs": {
@@ -126,9 +126,9 @@
           "source": "event_seq"
         },
         "event_digest": {
-          "kind": "gap",
+          "kind": "derive",
           "source": null,
-          "reason": "speech_job_events 只有 state/occurred_at_us/progress_*,没有摘要列;搬迁要么按行计算规范摘要,要么在切换前补一列。这是切换的未决项"
+          "rule": "portable_sql.claims.event_digest(job_id, event_seq, state, occurred_at=occurred_at_us 折 UTC, kind, progress_completed, progress_total, payload_ref);草案表无摘要列,搬迁按此规则重算,历史事件与迁移后新事件因此可比较"
         },
         "payload_ref": {
           "kind": "gap",

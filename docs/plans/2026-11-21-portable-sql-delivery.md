@@ -1631,3 +1631,43 @@ canonical 切换。这条边界要认清,否则会拿「改接原语」当 #1100
 
 若将来启动这条切换,它是协调事务变更:先读 `speechnexus-coordination-change`,准备 bucket → Job →
 outbox 的锁序 oracle,并在切换前给出草案表到 canonical 表的列级换算与回退演练。
+
+### 8.75 #1102 的切换顺序与每个步骤的判据
+
+搬迁不是「跑一个脚本」,而是五步,每步都有独立的、会红的判据。顺序不可交换:bootstrap 提供
+`schema_meta`,换算需要它;对账要在提交之后,否则看到的还不是要上线的状态。
+
+| 步骤 | 命令 / 入口 | 判据 |
+| --- | --- | --- |
+| 1. 建 schema | `scripts/dev-env/portable-schema.py --dsn … --schema …` | `--check` 在空库上非零退出;重跑幂等;某版播种版本与文件名不符时该版整体回滚 |
+| 2. 换算行 | `claims.canonical_job_from_draft()` | 0 → `NULL`、`bucket_no = bucket_for(job_id)`、`due_at` 存 **naive UTC**(会话时区不影响结果) |
+| 3. 搬事件 | `claims.adopt_historical_events()` | 序号从 1 连续;摘要与 `event_digest()` 逐条相等;对已有事件的 Job 拒绝 |
+| 4. 对账 | `scripts/dev-env/portable-reconcile.py --dsn …` | 任一处字段不符即非零退出并点名;`claim_version` 判「只增不减」 |
+| 5. 回退 | 撤掉 canonical 侧全部表,重跑 1–4 | 重跑结果与一次跑完**完全相同**;草案侧行数不变 |
+
+三条顺序上的事实:
+
+- **换算返回 naive UTC 不是风格选择。**canonical 列是 `TIMESTAMP(6)`,把 aware datetime 交给
+  驱动,存下来的是会话时区下的墙上时间;`+08:00` 会话里 `12:00Z` 会存成 `20:00`。真库演练
+  (`tests/integration/test_canonical_job_conversion_pg.py`)刻意用非 UTC 会话证明这一点。
+- **`claim_version` 会被搬迁推进。**搬事件时 `+1` 是作废旧系统在飞认领的 fencing 手段,不是
+  搬迁错误;对账因此判「不小于草案」,并另有一条反向判据。
+- **对账必须能挡住半成品。**只搬了一部分 Job 时,对账以 `missing from coordination_jobs`
+  非零退出,这正是「切换不得继续」的信号。
+
+演练入口:`tests/integration/test_portable_switchover_rehearsal_pg.py` 把五步串起来跑,
+包括「丢掉 canonical 侧重来」这条回退路径。
+
+#### 8.75.1 `job_events.payload_ref` 仍是未决项,需要产品决定
+
+列级清单里 `payload_ref` 是 `gap`:`speech_job_events` 草案**不存 payload 引用**,所以搬迁没有
+可换算的来源。三种可选口径,影响面不同:
+
+| 口径 | 后果 | 需要谁决定 |
+| --- | --- | --- |
+| 全 `NULL` | snapshot/增量恢复时只能靠 `event_digest` 去重,大 payload 仍留在原处 | 产品 |
+| 搬迁时补一列并回填引用 | 需要先确定「原处」是什么(对象存储 key?行内 JSON?),并改草案表 | 架构 + 产品 |
+| 不存 payload,事件只表达状态迁移 | 与当前 `job_events` 的列语义一致,但恢复要靠客户端重取 | 产品 |
+
+在这条决定作出之前,搬迁不得「顺手猜一个」:`canonical_source_map` 保持 `gap` 标记,
+`test_gaps_and_derivations_carry_their_reason` 保证它不会悄悄变成已解决。

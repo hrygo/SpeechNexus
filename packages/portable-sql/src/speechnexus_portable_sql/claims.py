@@ -174,6 +174,74 @@ def bucket_for(job_id: str, buckets: int = BUCKETS) -> Decimal:
     return Decimal(int.from_bytes(digest[:8], "big") % buckets)
 
 
+#: 草案 `coordination_jobs.claim_expires_at_us` 用 0 表示「未领取」;canonical 用 NULL。
+#: 这条等价关系只在这里定义一次,搬迁脚本与运维查询都不得自己写 `= 0`。
+UNDECIDED_EPOCH_US = 0
+
+
+def _utc_from_epoch_us(value: object, *, field: str) -> datetime | None:
+    """epoch 微秒 -> canonical 时间;0 与负数是「从未发生」,不是 1970 年.
+
+    返回值是**naive UTC**:canonical 的列是 `TIMESTAMP(6)`(不带时区),写进去的是 UTC 墙上
+    时间。如果直接把 aware 的 datetime 交给驱动,存下来的其实是「会话时区下的墙上时间」——
+    同一个时刻在不同 `TimeZone` 的会话里会存成不同的值,而且读回来没有任何报错。真库演练
+    (`test_canonical_job_conversion_pg.py`)在 +08:00 会话里把它测出来了:12:00Z 存成了 20:00。
+    """
+
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ContractError(f"{field} must be an integer epoch in microseconds")
+    if value <= UNDECIDED_EPOCH_US:
+        return None
+    return datetime.fromtimestamp(value / 1_000_000, tz=UTC).replace(tzinfo=None)
+
+
+def canonical_job_from_draft(
+    *,
+    job_id: str,
+    operation_id: str,
+    attempt_id: str,
+    request_digest: str,
+    job_state: str,
+    claim_owner_id: str | None,
+    claim_expires_at_us: int,
+    claim_version: int,
+    due_at_us: int,
+    last_event_seq: int,
+) -> dict[str, object]:
+    """把一条草案 job 行换算成 canonical 行的唯一实现.
+
+    为什么要有这个函数:换算规则(0 表示未领取、bucket 由 `job_id` 派生、时间折成
+    `TIMESTAMP(6)`)写进 SQL、写进脚本、再写进文档,就是三份实现;搬迁演练与生产切换
+    必须走同一段代码。它只做换算,不做 I/O——所以能在真库上按行校验,也能在单测里逐字段
+    钉住。
+    """
+
+    require_text(job_id, field="job_id", max_bytes=128)
+    require_text(job_state, field="job_state", max_bytes=24)
+    require_digest(request_digest, field="request_digest")
+    if claim_version < 0 or last_event_seq < 0:
+        raise ContractError("claim_version and last_event_seq must not be negative")
+    expires_at = _utc_from_epoch_us(claim_expires_at_us, field="claim_expires_at_us")
+    due_at = _utc_from_epoch_us(due_at_us, field="due_at_us")
+    if due_at is None:
+        raise ContractError("due_at_us must be a positive epoch, a Job cannot be due at the epoch")
+    return {
+        "job_id": job_id,
+        "operation_id": operation_id,
+        "attempt_id": attempt_id,
+        "request_digest": request_digest,
+        "bucket_no": bucket_for(job_id),
+        "due_at": due_at,
+        "job_state": job_state,
+        "claim_owner_id": claim_owner_id,
+        "claim_expires_at": expires_at,
+        "claim_version": Decimal(claim_version),
+        "last_event_seq": Decimal(last_event_seq),
+    }
+
+
 def acquire_bucket(
     connection: Connection,
     *,
@@ -500,6 +568,69 @@ def append_event(
     finally:
         cursor.close()
     return EventAppend(job_id=job_id, event_seq=next_seq, event_id=event_id, digest=digest)
+
+
+@dataclass(frozen=True)
+class HistoricalEvent:
+    """草案 `speech_job_events` 的一行,按 canonical 规则重建摘要。"""
+
+    state: str
+    occurred_at_us: int
+    kind: str | None = None
+    progress_completed: int | None = None
+    progress_total: int | None = None
+    payload_ref: str | None = None
+
+
+def adopt_historical_events(
+    connection: Connection, *, job_id: str, events: Sequence[HistoricalEvent]
+) -> Decimal:
+    """把历史事件搬进 canonical `job_events` 并把 head 推到末尾,返回新的 `last_event_seq`.
+
+    为什么必须走这条路径:canonical 的事件去重依赖摘要,而草案表没有摘要列,所以历史事件
+    的 `event_seq` 与摘要都要在这里重建一次。序号必须从 1 连续,head 必须等于搬完后的最大值
+    ——否则下一次 `append_event` 会撞主键,而撞主键在重试语义里会被当成「已经写过」。
+
+    这里不新增 SQL:复用 `job.event_head` / `job_event.insert` / `job.event_head_update`,
+    所以搬迁与在线写入走的是同一组语句。
+    """
+
+    require_text(job_id, field="job_id", max_bytes=128)
+    cursor = connection.cursor()
+    try:
+        cursor.execute(STATEMENTS["job.event_head"], (job_id,))
+        head_rows = cursor.fetchall()
+        if len(head_rows) != 1:
+            raise ContractError(f"coordination_jobs has {len(head_rows)} rows for {job_id!r}")
+        head = head_rows[0]
+        seq = Decimal(str(head.at(0)))
+        version = Decimal(str(head.at(1)))
+        if seq != 0:
+            raise ContractError(f"{job_id!r} already has events; adoption is a one-shot backfill")
+        for index, event in enumerate(events, start=1):
+            occurred_at = _utc_from_epoch_us(event.occurred_at_us, field="occurred_at_us")
+            if occurred_at is None:
+                raise ContractError("a historical event needs a real timestamp")
+            digest = event_digest(
+                job_id=job_id,
+                event_seq=Decimal(index),
+                state=event.state,
+                occurred_at=occurred_at.replace(tzinfo=UTC),
+                kind=event.kind,
+                progress_completed=event.progress_completed,
+                progress_total=event.progress_total,
+                payload_ref=event.payload_ref,
+            )
+            cursor.execute(
+                STATEMENTS["job_event.insert"], (job_id, index, digest, event.payload_ref)
+            )
+        last = Decimal(len(events))
+        cursor.execute(STATEMENTS["job.event_head_update"], (last, version + 1, job_id, version))
+        if cursor.rowcount != 1:
+            raise ContractError("event head moved under the backfill; rerun it in one transaction")
+    finally:
+        cursor.close()
+    return last
 
 
 def read_events(

@@ -1735,6 +1735,38 @@ fence 复核与 Job CAS 在同一事务,旧 dispatcher 拿到的过期 fence 版
 | 准入锚点 | 缺 `request_document` / lease 非 reserved-executing 的行不被认领 |
 | 租约释放 | 认领后桶可被另一 owner 立即拿到,不残留租约 |
 
+#### 8.76.5 实施反馈:三处按字面写会出错的地方
+
+原语落地时按 §8.76 直接实现会撞到三件事,记录在此,接线那一刀按修正后的结论做。
+
+**A. 候选语句是四象限,不是两条。** 生产的 `kinds` 与 `require_admission` 是两个独立开关,
+(有 lane ∧ 要准入) 才是生产实际那一档。业务层不许拼 SQL,所以 manifest 里必须同时有
+`job.candidates.lane`、`job.candidates.admitted`、`job.candidates.lane_admitted` 三条,
+外加读回 Job 字段的 `job.claimed_view`。
+
+**B. §8.76.1 第 3 步的「过期 fence 会被 `require_fence` 拒绝」在 `claim_batch` 内不可达。**
+`bucket.fence` 是 `SELECT … FOR UPDATE`,同事务内桶行不会变;跨事务的旧版本由
+`acquire_bucket` 的 `version = ?` CAS 拒绝。注入实测:删掉复核后 11 条真库判据全绿,只有语句
+形状单测变红。复核仍然保留,但它的定位是**不变量断言**(拦「行锁只覆盖单条语句」的驱动,
+以及将来把 acquire 与 claim 拆两个事务的改动),不是并发判据——§8.76.4 里「过期 fence 被拒」
+那条只能在 `claim_next` 上观测。写判据时不能把这两件事混成一条。
+
+**C. 候选谓词与生产 `_claim()` 的 WHERE 不等价。** 生产还有两条 canonical
+`job.candidates` 没有的条件:`speech_jobs.state IN ('pending','running')` 与
+`coordination_jobs.claim_expires_at_us <= now`(到期可重领)。后果有两面:
+canonical `job_state='pending'` 但公共状态已终态的 Job 仍会被认领;过期 claim 的回收目前只
+体现在 `job_state` 推成 `claimed`,与「到期可重领」不等价。**接线前必须先定这两件事**,
+否则是两套语义被当成一套。
+
+**D. `bucket.fence … FOR UPDATE` 会等待。** 「跳过而不是等待」只对**已提交**的租约成立:
+持有者事务还开着时本调用会等它的行锁,而 `SKIP LOCKED` 被契约禁止。接线时要么把
+「等锁」计入 deadline 并显式超时,要么让桶租约在认领事务之外持有——后者与 §8.76.1 第 4 步
+冲突,需要重新决定。
+
+**E. 签名只有一个 `lease_until`。** 它同时做桶租约与 Job claim 到期;桶租约返回前释放所以
+不残留,但「桶租约短、Job 租约长」表达不了。生产 `claim_due(lease_ms)` 用的是后者,接线时
+要么拆两个参数,要么接受同值。
+
 #### 8.76.6 到期重领:用一个显式语句,不把语义压进候选谓词
 
 §8.76.5 的 C 指出候选语句与生产 `WHERE` 不等价。查清之后,两边的差别其实是一条**语义**,

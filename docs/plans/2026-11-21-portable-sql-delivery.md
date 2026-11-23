@@ -1406,15 +1406,15 @@ SELECT 1 FROM speech_workspaces, workspace_quotas, … WHERE 1=0
 
 ### 8.64 剩余 244 条的构成与「能不能动」的判定
 
-按规则统计(2026-11-23,基线 228):
+按规则统计(2026-11-23,基线 196):
 
 | 规则 | 条数 | 归属 | 能否现在动 |
 | --- | ---: | --- | --- |
 | `sql-string-building` | 53 | #1100 | 能;但字面量化会暴露被掩盖的 `paging-limit` / `vendor-json` |
-| `vendor-type` | 45 | #1102 | 不能:厂商类型名(`jsonb`/`text`)要等 bootstrap 与 profile |
+| `vendor-type` | 26 | #1102 | 不能:厂商类型名(`jsonb`/`text`)要等 bootstrap 与 profile |
 | `vendor-json` | 33 | #1102 | 不能:JSONB 运算符与 `->>` 取值的替代需要契约层先定 |
 | `advisory-lock` | 32 | 无卡 | **不能**:见下 |
-| `runtime-ddl` | 18 | #1102 | 不能:workbench 在运行期建表,bootstrap 改由迁移承担后才消失 |
+| `runtime-ddl` | 5 | #1102 | 不能:workbench 在运行期建表,bootstrap 改由迁移承担后才消失 |
 | `paging-limit` | 12 | #1100(已登记) | 不能等价去掉:都是有界页,去掉要改成取全量再截断 |
 | `cte` | 9 | #1102 | 不能:递归/聚合改写要先证明等价 |
 | 其余 | 28 | 混合 | 逐条判定 |
@@ -1550,3 +1550,50 @@ current.replace("CURRENT_USER", "CAST(? AS name)") == named
 品牌分支与供应商原语,不是「标识符按配置组合」。真正的约束是「不得按品牌命名构造语句」,这四处都不涉及。
 
 同类的 `{_COLUMNS}` 投影常量仍按 8.5x 的做法字面量化,因为列集合是代码事实,不是部署输入。
+
+### 8.72 #1102 第一刀:workbench 的 DDL 片段进 profile 清单,复算器同时加固
+
+workbench 的 13 个 `*_schema.py` 一直是「部署期制品却按业务 DML 判红」的状态:它们被守卫记为
+`runtime-ddl`,而 `workbench/migrate.py` 的模块注释写明
+
+> the workbench fragments … are executed exactly once by the *owner*, on a fresh namespace,
+> inside one transaction. This module is that step (``workbench-migrate``), and it is the only
+> place the workbench DDL runs. It is not a runtime migration runner and it never repairs drift.
+
+所以正确动作不是「改写成字面量」(DDL 本来就不是 DML),而是**把声明补上,并把复算器做对**:
+
+1. `scripts/dev-env/portable-sql-profiles.json` 的 `paths` 增加 13 个 workbench 片段;
+2. `tests/ci/test_declared_ddl_is_migration_only.py` 相应加固 —— 原复算器只认模块级 `*_DDL` 常量,
+   而 workbench 有 3 个文件把 `CREATE TABLE` 内联在 `sql.SQL("""…""")` 里、2 个文件只有 `_V1`/`_V2`
+   这类名字。新复算器的判据改成**按内容识别**:模块级常量文本出现 `CREATE TABLE`/`CREATE SCHEMA`/
+   `CREATE INDEX`/`ALTER TABLE`,或函数体里内联了这些文本,都算制品;
+3. 允许的消费者从「迁移树之外一律算违规」改成「迁移树 + `workbench/migrate.py` + 清单内部互相复用」——
+   这条放宽是有必要的,因为 `runtime_schema` 就是把各片段组合起来的那一处;但**业务运行时代码仍被排除**。
+
+注入即红:把 `content_writes_migration_sql` 导入进 `postgres_versions.py`(业务侧) → 复算器立刻报
+`declared artifact has a business consumer`,退出码 1。
+
+净变化 **228 → 196**(−13 `runtime-ddl` −19 `vendor-type`;profile-ddl 404 条 / 56 个文件单独计数,
+不进业务 DML 基线)。剩下 5 条 `runtime-ddl` 全在 `node-controller` 的 SQLite intent store,属单机本地库,
+是另一条判定线。
+
+### 8.74 #1100 剩余 196 条的真实构成:逐类说清「卡在什么上」
+
+基线停在 196 时,最容易犯的错是把「没做完」和「做不了」混为一谈。下表是**每一条都指向一个具体
+缺口**的清单,不是待办数量统计:
+
+| 规则 | 条数 | 文件 | 卡在什么上 |
+| --- | ---: | ---: | --- |
+| `sql-string-building` | 51 | 25 | 已逐条判决(§8.70 / §8.71):配置标识符、方言操作符、行数派生。**没有可迁移项**,再改写只是在规则之间搬计数 |
+| `advisory-lock` | 32 | 24 | 需把这些站点换成已交付的 `claims` 原语(bucket + fence)。原语有 PG oracle(`test_claim_bucket_pg.py` 18 passed),但**生产派发链路仍走自己的 CTE**,尚未改接 |
+| `vendor-type` | 32 | 19 | DDL 类型字面量(已在 profile 制品侧)与行工厂里的第三方类型;要落地需要应用层类型映射 |
+| `vendor-json` | 28 | 17 | JSONB 运算符;要么在应用层做 JSON,要么给受限方言加 JSON 谓词原语 |
+| `paging-limit` | 12 | 9 | 缺少「有界分页」的契约原语(keyset 之外的部分) |
+| `cte` + `skip-locked` + `returning` + `format` | 16 | 4 | **同一处**:`job_dispatch_postgres` 的派发领取语句族。与 `advisory-lock` 同一根因——等 `claims` 改接 |
+| `session-tuning` / `vendor-lock` / `distinct-on` / `upsert` / `vendor-function` / `vendor-time` / `vendor-error-branch` / `aggregate-filter` / `pyformat` | 20 | 12 | 零散,各自需要一次独立判定;`session-tuning` 缺事务级只读/超时原语 |
+| `runtime-ddl` | 5 | 1 | node-controller 本地 SQLite(§8.73,判定不迁移) |
+
+结论:**16 条集中在同一处**,32 条共用同一个原语,51 条已判决。真正的下一刀是「把派发领取改接到
+`claims`」——它一次同时消掉 `cte`/`skip-locked`/`returning`/`format`,并为 32 条 `advisory-lock`
+开出一条可复制的路。这是协调事务变更,按仓库约定要先读 `speechnexus-coordination-change` 技能,
+并准备 bucket → Job → outbox 的锁序 oracle。

@@ -375,6 +375,16 @@ def _prerequisites(
     )
 
 
+# 预留容量列写死;列集合与 `DIMENSIONS` 的一致性由 test_artifact_and_runtime_statements 核对。
+_UPDATE_HOST_NODE = (
+    "UPDATE host_nodes SET "
+    "held_unified_physical_memory_bytes = ?, held_device_memory_bytes = ?, "
+    "held_host_memory_bytes = ?, held_cpu_decode_millicores = ?, "
+    "held_host_pcm_buffer_bytes = ?, held_scratch_disk_bytes = ?, "
+    "version = version + 1 WHERE host_node_id = ? AND version = ?"
+)
+
+
 def _changed(cursor: RuntimeCursor, query: str, parameters: tuple[object, ...]) -> None:
     cursor.execute(query, parameters)
     if cursor.rowcount != 1:
@@ -493,11 +503,9 @@ def create_in_transaction(
         plan = command.approved_plan
         if plan is None:
             raise RuntimeRejectedError("unapproved_runtime_template")
-        assignments = ", ".join(f"held_{name} = %s" for name in DIMENSIONS)
         _changed(
             cursor,
-            f"UPDATE host_nodes SET {assignments}, version = version + 1 WHERE "
-            f"host_node_id = ? AND version = ?",
+            _UPDATE_HOST_NODE,
             (*updated.values, host.node_id, host.version),
         )
         columns = [

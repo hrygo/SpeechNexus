@@ -28,6 +28,26 @@
 
 ### 1. 迁移到 `0065_canonical_jobs_reconcile`
 
+#### 部署顺序：迁移（含授权重放）先于新构建
+
+顺序是硬约束，不是建议：先把库迁到 `0064_canonical_jobs_columns` 之上（当前 head 是
+`0065_canonical_jobs_reconcile`），重放下节三个身份的 `coordination_jobs` INSERT 授权，
+**再**启动新构建。新构建的 Job 写入在 INSERT 里固定提供 `bucket_no`
+（`backend/src/speechnexus_backend/speech/infrastructure/job_writer_columns.py:29`），
+这一列由 `0064` 添加；写入者不做「列不在就换一种 INSERT」的探测，也不保留第二套
+支持的 schema。
+
+新构建先启动、迁移后跑时，每一次新建 Job 都在 INSERT 处以
+`psycopg.errors.UndefinedColumn: column "bucket_no" of relation coordination_jobs
+does not exist`（SQLSTATE `42703`）失败：公开创建面把它归为 `storage_rejected`
+的拒绝（`backend/src/speechnexus_backend/speech/infrastructure/public_jobs_postgres.py:750`），
+协调写入者把它归为 `reconciliation_required`
+（`backend/src/speechnexus_backend/speech/infrastructure/jobs_postgres.py:100`）。
+两者都不是数据问题，重试和 `recover_create_job` 都绕不过去：语句引用了不存在的列。
+授权未重放是同一位置、同为「新建 Job 必失败」的另一种形态——`42501 permission denied
+for table coordination_jobs`（见下节），所以迁移与授权重放必须一起早于新构建。迁移完成
+之后不要回退到 `0064` 以下再运行新构建，否则同样是这个错误。
+
 `v0.1.0` 的目录树停在 `0057_asr_settlement`（发布说明写的 head 是
 `0056_debt_probe_live_state_index`，但 tag 里已经有 0057），此后新增八个 revision：
 

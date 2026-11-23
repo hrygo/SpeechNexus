@@ -28,7 +28,9 @@ from sqlalchemy.pool import NullPool
 from tests.integration.test_production_jobs import REQUEST, JobDatabase
 from tests.integration.test_production_jobs import database as database
 from tests.support.cancellation_fence_schema import ensure_cancellation_fence_schema
+from tests.support.historical_grants import apply_declared_grants
 from tests.support.job_database import MySQLJobTransactions
+from tests.support.legacy_jobs import seed_legacy_job
 from tests.support.migrations import HEAD
 from tests.support.portable_pg import connect as portable_pg_connect
 
@@ -57,7 +59,6 @@ from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema imp
     gateway_cancellation_fence_grants,
 )
 from speechnexus_backend.speech.infrastructure.job_schema import job_runtime_grants
-from speechnexus_backend.speech.infrastructure.jobs_sql import JobCursor, create_in_transaction
 from speechnexus_backend.speech.infrastructure.runtime_delivery_schema import RUNTIME_DELIVERY_DDL
 from speechnexus_backend.speech.infrastructure.runtime_intent_schema import RUNTIME_INTENT_DDL
 from speechnexus_backend.speech.infrastructure.runtime_observation_schema import (
@@ -280,12 +281,16 @@ def foundation(database: JobDatabase) -> Iterator[Foundation]:
             unavailable = set(release_guard_grants(db.schema, roles[0]))
             assert unavailable <= set(grants)
             grants = tuple(grant for grant in grants if grant not in unavailable)
-        for grant in grants:
-            if db.dialect == "mysql":
+        if db.dialect == "postgresql":
+            # A revision below 0064 has no ``bucket_no``; the declared grant names
+            # today's columns, so apply it over the columns this revision has.
+            apply_declared_grants(db.query, grants, schema=db.schema)
+        else:
+            for grant in grants:
                 if "USAGE ON SCHEMA" in grant:
                     continue
                 grant = re.sub(r'TO "([^"]+)"', r"TO '\1'@'%'", grant).replace('"', "`")
-            db.query(grant)
+                db.query(grant)
         seed(db)
         yield Foundation(db, *roles)
     finally:
@@ -690,6 +695,10 @@ class UpgradeSandbox:
             self.admin.execute("SELECT version_num FROM alembic_version").fetchone()["version_num"],
         )
 
+    def query(self, statement: str, parameters: tuple[object, ...] = ()) -> list[Any]:
+        cursor = self.admin.execute(statement, parameters or None)
+        return cast(list[Any], cursor.fetchall()) if cursor.description else []
+
 
 @pytest.fixture
 def upgrade_sandbox(database: JobDatabase) -> Iterator[UpgradeSandbox]:
@@ -707,10 +716,16 @@ def upgrade_sandbox(database: JobDatabase) -> Iterator[UpgradeSandbox]:
     try:
         sandbox.upgrade("0001_jobs")
         admin.execute(f'SET search_path TO "{schema}", pg_catalog')
-        for grant in job_runtime_grants(schema, database.role):
-            admin.execute(grant)
+        # 0001 predates 0064's ``bucket_no``; the declared writer grant is today's,
+        # so apply it over the columns this revision actually has.
+        apply_declared_grants(
+            sandbox.query, job_runtime_grants(schema, database.role), schema=schema
+        )
+        # The production writer is only supported at >= 0064, so a schema at 0001
+        # cannot be seeded through it. These migration tests only need the legacy
+        # rows that later revisions backfill from; insert that shape directly.
         with admin.transaction(), admin.cursor() as cursor:
-            assert create_in_transaction(cast(JobCursor, cursor), REQUEST).outcome == "committed"
+            seed_legacy_job(cursor.execute, REQUEST)
         yield sandbox
     finally:
         admin.close()

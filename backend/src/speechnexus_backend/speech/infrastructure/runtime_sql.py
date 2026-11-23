@@ -385,6 +385,29 @@ _UPDATE_HOST_NODE = (
 )
 
 
+# 33 列写死:基准 15 列 + peak/steady/per_slot 各 6 个维度,顺序与 values 一致。
+# 列序由 test_engine_instance_insert_statement 对着 DIMENSIONS 核对。
+_INSERT_ENGINE_INSTANCE = (
+    "INSERT INTO engine_instances ("
+    "instance_id, instance_generation, host_node_id, pool_id, gateway_id, "
+    "binding_revision_id, manifest_id, approved_template_id, management_mode, "
+    "loading_policy, config_digest, instance_state, max_slots, realtime_reserved_slots, "
+    "last_fencing_token, peak_unified_physical_memory_bytes, peak_device_memory_bytes, "
+    "peak_host_memory_bytes, peak_cpu_decode_millicores, peak_host_pcm_buffer_bytes, "
+    "peak_scratch_disk_bytes, steady_unified_physical_memory_bytes, "
+    "steady_device_memory_bytes, steady_host_memory_bytes, "
+    "steady_cpu_decode_millicores, steady_host_pcm_buffer_bytes, "
+    "steady_scratch_disk_bytes, per_slot_unified_physical_memory_bytes, "
+    "per_slot_device_memory_bytes, per_slot_host_memory_bytes, "
+    "per_slot_cpu_decode_millicores, per_slot_host_pcm_buffer_bytes, "
+    "per_slot_scratch_disk_bytes "
+    ") VALUES ("
+    "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+    "?, ?, ?, ?, ?, ? "
+    ")"
+)
+
+
 def _changed(cursor: RuntimeCursor, query: str, parameters: tuple[object, ...]) -> None:
     cursor.execute(query, parameters)
     if cursor.rowcount != 1:
@@ -508,23 +531,6 @@ def create_in_transaction(
             _UPDATE_HOST_NODE,
             (*updated.values, host.node_id, host.version),
         )
-        columns = [
-            "instance_id",
-            "instance_generation",
-            "host_node_id",
-            "pool_id",
-            "gateway_id",
-            "binding_revision_id",
-            "manifest_id",
-            "approved_template_id",
-            "management_mode",
-            "loading_policy",
-            "config_digest",
-            "instance_state",
-            "max_slots",
-            "realtime_reserved_slots",
-            "last_fencing_token",
-        ]
         values: tuple[object, ...] = (
             request.instance_id,
             request.instance_generation,
@@ -542,21 +548,9 @@ def create_in_transaction(
             plan.realtime_reserved_slots,
             request.fencing_token,
         )
-        for prefix, vector in (
-            ("peak_", plan.peak),
-            ("steady_", plan.steady),
-            ("per_slot_", plan.per_slot),
-        ):
-            columns.extend(prefix + name for name in DIMENSIONS)
+        for vector in (plan.peak, plan.steady, plan.per_slot):
             values += vector.values
-        cursor.execute(
-            "INSERT INTO engine_instances ("
-            + ", ".join(columns)
-            + ") VALUES ("
-            + ", ".join(["%s"] * len(values))
-            + ")",
-            values,
-        )
+        cursor.execute(_INSERT_ENGINE_INSTANCE, values)
         if head is None:
             cursor.execute(
                 "INSERT INTO runtime_instance_heads (instance_id, current_generation, "

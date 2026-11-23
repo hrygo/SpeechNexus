@@ -1860,3 +1860,66 @@ canonical `job_state='pending'` 但公共状态已终态的 Job 仍会被认领;
 - `job.claimed_view.request_document` 可空,而 `DispatchJob.request_document` 是非空 `str`
   (老 SQL 用 `COALESCE(…, '')`);接线要显式映射 `None → ""`,并把 `claimed_jobs` 的顺序还原
   成老语句的 `created_at_us, job_id`。
+
+### 8.78 取消栅栏去掉 advisory lock:判定、替代锁与三条真库判据
+
+用户 2026-11-22 的决定是「不用的机制删除,但删除要有代码证据;有写者不满足就换成可移植的
+行锁」。按写者集合与读侧逐条核过后,**结论是保留一把锁,改成 Job 行锁**,不是删除。
+
+**写者只有一个,且已不能并发。** `write_cancellation_fence` 的唯一生产调用者是
+`PostgresPublicJobs.cancel`;它进事务后先 `_lock_cancel_target` 取 `speech_jobs` 行锁
+(`FOR UPDATE OF j`),写 receipt 后才写围栏。同一 Job 的第二个受理在行锁上等待,醒来先看到
+receipt 走 replay,不会再写围栏;`ON CONFLICT (job_id) DO NOTHING` 与主键是第二道。所以
+「两个并发取消留一行围栏」不依赖 advisory lock。
+
+**但 advisory lock 不是写者互斥,是写者↔读者排序。** 读侧是
+`execution_gateway.infrastructure.cancellation_fence_sql.cancellation_fence_present`:它先取
+同一把 advisory lock 再读围栏,让「提交」与「受理」只能一方先提交。这条链上**没有任何一方
+持有 Job 行锁**(网关创建执行时只锁 `resource_pools` / `admission_leases` /
+`runtime_instance*`),所以删掉 backend 的锁、只留网关那一半等于一把只有一方取的锁——什么
+也不排除。删除分支因此不成立;`test_acceptance_lock_waits_for_submit_and_then_refuses` 也
+正是这条排序的判据。
+
+**替代锁:两侧都取 canonical Job 行锁。**
+
+- 写者:`PostgresPublicJobs.cancel` 在事务开头调 `lock_cancellation_fence`,它是
+  `SELECT job_id FROM coordination_jobs WHERE job_id = ? FOR UPDATE`;`write_cancellation_fence`
+  再取一次作直接调用者的兜底(同事务重入不等待)。
+- 读者:`cancellation_fence_present` 先取同一行,再读围栏。PostgreSQL 的 `FOR UPDATE` 要求
+  行上某列 `UPDATE` 权限(四种行锁子句都一样,实测 PG 18.6),网关角色由
+  `coordination_runtime_grants` 拿到 `UPDATE (claim_version)` 行锁许可,不写这一列。它与
+  `GATEWAY_UPDATES` 里既有的 `UPDATE (version)` 同族——该函数自己写明「只有 version 列
+  UPDATE 跨所有权,专为行锁」。残余能力是**失败关闭**的:误推进 fencing 计数只会让当前
+  owner 的 CAS 失配、Job 在租约到期后被重领;`claim_owner_id`/`claim_expires_at`/`job_state`
+  仍被拒,网关不能认领、续租或关闭。`test_production_claims.py` 的
+  `test_gateway_can_only_bump_the_fencing_counter_on_the_job_row` 按这四列钉住边界。
+- 锁序:仍是 bucket → Job → outbox。受理是 canonical Job → `speech_jobs` → receipt → 围栏;
+  `_finish`/`_record_progress` 也是 canonical Job → `speech_jobs`;网关是 authority 行 →
+  canonical Job。没有路径先持 `speech_jobs` 再等 canonical Job,因此不成环。
+
+**canonical 状态闭合同一提交完成。** claim 只读 `coordination_jobs`,围栏不参与认领谓词;
+受理只改 `speech_jobs` 时,`job_state` 仍是 `pending`,围栏已提交的 Job 会被认领、再因公共
+状态终态被跳过(实测:受理后 `job_state='pending'`,claim 返回该 Job)。所以受理在写 receipt
+后把 `coordination_jobs.job_state` 置 `cancelled`:它是派发处置,不是停止证据(公共状态在
+`cancelling` 上等停止证据)。这样 claim 的 `job_state = 'pending'` CAS 在行锁醒来后必然失败,
+「围栏已提交的 Job 不再被认领」由认领谓词本身保证,不需要 `claims.py` 认识 backend 表。
+
+**三条判据与注入**(`tests/integration/test_cancellation_fence_claim_pg.py`,真 PG、真角色):
+
+| 判据 | 注入 | 红在哪 |
+| --- | --- | --- |
+| 受理后不再被认领 | 删 `cancel` 里的 canonical `job_state='cancelled'` 更新 | claim 返回已取消的 Job,`claimed == []` 失败 |
+| 领取后被取消,`_finish` 拒绝 | 把 `_finish` 三处状态谓词改成 `… OR TRUE`(canonical 守卫、公共状态 CAS、canonical close) | `pytest.raises(DispatchClaimLostError)` 失败,`_finish` 成功关闭 |
+| 两个并发取消只留一行、都收敛到首次受理 | 删 `cancel` 的 receipt replay 短路 | 第二个受理插入第二张 receipt,主键冲突 → `unknown`,线程捕获异常,`errors == []` 失败 |
+
+三注入均实测:第 1 条在 `claimed == []` 红(claim 返回已取消的 Job);第 2 条在
+`DID NOT RAISE` 红(`cancelling -> failed` 被成功关闭;`succeeded` 由公共状态触发器拒绝,
+所以先试合法的 `failed`);第 3 条在线程捕获 `JobOutcomeUnknownError` 红(第二张 receipt
+触发主键冲突)。每次注入后按 sha256 恢复原文件并逐字节核对一致,注入前后清理 `*.pyc`。
+
+围栏行数本身由围栏主键与 `ON CONFLICT` 保证;第三条注入打的是「第二个调用者是否收敛到首个
+事实」,不是「能不能多插一行」——后者只能靠删主键制造,不是这段代码的回归形态。
+
+守卫基线因此减 2 条 advisory-lock:
+`backend/.../job_cancellation_fence.py` 1 条、`execution-gateway/.../cancellation_fence_sql.py`
+1 条,181 → 179,`new=0`。没有新增 advisory lock、vendor 分支或 `SKIP LOCKED`。

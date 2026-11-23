@@ -12,7 +12,10 @@ they are still ``NULL``).
 Lock order is fixed at bucket row -> Job row -> event/outbox: ``claim_batch`` reads the
 bucket fence ``FOR UPDATE``, then touches ``coordination_jobs``, and the state store below
 always takes the ``coordination_jobs`` row lock before the public ``speech_jobs`` row it
-projects. No ``SKIP LOCKED`` and no vendor error branch are involved.
+projects. Cancellation acceptance takes that same Job row first and closes its
+``job_state`` before it writes the fence, which is why a Job whose cancellation was
+accepted can no longer win the claim CAS. No ``SKIP LOCKED`` and no vendor error branch
+are involved.
 """
 
 from __future__ import annotations

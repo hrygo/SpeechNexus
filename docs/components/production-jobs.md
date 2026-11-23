@@ -250,10 +250,12 @@ Artifact 或长期停留在 `running`。
 它的同事务投影，只含 `job_id`、`request_id` 和受理时间，避免 gateway 角色读取
 operation/attempt/摘要列。投影与 receipt 在同一 `PostgresPublicJobs.cancel` 事务写入，
 迁移 `0035` 会为既有 accepted receipt 回填。围栏本身不是停止证据，也不释放租约或预算。
-`write_cancellation_fence` 取
-`job_cancellation_fence_lock_key(job_id)` 的互斥事务级 advisory lock 后
+`write_cancellation_fence` 先取该 Job 的 canonical 行锁
+（`coordination_jobs` 的 `SELECT … FOR UPDATE`，由 `lock_cancellation_fence` 执行）后
 `INSERT … ON CONFLICT DO NOTHING` 并回读，先提交者胜出，重放返回原受理时间与
-request ID，不覆盖他人事实。
+request ID，不覆盖他人事实。受理事务在同一提交里把 `coordination_jobs.job_state`
+close 成 `cancelled`：claim 只读这一行，围栏本身不参与认领谓词，而公共状态在
+`cancelling` 上要等停止证据——canonical `job_state` 是派发处置，不是停止证据。
 
 网关在创建任何执行之前读同一主键：围栏存在时只写
 `failed / not_required / gateway_barrier_fenced` 的终态 `submit_intents`，不写输出流头、
@@ -867,9 +869,11 @@ worker 角色使用 `public_job_grants` 与 `cancellation_reconciliation_grants`
 
 接线已经落地：
 
-1. `PostgresPublicJobs.cancel` 在写入 `cancelling`、事件和 receipt 后，于同一事务调用
-   `write_cancellation_fence`；它是该事务最后一个会等待锁的写入，之后不再取
-   `admission_leases`/`runtime_instance*` 行锁。
+1. `PostgresPublicJobs.cancel` 先取 canonical Job 行锁，再取 `speech_jobs` 行锁，随后
+   写状态、事件、receipt，把 `coordination_jobs.job_state` close 成 `cancelled`，最后于
+   同一事务调用 `write_cancellation_fence`。固定顺序是 Jobs 的 bucket → canonical Job →
+   public Job/outbox；取到 canonical Job 行后不再等 `admission_leases`/`runtime_instance*`
+   行锁（网关先取 authority 行、后取 Job 行，反过来会成环）。
 2. `job_cancellation_runtime.py` 把 `PublicJobs`、PG 对账账本、`PostgresLeaseSettler`、
    `GatewayCancellationConfirmer` 和 `CancellationReconciliationWorker` 装配在一起；
    `settle_cancelled` 走 `PublicJobs` 的 `status_version` 条件更新并随后归还租约，活跃

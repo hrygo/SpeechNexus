@@ -98,9 +98,10 @@ intent，不能再次外发。PostgreSQL adapter 已按[应用事务方案与契
 投影 `job_id`/`request_id`/受理时间，但 gateway 提交只读 `job_id` 判断存在性；两者都不是停止证据，也不释放预算。网关在 `create_submit` 内、身份
 校验通过之后、任何创建执行的写入之前读取围栏：
 
-1. 先取同一 job 的互斥事务级 advisory lock，键由
-   `speechnexus_contracts.cancellation_fence.job_cancellation_fence_lock_key` 冻结；backend
-   受理事务必须取同一键的同一把锁。这样受理与提交只能有一方先提交。
+1. 先取同一 job 的 canonical 行锁：`coordination_jobs.job_id` 的
+   `SELECT … FOR UPDATE`。backend 受理事务取同一行锁后才写围栏，所以受理与提交只能有一方
+   先提交。网关角色只需要该行的 `UPDATE (claim_version)` 行锁许可（`coordination_runtime_grants`
+   授予），不写这一列。
 2. 围栏存在时，不写 `output_stream_heads`，只写一行终态 intent：
    `execution_state=failed`、`cleanup_state=not_required`、
    `error_code=gateway_barrier_fenced`、`stop_evidence_kind=none`、无 engine 请求与外发

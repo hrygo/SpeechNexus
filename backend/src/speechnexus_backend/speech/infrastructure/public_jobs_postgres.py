@@ -64,6 +64,7 @@ from speechnexus_backend.speech.infrastructure.catalog_revision_schema import (
     STATE_TABLE,
 )
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence import (
+    lock_cancellation_fence,
     write_cancellation_fence,
 )
 from speechnexus_backend.speech.infrastructure.leases_postgres import (
@@ -912,6 +913,15 @@ class PostgresPublicJobs:
         for attempt in range(2):
             try:
                 with self._transaction(deadline) as connection:
+                    # Fixed lock order is canonical Job row -> public Job row. The
+                    # fence writer must own the canonical row before it touches
+                    # `speech_jobs`, because terminal transitions take the same row
+                    # first; the gateway takes it too before it reads the fence,
+                    # which is what orders acceptance against submit. `job_id` is
+                    # the argument, so a caller naming another workspace locks a
+                    # row it then refuses to read. Each attempt is its own
+                    # transaction, so the retry takes the row again.
+                    lock_cancellation_fence(connection, job_id)
                     job_row = _lock_cancel_target(connection, job_id, workspace_id)
                     if job_row is None:
                         return JobCancellationResult("not_found")
@@ -985,8 +995,24 @@ class PostgresPublicJobs:
                     updated = _select_job(connection, job.job_id)
                     inserted = _cancellation_by_job(connection, job.job_id)
                     if accepted:
-                        # Last lock-taking write of acceptance: submit takes the same
-                        # advisory lock before it can create an execution.
+                        # The canonical Job row is the row the claim reads, so the
+                        # accepted cancellation has to close its dispatch disposition
+                        # in this same commit: otherwise a pending Job stays claimable
+                        # (`job_state = 'pending'`) after its fence is committed, and
+                        # every claim of it is skipped on the public state forever.
+                        # The public state keeps `cancelling` until a verified stop;
+                        # this column is the dispatch disposition, not stop evidence.
+                        closed = connection.execute(
+                            "UPDATE coordination_jobs SET job_state = 'cancelled' WHERE job_id = ?",
+                            (job.job_id,),
+                        )
+                        if closed.rowcount != 1:
+                            raise PublicJobConflictError(
+                                "Public Job cancellation lost its dispatch row"
+                            )
+                        # Last write of acceptance, under the Job row already held:
+                        # submit takes the same row lock before it creates an
+                        # execution.
                         write_cancellation_fence(
                             connection,
                             job_id=job.job_id,
@@ -1005,9 +1031,10 @@ class PostgresPublicJobs:
                 raise
             except psycopg.errors.UniqueViolation:
                 # Only the receipt's (workspace_id, idempotency_key_digest)
-                # constraint can be violated here: _lock_cancel_target holds the
-                # Job row FOR UPDATE, so a same-Job duplicate cannot reach this
-                # insert, and the fence insert ignores its own conflict. The
+                # constraint can name a committed winner here: _lock_cancel_target
+                # holds the public Job row FOR UPDATE, so a same-Job duplicate
+                # cannot reach this insert, and the fence insert runs under the
+                # canonical row lock it re-takes and ignores its own conflict. The
                 # winning inserter has therefore committed by the time the index
                 # reports the conflict, and one retry reads its receipt and
                 # answers the same conflict the removed key lock produced.

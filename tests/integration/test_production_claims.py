@@ -253,21 +253,59 @@ def test_counter_overflow_and_missing_job_preserve_original_rows(
     assert project_onto(db.query("SELECT * FROM coordination_jobs"), original) == original
 
 
-def test_gateway_cannot_mutate_worker_claim_authority(claim_database: ClaimDatabase) -> None:
+def test_gateway_can_only_bump_the_fencing_counter_on_the_job_row(
+    claim_database: ClaimDatabase,
+) -> None:
+    """The gateway's sole write on the canonical Job row is the row-lock allowance.
+
+    The fence reader takes ``SELECT … FOR UPDATE`` on ``coordination_jobs`` before it
+    reads ``speech_job_cancellation_fences``, and PostgreSQL refuses that clause
+    without an UPDATE privilege on at least one column. ``coordination_runtime_grants``
+    therefore grants exactly ``UPDATE (claim_version)`` -- the same version-column
+    allowance the coordination tables already use -- and nothing that carries
+    ownership: a gateway cannot claim, extend or close a Job, and a version bump only
+    fails the current owner's CAS closed (the Job is re-claimed after its lease).
+    """
+    dialect = claim_database.foundation.database.dialect
     expected = (
         psycopg.errors.InsufficientPrivilege
-        if claim_database.foundation.database.dialect == "postgresql"
+        if dialect == "postgresql"
         else pymysql.err.OperationalError
     )
+    denied = (
+        "UPDATE coordination_jobs SET claim_owner_id = 'intruder' WHERE job_id = 'job-test'",
+        "UPDATE coordination_jobs SET job_state = 'cancelled' WHERE job_id = 'job-test'",
+        "UPDATE coordination_jobs SET claim_expires_at = NULL WHERE job_id = 'job-test'",
+        "UPDATE coordination_jobs SET claim_expires_at_us = 0 WHERE job_id = 'job-test'",
+    )
+    for statement in denied:
+        with (
+            claim_database.foundation.connection("gateway") as connection,
+            pytest.raises(expected),
+            connection.cursor() as cursor,
+        ):
+            cursor.execute(statement)
+    if dialect != "postgresql":
+        return
     with (
         claim_database.foundation.connection("gateway") as connection,
-        pytest.raises(expected),
         connection.cursor() as cursor,
     ):
         cursor.execute(
-            "UPDATE coordination_jobs SET claim_version = claim_version + 1 WHERE job_id = %s",
-            ("job-test",),
+            "SELECT "
+            "has_column_privilege(current_user::text, 'coordination_jobs', 'claim_version', "
+            "'UPDATE') AS bump, "
+            "has_column_privilege(current_user::text, 'coordination_jobs', 'claim_owner_id', "
+            "'UPDATE') AS steal, "
+            "has_column_privilege(current_user::text, 'coordination_jobs', 'job_state', "
+            "'UPDATE') AS state, "
+            "has_column_privilege(current_user::text, 'coordination_jobs', 'claim_expires_at', "
+            "'UPDATE') AS expiry"
         )
+        allowed = cursor.fetchone()
+    assert allowed is not None
+    # The row-lock allowance is the only granted write; authority stays refused.
+    assert dict(allowed) == {"bump": True, "steal": False, "state": False, "expiry": False}
 
 
 @pytest.mark.parametrize("database", ["postgresql"], indirect=True)

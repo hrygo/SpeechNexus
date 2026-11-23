@@ -316,6 +316,12 @@
       "release": "#1100 完成时删除本条目"
     },
     {
+      "rule": "paging-limit",
+      "path": "execution-gateway/src/speechnexus_gateway/infrastructure/abort_recovery_sql.py",
+      "card": "#1100",
+      "reason": "先去重定序再决定取哪一行,逐条判断"
+    },
+    {
       "rule": "pyformat",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/readiness.py",
       "count": 1,
@@ -670,12 +676,6 @@
       "card": "#1100",
       "reason": "按语句族重写成常量语句 + 派发表",
       "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "sql-string-building",
-      "path": "execution-gateway/src/speechnexus_gateway/infrastructure/abort_recovery_sql.py",
-      "card": "#1100",
-      "reason": "`IN` 的元数按批次长度拼占位符:受限契约的 ListMarker 只在 psycopg 驱动展开,MySQL 协调 oracle 路径没有对应实现(见文档 §8.65)"
     },
     {
       "rule": "sql-string-building",

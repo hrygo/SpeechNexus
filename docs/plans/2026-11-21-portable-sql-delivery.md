@@ -1406,16 +1406,16 @@ SELECT 1 FROM speech_workspaces, workspace_quotas, … WHERE 1=0
 
 ### 8.64 剩余 244 条的构成与「能不能动」的判定
 
-按规则统计(2026-11-23,基线 246):
+按规则统计(2026-11-23,基线 244):
 
 | 规则 | 条数 | 归属 | 能否现在动 |
 | --- | ---: | --- | --- |
-| `sql-string-building` | 67 | #1100 | 能;但字面量化会暴露被掩盖的 `paging-limit` / `vendor-json` |
+| `sql-string-building` | 65 | #1100 | 能;但字面量化会暴露被掩盖的 `paging-limit` / `vendor-json` |
 | `vendor-type` | 47 | #1102 | 不能:厂商类型名(`jsonb`/`text`)要等 bootstrap 与 profile |
 | `vendor-json` | 33 | #1102 | 不能:JSONB 运算符与 `->>` 取值的替代需要契约层先定 |
 | `advisory-lock` | 32 | 无卡 | **不能**:见下 |
 | `runtime-ddl` | 18 | #1102 | 不能:workbench 在运行期建表,bootstrap 改由迁移承担后才消失 |
-| `paging-limit` | 11 | #1100(已登记) | 不能等价去掉:都是有界页,去掉要改成取全量再截断 |
+| `paging-limit` | 12 | #1100(已登记) | 不能等价去掉:都是有界页,去掉要改成取全量再截断 |
 | `cte` | 9 | #1102 | 不能:递归/聚合改写要先证明等价 |
 | 其余 | 28 | 混合 | 逐条判定 |
 
@@ -1433,25 +1433,39 @@ SELECT 1 FROM speech_workspaces, workspace_quotas, … WHERE 1=0
 因此 #1100 的可动面只剩 `sql-string-building` 与已登记的有界页;基线归零需要 #1102 先落地。
 这一条写进 issue #1100,避免把「基线没归零」读成「执行不力」。
 
-### 8.65 契约缺口:`ListMarker` 只在 psycopg 驱动展开
+### 8.65 `ListMarker` 的展开必须由驱动层拥有(已补齐)
 
-`abort_recovery_sql` 的三条语句原本按批次长度拼 `%s`(`IN (%s, %s, …)`)。看起来正该换成契约里的
-`ListMarker`(`IN (?)` 一个标记)——仓库里 `assets_postgres` 就是这么写的。**换成之后 CI 红了,只有 `mysql` 分支红:**
+`abort_recovery_sql` 的三条语句原本按批次长度拼 `%s`(`IN (%s, %s, …)`)。换成契约里的
+`ListMarker`(`IN (?)` 一个标记)之后 CI 红,只有 `mysql` 分支红:
 
 ```
 FAILED tests/integration/test_gateway_abort_ledger.py::test_due_queue_returns_the_original_origin_and_steps_its_check[mysql]
 KeyError: 'intent-a'
 ```
 
-原因在装配,不在语句:
+根因不在语句,在装配:psycopg 驱动的 `PortableCursor` 调 `expand_lists` 摊开标记,而
+`pymysql_driver._PortableCursor` 只做标记翻译(`?` → `%s`),**不摊开列表**。于是 `IN (?)` 的 `?`
+被当成普通参数绑定,`ListMarker` 对象本身被当作值 —— 两条语句都匹配不到行。失败形态是**静默失配**,
+不是报错,所以更难查。
 
-- PostgreSQL 路径经 `PortableCursor`,它调 `expand_lists` 把 `ListMarker` 摊成 N 个占位符;
-- MySQL 协调 oracle 路径直接把 `pymysql` 游标当 `SubmitCursor` 用(`tests/support/gateway_database.py`
-  的 `_run`),**没有**这一层。于是 `IN (?)` 里的 `?` 被当成普通参数绑定,`ListMarker` 对象本身被当作值,
-  两条语句都匹配不到行 —— 更新没命中、读回为空,表现为 `KeyError`。
+修法:把 `expand_lists` 也接进 `pymysql_driver`,与 psycopg 驱动共用同一条规则(`markers.py` 的注释
+早就写明这条规则不该写两遍)。判据 `test_pymysql_list_marker.py` 四条:
 
-结论:**`ListMarker` 目前只在一半的方言路径上成立**,把 `IN (…)` 换成 `IN (?)` 会让 MySQL oracle 静默失配
-(不是报错,是匹配不到行,更难查)。因此这条改造**回退**,并把原因写进 ledger,而不是把它算成一次「已收敛」。
+- 一个标记摊成 N 个占位符,参数按序摊平(断言最终 `%s` 文本与参数元组);
+- 同一个标记对象可以连续服务两条语句(展开是纯函数,不是一次性迭代);
+- mixed 语句(`%s` + 列表标记)被 `ContractError` 拒绝;
+- 普通参数仍只做翻译,不受影响。
 
-要真正收敛这一处,得先给协调 oracle 路径补上同样的展开(或让 `SubmitCursor` 契约显式要求
-"标记必须在驱动层展开"),再改语句。这属于契约层工作,记在此处待办。
+注入即红:把展开分支改成永不执行 → `3 failed, 1 passed`。
+
+契约层面的结论:**「标记必须在驱动层展开」是 `SubmitCursor` 契约的一部分**,不是某个驱动的实现细节。
+任何只做标记翻译、不做列表摊开的游标,都会把 `IN (?)` 变成静默失配。
+
+### 8.66 abort 回收语句字面量化(第二次,这次两种方言都过)
+
+驱动补齐后重做:`_DUE` / `_MARK_DUE` / `_READ_RECEIPTS` 三条字面量,`IN` 用
+`ListMarker(taken)`,同一对象服务更新与读回两条语句。
+
+`LIMIT ?` 因此被守卫看见(1 条 `paging-limit`,有界页,登记)。
+
+基线 **246 → 244**。

@@ -70,6 +70,20 @@ def query_in_transaction(cursor: LeaseCursor, lease_id: str) -> LeaseResult:
     return LeaseResult("replayed", lease_id, _record(rows[0]))
 
 
+# 12 个容量列写死:受限方言不允许把列名拼进语句。列集合与 `DIMENSIONS` 的一致性
+# 由 test_host_node_update_statements 核对。
+_UPDATE_HOST_NODE = (
+    "UPDATE host_nodes SET "
+    "held_unified_physical_memory_bytes = ?, held_device_memory_bytes = ?, "
+    "held_host_memory_bytes = ?, held_cpu_decode_millicores = ?, "
+    "held_host_pcm_buffer_bytes = ?, held_scratch_disk_bytes = ?, "
+    "quarantined_unified_physical_memory_bytes = ?, quarantined_device_memory_bytes = ?, "
+    "quarantined_host_memory_bytes = ?, quarantined_cpu_decode_millicores = ?, "
+    "quarantined_host_pcm_buffer_bytes = ?, quarantined_scratch_disk_bytes = ? "
+    ", node_state = ?, version = ? WHERE host_node_id = ? AND version = ?"
+)
+
+
 def _update(cursor: LeaseCursor, query: str, parameters: tuple[object, ...]) -> None:
     cursor.execute(query, parameters)
     if cursor.rowcount != 1:
@@ -196,15 +210,9 @@ def quarantine_in_transaction(
                 accounting.quota_version,
             ),
         )
-    assignments = ", ".join(
-        prefix + dimension + " = %s"
-        for prefix in ("held_", "quarantined_")
-        for dimension in DIMENSIONS
-    )
     _update(
         cursor,
-        f"UPDATE host_nodes SET {assignments}, node_state = ?, version = ? "
-        "WHERE host_node_id = ? AND version = ?",
+        _UPDATE_HOST_NODE,
         (
             *updated.held.values,
             *updated.quarantined.values,

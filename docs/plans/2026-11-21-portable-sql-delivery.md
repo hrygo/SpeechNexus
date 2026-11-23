@@ -1356,3 +1356,18 @@ SELECT 1 FROM speech_workspaces, workspace_quotas, … WHERE 1=0
 `pg_advisory_xact_lock`(此前被前一条规则掩盖),按 #1095 登记 —— 这不是新引入的构造,是原本就在的。
 
 基线 **254 → 252**。PG oracle:`tests/integration -k audit` 11 passed、`-k audit`(unit)115 passed。
+
+### 8.61 容量列:12 个 SET 赋值写死,顺序对着 `DIMENSIONS` 钉住
+
+`leases_sql` 与 `lease_release_sql` 都按 `held_/quarantined_ × DIMENSIONS` 拼 `SET` 子句,
+并用 `%s`。两处都改成 12 个赋值写死的字面量语句,参数顺序不变(`held.values` 然后 `quarantined.values`,
+再由语句尾部追加 `node_state` / `version`)。
+
+列顺序不能凭感觉:`test_host_node_update_statements.py` 从 `DIMENSIONS` 派生期望序列,与两条语句里
+`SET` 部分的列名逐项比较,并断言语句以 `WHERE host_node_id = ? AND version = ?` 收尾(CAS 仍在)。
+注入即红:从 `leases_sql` 删掉 `held_scratch_disk_bytes` 一个赋值 → `1 failed`。
+
+这两条语句在真库上由 `test_completed_release_pg.py` 与 `test_owner_activation_quarantine.py`
+(参数化的 `postgres` 分支)覆盖:21 passed。
+
+基线 **252 → 250**。

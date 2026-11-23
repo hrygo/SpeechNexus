@@ -26,6 +26,18 @@ from speechnexus_backend.speech.infrastructure.leases_sql import (
     _vector,
 )
 
+# 与 leases_sql 的同名列集合一致;列顺序必须对应 `held.values + quarantined.values`。
+_UPDATE_HOST_NODE = (
+    "UPDATE host_nodes SET "
+    "held_unified_physical_memory_bytes = ?, held_device_memory_bytes = ?, "
+    "held_host_memory_bytes = ?, held_cpu_decode_millicores = ?, "
+    "held_host_pcm_buffer_bytes = ?, held_scratch_disk_bytes = ?, "
+    "quarantined_unified_physical_memory_bytes = ?, quarantined_device_memory_bytes = ?, "
+    "quarantined_host_memory_bytes = ?, quarantined_cpu_decode_millicores = ?, "
+    "quarantined_host_pcm_buffer_bytes = ?, quarantined_scratch_disk_bytes = ? "
+    ", version = ? WHERE host_node_id = ? AND version = ?"
+)
+
 
 def release_in_transaction(
     cursor: LeaseCursor,
@@ -223,12 +235,9 @@ def release_in_transaction(
                 accounting.quota_version,
             ),
         )
-    assignments = ", ".join(
-        prefix + name + " = %s" for prefix in ("held_", "quarantined_") for name in DIMENSIONS
-    )
     _update(
         cursor,
-        f"UPDATE host_nodes SET {assignments}, version = ? WHERE host_node_id = ? AND version = ?",
+        _UPDATE_HOST_NODE,
         (
             *updated.held.values,
             *updated.quarantined.values,

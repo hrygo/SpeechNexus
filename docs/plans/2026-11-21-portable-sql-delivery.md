@@ -1598,6 +1598,14 @@ workbench 的 13 个 `*_schema.py` 一直是「部署期制品却按业务 DML �
 **这与「确定不使用的功能要删除」并不矛盾**:它不是不用的功能,是不能删的节点本地状态。五条在
 ledger 里以本表为理由登记。
 
+**勘误(本条判定的有效边界)**:判定适用的九条不变(`runtime-ddl` 五条、`sql-string-building`
+一条、`vendor-type` 三条),继续留在 ledger 里;同文件的 `upsert` 一条**已迁走**,因为它不是
+bootstrap DDL 而是 DML:`ON CONFLICT (key) DO UPDATE SET value = excluded.value` 是真 upsert,
+折成「插入即读」会把新的 `schema_version` 吞掉。现在的写法是同一事务里先 `UPDATE`、
+`rowcount == 0` 才 `INSERT`,插入那一步包在 `packages/portable-sql` 的 `savepoint` 里 —— 与
+§8.20 是同一个原语。SQLite 没有 `SELECT ... FOR UPDATE`,串行化由 `BEGIN IMMEDIATE` 的库级写锁
+承担;把事务改成 `BEGIN` 后,并发写同一个键实测以 `database is locked` 失败。
+
 ### 8.74 #1100 剩余 196 条的真实构成:逐类说清「卡在什么上」
 
 基线停在 196 时,最容易犯的错是把「没做完」和「做不了」混为一谈。下表是**每一条都指向一个具体

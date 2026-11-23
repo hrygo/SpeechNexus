@@ -6,7 +6,12 @@
 
 from __future__ import annotations
 
-from speechnexus_backend.engine_registration import _DIMENSIONS, HOST_INSERT, POOL_INSERT
+from speechnexus_backend.engine_registration import (
+    _DIMENSIONS,
+    HOST_INSERT,
+    POOL_INSERT,
+    QUOTA_INSERT,
+)
 
 
 def test_host_insert_lists_every_allocatable_dimension_in_order() -> None:
@@ -32,3 +37,25 @@ def test_pool_insert_binds_the_two_identity_columns() -> None:
     assert POOL_INSERT.startswith("INSERT INTO resource_pools (")
     assert POOL_INSERT.count("?") == 2
     assert "ON CONFLICT" not in POOL_INSERT
+
+
+def test_quota_insert_is_insert_if_absent_not_an_upsert_or_do_nothing() -> None:
+    """配额行只由第一次注册建立:语句必须是纯 INSERT,冲突交给保存点。
+
+    `ON CONFLICT ... DO NOTHING` 是品牌方言;`DO UPDATE` 会把并发注册者自己的
+    `max_attempts` / `policy_revision` 写进已经存在的配额行,绕过下面那两条冲突判定。
+    """
+
+    assert QUOTA_INSERT.startswith("INSERT INTO workspace_quotas (")
+    assert QUOTA_INSERT.count("?") == 3
+    assert "?" not in QUOTA_INSERT.split("VALUES", 1)[0]
+    for brand_syntax in ("ON CONFLICT", "ON DUPLICATE KEY", "MERGE INTO", "REPLACE INTO"):
+        assert brand_syntax not in QUOTA_INSERT
+    listed = QUOTA_INSERT.split("(", 1)[1].split(")", 1)[0]
+    assert [column.strip() for column in listed.split(",")] == [
+        "workspace_id",
+        "max_attempts",
+        "held_attempts",
+        "quarantined_attempts",
+        "policy_revision",
+    ]

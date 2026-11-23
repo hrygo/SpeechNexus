@@ -1229,3 +1229,30 @@ schema 与 role 是标识符,不能绑定成参数。按 DML 口径改造它们�
 所以规则不动。这个数字(12 / 87)也解释了为什么这项收敛只能逐个调用点做,不能靠一次规则调整。
 
 基线 **279 → 275**。PG oracle:`test_tts_durable_pg.py` + `test_transcription_disable_barrier_pg.py` 13 passed。
+
+### 8.53 两种身份:分支写字面量,而不是拼标识符
+
+`builtin_voice_revocation` 按 `kind` 在两组表/身份列之间选:审批表 `…source_approvals` /
+`…approvals`,撤销表 `…source_revocations` / `…revocations`,身份列 `source_approval_id` /
+`approval_id`,而且用的是 `%s`。三条语句拆成六个分支写法,每条都是字面量、都用 `?`。
+
+这不是「重复」:两张表本来就是两个身份,分支把这件事写在代码里;拼标识符则把它藏进字符串。
+PG oracle `test_builtin_voice_revocation.py` 的 `[source]` / `[qualification]` 两个参数化用例
+正好各走一条分支。
+
+### 8.54 启动探针:一条静态语句替代 N 条动态语句
+
+`admission_watch_runtime` 与 `job_cancellation_runtime` 的启动检查原来对每张表发
+`SELECT 1 FROM {table} WHERE 1=0`。改成一条静态语句:
+
+```sql
+SELECT 1 FROM speech_workspaces, workspace_quotas, … WHERE 1=0
+```
+
+`WHERE 1=0` 让 PostgreSQL 仍然解析每一个关系(缺表或缺 SELECT 权限照样报错),但不返回行、也不做
+真实连接工作。N 条动态语句变成 1 条可静态登记语句,失败模式不变。
+
+判据:`test_lifecycle_table_literals.test_the_startup_read_probes_name_only_schema_tables` 要求探针里
+列出的每个关系都来自 schema 常量或 DDL。注入即红:把 `…not_submitted` 拼成 `…not_submited` → `1 failed`。
+
+基线 **275 → 270**。PG oracle:`test_builtin_voice_revocation.py` 2 passed(两种身份各一)。

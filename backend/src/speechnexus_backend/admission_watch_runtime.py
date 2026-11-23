@@ -40,6 +40,14 @@ logger = logging.getLogger(__name__)
 #: Every relation the report's own transaction reads. Naming them at open turns a
 #: missing migration or a missing grant into a startup failure instead of a poll
 #: whose verdict is a storage outage on a loop that never ends.
+# 零行探针:一条静态语句同时验证这些关系存在且可读。`WHERE 1=0` 让 PostgreSQL 仍然解析
+# 每个关系(缺表或缺 SELECT 权限照样报错),但不返回任何行,也不做真正的连接工作。
+READ_PROBE = (
+    "SELECT 1 FROM speech_workspaces, workspace_quotas, speech_publications, "
+    "speech_publication_heads, speech_binding_revisions, speech_publication_retirements, "
+    "engine_instances, runtime_instance_heads, runtime_instance_intents, resource_pools, "
+    "host_nodes, admission_leases, admission_attempts WHERE 1=0"
+)
 REQUIRED_TABLES = (
     "speech_workspaces",
     "workspace_quotas",
@@ -167,9 +175,7 @@ class AdmissionWatchRuntime:
         pool.open()
         try:
             with pool.connection(timeout=settings.transaction_timeout_seconds) as connection:
-                for table in REQUIRED_TABLES:
-                    # 零行探针:验证表可读即可,方言没有 `LIMIT`,这里也没有分页语义。
-                    connection.execute(f"SELECT 1 FROM {table} WHERE 1=0")
+                connection.execute(READ_PROBE)
         except psycopg.Error as error:
             # A database that never ran the migration profile, or an admission role
             # whose grants are narrower than the report's read, must fail here with

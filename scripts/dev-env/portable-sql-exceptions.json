@@ -370,17 +370,9 @@
     {
       "rule": "sql-string-building",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/public_job_admission.py",
-      "count": 4,
+      "count": 1,
       "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "sql-string-building",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/public_jobs_postgres.py",
-      "count": 5,
-      "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
+      "reason": "剩余 1 条是资格来源判定:语句文本由 qualification_source_state_sql('q') 生成,该 CASE 表达式是同一规则的单一定义点(admission 与 Job 回退共用),内联等于把它写成第二份",
       "release": "#1100 完成时删除本条目"
     },
     {
@@ -396,8 +388,8 @@
       "path": "backend/src/speechnexus_backend/speech/infrastructure/readiness.py",
       "count": 5,
       "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
+      "reason": "5 条都是语句文本拼装:投影片段(_SCHEDULE_STATE_SQL / _RETRY_COLUMNS_SQL)、数据库时钟片段与 schema 表名标识符。标识符不能参数化;片段是同一判定的单一定义点(四条读共用一套 schedule/retry 列),内联等于把同一段写四遍。debt_class 标签与 verified-stop 词表已改为绑定参数,不在拼接之列",
+      "release": "#1100 / #1102 按语句族迁移时删除本条目"
     },
     {
       "rule": "sql-string-building",

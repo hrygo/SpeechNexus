@@ -14,6 +14,8 @@ import pytest
 
 from speechnexus_backend.speech.infrastructure import (
     binding_lifecycle_postgres,
+    public_job_admission,
+    public_jobs_postgres,
     voice_publications_postgres,
 )
 
@@ -21,6 +23,15 @@ _INFRA = Path(binding_lifecycle_postgres.__file__).parent
 _MODULES = {
     "binding_lifecycle_postgres": Path(binding_lifecycle_postgres.__file__),
     "voice_publications_postgres": Path(voice_publications_postgres.__file__),
+}
+
+#: The readers that ask the catalogue tombstone/state tables by name. They used to
+#: interpolate ``RETIREMENT_TABLE`` / ``STATE_TABLE``; a table name is an identifier, so no
+#: dialect can bind it, and the interpolation was the only reason these statements could
+#: not be read statically.
+_CATALOGUE_READERS = {
+    "public_job_admission": Path(public_job_admission.__file__),
+    "public_jobs_postgres": Path(public_jobs_postgres.__file__),
 }
 
 
@@ -93,3 +104,46 @@ def test_the_startup_read_probes_name_only_schema_tables() -> None:
             for name in statement.split(" FROM ", 1)[1].split(" WHERE ", 1)[0].split(",")
         }
         assert names <= _SCHEMA_TABLES, sorted(names - _SCHEMA_TABLES)
+
+
+#: A table name in these modules' statements, when it belongs to the publication family.
+_CATALOGUE_TABLE_NAME = re.compile(
+    r"\b(?:FROM|JOIN) (speech_publication\w*|speech_catalog\w*)", re.IGNORECASE
+)
+
+
+def test_the_catalogue_readers_name_only_the_schema_tables() -> None:
+    """The literalised table names are the schema constants, not a second naming.
+
+    A table name cannot be a parameter, so the closed set of names has to appear in the
+    statement text. This test is what keeps that from becoming a second definition: it
+    reads the names from the schema modules, so renaming a table -- or misspelling one
+    literal -- fails here. A wrong relation name is not caught by the type checker and
+    only surfaces as "a required relation is missing" from the Job store, which is why the
+    fact source has to be independent of the statements.
+    """
+    from speechnexus_backend.speech.infrastructure.catalog_revision_schema import (
+        RETIREMENT_TABLE,
+        STATE_TABLE,
+    )
+    from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema import (
+        HEAD_TABLE,
+    )
+    from speechnexus_backend.speech.infrastructure.publication_schema import (
+        TABLE as PUBLICATION_TABLE,
+    )
+
+    known = {PUBLICATION_TABLE, HEAD_TABLE, RETIREMENT_TABLE, STATE_TABLE}
+    texts = {name: path.read_text(encoding="utf-8") for name, path in _CATALOGUE_READERS.items()}
+    for name, text in texts.items():
+        named = set(_CATALOGUE_TABLE_NAME.findall(text))
+        assert named, f"{name} names no catalogue table; the check would be vacuous"
+        assert named <= known, f"{name} names tables no schema module owns: {sorted(named - known)}"
+        assert RETIREMENT_TABLE in named, f"{name} does not read the tombstone table"
+        # The interpolation that made the statement unstatable may not come back; the
+        # portable-SQL guard also rejects it, so this is the site-level half of that.
+        assert "{RETIREMENT_TABLE}" not in text, name
+        assert "{STATE_TABLE}" not in text, name
+    assert STATE_TABLE in _CATALOGUE_TABLE_NAME.findall(texts["public_jobs_postgres"]), (
+        "the catalogue revision read no longer names the state table literally"
+    )

@@ -11,8 +11,12 @@ import psycopg
 import pytest
 
 from speechnexus_backend.speech.application.readiness import ReadinessService
+from speechnexus_backend.speech.domain.job_dispatch import VERIFIED_STOP_EVIDENCE_KINDS
 from speechnexus_backend.speech.infrastructure.readiness import (
     _PERMANENT_DEBT,
+    _SQL_VERIFIED_STOP_EVIDENCE,
+    _STOP_EVIDENCE_DEBT,
+    _VERIFIED_STOP_PARAMETERS,
     ABANDONED_HOLDING_CAPACITY,
     LEFT_CANCELLING_HOLDING_CAPACITY,
     CancellationDebtProbe,
@@ -599,3 +603,20 @@ async def test_a_hung_probe_does_not_delay_the_aggregate_past_the_budget() -> No
 
     assert report.ready is True
     assert elapsed < 1.0
+
+
+def test_the_verified_stop_vocabulary_is_bound_not_quoted_into_the_statement() -> None:
+    """The kinds are values: the read compares against them, it does not spell them.
+
+    The vocabulary is a closed domain set, so the risk is not an outside caller -- it is
+    that the comparison used to depend on how a dialect quotes a string literal. The two
+    halves fail together if someone re-literalises it: the parameter set would no longer
+    cover the domain, and the kind would reappear inside the statement text.
+    """
+    assert set(_VERIFIED_STOP_PARAMETERS.values()) == set(VERIFIED_STOP_EVIDENCE_KINDS)
+    assert len(_VERIFIED_STOP_PARAMETERS) == len(VERIFIED_STOP_EVIDENCE_KINDS)
+    assert _SQL_VERIFIED_STOP_EVIDENCE.count("%(") == len(VERIFIED_STOP_EVIDENCE_KINDS)
+    for kind in VERIFIED_STOP_EVIDENCE_KINDS:
+        assert f"'{kind}'" not in _STOP_EVIDENCE_DEBT, (
+            f"{kind} is quoted into the statement text instead of bound as a parameter"
+        )

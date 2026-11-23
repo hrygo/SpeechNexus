@@ -1597,4 +1597,3 @@ workbench 的 13 个 `*_schema.py` 一直是「部署期制品却按业务 DML �
 `claims`」——它一次同时消掉 `cte`/`skip-locked`/`returning`/`format`,并为 32 条 `advisory-lock`
 开出一条可复制的路。这是协调事务变更,按仓库约定要先读 `speechnexus-coordination-change` 技能,
 并准备 bucket → Job → outbox 的锁序 oracle。
-

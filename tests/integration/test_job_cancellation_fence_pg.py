@@ -3,7 +3,7 @@
 The fence, the gateway submit transaction and the reconciliation schedule run as
 separate non-owner roles. No test skips into an unqualified pass: an absent
 isolated DSN is an explicit skip, and every assertion below exercises real rows,
-real advisory locks and real commit boundaries.
+real Job row locks and real commit boundaries.
 """
 
 from __future__ import annotations
@@ -110,6 +110,15 @@ class FenceSandbox:
             "state, status_version, created_at_us, updated_at_us) VALUES "
             "(%s, 'workspace-test', 'tts', 'tts-quality', %s, %s, 2, 1, 1)",
             (job_id, DIGEST, state),
+        )
+
+    def seed_coordination(self, job_id: str) -> None:
+        """The canonical Job row whose lock orders the fence against submit."""
+        self.query(
+            "INSERT INTO coordination_jobs (job_id, operation_id, attempt_id, "
+            "initial_event_id, initial_event_digest, request_digest) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (job_id, job_id, job_id + "-attempt", job_id + "-event", DIGEST, DIGEST),
         )
 
     def seed_lease(self, job_id: str, attempt_id: str, lease_id: str) -> None:
@@ -421,6 +430,9 @@ def test_fence_joins_the_acceptance_transaction(fence_db: FenceSandbox) -> None:
 
 def test_acceptance_lock_waits_for_submit_and_then_refuses(fence_db: FenceSandbox) -> None:
     fence_db.seed_job("job-lock-1")
+    # The ordering lock is the canonical Job row, so this Job needs one: the fence
+    # writer locks it and the gateway submit blocks on it before reading the fence.
+    fence_db.seed_coordination("job-lock-1")
     fence_db.seed_lease("job-lock-1", "attempt-lock-1", "lease-lock-1")
     intent = submission_intent(identity("lease-lock-1", "attempt-lock-1", "job-lock-1"))
     request = submit_request(intent.identity)
@@ -440,7 +452,7 @@ def test_acceptance_lock_waits_for_submit_and_then_refuses(fence_db: FenceSandbo
                 request_id="request-lock-1",
                 accepted_at_us=int(time.time() * 1_000_000),
             )
-        # This transaction owns the lock but is not committed yet.
+        # This transaction owns the Job row lock but is not committed yet.
         worker = threading.Thread(target=submit)
         worker.start()
         deadline = time.monotonic() + 5
@@ -454,7 +466,7 @@ def test_acceptance_lock_waits_for_submit_and_then_refuses(fence_db: FenceSandbo
             if waiting:
                 break
             time.sleep(0.01)
-        assert waiting >= 1, "the gateway submit did not block on the fence lock"
+        assert waiting >= 1, "the gateway submit did not block on the Job row lock"
         holder.commit()
         worker.join(timeout=5)
         assert not worker.is_alive()

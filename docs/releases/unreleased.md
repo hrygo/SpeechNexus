@@ -340,7 +340,7 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 | `deletion_plan_grants` | `job_schema.py` | **新增**，见第 3 条 |
 | `deletion_execution_grants` | `job_schema.py` | **新增**，见第 3 条 |
 | `job_runtime_grants` | `job_schema.py` | **变**：`coordination_jobs` 的 INSERT 授权随 `COORDINATION_JOB_INSERT_COLUMNS` 自动加 `bucket_no`、`due_at`（函数体未改，见第 1 条） |
-| `coordination_runtime_grants` | `coordination_grants.py` | **变**：`coordination_jobs` 的 INSERT 列加 `bucket_no`、`due_at`（见第 1 条）；另给 speech 角色 `coordination_claim_buckets` 的 `SELECT` 与 `claim_owner_id`／`lease_until`／`version` 三列 `UPDATE`，不给 `INSERT`／`DELETE`，gateway 侧一条都没有。迁移后重放一次即可（`provision-job-roles.py` 会带上） |
+| `coordination_runtime_grants` | `coordination_grants.py` | **变**：`coordination_jobs` 的 INSERT 列加 `bucket_no`、`due_at`（见第 1 条）；给 speech 角色 `coordination_claim_buckets` 的 `SELECT` 与 `claim_owner_id`／`lease_until`／`version` 三列 `UPDATE`，不给 `INSERT`／`DELETE`；gateway 角色新增 `coordination_jobs` 的 `UPDATE (claim_version)` 行锁许可（见第 5 条，不写这一列）。迁移后重放一次即可（`provision-job-roles.py` 会带上） |
 | `public_job_admission_grants` | `public_job_admission_grants.py` | **变**：`coordination_jobs` 的 INSERT 列加 `bucket_no`、`due_at`，见第 1 条 |
 | `binding_disable_admission_grants` | `admission_postgres.py` | 未变（SQL 参数标记迁到 `?`，授权列未动） |
 | `tts_voice_admission_grants` | `admission_postgres.py` | 未变（同文件，参数标记迁移） |
@@ -351,6 +351,68 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 | `binding_publication_grants` | `publication_lifecycle_schema.py` | 未变（同文件，DDL 的 `::` 改为 `CAST`） |
 | `settlement_worker_grants` | `settlement_worker_verifier.py` | 未变（参数标记迁移） |
 | `job_dispatch_grants` | `job_schema.py` | 未变 |
+
+### 5. 重跑 `coordination_runtime_grants`：网关改为锁 canonical Job 行读围栏
+
+取消围栏不再取 PostgreSQL advisory lock。受理事务与网关提交在 `coordination_jobs` 的
+**同一行**上取 `SELECT … FOR UPDATE`：网关在读围栏前锁这一行，受理在写围栏前锁同一行，
+所以提交要么先于受理提交，要么在等到行锁后看见已提交的围栏并拒绝创建执行。这一行正是
+派发认领 CAS 与终态迁移锁的行，锁序仍是 bucket → Job → 围栏/outbox。
+
+`coordination_runtime_grants` 因此给 gateway 角色加了一条
+`GRANT UPDATE (claim_version) ON coordination_jobs`：PostgreSQL 要求 `FOR UPDATE` 持有
+目标行某一列的 `UPDATE` 权限，`claim_version` 是 fencing 计数列，网关只借它取行锁，不写
+（`GATEWAY_UPDATES` 里既有的 `UPDATE (version)` 是同一种行锁许可）。即使误写也只推进 fencing
+计数，当前 owner 的 CAS 会失配并在租约到期后被重领——失败关闭；`claim_owner_id`、
+`claim_expires_at`、`job_state` 仍被拒，网关不能认领、续租或关闭。
+`gateway_cancellation_fence_grants` 没变。
+
+停在旧授权上的部署，网关每次 `create_submit` 读围栏都在
+`SELECT job_id FROM coordination_jobs … FOR UPDATE` 处以
+`42501 permission denied for table coordination_jobs` 失败：派发器拿不到提交结果，新执行
+停止创建——不是「围栏失效后照常派发」，但同样必须重放。重放的是同一组函数，按
+`provision-job-roles.py` 的 owner 身份执行；没有 compose 环境时按下面两段手工做，角色名从
+DSN 还原，不会贴到别的身份上：
+
+```bash
+set -a; . deploy/compose.env; set +a
+export SN_ADMIN_DSN="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:${SPEECHNEXUS_POSTGRES_HOST_PORT:-55432}/${POSTGRES_DB}"
+
+uv run --all-packages python - <<'PY'
+import os
+from urllib.parse import unquote, urlsplit
+
+import psycopg
+
+from speechnexus_backend.speech.infrastructure.coordination_grants import (
+    coordination_runtime_grants,
+)
+
+schema = os.environ.get("SN_SCHEMA", "speech")
+key = "SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL"
+dsn = os.environ.get(key, "").strip()
+if not dsn:
+    raise SystemExit(f"{key} is blank, so there is no dispatch identity to grant")
+dispatch = unquote(urlsplit(dsn).username or "")
+gateway = os.environ.get("SN_GATEWAY_ROLE", "sn_gateway")
+with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as connection:
+    for statement in coordination_runtime_grants(
+        schema, speech_role=dispatch, gateway_role=gateway
+    ):
+        connection.execute(statement)
+print(f"re-applied coordination_runtime_grants to {dispatch} and {gateway}")
+PY
+```
+
+核实：**实跑 + 读代码**。2026-11-24 在 PG 18.6 上以真实角色验证：在临时 schema 里重放
+`coordination_runtime_grants` 为 `coordination_jobs` 生成的两条网关语句
+（`GRANT SELECT` 与 `GRANT UPDATE (claim_version)`）后，与 `cancellation_fence_present` 同形的
+`SELECT job_id FROM coordination_jobs WHERE job_id = ? FOR UPDATE` 成功；给 gateway 角色
+`REVOKE UPDATE (claim_version)` 后同一条语句以 `42501 permission denied for table
+coordination_jobs` 失败；再重放这两条语句后恢复成功。围栏的
+写入端由 `test_job_cancellation_fence_pg.py` 的
+`test_acceptance_lock_waits_for_submit_and_then_refuses` 在真库上钉住「提交在 Job 行锁上
+等待，受理提交后拒绝创建执行」。
 
 ## 边界澄清（行为未变）
 

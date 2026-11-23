@@ -26,15 +26,41 @@ from speechnexus_backend.speech.domain.audit_events import (
     AuditEventUnavailableError,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
-from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema import EVENT_TABLE
 from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 _COLUMNS = (
     "event_id, kind, action, binding_id, request_id, actor_type, credential_label, "
     "occurred_at_us, policy_revision, change_summary_json"
 )
-_BASE = f"SELECT {_COLUMNS} FROM {EVENT_TABLE} WHERE kind = 'binding'"
-_ORDER = " ORDER BY occurred_at_us DESC, event_id DESC"
+# 四种查询形状各自写成一条完整语句:受限方言要求语句可静态登记,运行期不再拼谓词。
+# 列投影与 `_COLUMNS` 的一致性由 test_audit_event_statements 核对。
+_PAGE_FIRST = (
+    "SELECT event_id, kind, action, binding_id, request_id, actor_type, "
+    "credential_label, occurred_at_us, policy_revision, change_summary_json "
+    "FROM speech_publication_lifecycle_events WHERE kind = 'binding' "
+    "ORDER BY occurred_at_us DESC, event_id DESC"
+)
+_PAGE_AFTER_ORDER = (
+    "SELECT event_id, kind, action, binding_id, request_id, actor_type, "
+    "credential_label, occurred_at_us, policy_revision, change_summary_json "
+    "FROM speech_publication_lifecycle_events WHERE kind = 'binding' "
+    "AND (occurred_at_us, event_id) < (?, ?) "
+    "ORDER BY occurred_at_us DESC, event_id DESC"
+)
+_PAGE_ACTION_ORDER = (
+    "SELECT event_id, kind, action, binding_id, request_id, actor_type, "
+    "credential_label, occurred_at_us, policy_revision, change_summary_json "
+    "FROM speech_publication_lifecycle_events WHERE kind = 'binding' "
+    "AND action = ? ORDER BY occurred_at_us DESC, event_id DESC"
+)
+_PAGE_AFTER_ACTION_ORDER = (
+    "SELECT event_id, kind, action, binding_id, request_id, actor_type, "
+    "credential_label, occurred_at_us, policy_revision, change_summary_json "
+    "FROM speech_publication_lifecycle_events WHERE kind = 'binding' "
+    "AND (occurred_at_us, event_id) < (?, ?) AND action = ? "
+    "ORDER BY occurred_at_us DESC, event_id DESC"
+)
+
 _SUMMARY_KEYS = frozenset({"changed_fields", "reason"})
 
 
@@ -48,16 +74,19 @@ def statement(query: AuditEventQuery) -> tuple[str, tuple[object, ...], int]:
     """
     if not isinstance(query, AuditEventQuery):
         raise AuditEventUnavailableError
-    text = _BASE
     parameters: list[object] = []
     if query.after is not None:
-        text += " AND (occurred_at_us, event_id) < (?, ?)"
         parameters.extend((query.after.occurred_at_us, query.after.event_id))
     if query.action is not None:
-        text += " AND action = ?"
         parameters.append(query.action)
     # 页大小不进 SQL:受限方言没有 `LIMIT`,多取的那一行由 fetchmany 决定。
-    return text + _ORDER, tuple(parameters), query.limit + 1
+    statement = {
+        (True, True): _PAGE_AFTER_ACTION_ORDER,
+        (True, False): _PAGE_AFTER_ORDER,
+        (False, True): _PAGE_ACTION_ORDER,
+        (False, False): _PAGE_FIRST,
+    }[(query.after is not None, query.action is not None)]
+    return statement, tuple(parameters), query.limit + 1
 
 
 class PostgresAuditEventReads:

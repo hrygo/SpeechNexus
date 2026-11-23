@@ -67,8 +67,6 @@
     "sql-string-building::backend/src/speechnexus_backend/speech/infrastructure/asr_settlement_preflight.py": 1,
     "sql-string-building::backend/src/speechnexus_backend/speech/infrastructure/asr_settlement_schema.py": 2,
     "sql-string-building::backend/src/speechnexus_backend/speech/infrastructure/assets_postgres.py": 1,
-    "sql-string-building::backend/src/speechnexus_backend/speech/infrastructure/audit_events_postgres.py": 1,
-    "sql-string-building::backend/src/speechnexus_backend/speech/infrastructure/binding_disable_barrier.py": 1,
     "sql-string-building::backend/src/speechnexus_backend/speech/infrastructure/binding_drafts_sql.py": 1,
     "sql-string-building::backend/src/speechnexus_backend/speech/infrastructure/builtin_voice_qualification.py": 1,
     "sql-string-building::backend/src/speechnexus_backend/speech/infrastructure/deletion_executions_postgres.py": 1,

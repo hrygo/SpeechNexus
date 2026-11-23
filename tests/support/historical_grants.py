@@ -31,19 +31,46 @@ import re
 from collections.abc import Callable, Iterable
 from typing import Any
 
-#: ``GRANT <privilege> (a, b) ON "schema"."table" TO ...`` — the repository renders
-#: tables both bare and double-quoted, so the table name is matched either way.
+#: ``GRANT ... ON "schema"."table" TO ...`` — the repository renders tables both
+#: bare and double-quoted, so the table name is matched either way.
+_TABLE_GRANT = re.compile(r' ON "[^"]+"\."?([a-z0-9_]+)"? TO ')
+#: ``GRANT <privilege> (a, b) ON "schema"."table" TO ...`` — the same quoting
+#: tolerance for the column-level half.
 _COLUMN_GRANT = re.compile(r'^(GRANT \w+ \()([^()]*)(\) ON "[^"]+"\."?([a-z0-9_]+)"? TO )')
 Query = Callable[[str, tuple[object, ...]], Any]
 
 
 def apply_declared_grants(query: Query, statements: Iterable[str], *, schema: str) -> None:
-    """Execute ``statements`` with column-level grants narrowed to existing columns.
+    """Execute ``statements`` with grants narrowed to what the revision has.
+
+    Two narrowing rules, both for the same reason — a declaration describes the
+    **head** schema and a historical migration test still has to apply it:
+
+    * a statement naming a relation the revision does not have yet is skipped
+      entirely (0066's ``coordination_claim_buckets`` postdates the 0028/0065
+      revisions some tests stop at);
+    * a column-level grant is narrowed to the columns the revision has.
 
     ``query`` takes one statement plus parameters and returns its fetched rows
     (empty for DDL/DCL), matching ``JobDatabase.query``.
     """
+    relations: dict[str, bool] = {}
     for statement in statements:
+        table_match = _TABLE_GRANT.search(statement)
+        if table_match is not None:
+            relation = table_match.group(1)
+            if relation not in relations:
+                relations[relation] = bool(
+                    query(
+                        "SELECT COUNT(*) AS count FROM information_schema.tables "
+                        "WHERE table_schema = %s AND table_name = %s",
+                        (schema, relation),
+                    )[0]["count"]
+                )
+            if not relations[relation]:
+                # The declared relation postdates this revision, so the ACL a
+                # deployment at this revision held did not name it at all.
+                continue
         match = _COLUMN_GRANT.match(statement)
         if match is None:
             query(statement, ())

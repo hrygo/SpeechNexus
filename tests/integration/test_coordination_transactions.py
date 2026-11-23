@@ -32,6 +32,7 @@ from tests.support.coordination import (
     counter,
     digest,
 )
+from tests.support.coordination_ddl import COORDINATION_DDL_STATEMENTS
 from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_portable_sql.pymysql_driver import connect as portable_mysql_connect
@@ -357,7 +358,14 @@ def test_actual_engine_and_foreign_keys(database: Database) -> None:
                 """SELECT ENGINE FROM information_schema.tables
                    WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE'"""
             )
-            assert len(rows) == 15
+            # 表数量从 DDL 清单推出来,不写死:加一张 canonical 表就要改一个魔数,是本仓库
+            # 反复出现的「同一规则多个定义点」。这里问的是「DDL 声明的表都建出来了吗」。
+            expected = sum(
+                1
+                for statement in COORDINATION_DDL_STATEMENTS
+                if statement.lstrip().upper().startswith("CREATE TABLE")
+            )
+            assert len(rows) == expected
             assert all(row["ENGINE"] == "InnoDB" for row in rows)
             assert (
                 tx.one("SELECT @@transaction_isolation AS isolation_level")["isolation_level"]

@@ -47,6 +47,7 @@ SQL 是**新建 namespace 的设计草案和测试输入**，不是已部署业�
 | `output_sample_intervals` | Gateway，只追加 | PCM 样本区间账本；重叠由锁定流权威行后的应用检查拒绝 |
 | `coordination_jobs` | 所属 Speech 任务模块 | 持久 Job 身份、认领 owner/version/deadline；生产原子创建、恢复及独立 claim 事务已有，完整公开 Job 业务派发仍须验收，见[生产 Job](../components/production-jobs.md) |
 | `coordination_outbox` | 同上 | 与 Job 同事务写入；通知丢失时仍可轮询 |
+| `coordination_claim_buckets` | 所属 Speech 任务模块 / Worker | 固定 `BUCKETS`（256）个逻辑桶的 `claim_owner_id` / `lease_until` / `version`；`0066` 建表并播种空桶，认领按 `version` CAS 抢桶再归还，桶行只由 schema 创建 |
 
 新增表使配方、停止事实、当前指针和 Job/outbox 的职责显式，目标不是最少表数。
 核心 FK 继续约束 instance/host/pool/gateway、attempt/lease、lease/submit、submit/evidence

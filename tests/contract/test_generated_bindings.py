@@ -131,9 +131,9 @@ def test_coordination_ownership_covers_ports_tables_and_query_snapshots() -> Non
     # 生产 DDL 直接来自生成器,不再有第二份可漂移的副本。
     from tests.support.coordination_ddl import COORDINATION_DDL_TEXT
 
-    assert set(re.findall(r"^CREATE TABLE (\w+)", COORDINATION_DDL_TEXT, re.MULTILINE)) <= set(
-        matrix["tables"]
-    )
+    assert set(
+        re.findall(r"^CREATE TABLE (?:IF NOT EXISTS )?(\w+)", COORDINATION_DDL_TEXT, re.MULTILINE)
+    ) <= set(matrix["tables"])
     for name, port in matrix["ports"].items():
         assert port["producer"] and port["consumer"]
         assert all(matrix["tables"][table] == port["owner"] for table in port["writes"]), name

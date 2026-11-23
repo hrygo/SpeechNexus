@@ -34,9 +34,14 @@ from tests.support.portable_pg import connect_kwargs as portable_connect_kwargs
 from speechnexus_backend.speech.application.jobs import CreateJobService, JobTransactions
 from speechnexus_backend.speech.domain.jobs import CreateJob
 from speechnexus_backend.speech.infrastructure.job_schema import (
+    CANONICAL_JOB_DDL,
     JOB_DDL,
     job_dispatch_grants,
     job_runtime_grants,
+)
+from speechnexus_backend.speech.infrastructure.job_writer_columns import (
+    COORDINATION_JOB_INSERT_COLUMNS,
+    COORDINATION_OUTBOX_INSERT_COLUMNS,
 )
 from speechnexus_backend.speech.infrastructure.jobs_postgres import (
     JobPool,
@@ -177,16 +182,14 @@ def database(request: pytest.FixtureRequest) -> Iterator[JobDatabase]:
                 f"CREATE DATABASE `{schema}` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin"
             )
             cursor.execute(f"USE `{schema}`")
-            for ddl in JOB_DDL:
+            for ddl in (*JOB_DDL, *CANONICAL_JOB_DDL):
                 cursor.execute(ddl.replace('COLLATE "C"', "COLLATE utf8mb4_0900_bin"))
             cursor.execute(f"CREATE USER '{role}'@'%' IDENTIFIED BY 'synthetic_job_test'")
+            # 列清单直接取写入者声明,不在这里手写第五份副本:漏一列的后果是运行期
+            # ``42501``(列级授权缺列时 MySQL/PG 的错误都不点名缺哪列)。
             for table, columns in (
-                (
-                    "coordination_jobs",
-                    "job_id,operation_id,attempt_id,initial_event_id,"
-                    "initial_event_digest,request_digest",
-                ),
-                ("coordination_outbox", "event_id,job_id,event_digest"),
+                ("coordination_jobs", ",".join(COORDINATION_JOB_INSERT_COLUMNS)),
+                ("coordination_outbox", ",".join(COORDINATION_OUTBOX_INSERT_COLUMNS)),
             ):
                 cursor.execute(
                     f"GRANT SELECT, INSERT ({columns}) ON `{schema}`.{table} TO '{role}'@'%'"

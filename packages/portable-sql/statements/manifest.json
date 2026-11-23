@@ -1201,6 +1201,46 @@
       "sql": "UPDATE coordination_jobs SET last_event_seq = ?, claim_version = ? WHERE job_id = ? AND claim_version = ?"
     },
     {
+      "id": "job.reclaim",
+      "version": 1,
+      "params": [
+        {
+          "name": "next_state",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "owner_id",
+          "kind": "text",
+          "nullable": true
+        },
+        {
+          "name": "bucket_no",
+          "kind": "decimal",
+          "nullable": false
+        },
+        {
+          "name": "expected_state",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "now",
+          "kind": "timestamp",
+          "nullable": false
+        }
+      ],
+      "result": [],
+      "transaction": "write",
+      "lock_order": [
+        "coordination_claim_buckets",
+        "coordination_jobs"
+      ],
+      "idempotency": "replay_until_converged",
+      "error_semantics": "rollback_and_rescan",
+      "sql": "UPDATE coordination_jobs SET job_state = ?, claim_owner_id = ?, claim_version = claim_version + 1 WHERE bucket_no = ? AND job_state = ? AND claim_expires_at <= ?"
+    },
+    {
       "id": "job_event.insert",
       "version": 1,
       "params": [

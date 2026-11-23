@@ -22,6 +22,7 @@ from speechnexus_backend.speech.domain.configuration import (
     document_digest,
     revision_number,
 )
+from speechnexus_portable_sql.transaction import insert_if_absent
 
 
 class BindingCursor(Protocol):
@@ -145,6 +146,19 @@ def _update(cursor: BindingCursor, sql: str, args: tuple[object, ...]) -> None:
         raise BindingUnavailableError
 
 
+# 两套列集合各写死;列与占位符的对应由 test_binding_draft_insert_statements 核对。
+_INSERT_DRAFT = (
+    "INSERT INTO speech_binding_commands "
+    "(key_digest, binding_id, document_version, intent_json, request_digest) "
+    "VALUES (?,?,?,?,?)"
+)
+_INSERT_DRAFT_WITH_DEFAULTS = (
+    "INSERT INTO speech_binding_commands "
+    "(key_digest, binding_id, document_version, intent_json, request_digest, "
+    "defaults_declared) VALUES (?,?,?,?,?,?)"
+)
+
+
 def create_draft(
     cursor: BindingCursor,
     command: CreateBindingDraft,
@@ -156,7 +170,6 @@ def create_draft(
     check_command(command)
     if command.parameter_defaults is not None and not include_defaults:
         raise ValueError("Default declarations require the atomic snapshot port")
-    fields = "key_digest,binding_id,document_version,intent_json,request_digest"
     arguments: tuple[object, ...] = (
         command.key_digest,
         command.binding_id,
@@ -165,18 +178,13 @@ def create_draft(
         command.request_digest,
     )
     if include_defaults:
-        fields += ",defaults_declared"
         arguments += (command.parameter_defaults is not None,)
-    placeholders = ",".join("%s" for _ in arguments)
-    cursor.execute(
-        f"INSERT INTO speech_binding_commands ({fields}) VALUES ({placeholders}) "
-        "ON CONFLICT (key_digest) DO NOTHING",
-        arguments,
-    )
+        inserted = insert_if_absent(cursor, _INSERT_DRAFT_WITH_DEFAULTS, arguments)
+    else:
+        inserted = insert_if_absent(cursor, _INSERT_DRAFT, arguments)
     # The unique-key INSERT waits for the original transaction. Journal and
     # result rows are immutable, so no UPDATE privilege/explicit row lock is
     # needed after that wait. Only the family allocation head is mutable.
-    inserted = cursor.rowcount == 1
     rows = _rows(
         cursor,
         "SELECT * FROM speech_binding_commands WHERE key_digest=?",

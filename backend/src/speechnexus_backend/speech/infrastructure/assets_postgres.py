@@ -33,6 +33,21 @@ from speechnexus_portable_sql.contract import ListMarker
 from speechnexus_portable_sql.transaction import is_savepoint_control
 from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
+# 非权威的 poll 提示列:回收与过期各用一列,两条语句各自写死。
+_PENDING_CANDIDATES = (
+    "SELECT asset_id FROM speech_assets "
+    "WHERE (upload_phase = 'writing' "
+    "OR (asset_state = 'staging' AND upload_phase = 'settled')) "
+    "ORDER BY reconcile_polled_at_us, expires_at_us, asset_id LIMIT ?"
+)
+_EXPIRED_CANDIDATES = (
+    "SELECT asset_id FROM speech_assets WHERE asset_state <> 'deleted' "
+    "AND expires_at_us <= ? "
+    "ORDER BY expiry_polled_at_us, expires_at_us, asset_id LIMIT ?"
+)
+_MARK_RECONCILED = "UPDATE speech_assets SET reconcile_polled_at_us = ? WHERE asset_id IN (?)"
+_MARK_EXPIRED = "UPDATE speech_assets SET expiry_polled_at_us = ? WHERE asset_id IN (?)"
+
 
 class AssetCursor:
     def __init__(self, cursor: psycopg.Cursor[dict[str, Any]], deadline: float) -> None:
@@ -536,23 +551,15 @@ class PostgresAssetMetadata:
     def _candidates(self, limit: int, *, pending: bool) -> list[str]:
         if not 1 <= limit <= 100:
             raise ValueError("Asset scans must be bounded")
-        predicate = (
-            "(upload_phase = 'writing' OR (asset_state = 'staging' AND upload_phase = 'settled'))"
+        # 两条扫描各自写死:poll 提示列不是同一条语句能参数化的东西。
+        candidates, mark = (
+            (_PENDING_CANDIDATES, _MARK_RECONCILED)
             if pending
-            else "asset_state <> 'deleted' AND expires_at_us <= ?"
+            else (_EXPIRED_CANDIDATES, _MARK_EXPIRED)
         )
-        # These timestamps are non-authoritative poll hints, independent for
-        # recovery and expiry. A permanently blocked original must not consume
-        # the first bounded page on every tick and starve all later resources.
-        polled = "reconcile_polled_at_us" if pending else "expiry_polled_at_us"
         with self._transaction() as cursor:
             args = (limit,) if pending else (cursor.clock(), limit)
-            rows = cursor.rows(
-                "SELECT asset_id FROM speech_assets WHERE "
-                + predicate
-                + f" ORDER BY {polled}, expires_at_us, asset_id LIMIT ?",
-                args,
-            )
+            rows = cursor.rows(candidates, args)
             identities = [row["asset_id"] for row in rows]
             if identities:
                 # Lock only the selected hint rows, in canonical identity order.
@@ -562,10 +569,7 @@ class PostgresAssetMetadata:
                     "ORDER BY asset_id FOR UPDATE",
                     (ListMarker(identities),),
                 )
-                cursor.rows(
-                    f"UPDATE speech_assets SET {polled} = ? WHERE asset_id IN (?)",
-                    (cursor.clock(), ListMarker(identities)),
-                )
+                cursor.rows(mark, (cursor.clock(), ListMarker(identities)))
             return identities
 
     def prepare_expiry(self, asset_id: str, ledger_id: str) -> DeletionTicket | None:

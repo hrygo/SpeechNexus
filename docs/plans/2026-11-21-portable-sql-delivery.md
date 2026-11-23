@@ -1371,3 +1371,22 @@ SELECT 1 FROM speech_workspaces, workspace_quotas, … WHERE 1=0
 (参数化的 `postgres` 分支)覆盖:21 passed。
 
 基线 **252 → 250**。
+
+### 8.62 字面量化会让被掩盖的规则暴露
+
+`assets_postgres` 的候选扫描原本写成 `"SELECT … WHERE " + predicate + f" ORDER BY {polled} … LIMIT ?"`。
+字面量化后守卫立刻报出 **`paging-limit`(2)**,而基线里从来没有这两条 —— 也就是说这个文件一直在两条规则上
+同时越界,只是 `sql-string-building` 先被记录,`LIMIT` 藏在 f-string 里没被单独看见。
+
+处理方式不变:该留的留、该记的记。这两个 `LIMIT ?` 是有界页(`limit` 参数 1..100 且上游已校验),
+去掉它就得在 Python 里取全量再截断,那不是等价改动;所以登记进 ledger(card #1100,理由「先去重定序再决定
+取哪一行」),并在 PR 里如实说明**净变化是 −1 而不是 −3**。
+
+同一轮把 `abort_intent_sql` 的回执投影与 `binding_drafts_sql` 的两套插入列集合写成字面量,
+后者顺带把 `ON CONFLICT (key_digest) DO NOTHING` 换成 `insert_if_absent` 的布尔返回,
+`rowcount == 1` 的判据由它承担。
+
+判据 `test_literalized_statements.py` 三条,各自注入即红:
+删 abort 回执一列 / 把两个 asset 扫描的 ORDER BY 列对调 / 删 binding 插入一列 → 都是 `1 failed, 2 passed`。
+
+基线 **250 → 249**。

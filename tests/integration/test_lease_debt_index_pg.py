@@ -24,6 +24,7 @@ from tests.integration.test_public_job_progress_migration_pg import (
     _url,
 )
 from tests.support.migrations import (
+    HEAD,
     LEASE_DEBT_INDEX,
     LEASE_DEBT_INDEX_REVISION,
     LEDGER_DEBT_INDEX,
@@ -100,7 +101,7 @@ def test_0063_refuses_its_own_downgrade_from_the_current_head() -> None:
     with _isolated_schema(_url()) as (config, query):
         command.upgrade(config, "head")
         head = _revision(query)
-        assert head == "0063_deletion_targets_blocked"
+        assert head == HEAD
 
         with pytest.raises(RuntimeError) as refused:
             command.downgrade(config, LEASE_DEBT_INDEX_REVISION)

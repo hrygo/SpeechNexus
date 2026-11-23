@@ -51,7 +51,12 @@ SPEECH_UPDATES = {
         "lease_state cleanup_state budget_released_at_us "
         "quarantine_observed_at_us quarantine_reason_code version"
     ),
-    "coordination_jobs": "claim_owner_id claim_expires_at_us claim_version job_state",
+    # 派发改用 canonical 租约列:认领/续租/终止都写 `claim_expires_at`(0064 的
+    # TIMESTAMP(6)),`job_state` 由 `pending` 推成 `claimed`。草案 epoch 列仍在列里,
+    # 因为草案列退役前仍是协调行的可写面(写入者的领取重放路径仍用它)。
+    "coordination_jobs": (
+        "claim_owner_id claim_expires_at claim_expires_at_us claim_version job_state"
+    ),
     "coordination_outbox": "delivered_at_us",
     "runtime_intent_deliveries": "",
     CLAIM_BUCKET_TABLE: " ".join(CLAIM_BUCKET_UPDATE_COLUMNS),

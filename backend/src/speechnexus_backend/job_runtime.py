@@ -15,6 +15,10 @@ from speechnexus_backend.speech.application.voice_publications import VoicePubli
 from speechnexus_backend.speech.domain.job_prerequisites import ADMISSION_DSN
 from speechnexus_backend.speech.infrastructure.artifacts_minio import MinioArtifactRemoval
 from speechnexus_backend.speech.infrastructure.assets_minio import MinioAssetObjects
+from speechnexus_backend.speech.infrastructure.claim_bucket_schema import (
+    CLAIM_BUCKET_TABLE,
+    CLAIM_BUCKET_UPDATE_COLUMNS,
+)
 from speechnexus_backend.speech.infrastructure.deletion_executions_postgres import (
     PostgresDeletionExecutions,
 )
@@ -189,6 +193,7 @@ _JOB_DECLARED_TABLES = tuple(
             *DELETION_EXECUTION_TABLES,
             "coordination_jobs",
             "coordination_outbox",
+            CLAIM_BUCKET_TABLE,
             "admission_operations",
             "speech_job_cancellation_fences",
             "speech_job_cancellation_reconciliations",
@@ -213,8 +218,18 @@ _JOB_UPDATE_SURFACE: dict[str, tuple[str, ...]] = {
     # Operation-content deletion tombstones the legacy private command copy
     # through 0007's command-shape CHECK (#540).
     "admission_operations": LEGACY_INTENT_UPDATE_COLUMNS,
+    # ``claim_expires_at`` 是 0064 的 canonical 租约列:#1176 段 B2 之后认领写的是它,
+    # 派发身份从 ``coordination_runtime_grants`` 拿到这一列。writer 自己不写它,但这两个
+    # 授权组可以装在同一个 login 上(单角色部署与集成 fixture 都这样),所以它是「允许但
+    # 不要求」;必须有的一列由 ``REQUIRED_UPDATE_COLUMNS`` 单独钉住(见下方 required 循环)。
+    # 桶租约表(#1176 段 B2)。writer 自己不碰它:认领拿桶的是派发身份,而
+    # ``coordination_runtime_grants`` 给的正是 ``SELECT`` + 这三列 ``UPDATE``。允许但不要求,
+    # 因为单角色部署与本仓的 foundation fixture 把两个身份装在同一个 login 上;除此之外
+    # 多给一列仍然会在启动时被点名。
+    CLAIM_BUCKET_TABLE: CLAIM_BUCKET_UPDATE_COLUMNS,
     "coordination_jobs": (
         "claim_owner_id",
+        "claim_expires_at",
         "claim_expires_at_us",
         "claim_version",
         "job_state",
@@ -227,7 +242,10 @@ _JOB_UPDATE_SURFACE: dict[str, tuple[str, ...]] = {
         "updated_at_us",
     ),
 }
-_JOB_REQUIRED_UPDATE = frozenset(REQUIRED_UPDATE_COLUMNS)
+# ``coordination_jobs`` 例外:上述 canonical 租约列可能与本 writer 一起装在同一个 login 上,
+# 「允许集合」比「必须有的一列」宽一一列,所以它按「允许但不要求完整」校验,其余表仍要求
+# 恰好等于声明面——多给一列还是会在启动时被点名。
+_JOB_REQUIRED_UPDATE = frozenset(REQUIRED_UPDATE_COLUMNS) - {"coordination_jobs"}
 # The deletion executor removes exactly the authoritative public Job intent row of
 # the confirmed operation (#540) and one unreferenced voice draft revision. Every
 # other declared relation still refuses DELETE/TRUNCATE, and the assertion below

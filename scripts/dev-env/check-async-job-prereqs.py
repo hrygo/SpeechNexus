@@ -154,7 +154,7 @@ DISPATCH_WRITE_PROBES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "coordination_jobs",
         "UPDATE",
-        ("claim_owner_id", "claim_expires_at_us", "claim_version", "job_state"),
+        ("claim_owner_id", "claim_expires_at", "claim_version", "job_state"),
     ),
     (
         "speech_job_events",

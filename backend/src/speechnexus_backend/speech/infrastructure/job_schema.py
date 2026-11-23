@@ -48,6 +48,11 @@ CANONICAL_JOB_DDL: tuple[str, ...] = (
     # 0064 added ``due_at`` in the same way; the writer now fills it, so the InnoDB
     # verification schema must carry the column too or the shared INSERT fails only there.
     "ALTER TABLE coordination_jobs ADD COLUMN due_at TIMESTAMP(6)",
+    # The claim path now writes the canonical lease (``claim_expires_at``) instead of the
+    # draft epoch column, so a schema built from this declaration must have it; otherwise
+    # the same 派发 code would work on a migrated PostgreSQL and fail on the verification
+    # schema with an unknown column (#1176 段 B2).
+    "ALTER TABLE coordination_jobs ADD COLUMN claim_expires_at TIMESTAMP(6)",
 )
 
 

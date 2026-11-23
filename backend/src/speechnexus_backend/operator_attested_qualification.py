@@ -59,7 +59,14 @@ _LEDGER_RELATIONS = (
     "speech_publication_heads",
     "speech_publication_retirements",
 )
-_RELATIONS = ",".join("'" + name + "'" for name in _LEDGER_RELATIONS)
+#: `c.relname IN (…)` 是**值位**:台账表名在那里是数据,不是 SQL 标识符位置,所以它可参数化
+#: (FROM/JOIN 里的表名不可参数化,那是另一回事)。旧写法 `",".join("'" + name + "'")` 把 13 个
+#: 名字引号进文本 —— 名字里只要出现 `'` 整条语句就语法错误,这正是 #1100 要消掉的值插值。
+#: 占位符个数与绑定值都从 `_LEDGER_RELATIONS` 这一份定义点派生,与 readiness 里 verified-stop
+#: 词表的绑定同形;语句刻意保持 f-string,因为占位符个数必须跟着词表走(见 §8.74.1)。
+_SQL_RELATIONS = "(" + ", ".join("?" for _ in _LEDGER_RELATIONS) + ")"
+#: 两次 `IN (…)`(本人身份一次、可达角色一次),同一个词表按顺序重复。
+_RELATION_PARAMETERS: tuple[str, ...] = (*_LEDGER_RELATIONS, *_LEDGER_RELATIONS)
 
 # A write identity may append its two rows and read what it needs; it must not be
 # able to rewrite, delete or truncate any part of the qualification ledger later.
@@ -70,7 +77,7 @@ _FORBIDDEN_IDENTITY = (
     "OR pg_catalog.pg_has_role(SESSION_USER,n.nspowner,'MEMBER') "
     "OR pg_catalog.has_schema_privilege(SESSION_USER,n.oid,'CREATE') "
     "OR EXISTS (SELECT 1 FROM pg_catalog.pg_class c WHERE c.relnamespace=n.oid "
-    f"AND c.relname IN ({_RELATIONS}) AND ("
+    f"AND c.relname IN {_SQL_RELATIONS} AND ("
     "pg_catalog.has_table_privilege(SESSION_USER,c.oid,"
     "'UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') OR "
     "pg_catalog.has_any_column_privilege(SESSION_USER,c.oid,'UPDATE,REFERENCES'))) "
@@ -80,7 +87,7 @@ _FORBIDDEN_IDENTITY = (
     "OR reachable.rolcreatedb OR reachable.rolcreaterole OR reachable.rolreplication "
     "OR reachable.rolbypassrls OR pg_catalog.has_schema_privilege(reachable.oid,n.oid,'CREATE') "
     "OR EXISTS (SELECT 1 FROM pg_catalog.pg_class c WHERE c.relnamespace=n.oid "
-    f"AND c.relname IN ({_RELATIONS}) AND pg_catalog.has_table_privilege("
+    f"AND c.relname IN {_SQL_RELATIONS} AND pg_catalog.has_table_privilege("
     "reachable.oid,c.oid,'UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')))) "
     "AS forbidden FROM pg_catalog.pg_roles r "
     "JOIN pg_catalog.pg_database d ON d.datname=current_database() "
@@ -171,7 +178,7 @@ def record_operator_attestation(
     evidence_digest = declaration_digest(declaration, request)
 
     def operation(cursor: Any) -> dict[str, Any]:
-        cursor.execute(_FORBIDDEN_IDENTITY)
+        cursor.execute(_FORBIDDEN_IDENTITY, _RELATION_PARAMETERS)
         identities = cursor.fetchall()
         if len(identities) != 1 or identities[0]["forbidden"]:
             raise OperatorAttestationError("writer_identity_forbidden")

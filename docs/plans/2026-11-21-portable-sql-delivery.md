@@ -1616,7 +1616,7 @@ bootstrap DDL 而是 DML:`ON CONFLICT (key) DO UPDATE SET value = excluded.value
 
 | 规则 | 条数 | 文件 | 卡在什么上 |
 | --- | ---: | ---: | --- |
-| `sql-string-building` | 51 | 25 | 已逐条判决(§8.70 / §8.71):配置标识符、方言操作符、行数派生。**没有可迁移项**,再改写只是在规则之间搬计数 |
+| `sql-string-building` | 43 | 24 | 写本节时 51 条 / 25 个文件,其中 8 条标识符插值已随 #1194 字面量化。现行构成见 §8.74.1:**42 条标识符/语句文本(必须保留)+ 1 条值插值(已改绑定参数)**;**没有可迁移项** |
 | `advisory-lock` | 32 | 24 | 需把这些站点换成已交付的 `claims` 原语(bucket + fence)。原语有 PG oracle(`test_claim_bucket_pg.py` 18 passed),但**生产派发链路仍走自己的 CTE**,尚未改接 |
 | `vendor-type` | 32 | 19 | DDL 类型字面量(已在 profile 制品侧)与行工厂里的第三方类型;要落地需要应用层类型映射 |
 | `vendor-json` | 28 | 17 | JSONB 运算符;要么在应用层做 JSON,要么给受限方言加 JSON 谓词原语 |
@@ -1642,6 +1642,78 @@ canonical 切换。这条边界要认清,否则会拿「改接原语」当 #1100
 
 若将来启动这条切换,它是协调事务变更:先读 `speechnexus-coordination-change`,准备 bucket → Job →
 outbox 的锁序 oracle,并在切换前给出草案表到 canonical 表的列级换算与回退演练。
+
+#### 8.74.1 `sql-string-building` 的 43 条:42 条标识符/语句文本 + 1 条值插值(已消)
+
+§8.74 把这一族记成「已逐条判决」,却没有把**标识符插值**与**值插值**分开,所以 43 这个数字读不
+出还剩多少真缺陷。逐条重判(每条 f-string 的每个 `{…}` 都追到定义点)后的构成是:
+
+| 分类 | 条数 | 判据 |
+| --- | ---: | --- |
+| 标识符(name 位置) | 23 | schema/role/表名/视图名/列清单。来自模块常量或 `checked_sql_name`;任何方言都不能把 name 位置换成占位符 |
+| 语句文本(片段与占位符形状) | 19 | 投影、时钟、谓词、CASE,以及由词表长度派生的 `?` 个数。每段都是同一判定的单一定义点,内联等于把同一段写 N 遍 |
+| 值(值位置) | 1 | 台账表名落进 `c.relname IN (…)`——那是**值位**,不是 name 位 |
+
+即 **43 findings = 42 identifier-only(must stay)+ 1 value(fixed)**。值的判据沿用 #1194 的口径:
+被插进值位置的是**数据**而不是 SQL 结构,旧写法靠引号把它变成字面量,于是值里出现 `'` 就改写
+语句。逐文件:
+
+| 文件 | 条数 | 分类 | 闭集依据 / 为什么必须保留 |
+| --- | ---: | --- | --- |
+| `operator_attested_qualification.py` | 1 | **值(已修)** | `_LEDGER_RELATIONS` 是词表,放进 `IN (…)` 是值位;改为绑定参数 |
+| `speech/infrastructure/admission_sql.py` | 2 | 语句文本 | `columns` / `assignments` / `placeholders` 由 `DIMENSIONS` 常量派生;列清单与 `?` 个数同源 |
+| `speech/infrastructure/asr_settlement_debt.py` | 2 | 语句文本 | `_NOW = "CAST(? AS BIGINT)"` 本身就带占位符,插的是「现在」位置的表达式 |
+| `speech/infrastructure/asr_settlement_preflight.py` | 1 | 语句文本 | `_ROOT_ABSENT` 是一条判定(结算根不存在)的单一定义点,不是值 |
+| `speech/infrastructure/asr_settlement_schema.py` | 2 | 标识符 | `schema` / `role` 先过 `checked_sql_name`(`[a-z][a-z0-9_]{2,62}`),DCL 里不能参数化 |
+| `speech/infrastructure/builtin_voice_qualification.py` | 1 | 语句文本 | 插的是 `qualification_source_state_sql('q')` 的 CASE,该 CASE 是「资格来源状态」的单一定义点 |
+| `speech/infrastructure/deletion_executions_postgres.py` | 1 | 语句文本 | `(?, ?, ?)` 的组数由 `_PRIVILEGES` 常量元组长度派生,行内容本身不可字面化 |
+| `speech/infrastructure/deletion_plans_postgres.py` | 3 | 2 标识符 + 1 语句文本 | `_PLAN_COLUMNS` 是列清单、`DELETION_PLANS` 是 `deletion_plan_schema` 的表名常量;`VALUES` 占位符组数同 `deletion_executions` |
+| `speech/infrastructure/job_cancellation_fence.py` | 2 | 标识符 | `TABLE` = `CANCELLATION_FENCE_TABLE`,来自 `job_cancellation_fence_schema` 的 `FROM`/`INSERT INTO` 位置 |
+| `speech/infrastructure/job_dispatch_postgres.py` | 1 | 标识符 | `NOT_SUBMITTED_TABLE` 是 schema 模块常量,内联等于给这张表第二份定义点 |
+| `speech/infrastructure/public_job_admission.py` | 1 | 语句文本 | 同上:同一个 `qualification_source_state_sql('q')` |
+| `speech/infrastructure/qualified_speech_facts_postgres.py` | 2 | 1 标识符 + 1 语句文本 | 授权行的 `schema`/`role` 过 `checked_sql_name`;另一条是同一个来源状态 CASE |
+| `speech/infrastructure/readiness.py` | 5 | 语句文本 | `_SCHEDULE_STATE_SQL` / `_RETRY_COLUMNS_SQL` / `_NOW_CLOCK` 由四条读共用;`_SQL_VERIFIED_STOP_EVIDENCE` 已是词表派生的参数占位符(值早就绑进去了) |
+| `speech/infrastructure/tts_settlement_preflight.py` | 1 | 语句文本 | `_TTS_KINDS` / `_TTS_COMMANDS` 是手写谓词,`_ROOT_ABSENT` 是判定,`_PUBLIC_SETTLEMENT_GRACE_US` 是单一定义点的常量 |
+| `speech/infrastructure/tts_settlement_schema.py` | 4 | 标识符 | 同 `asr_settlement_schema`:四类 DCL 的 `schema` / `role` 都过 `checked_sql_name` |
+| `speech/infrastructure/voice_capability_evidence_postgres.py` | 1 | 标识符 | `EVIDENCE_TABLE` = `speech_voice_capability_evidence`,来自 `voice_publication_schema` |
+| `speech/infrastructure/voice_catalogue_postgres.py` | 4 | 标识符 | `VOICE_READER_VIEW` 是 `voice_catalogue_schema` 的视图名常量,`FROM` 位置 |
+| `workbench/infrastructure/postgres_assistant_turns.py` | 1 | 标识符 + 语句文本 | `_COLUMNS` 是列清单常量;`suffix` 只有 `""` / `" FOR UPDATE"` 两个取值 |
+| `workbench/infrastructure/postgres_exports.py` | 2 | 标识符 + 语句文本 | 同上;`{s}` 是留给 `sql.SQL(...).format(s=…)` 的 schema 占位,不是已发生的插值 |
+| `workbench/infrastructure/postgres_saved_assets.py` | 1 | 标识符 | `_COLUMNS` 列清单常量 |
+| `workbench/runtime.py` | 2 | 语句文本 | `scope` 只有 `""` / `" AND c.relname = ANY(?) "` 两个取值,两段都自带占位符 |
+| `execution-gateway/…/cancellation_fence_sql.py` | 1 | 标识符 | `JOB_CANCELLATION_FENCE_TABLE` 来自 `speechnexus_contracts.cancellation_fence` |
+| `execution-gateway/…/reader_authority.py` | 1 | 标识符 | `schema` 先过 `re.fullmatch(r"[a-z][a-z0-9_]{2,62}")`,同一值还作为 `n.nspname=?` 绑定 |
+| `node-controller/…/sqlite_intent_store.py` | 1 | 语句文本 | `?` 个数由 `RuntimeIntentState` 枚举里 `is_unresolved` 的成员数派生(§8.73 的本地库判定不变) |
+
+**那 1 条值插值。** `_LEDGER_RELATIONS`(13 张资格台账表)原先用
+`",".join("'" + name + "'" …)` 做成 `'a','b',…` 拼进两处 `c.relname IN (…)`。这不是 name 位置:
+`c.relname` 是目录表里的文本列,比较的是**值**,所以它能参数化,也应该参数化。现在的形状是
+`_SQL_RELATIONS`(占位符个数)与 `_RELATION_PARAMETERS`(绑定值,两处 `IN` 各一遍)都从
+`_LEDGER_RELATIONS` 这一份定义点派生,与 `readiness` 里 `VERIFIED_STOP_EVIDENCE_KINDS` 的绑定同形;
+`tests/unit/backend/test_operator_attested_qualification.py` 逐条核对「占位符数 = 2×词表」且
+「词表名字不出现在语句文本里」,重引号化即红。
+
+真库 oracle(隔离库 `speechnexus_test`,探针角色 `sn_interp_probe` 无任何授权,跑完即删):
+
+| 场景 | 结果 |
+| --- | --- |
+| shipped 语句 + 真实词表 | `forbidden=False`(无授权身份不应被判为禁止身份) |
+| shipped 语句 + 前三个值换成 `O'Brien` / `back\slash` / `100%` | `forbidden=False`,**无报错** |
+| 旧形状(把 `O'Brien` 拼进词表) | `SyntaxError: syntax error at or near "Brien"` |
+| 旧形状(值改成 `x') OR TRUE OR c.relname IN ('y`) | `forbidden=True`(基线是 `False`:谓词被改写) |
+| 绑定值逐个匹配临时表名 `O'Brien` / `back\slash` / `100%` | `(1, 1, 1)`,引号、反斜杠、百分号都按字面比较 |
+
+**为什么守卫基线不因此下降。** 这条修正消掉的是「值进文本」,不是「语句文本可静态登记」:占位符
+个数必须跟着词表走,所以 f-string 还在,`sql-string-building` 仍是 1 条。这与 #1194 的 3 条值修复
+一致——那三条改成绑定参数后,`readiness` 的 5 条也没有减少。本轮基线保持 **164**,`new=0
+fixed=0`;台账里该文件的 `sql-string-building` 条目继续有效(键还在基线里,删掉会让守卫报
+`unregistered`),只把 reason 改成本次判决。
+
+**两条读数的边界。** 一是这条规则的视野只有 f-string:`qualification_source_evidence.py` 用
+`"THEN '" + STATE_EVIDENCED + "'"` 拼的四个状态标签同样是值位置的字面量,守卫看不见;#1194 已把
+那个 CASE 判为「语句文本」(单一定义点),本轮沿用,但它不是「不存在值插值」的证据,只是「这四处
+已判决」。二是 `admission_sql` 的 `placeholders` 生成的是 `%s` 而不是 `?`,那是 `format` 族的
+标记问题(不在本轮 43 条内),留待 #1102。
 
 ### 8.75 #1102 的切换顺序与每个步骤的判据
 

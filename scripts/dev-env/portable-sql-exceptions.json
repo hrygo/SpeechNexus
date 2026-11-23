@@ -286,7 +286,7 @@
       "path": "backend/src/speechnexus_backend/operator_attested_qualification.py",
       "count": 1,
       "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
+      "reason": "值位已改绑定参数(台账表名进 c.relname IN (…),见 docs/plans/2026-11-21-portable-sql-delivery.md §8.74.1);剩下这 1 条是 f-string 语句文本本身:占位符个数必须随 _LEDGER_RELATIONS 走,词表字面量化后才消失",
       "release": "#1100 完成时删除本条目"
     },
     {

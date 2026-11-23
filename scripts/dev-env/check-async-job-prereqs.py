@@ -37,7 +37,9 @@ PASS/FAIL/PENDING,FAIL 时点名缺的是哪一项;需要 Docker daemon、psql �
 
 脚本里的探测语句与生产代码同源:常量复制自 `job_dispatch_runtime` 与 `job_runtime`,
 由 `tests/unit/test_async_job_prereqs_check.py` 断言逐字相等,生产改动而脚本未跟随时
-该测试变红。
+该测试变红。唯一例外是 INSERT 列清单:它不再有副本,直接导入
+`job_writer_columns.JOB_WRITER_INSERT_COLUMNS`(#1181),因此逐字比对对它没有意义,
+测试改为断言两边是同一个对象。
 """
 
 from __future__ import annotations
@@ -61,6 +63,31 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 VERSIONS_DIR = (
     REPO_ROOT / "backend/src/speechnexus_backend/speech/infrastructure/migrations/versions"
 )
+# 本检出里的后端包。脚本以独立文件运行(有时有 workspace venv,有时只有本检出):
+# 把 backend/src 放进 sys.path 后导入的就是生产模块本身,而不是第二份副本。
+# 这里只导入纯标准库依赖的模块——有第三方依赖的后端模块在这里导入不了,也不该由
+# 本脚本引入。
+_BACKEND_SRC = REPO_ROOT / "backend/src"
+
+
+def _prepend_backend_source() -> None:
+    """把本检出的 backend/src 放进 sys.path(只放一次)。"""
+
+    source = str(_BACKEND_SRC)
+    if source not in sys.path:
+        sys.path.insert(0, source)
+
+
+def _writer_insert_columns() -> dict[str, tuple[str, ...]]:
+    """唯一 INSERT 列声明;运维副本已拆掉(#1181)。"""
+
+    _prepend_backend_source()
+    from speechnexus_backend.speech.infrastructure.job_writer_columns import (
+        JOB_WRITER_INSERT_COLUMNS,
+    )
+
+    return JOB_WRITER_INSERT_COLUMNS
+
 
 # 迁移必须已建出的 Job/准入关系;缺失时创建或领取必然失败。这些名字都必须是
 # job_runtime 声明的 Job writer 关系(同源测试断言其子集)。
@@ -271,206 +298,12 @@ WRITER_REQUIRED_SELECT: tuple[str, ...] = (
     "speech_voice_metadata_commands",
 )
 
-# 复制自 job_writer_columns.JOB_WRITER_INSERT_COLUMNS:表级 INSERT 会被拒绝,
-# 写者只允许这些列的列级 INSERT。
-WRITER_INSERT_COLUMNS: dict[str, tuple[str, ...]] = {
-    "coordination_jobs": (
-        "job_id",
-        "operation_id",
-        "attempt_id",
-        "initial_event_id",
-        "initial_event_digest",
-        "request_digest",
-        "bucket_no",
-        "due_at",
-    ),
-    "coordination_outbox": (
-        "event_id",
-        "job_id",
-        "event_digest",
-    ),
-    "admission_operations": (
-        "operation_id",
-        "workspace_id",
-        "request_digest",
-        "request_document",
-        "initial_attempt_id",
-        "current_attempt_id",
-        "recorded_at_us",
-    ),
-    "speech_job_intents": (
-        "job_id",
-        "request_digest",
-        "request_document",
-        "recorded_at_us",
-    ),
-    "speech_artifacts": (
-        "artifact_id",
-        "workspace_id",
-        "artifact_kind",
-        "artifact_state",
-        "media_type",
-        "bytes",
-        "sha256",
-        "receipt_id",
-        "source_operation_id",
-        "object_key",
-        "storage_version_id",
-        "created_at_us",
-        "expires_at_us",
-    ),
-    "speech_job_cancellation_not_submitted": (
-        "job_id",
-        "observed_at_us",
-        "observer",
-    ),
-    "speech_jobs": (
-        "job_id",
-        "workspace_id",
-        "kind",
-        "model_id",
-        "request_digest",
-        "idempotency_key_digest",
-        "state",
-        "status_version",
-        "result_json",
-        "error_code",
-        "created_at_us",
-        "updated_at_us",
-        "retry_of_job_id",
-    ),
-    "speech_job_events": (
-        "job_id",
-        "event_seq",
-        "state",
-        "occurred_at_us",
-        "kind",
-        "progress_unit",
-        "progress_completed",
-        "progress_total",
-    ),
-    "speech_job_submissions": (
-        "job_id",
-        "request_id",
-        "client_reference",
-        "effective_configuration_json",
-        "execution_revision",
-        "progress_unit",
-        "progress_total",
-        "submitted_at_us",
-    ),
-    "speech_job_cancellations": (
-        "job_id",
-        "workspace_id",
-        "operation_id",
-        "attempt_id",
-        "request_id",
-        "request_digest",
-        "idempotency_key_digest",
-        "accepted",
-        "requested_at_us",
-    ),
-    "speech_job_cancellation_fences": (
-        "job_id",
-        "accepted_at_us",
-        "request_id",
-    ),
-    "speech_job_cancellation_reconciliations": (
-        "job_id",
-        "attempts",
-        "next_check_at_us",
-        "last_outcome",
-        "settled_at_us",
-        "updated_at_us",
-    ),
-    "speech_voice_drafts": (
-        "draft_id",
-        "generation_job_id",
-        "kind",
-        "status",
-        "head_revision",
-        "metadata_revision",
-        "display_name",
-        "input_json",
-        "binding_json",
-        "created_at_us",
-        "updated_at_us",
-    ),
-    "speech_voice_draft_revisions": (
-        "draft_id",
-        "revision",
-        "kind",
-        "generation_job_id",
-        "input_json",
-        "binding_json",
-        "created_at_us",
-    ),
-    "speech_deletion_plans": (
-        "id",
-        "workspace_id",
-        "target_owner",
-        "target_kind",
-        "target_id",
-        "target_revision",
-        "target_digest",
-        "mode",
-        "plan_revision",
-        "plan_digest",
-        "idempotency_key_digest",
-        "intent_digest",
-        "created_at",
-        "expires_at",
-        "dependencies",
-        "content_snapshot",
-    ),
-    # 0059 deletion execution: its own ledger plus the two relations of the
-    # existing asset content-deletion machine it reuses.
-    "speech_deletion_ledger": (
-        "id",
-        "workspace_id",
-        "plan_id",
-        "plan_revision",
-        "plan_digest",
-        "target_owner",
-        "target_kind",
-        "target_id",
-        "target_revision",
-        "idempotency_key_digest",
-        "intent_digest",
-        "deleted",
-        "retained",
-        "error",
-        "status",
-        "cleanup_state",
-        "content_ledger_id",
-        "created_at",
-        "updated_at",
-        "completed_at",
-    ),
-    "speech_content_deletions": (
-        "ledger_id",
-        "asset_id",
-        "sha256",
-        "storage_version_id",
-        "reason",
-        "deletion_state",
-        "blocked_reason",
-        "created_at_us",
-    ),
-    "speech_asset_events": (
-        "event_id",
-        "asset_id",
-        "event_kind",
-        "asset_version",
-        "occurred_at_us",
-    ),
-    "speech_voice_metadata_commands": (
-        "draft_id",
-        "key_digest",
-        "request_digest",
-        "result_json",
-    ),
-}
+# 唯一 INSERT 列声明就是 job_writer_columns.JOB_WRITER_INSERT_COLUMNS(#1181):表级
+# INSERT 会被拒绝,写者只允许这些列的列级 INSERT。脚本不再保存副本——原来那份
+# 由本文件的单元测试逐字比对,但比对只能发现漂移,不能阻止下一次漏改;现在导入的
+# 是同一个 dict 对象(见 tests/unit/test_coordination_insert_column_grants.py)。
+WRITER_INSERT_COLUMNS: dict[str, tuple[str, ...]] = _writer_insert_columns()
+
 
 # 复制自 job_runtime._JOB_UPDATE_SURFACE:唯一允许的 UPDATE 列面。
 WRITER_UPDATE_COLUMNS: dict[str, tuple[str, ...]] = {
@@ -545,7 +378,6 @@ ASSEMBLED_KINDS = frozenset({"asr", "tts", "voice_design", "voice_clone"})
 # 常驻 TTS 变体的互斥规则不在这里写第二份:闸门调用
 # `speechnexus_backend.speech.domain.lane_selection.resident_tts_variant_findings`,
 # 预检也调用同一个函数,否则"预检通过、闸门必拒"就是下一次漂移。
-_BACKEND_SRC = REPO_ROOT / "backend/src"
 
 
 def resident_variant_findings(kinds: list[str]) -> list[str]:
@@ -554,9 +386,7 @@ def resident_variant_findings(kinds: list[str]) -> list[str]:
     `lane_selection` 只依赖标准库,所以没有 workspace venv 时也能从本检出直接导入;
     有 venv 时导入的是同一个文件(editable 安装指向同一目录),不存在第二份规则。
     """
-    source = str(_BACKEND_SRC)
-    if source not in sys.path:
-        sys.path.insert(0, source)
+    _prepend_backend_source()
     from speechnexus_backend.speech.domain.lane_selection import (
         resident_tts_variant_findings,
     )

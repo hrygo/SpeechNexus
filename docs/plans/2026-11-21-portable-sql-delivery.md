@@ -1576,3 +1576,25 @@ workbench 的 13 个 `*_schema.py` 一直是「部署期制品却按业务 DML �
 净变化 **228 → 196**(−13 `runtime-ddl` −19 `vendor-type`;profile-ddl 404 条 / 56 个文件单独计数,
 不进业务 DML 基线)。剩下 5 条 `runtime-ddl` 全在 `node-controller` 的 SQLite intent store,属单机本地库,
 是另一条判定线。
+
+### 8.74 #1100 剩余 196 条的真实构成:逐类说清「卡在什么上」
+
+基线停在 196 时,最容易犯的错是把「没做完」和「做不了」混为一谈。下表是**每一条都指向一个具体
+缺口**的清单,不是待办数量统计:
+
+| 规则 | 条数 | 文件 | 卡在什么上 |
+| --- | ---: | ---: | --- |
+| `sql-string-building` | 51 | 25 | 已逐条判决(§8.70 / §8.71):配置标识符、方言操作符、行数派生。**没有可迁移项**,再改写只是在规则之间搬计数 |
+| `advisory-lock` | 32 | 24 | 需把这些站点换成已交付的 `claims` 原语(bucket + fence)。原语有 PG oracle(`test_claim_bucket_pg.py` 18 passed),但**生产派发链路仍走自己的 CTE**,尚未改接 |
+| `vendor-type` | 32 | 19 | DDL 类型字面量(已在 profile 制品侧)与行工厂里的第三方类型;要落地需要应用层类型映射 |
+| `vendor-json` | 28 | 17 | JSONB 运算符;要么在应用层做 JSON,要么给受限方言加 JSON 谓词原语 |
+| `paging-limit` | 12 | 9 | 缺少「有界分页」的契约原语(keyset 之外的部分) |
+| `cte` + `skip-locked` + `returning` + `format` | 16 | 4 | **同一处**:`job_dispatch_postgres` 的派发领取语句族。与 `advisory-lock` 同一根因——等 `claims` 改接 |
+| `session-tuning` / `vendor-lock` / `distinct-on` / `upsert` / `vendor-function` / `vendor-time` / `vendor-error-branch` / `aggregate-filter` / `pyformat` | 20 | 12 | 零散,各自需要一次独立判定;`session-tuning` 缺事务级只读/超时原语 |
+| `runtime-ddl` | 5 | 1 | node-controller 本地 SQLite(§8.73,判定不迁移) |
+
+结论:**16 条集中在同一处**,32 条共用同一个原语,51 条已判决。真正的下一刀是「把派发领取改接到
+`claims`」——它一次同时消掉 `cte`/`skip-locked`/`returning`/`format`,并为 32 条 `advisory-lock`
+开出一条可复制的路。这是协调事务变更,按仓库约定要先读 `speechnexus-coordination-change` 技能,
+并准备 bucket → Job → outbox 的锁序 oracle。
+

@@ -101,7 +101,10 @@ def test_writer_surfaces_match_runtime() -> None:
 
     module = checker()
     assert module.WRITER_REQUIRED_SELECT == job_runtime.REQUIRED_SELECT
-    assert module.WRITER_INSERT_COLUMNS == JOB_WRITER_INSERT_COLUMNS
+    # #1181: the INSERT surface has a single definition point, so this compares the
+    # same object instead of two equal copies. A pasted-back literal is a new object
+    # and goes red here even when its content happens to match today's declaration.
+    assert module.WRITER_INSERT_COLUMNS is JOB_WRITER_INSERT_COLUMNS
     assert module.WRITER_UPDATE_COLUMNS == job_runtime._JOB_UPDATE_SURFACE
     # Deletion execution is the only writer surface with a DELETE, and it is one
     # table: a copy that drifts would let the preflight pass while the startup

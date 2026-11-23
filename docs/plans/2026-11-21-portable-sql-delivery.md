@@ -1671,3 +1671,66 @@ outbox 的锁序 oracle,并在切换前给出草案表到 canonical 表的列级
 
 在这条决定作出之前,搬迁不得「顺手猜一个」:`canonical_source_map` 保持 `gap` 标记,
 `test_gaps_and_derivations_carry_their_reason` 保证它不会悄悄变成已解决。
+
+### 8.76 派发改接 claim bucket:先定「哪个 worker 认哪个桶」
+
+协调契约已经冻结了**怎么认领**:`docs/architecture/coordination-transactions.md` 写明
+「Job/outbox 使用 claim bucket,bucket 与 Job/outbox 分别以 version / owner / expiry CAS 认领;
+每次实际认领都要在同一事务复核 bucket fence;不使用 `SKIP LOCKED`」。本文档只补契约**没写**
+的那一半:**一个 dispatcher 一次轮询去看哪些桶**。这是调度策略,不是正确性选择——三种做法在
+「不重复认领」上都成立,差别只在公平性、争用和坏 worker 的影响面。
+
+| 方案 | 做法 | 代价 |
+| --- | --- | --- |
+| A 固定分片 | `bucket_no % worker_count == index` | 不争用;但某个 worker 挂掉后它那片桶**再没人看**,只能等人工重排分片 |
+| B 全桶轮询 | 每轮从 `bucket_for(owner_id + 分钟)` 起线性扫满 256 个桶,拿到空闲桶就认领 | 最坏 256 次 CAS;宕机的 worker 的桶租约一过期就能被接走 |
+| C 静态偏好 + 溢出 | 先扫自己的偏好区间,剩余额度再扫全表 | 常见路径快;实现与测试多一层 |
+
+**采用 B。**理由:方案 A 的失败模式(整片桶永久无人认领)需要运维介入才能恢复,而项目边界里
+没有「调度器再平衡」这一层;方案 C 的收益只在桶远多于 worker 时才明显,当前 worker 数量级
+远小于 256 个桶,省下的扫描不构成瓶颈。B 的最坏代价是每轮最多 256 次带版本条件的 `UPDATE`,
+与「每轮全表 `SKIP LOCKED` 扫描」同阶。
+
+#### 8.76.1 一次轮询的事务形状
+
+1. 读 `schema_meta` 探针(见协调事务契约「先取得专用探针连接」)确认 schema 与部署代次;
+2. 开写事务,按 `bucket_for(owner_id + 分钟)` 起的顺序对每个桶做 `acquire_bucket`
+   (`expected_version` 取上一轮读到的值,拿不到就跳过该桶);
+3. 拿到桶后**立刻**用该桶的 fence 版本调 `claim_next`/`claim_job` 认领,认领数计入本轮 `limit`;
+4. 认领完就 `release_bucket`,不把桶租约带到下一轮:`limit` 是**本轮认领数**,不是桶数;
+5. 达到 `limit` 或扫满 256 个桶即结束;整笔提交。
+
+fence 复核与 Job CAS 在同一事务,旧 dispatcher 拿到的过期 fence 版本会被 `require_fence` 拒绝,
+不会出现「旧 owner 认领了新候选」。
+
+#### 8.76.2 需要新增的 canonical 语句(都只用 `?` 标记)
+
+现有 `job.candidates` 只按 `bucket_no + job_state + due_at` 取,没有 lane(`kind`)过滤,也没有
+准入锚点。生产派发需要两者,所以 B2 要新增两条 manifest 语句,而不是在业务层拼 SQL:
+
+| 语句 | 作用 |
+| --- | --- |
+| `job.candidates.lane` | 在 `job.candidates` 上追加 `AND kind IN (…)`(列表由驱动层展开) |
+| `job.candidates.admitted` | 追加准入锚点:`EXISTS` 于 `admission_operations`(请求文档非空、摘要一致)与 `admission_leases`(reserved/executing) |
+
+两条都必须是可移植子集内的写法:`IN (?)` + `ListMarker`(MySQH 路径已在 #1100 第十九轮补齐展开)、
+普通 `JOIN`/`EXISTS`,不用 `LIMIT`/`WITH`/`RETURNING`/`SKIP LOCKED`。
+
+#### 8.76.3 这一步消掉什么、不消什么
+
+- **消掉**:`job_dispatch_postgres._claim()` 的 `WITH clock/due/updated … FOR UPDATE SKIP LOCKED …
+  RETURNING`(16 条 claim 族)与围绕它的 `pg_try_advisory_lock` 串行化(32 条 `advisory-lock`)。
+  基线预期从 196 降到 148。
+- **不消**:`runtime_delivery_sql` 的 `SKIP LOCKED`(另一条 outbox 投递链路,单独切片);
+  其余 `vendor-json`/`paging-limit`/`vendor-type` 主体仍属 #1102 后续。
+
+#### 8.76.4 判据(真库,注入即红)
+
+| 场景 | 判据 |
+| --- | --- |
+| 两个 dispatcher 抢同一桶 | 只有一个 `acquire_bucket` 返回 true,另一个跳过且本轮不认领该桶的 Job |
+| 过期 fence | 用上一轮读到的旧版本调 `claim_next` 必须被 `require_fence` 拒绝 |
+| Job CAS 竞争 | 两条事务读同一候选,只有一个 `claim_job` 返回 true |
+| lane 过滤 | 队列里混入别的 `kind`,本轮只认领本 lane 的 |
+| 准入锚点 | 缺 `request_document` / lease 非 reserved-executing 的行不被认领 |
+| 租约释放 | 认领后桶可被另一 owner 立即拿到,不残留租约 |

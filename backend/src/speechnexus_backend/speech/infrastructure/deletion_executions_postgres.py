@@ -60,7 +60,6 @@ from speechnexus_backend.speech.infrastructure.deletion_ledger_schema import (
     CONTENT_DELETION_INSERT_COLUMNS,
     CONTENT_DELETION_UPDATE_COLUMNS,
     DELETION_LEDGER,
-    DELETION_LEDGER_INSERT_COLUMNS,
     JOB_INTENT_DELETE_TABLES,
     LEGACY_INTENT_UPDATE_COLUMNS,
 )
@@ -135,6 +134,15 @@ _READ_PRIVILEGES: tuple[tuple[str, str, str | None], ...] = (("SELECT", DELETION
 
 def _unavailable() -> DeletionLedgerUnavailableError:
     return DeletionLedgerUnavailableError("deletion execution storage is unavailable")
+
+
+_INSERT_LEDGER = (
+    "INSERT INTO speech_deletion_ledger (id, workspace_id, plan_id, plan_revision, "
+    "plan_digest, target_owner, target_kind, target_id, target_revision, "
+    "idempotency_key_digest, intent_digest, deleted, retained, error, status, "
+    "cleanup_state, content_ledger_id, created_at, updated_at, completed_at) "
+    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+)
 
 
 def _targets(items: list[list[Any]]) -> tuple[DeletionTarget, ...]:
@@ -790,10 +798,10 @@ class _DeletionExecution:
         now = self._tx.now()
         ledger_id = deletion_id or ("dl-" + uuid.uuid4().hex)
         completed_at = now if status == "succeeded" else None
-        columns = ", ".join(DELETION_LEDGER_INSERT_COLUMNS)
-        placeholders = ", ".join(["%s"] * len(DELETION_LEDGER_INSERT_COLUMNS))
+        # 列与占位符写死;列顺序由 test_deletion_ledger_insert_matches_the_schema_constant
+        # 对着 DELETION_LEDGER_INSERT_COLUMNS 与 DDL 核对。
         self._tx.rows(
-            f"INSERT INTO {DELETION_LEDGER} ({columns}) VALUES ({placeholders})",
+            _INSERT_LEDGER,
             (
                 ledger_id,
                 self._workspace_id,

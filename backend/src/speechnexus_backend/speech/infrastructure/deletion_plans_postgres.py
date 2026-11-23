@@ -26,12 +26,11 @@ from speechnexus_backend.speech.domain.deletion import (
     plan_digest,
 )
 from speechnexus_backend.speech.infrastructure.deletion_plan_schema import (
-    DELETION_PLAN_INSERT_COLUMNS,
     DELETION_PLANS,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_portable_sql.clock import now_us
-from speechnexus_portable_sql.transaction import is_savepoint_control
+from speechnexus_portable_sql.transaction import insert_if_absent, is_savepoint_control
 from speechnexus_portable_sql.vendor import Jsonb, PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 _ACTIVE_JOB_STATES = frozenset({"pending", "running", "cancelling"})
@@ -505,6 +504,14 @@ def voice_revision_snapshot(
     )
 
 
+_INSERT_PLAN = (
+    "INSERT INTO speech_deletion_plans (id, workspace_id, target_owner, target_kind, "
+    "target_id, target_revision, target_digest, mode, plan_revision, plan_digest, "
+    "idempotency_key_digest, intent_digest, created_at, expires_at, dependencies, "
+    "content_snapshot) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+)
+
+
 class _Transaction:
     def __init__(
         self,
@@ -604,11 +611,11 @@ class _Transaction:
             ]
             for item in plan.dependencies
         ]
-        columns = ", ".join(DELETION_PLAN_INSERT_COLUMNS)
-        placeholders = ", ".join(["%s"] * len(DELETION_PLAN_INSERT_COLUMNS))
-        self.rows(
-            f"INSERT INTO {DELETION_PLANS} ({columns}) VALUES ({placeholders}) "
-            "ON CONFLICT (workspace_id, idempotency_key_digest) DO NOTHING",
+        # 列与占位符都写死:语句可静态登记,列顺序的正确性由
+        # test_deletion_plan_insert_matches_the_schema_constant 对着 DDL 常量核对。
+        insert_if_absent(
+            self,
+            _INSERT_PLAN,
             (
                 plan.id,
                 plan.workspace_id,

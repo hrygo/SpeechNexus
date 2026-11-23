@@ -18,6 +18,11 @@ import pytest
 
 from speechnexus_backend.attest_builtin_voice import load_trust_declaration
 from speechnexus_backend.attest_builtin_voice import main as attest_main
+from speechnexus_backend.operator_attested_qualification import (
+    _FORBIDDEN_IDENTITY,
+    _LEDGER_RELATIONS,
+    _RELATION_PARAMETERS,
+)
 from speechnexus_backend.qualification_provenance import (
     EVIDENCE_LEGACY,
     EVIDENCE_OPERATOR,
@@ -66,6 +71,7 @@ from speechnexus_backend.speech.domain.runtime_observations import (
 )
 from speechnexus_backend.speech.infrastructure.runtime_codec import request_to_wire
 from speechnexus_backend.speech.infrastructure.runtime_observation_codec import prepare_observation
+from speechnexus_portable_sql.subset import placeholder_count
 from tests.fake.runtime_intents import COMMAND, NOW, OWNER, PLAN, REQUEST
 from tests.fake.runtime_observations import HOST, INSTANCE, PREREQUISITES
 from tests.unit.test_production_leases import decide as quarantine_decision
@@ -1005,3 +1011,21 @@ def test_the_unverified_admission_refusal_has_its_own_internal_code() -> None:
 
     assert SOURCE_UNVERIFIED in ADMISSION_REJECTION_CODES
     assert PUBLIC_ADMISSION_CODES[SOURCE_UNVERIFIED] == "engine_resource_disabled"
+
+
+def test_the_ledger_relation_vocabulary_is_bound_not_quoted_into_the_statement() -> None:
+    """The ledger names sit in a value position: they are bound, not spelled.
+
+    ``c.relname IN (…)`` compares a catalog text column against names, so the names are
+    values there -- unlike a table name in ``FROM``/``JOIN``, which no dialect can bind.
+    The old shape joined ``"'" + name + "'"`` into the text, so one name containing a
+    quote rewrote the predicate. The two halves fail together if someone re-literalises
+    it: the placeholder count would no longer cover the vocabulary, and the names would
+    reappear inside the statement text.
+    """
+    assert placeholder_count(_FORBIDDEN_IDENTITY) == 2 * len(_LEDGER_RELATIONS)
+    assert _RELATION_PARAMETERS == _LEDGER_RELATIONS * 2
+    for name in _LEDGER_RELATIONS:
+        assert name not in _FORBIDDEN_IDENTITY, (
+            f"{name} is spelled into the statement text instead of bound as a parameter"
+        )

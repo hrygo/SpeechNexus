@@ -43,6 +43,7 @@ from speechnexus_backend.workbench.infrastructure.public_transcript_source impor
     PublicTranscriptSource,
 )
 from speechnexus_backend.workbench.infrastructure.sealing_schema import sealing_migration_sql
+from speechnexus_portable_sql.contract import ConflictError, StorageError
 
 pytestmark = pytest.mark.integration
 BODY = "\ufeff合成会议\r\n🙂e\u0301 "
@@ -79,7 +80,12 @@ async def test_v1_refuses_sealing_without_an_owner_upgrade(store: Store) -> None
         await store.app.seal_transcript(
             transcript_id=original.id, expected_revision=1, idempotency_key="seal"
         )
-    assert caught.value.sqlstate == "23514" and not caught.value.commit_unknown
+    # A check-constraint refusal is a storage-level error, not a conflict; the
+    # application boundary carries the contract's reason, not the SQLSTATE.
+    failure = caught.value.failure
+    assert isinstance(failure, StorageError)
+    assert not isinstance(failure, ConflictError)
+    assert not caught.value.commit_unknown
     assert await store.app.get_transcript(original.id) == original
     assert await counts(store) == (1, 1)
 

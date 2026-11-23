@@ -478,20 +478,6 @@
       "reason": "node-controller 的本地 intent store 是节点本地状态,不是产品库:路径由 SPEECHNEXUS_CONTROLLER_INTENT_STORE_PATH 配置(deploy/cluster/compute/compose.yaml:72、deploy/images/node-controller.Dockerfile:75),app.py:76 装配,app.py:104 作为 readiness 探针。SQLite 的 bootstrap/upsert/类型是本地库自身的写法,没有别处可承接;受限方言约束的是产品 DML。见文档 8.73"
     },
     {
-      "rule": "vendor-error-branch",
-      "path": "backend/src/speechnexus_backend/workbench/application/version_ports.py",
-      "count": 2,
-      "card": "#1100",
-      "reason": "错误分类统一到 portable_error 后失效",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-error-branch",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/postgres_versions.py",
-      "card": "#1100",
-      "reason": "workbench 行的第三方类型/参数标记,整块由 #1102 处理"
-    },
-    {
       "rule": "vendor-function",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/readiness.py",
       "count": 2,

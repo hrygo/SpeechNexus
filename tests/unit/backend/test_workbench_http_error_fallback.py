@@ -26,6 +26,7 @@ from speechnexus_backend.workbench.app import create_app
 from speechnexus_backend.workbench.application.llm import LlmError
 from speechnexus_backend.workbench.application.version_ports import VersionStoreError
 from speechnexus_backend.workbench.interfaces.http_versions import _error
+from speechnexus_portable_sql.contract import ConflictError, StorageError
 
 PRIVATE = "private-synthetic-777"
 LOGGER = "speechnexus_backend.workbench.interfaces.http_versions"
@@ -178,8 +179,20 @@ async def test_a_malformed_request_is_a_structured_400(
 @pytest.mark.parametrize(
     "failure,code",
     [
-        (VersionStoreError(sqlstate=PRIVATE, commit_unknown=False), "store_unavailable"),
-        (VersionStoreError(sqlstate=PRIVATE, commit_unknown=True), "outcome_unknown"),
+        (
+            VersionStoreError(failure=StorageError(PRIVATE), commit_unknown=False),
+            "store_unavailable",
+        ),
+        (
+            VersionStoreError(failure=StorageError(PRIVATE), commit_unknown=True),
+            "outcome_unknown",
+        ),
+        (
+            # The classified contract conflict is still the same store error on the wire:
+            # the HTTP layer maps the commit outcome, not the failure category.
+            VersionStoreError(failure=ConflictError(PRIVATE), commit_unknown=False),
+            "store_unavailable",
+        ),
     ],
 )
 async def test_a_store_failure_is_a_structured_503(
@@ -223,7 +236,7 @@ async def test_the_declaration_gap_is_recorded_with_its_status(
 ) -> None:
     caplog.set_level(logging.WARNING, logger=LOGGER)
     response = await call(
-        VersionStoreError(sqlstate=PRIVATE, commit_unknown=False),
+        VersionStoreError(failure=StorageError(PRIVATE), commit_unknown=False),
         "GET",
         "/v1/workbench/exports/export_1",
         None,

@@ -43,6 +43,7 @@ from speechnexus_backend.workbench.infrastructure.version_schema import (
     migration_sql,
 )
 from speechnexus_backend.workbench.interfaces.project_commands import ProjectCommandBoundary
+from speechnexus_portable_sql.contract import ConflictError, ConnectionLostError, StorageError
 
 pytestmark = pytest.mark.integration
 
@@ -364,7 +365,9 @@ async def test_database_failure_rolls_back_header_revision_and_receipt(store: St
         )
     with pytest.raises(VersionStoreError) as error:
         await create_project(store)
-    assert error.value.sqlstate == "23503"
+    # The deferred foreign key is a constraint conflict: the contract's class, not a
+    # SQLSTATE, is what the application boundary carries.
+    assert isinstance(error.value.failure, ConflictError)
     assert not error.value.commit_unknown
     assert "合成" not in str(error.value)
     async with await psycopg.AsyncConnection.connect(store.owner_dsn) as conn:
@@ -378,6 +381,50 @@ async def test_database_failure_rolls_back_header_revision_and_receipt(store: St
             )
         ).fetchone()
         assert counts == (0, 0, 0)
+
+
+async def test_a_duplicate_version_write_is_the_contract_conflict(store: Store) -> None:
+    # The second write of one scoped version receipt reaches the primary key the schema
+    # owns. The server refuses it; the adapter must report the contract's conflict
+    # category so the classification does not depend on the engine's error code.
+    digest = hashlib.sha256(b"synthetic-intent").hexdigest()
+    with pytest.raises(VersionStoreError) as error:
+        async with store.uow.transaction() as session:
+            now = await session.now()
+            project = Project.create(
+                project_id="duplicate-version",
+                workspace_id="workspace-synthetic",
+                name="合成",
+                now=now,
+            )
+            scope = ("project.create", project.workspace_id)
+            await session.claim_receipt(scope, "duplicate-key")
+            await session.save_project(project)
+            receipt = MutationReceipt(digest, project)
+            await session.save_receipt(scope, "duplicate-key", receipt)
+            await session.save_receipt(scope, "duplicate-key", receipt)
+    assert isinstance(error.value.failure, ConflictError)
+    assert not error.value.commit_unknown
+    assert "synthetic" not in str(error.value)
+
+
+async def test_a_storage_refusal_is_not_a_conflict(store: Store) -> None:
+    # A real grant failure on the migrated schema is a storage-level refusal, not a
+    # conflict: the contract reason says the role needs a grant, and the boundary never
+    # reports this as a duplicate/conflicting write.
+    async with await psycopg.AsyncConnection.connect(store.owner_dsn, autocommit=True) as owner:
+        await owner.execute(
+            sql.SQL("REVOKE INSERT ON {}.project_versions FROM {}").format(
+                sql.Identifier(store.schema), sql.Identifier(store.role)
+            )
+        )
+    with pytest.raises(VersionStoreError) as error:
+        await create_project(store)
+    failure = error.value.failure
+    assert isinstance(failure, StorageError)
+    assert not isinstance(failure, ConflictError)
+    assert failure.reason == "permission_denied"
+    assert not error.value.commit_unknown
 
 
 async def test_runtime_role_cannot_mutate_history_or_ddl(store: Store) -> None:
@@ -532,7 +579,8 @@ async def test_lock_timeout_is_bounded_known_abort(store: Store) -> None:
                 ),
                 2,
             )
-        assert error.value.sqlstate == "55P03"
+        assert isinstance(error.value.failure, StorageError)
+        assert not isinstance(error.value.failure, ConflictError)
         assert not error.value.commit_unknown
     assert await store.app.get_project(project.id) == project
 
@@ -605,10 +653,10 @@ async def test_lost_commit_confirmation_is_unknown_and_does_not_auto_retry(
         with pytest.raises(VersionStoreError) as error:
             await create_project(store)
         assert error.value.commit_unknown
-        assert (
-            error.value.sqlstate
-            == {"transport": None, "shutdown": "57P01", "statement_unknown": "40003"}[failure]
-        )
+        # Transport loss, backend shutdown and unknown statement completion are all
+        # unconfirmed: the contract classifies each one as a lost connection, never as
+        # a proven abort.
+        assert isinstance(error.value.failure, ConnectionLostError)
         assert "private" not in str(error.value)
         assert commits == 1
     replayed = await create_project(store)

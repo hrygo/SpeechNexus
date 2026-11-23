@@ -178,8 +178,8 @@ async def test_disabled_routes_fail_explicitly_without_phantom_success(operation
         (LlmError("source_not_sealed"), 409, "llm_source_not_sealed", 3),
         (LlmError("source_changed"), 409, "llm_source_changed", 3),
         (LlmError("invalid_input"), 422, "llm_invalid_input", 3),
-        (VersionStoreError(sqlstate=None, commit_unknown=True), 503, "outcome_unknown", 3),
-        (VersionStoreError(sqlstate=None, commit_unknown=False), 503, "store_unavailable", 4),
+        (VersionStoreError(failure=None, commit_unknown=True), 503, "outcome_unknown", 3),
+        (VersionStoreError(failure=None, commit_unknown=False), 503, "store_unavailable", 4),
         (RuntimeError("private"), 500, "internal_error", 1),
     ],
 )

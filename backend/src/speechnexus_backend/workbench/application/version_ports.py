@@ -16,6 +16,7 @@ from typing import Protocol
 from speechnexus_backend.workbench.application.listings import ListingPosition
 from speechnexus_backend.workbench.domain.listings import TranscriptSummary
 from speechnexus_backend.workbench.domain.versions import Project, Transcript, TranscriptRevision
+from speechnexus_portable_sql.contract import PortableSqlError
 
 type MutationScope = tuple[str, str]
 type VersionSnapshot = Project | Transcript
@@ -24,8 +25,17 @@ type VersionSnapshot = Project | Transcript
 class VersionStoreError(Exception):
     """Sanitized adapter failure; commit uncertainty is preserved across boundaries.
 
-    sqlstate is optional internal diagnostic metadata, never a public response field.
-    Consumers must not infer rollback from it or retry a mutation automatically.
+    `failure` is the contract's classification of the driver error and the only
+    diagnostic *and* branching fact on this boundary: a `ConflictError` means the
+    server rejected a duplicate/conflicting write, any other `StorageError` means a
+    storage-level refusal (`reason` says which). Adapters never hand the driver's
+    SQLSTATE, error class or message across this boundary, so the same logical
+    conflict classifies the same way on every engine. The attribute is internal
+    metadata, never a public response field. It is None when the adapter raised
+    this error for a business state instead of a driver failure.
+
+    Consumers branch on the contract type only; they must not infer rollback from
+    the classification itself or retry a mutation automatically.
 
     commit_unknown marks the outcome this request cannot decide. Adapters set it only
     in these cases:
@@ -33,9 +43,10 @@ class VersionStoreError(Exception):
     * the COMMIT was still in flight when the transaction's own budget ran out, so no
       server determination was ever read;
     * the driver reported transport loss or backend shutdown during the COMMIT, or the
-      COMMIT failed with a SQLSTATE that does not prove abort - only class 23 and
-      serialization failure/deadlock (40001, 40P01) prove it, while 40003, 57P01,
-      57014, 55P03 and unclassified failures stay unknown;
+      COMMIT failed with anything the contract does not classify as a constraint
+      conflict. A unique or foreign-key conflict is the only refusal that proves the
+      transaction rolled back; serialization failures, deadlocks, lock timeouts,
+      statement-unknown completion and unclassified failures all stay unknown;
     * the content-write adapter conservatively reuses the flag for business states
       whose earlier write is undetermined: an export no longer running, an owner
       already writing or unknown, a lost CAS token. There this request certainly did
@@ -47,13 +58,13 @@ class VersionStoreError(Exception):
     classification.
     """
 
-    def __init__(self, *, sqlstate: str | None, commit_unknown: bool) -> None:
+    def __init__(self, *, failure: PortableSqlError | None, commit_unknown: bool) -> None:
         super().__init__(
             "workbench store commit uncertain"
             if commit_unknown
             else "workbench store transaction failed"
         )
-        self.sqlstate = sqlstate
+        self.failure = failure
         self.commit_unknown = commit_unknown
 
 

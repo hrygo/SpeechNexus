@@ -12,6 +12,7 @@ from speechnexus_backend.workbench.infrastructure.postgres_versions import (
     PostgresVersionUnitOfWork,
     VersionStoreError,
 )
+from speechnexus_portable_sql.contract import ConflictError, ConnectionLostError
 
 
 class _Socket:
@@ -196,7 +197,7 @@ def _answered_uow(
     )
 
 
-async def test_server_sqlstate_arriving_after_the_cleanup_allowance_is_a_known_abort(
+async def test_a_constraint_conflict_after_the_cleanup_allowance_is_a_known_abort(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     uow = _answered_uow(
@@ -208,7 +209,7 @@ async def test_server_sqlstate_arriving_after_the_cleanup_allowance_is_a_known_a
     with pytest.raises(VersionStoreError) as error:
         async with uow.transaction():
             pass
-    assert error.value.sqlstate == "23503"
+    assert isinstance(error.value.failure, ConflictError)
     assert not error.value.commit_unknown
     assert "synthetic" not in str(error.value)
 
@@ -226,7 +227,7 @@ async def test_connection_lost_during_commit_keeps_the_driver_verdict_unknown(
         async with uow.transaction():
             pass
     assert error.value.commit_unknown
-    assert error.value.sqlstate is None
+    assert isinstance(error.value.failure, ConnectionLostError)
     # Unknown here is the driver's own verdict about a COMMIT that was already sent,
     # not our exit deadline discarding a reply: those two must stay distinguishable,
     # and only the driver's verdict may stand for a lost connection.
@@ -259,7 +260,7 @@ async def test_commit_reply_beyond_the_transaction_budget_is_unknown_not_abort(
         async with uow.transaction():
             pass
     assert error.value.commit_unknown
-    assert error.value.sqlstate is None
+    assert error.value.failure is None
     # A truncated reply is the deadline cutting the wait, never a driver answer: this
     # is the complement of the lost-connection case above, so the two causes cannot be
     # conflated into one "unknown".

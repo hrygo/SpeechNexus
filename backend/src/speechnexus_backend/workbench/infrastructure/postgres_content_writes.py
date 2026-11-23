@@ -103,7 +103,7 @@ class PostgresContentWrites:
             if row.status == "cancelling":
                 raise ExportCancelledError
             if row.status != "running":
-                raise VersionStoreError(sqlstate=None, commit_unknown=True)
+                raise VersionStoreError(failure=None, commit_unknown=True)
             intent: dict[str, object] = {"export_id": export_id, "artifact_id": artifact_id}
             digest = hashlib.sha256(json.dumps(intent, sort_keys=True).encode()).hexdigest()
             return await self._reserve(
@@ -139,7 +139,7 @@ class PostgresContentWrites:
             # A reserved owner cannot send PUT until its token wins the writing CAS.
             # Writing/unknown owners must never be stolen based on time or a retry.
             if previous.state in {"writing", "unknown"}:
-                raise VersionStoreError(sqlstate=None, commit_unknown=True)
+                raise VersionStoreError(failure=None, commit_unknown=True)
             await base._execute(
                 "UPDATE {s}.content_write_intents SET token=?,intent=?,state='reserved',"
                 "object_key=NULL,sha256=NULL,bytes=NULL,updated_at=? WHERE id=?",
@@ -180,7 +180,7 @@ class PostgresContentWrites:
                 (object_key, sha256, size, await base.now(), write.id, write.token),
             )
             if changed is None:
-                raise VersionStoreError(sqlstate=None, commit_unknown=True)
+                raise VersionStoreError(failure=None, commit_unknown=True)
 
     async def settle(self, write: ContentWrite) -> None:
         await self._finish(write, unknown=False)

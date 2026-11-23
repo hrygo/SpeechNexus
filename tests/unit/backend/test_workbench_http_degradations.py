@@ -132,6 +132,7 @@ from speechnexus_backend.workbench.interfaces import (
 from speechnexus_backend.workbench.interfaces.cursors import InvalidCursorError
 from speechnexus_backend.workbench.interfaces.http_ingress import IngressError
 from speechnexus_backend.workbench.interfaces.http_versions import ERRORS
+from speechnexus_portable_sql.contract import StorageError
 
 ROOT = Path(__file__).resolve().parents[3]
 PRIVATE = "synthetic-777"
@@ -472,8 +473,8 @@ INJECTIONS: tuple[BaseException, ...] = (
     IngressError("unsupported_media_type"),
     IngressError("workbench_unavailable"),
     # The store port, both outcomes.
-    VersionStoreError(sqlstate=PRIVATE, commit_unknown=False),
-    VersionStoreError(sqlstate=PRIVATE, commit_unknown=True),
+    VersionStoreError(failure=StorageError(PRIVATE), commit_unknown=False),
+    VersionStoreError(failure=StorageError(PRIVATE), commit_unknown=True),
     # The domain refusals the routers name.
     ResourceNotFoundError(),
     RevisionConflictError(1, 2),

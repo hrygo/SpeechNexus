@@ -71,10 +71,17 @@ def schema(database_url: str) -> Iterator[tuple[str, str]]:
         admin.execute(f'CREATE SCHEMA "{name}"')
         admin.execute(f'SET search_path TO "{name}", pg_catalog')
         admin.execute(_DRAFT_DDL)
+        # 生产库里草案事件表一定存在;对账默认会核对它的条数与序号连续性。
+        admin.execute(
+            "CREATE TABLE speech_job_events ("
+            "job_id VARCHAR(128) NOT NULL, event_seq BIGINT NOT NULL, "
+            "state VARCHAR(24) NOT NULL, occurred_at_us BIGINT NOT NULL)"
+        )
         admin.execute(
             "INSERT INTO draft_jobs VALUES (%s, %s, %s, %s, 'pending', NULL, 0, 0, %s, 0)",
             ("job-a", "op-a", "attempt-a", DIGEST, DUE_US),
         )
+        admin.execute("INSERT INTO speech_job_events VALUES ('job-a', 1, 'pending', %s)", (DUE_US,))
         admin.execute(
             "INSERT INTO draft_jobs VALUES (%s, %s, %s, %s, 'claimed', %s, %s, 2, %s, 0)",
             ("job-b", "op-b", "attempt-b", DIGEST, "worker-1", DUE_US + 300_000_000, DUE_US),
@@ -203,7 +210,9 @@ def test_a_rerun_after_dropping_everything_reaches_the_same_state(
         admin.execute(f'SET search_path TO "{name}", pg_catalog')
         # 回退 = 撤掉 canonical 侧的全部表,草案表保留。按目录清点,不手写表名。
         rows = admin.execute(
-            "SELECT tablename FROM pg_tables WHERE schemaname = %s AND tablename <> 'draft_jobs'",
+            # 草案侧的表(draft_jobs、speech_job_events)是搬迁的输入,回退不动它们。
+            "SELECT tablename FROM pg_tables WHERE schemaname = %s "
+            "AND tablename NOT IN ('draft_jobs', 'speech_job_events')",
             (name,),
         ).fetchall()
         for row in rows:

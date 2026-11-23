@@ -52,7 +52,50 @@ def _expected_time(value: object) -> datetime | None:
     return datetime.fromtimestamp(microseconds / 1_000_000, tz=UTC).replace(tzinfo=None)
 
 
-def mismatches(connection: psycopg.Connection[Any], *, draft_table: str, limit: int) -> list[str]:
+def _event_gaps(
+    connection: psycopg.Connection[Any], *, draft_events: str | None, limit: int
+) -> list[str]:
+    """事件侧的缺口:草案有几条,canonical 就必须是 1..N 且条数相等.
+
+    行核对只能发现「少搬了 Job」;「少搬了事件」不改变任何 Job 行,却会让 SSE 续读在缺口处
+    停住,而客户端拿到的是一段看起来正常的流。所以事件条数与序号连续性单独核。
+    """
+
+    if draft_events is None:
+        return []
+    rows = connection.execute(
+        "SELECT d.job_id, COUNT(*) FROM " + draft_events + " AS d "
+        "GROUP BY d.job_id ORDER BY d.job_id"
+    ).fetchall()
+    found: list[str] = []
+    for row in rows:
+        job_id = str(row[0])
+        expected = int(Decimal(str(row[1])))
+        stats = connection.execute(
+            "SELECT COUNT(*), COALESCE(MIN(event_seq), 0), COALESCE(MAX(event_seq), 0) "
+            "FROM job_events WHERE job_id = %s",
+            (job_id,),
+        ).fetchone()
+        assert stats is not None
+        count = int(Decimal(str(stats[0])))
+        lowest = int(Decimal(str(stats[1])))
+        highest = int(Decimal(str(stats[2])))
+        if count != expected:
+            found.append(f"{job_id}: {expected} draft event(s) but {count} in job_events")
+        elif expected and (lowest != 1 or highest != expected):
+            found.append(f"{job_id}: job_events cover {lowest}..{highest}, expected 1..{expected}")
+        if len(found) >= limit:
+            return found
+    return found
+
+
+def mismatches(
+    connection: psycopg.Connection[Any],
+    *,
+    draft_table: str,
+    limit: int,
+    draft_events: str | None = None,
+) -> list[str]:
     """逐字段比较;返回人能直接照着修的描述,而不是计数。"""
 
     cursor = connection.execute(
@@ -106,6 +149,7 @@ def mismatches(connection: psycopg.Connection[Any], *, draft_table: str, limit: 
             )
             if len(found) >= limit:
                 return found
+    found.extend(_event_gaps(connection, draft_events=draft_events, limit=limit - len(found)))
     return found
 
 
@@ -114,6 +158,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--dsn", required=True, help="owner DSN; the check is read-only")
     parser.add_argument("--schema", default=None, help="schema holding both tables")
     parser.add_argument("--draft-table", default="draft_jobs", help="draft-shaped job table")
+    parser.add_argument(
+        "--draft-events",
+        default="speech_job_events",
+        help="draft-shaped event table; pass an empty string to skip the event parity check",
+    )
     parser.add_argument("--limit", type=int, default=20, help="stop after this many mismatches")
     args = parser.parse_args(argv)
 
@@ -121,7 +170,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.schema:
             connection.execute(f'SET search_path TO "{args.schema}", pg_catalog')
         try:
-            found = mismatches(connection, draft_table=args.draft_table, limit=max(1, args.limit))
+            found = mismatches(
+                connection,
+                draft_table=args.draft_table,
+                limit=max(1, args.limit),
+                draft_events=args.draft_events or None,
+            )
         except psycopg.Error as error:
             print(f"FAIL: {error}", file=sys.stderr)
             return 1

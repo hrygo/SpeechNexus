@@ -485,14 +485,6 @@
     },
     {
       "rule": "sql-string-building",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/artifacts_postgres.py",
-      "count": 2,
-      "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "sql-string-building",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/asr_settlement_debt.py",
       "count": 2,
       "card": "#1100",
@@ -603,14 +595,6 @@
       "rule": "sql-string-building",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/readiness.py",
       "count": 5,
-      "card": "#1100",
-      "reason": "按语句族重写成常量语句 + 派发表",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
-      "rule": "sql-string-building",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/runtime_sql.py",
-      "count": 1,
       "card": "#1100",
       "reason": "按语句族重写成常量语句 + 派发表",
       "release": "#1100 完成时删除本条目"

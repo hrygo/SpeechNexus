@@ -65,6 +65,15 @@ _COLUMNS = (
 _READ_COLUMNS = _COLUMNS + ", deleted_at_us"
 
 
+# 读回投影写死;列序由 test_artifact_and_runtime_statements 对着 `_READ_COLUMNS` 核对。
+_SELECT_ARTIFACT = (
+    "SELECT artifact_id, workspace_id, artifact_kind, artifact_state, media_type, "
+    "bytes, sha256, receipt_id, source_operation_id, created_at_us, expires_at_us, "
+    "object_key, storage_version_id, deleted_at_us "
+    "FROM speech_artifacts WHERE artifact_id = ?"
+)
+
+
 class PostgresArtifactWriter:
     """Insert one ready Artifact row without ever calling object storage here."""
 
@@ -83,7 +92,7 @@ class PostgresArtifactWriter:
                     (str(max(1, int(self._timeout * 1000))),),
                 )
                 row = connection.execute(
-                    f"SELECT {_READ_COLUMNS} FROM speech_artifacts WHERE artifact_id = ?",
+                    _SELECT_ARTIFACT,
                     (artifact_id,),
                 ).fetchone()
         except ArtifactError:
@@ -124,7 +133,7 @@ class PostgresArtifactWriter:
                 row = (
                     inserted
                     or connection.execute(
-                        f"SELECT {_READ_COLUMNS} FROM speech_artifacts WHERE artifact_id = ?",
+                        _SELECT_ARTIFACT,
                         (artifact.artifact_id,),
                     ).fetchone()
                 )

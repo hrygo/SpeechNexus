@@ -1390,3 +1390,16 @@ SELECT 1 FROM speech_workspaces, workspace_quotas, … WHERE 1=0
 删 abort 回执一列 / 把两个 asset 扫描的 ORDER BY 列对调 / 删 binding 插入一列 → 都是 `1 failed, 2 passed`。
 
 基线 **250 → 249**。
+
+### 8.63 读回投影与预留容量的又一处字面量化
+
+`artifacts_postgres` 的读回投影 `_COLUMNS + ", deleted_at_us"` 与 `runtime_sql` 的
+`held_{name} = %s` 都改成字面量语句。两处都保留原有的 CAS 尾部
+(`WHERE artifact_id = ?` / `WHERE host_node_id = ? AND version = ?` 且 `version = version + 1`),
+判据逐项核对,注入即红。
+
+`runtime_sql` 这条用的是 `version = version + 1` 而不是写回读到的值:那是「预留」语义(自增),
+与 `leases_sql` 的「写回已知新值」不同,改写时没有把两者混为一谈。
+
+基线 **249 → 246**。PG oracle:`-k runtime_instance or engine_instance` 2 passed、
+`-k artifact` 相关 `test_artifact_retention_pg.py` 因需要隔离 MinIO 而 skip(本机无端点)。

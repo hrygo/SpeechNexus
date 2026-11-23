@@ -16,6 +16,8 @@ COPY packages/contracts/pyproject.toml packages/contracts/
 COPY packages/media/README.md packages/media/pyproject.toml packages/media/
 COPY packages/portable-sql/README.md packages/portable-sql/pyproject.toml packages/portable-sql/
 COPY packages/portable-sql/src packages/portable-sql/src
+COPY packages/portable-sql/schema packages/portable-sql/schema
+COPY packages/portable-sql/statements packages/portable-sql/statements
 COPY node-controller/README.md node-controller/pyproject.toml node-controller/
 COPY node-controller/src node-controller/src
 COPY deploy/images/node-controller-build-constraints.txt /tmp/node-controller-build-constraints.txt

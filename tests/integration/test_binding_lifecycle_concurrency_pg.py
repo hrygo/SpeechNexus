@@ -15,10 +15,12 @@ from tests.integration.test_publications_storage import (
     create_binding_revision,
 )
 
+from speechnexus_backend.speech.application.binding_documents import encode_document
 from speechnexus_backend.speech.domain.binding_lifecycle import (
     BindingActivationCommand,
     BindingActivationConflictError,
     BindingLifecycleConflictError,
+    BindingLifecycleReceipt,
 )
 from speechnexus_backend.speech.infrastructure.binding_lifecycle_postgres import (
     PostgresBindingLifecycle,
@@ -205,4 +207,123 @@ def test_competing_activations_serialize_and_reject_stale_head(
     )
     assert admin.execute("SELECT * FROM speech_publication_retirements").fetchall() == (
         initial_retirements
+    )
+
+
+def test_two_concurrent_same_key_commands_on_two_bindings_keep_one_identity(
+    sandbox: Sandbox,
+) -> None:
+    """Two bindings, one ``idempotency_key_digest``, overlapping transactions.
+
+    ``test_competing_activations_serialize_and_reject_stale_head`` gives both
+    writers the *same* binding, so ``lock_binding`` alone serialises them and
+    the unique index on the digest never bears weight. Here the same key names a
+    different binding on each writer, and a sequence-backed trigger holds the
+    first lifecycle event for ~0.4s so the other writer is genuinely in flight.
+    Only one identity may persist, and the other must be told the key already
+    recorded a different command.
+    """
+    admin = sandbox.admin
+    create_binding(admin, DEFINITION)
+    second_id = "tts-quality-second"
+    definition = encode_document({**DEFINITION, "binding_id": second_id})
+    key, request = "sha256:" + "d" * 64, "sha256:" + "e" * 64
+    admin.execute(
+        "INSERT INTO speech_binding_families (binding_id, latest_revision) VALUES (%s,'1')",
+        (second_id,),
+    )
+    admin.execute(
+        "INSERT INTO speech_binding_commands "
+        "(key_digest, binding_id, document_version, intent_json, request_digest) "
+        "VALUES (%s,%s,1,'{}',%s)",
+        (key, second_id, request),
+    )
+    admin.execute(
+        "INSERT INTO speech_binding_revisions "
+        "(binding_id, revision, revision_id, key_digest, document_version, "
+        " definition_json, definition_digest, request_digest, created_at_us) "
+        "VALUES (%s,'1','binding-rev-second-1',%s,1,%s,%s,%s,1700000000000003)",
+        (second_id, key, definition, "sha256:" + "f" * 64, request),
+    )
+    admin.execute(
+        "INSERT INTO speech_publications "
+        "(kind, object_id, revision, revision_id, published_at_us) VALUES "
+        "('binding','tts-quality','1','binding-rev-1',1700000000000001), "
+        "('binding',%s,'1','binding-rev-second-1',1700000000000002)",
+        (second_id,),
+    )
+    admin.execute(
+        "INSERT INTO speech_binding_publication_evidence "
+        "(kind, object_id, revision, revision_id, capacity_manifest_id, "
+        "qualification_report_id, evidence_source, recorded_at_us) VALUES "
+        "('binding','tts-quality','1','binding-rev-1','cap-tts-quality-1',"
+        "'qrep-tts-quality-1','operator_cli',1700000000000010), "
+        "('binding',%s,'1','binding-rev-second-1','cap-tts-quality-1',"
+        "'qrep-tts-quality-1','operator_cli',1700000000000011)",
+        (second_id,),
+    )
+    admin.execute(
+        "INSERT INTO speech_publication_heads "
+        "(kind, object_id, revision, revision_id, updated_at_us) VALUES "
+        "('binding','tts-quality','1','binding-rev-1',1700000000000001), "
+        "('binding',%s,'1','binding-rev-second-1',1700000000000002)",
+        (second_id,),
+    )
+    # 序列不是事务性的:第二个触发器调用拿到 2,所以只有第一个写者会慢下来,
+    # 与两个线程谁先到达无关。
+    admin.execute("CREATE SEQUENCE synthetic_hold_sequence")
+    admin.execute(f'GRANT USAGE ON SEQUENCE synthetic_hold_sequence TO "{sandbox.role}"')
+    admin.execute(
+        "CREATE FUNCTION synthetic_hold_event() RETURNS trigger LANGUAGE plpgsql "
+        "AS $$ BEGIN IF nextval('synthetic_hold_sequence') = 1 THEN "
+        "PERFORM pg_sleep(0.4); END IF; RETURN NEW; END $$"
+    )
+    admin.execute(
+        "CREATE TRIGGER synthetic_hold_event BEFORE INSERT ON "
+        "speech_publication_lifecycle_events FOR EACH ROW "
+        "EXECUTE FUNCTION synthetic_hold_event()"
+    )
+    digest = "sha256:" + "9" * 64
+
+    def command(binding_id: str, request_id: str) -> BindingActivationCommand:
+        return BindingActivationCommand(
+            binding_id=binding_id,
+            revision="1",
+            request_id=request_id,
+            actor_type="anonymous",
+            credential_label=None,
+            key_digest=digest,
+            intent_digest=digest,
+            expected_current_revision="1",
+        )
+
+    commands = {
+        "tts-quality": command("tts-quality", "overlap-first"),
+        second_id: command(second_id, "overlap-second"),
+    }
+    lifecycle = PostgresBindingLifecycle(sandbox.pool, timeout_seconds=15)
+
+    def activate(binding_id: str) -> BindingLifecycleReceipt:
+        return lifecycle.activate(commands[binding_id])
+
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        futures = {binding_id: workers.submit(activate, binding_id) for binding_id in commands}
+        receipts: list[tuple[str, BindingLifecycleReceipt]] = []
+        rejected: list[BindingLifecycleConflictError] = []
+        for binding_id, future in futures.items():
+            try:
+                receipts.append((binding_id, future.result(timeout=15)))
+            except BindingLifecycleConflictError as error:
+                rejected.append(error)
+    assert len(receipts) == 1 and len(rejected) == 1
+    winner, receipt = receipts[0]
+    assert rejected[0].code == "idempotency_conflict"
+    assert receipt.replayed is False and receipt.revision == "1"
+    assert admin.execute(
+        "SELECT action, binding_id, result_status FROM speech_publication_lifecycle_events"
+    ).fetchall() == [("model_binding.activate", winner, "published")]
+    replay = lifecycle.activate(commands[winner])
+    assert replay.replayed is True and replay.revision == "1"
+    assert admin.execute("SELECT count(*) FROM speech_publication_lifecycle_events").fetchone() == (
+        1,
     )

@@ -15,6 +15,7 @@ import json
 import os
 import uuid
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -1642,3 +1643,125 @@ def _public_document(ledger: Ledger, caps: dict[str, Any]) -> dict[str, Any]:
         "retired_at": None,
         "disabled_reason": None,
     }
+
+
+def test_two_concurrent_same_key_voice_publications_keep_one_identity(
+    pg: tuple[psycopg.Connection[dict[str, Any]], str, str],
+) -> None:
+    """Two voices, one ``key_digest``, overlapping transactions.
+
+    ``test_attested_qualification_publishes_and_is_read_back_as_operator_sourced``
+    publishes one identity and replays it, so on a quiet machine the first writer
+    commits before the second one starts and the replay proves sequencing, not
+    the intent key. Here both writers publish a different voice under the same
+    key, and a sequence-backed trigger holds the first intent row for ~0.4s so
+    the other writer is genuinely in flight. Only one identity may survive, and
+    the other must be told the key already records a different request.
+    """
+    db, schema, role = pg
+    ledger = Ledger(db, schema)
+    writer = ledger.writer(role)
+    try:
+        assert ledger.attest(writer)["outcome"] == "committed"
+    finally:
+        _close(ledger)
+    recorded = db.execute(
+        "SELECT facts FROM speech_builtin_voice_approvals WHERE approval_id=%s", (APPROVAL,)
+    ).fetchone()
+    assert recorded is not None
+    other_approval = "approval-overlap-other"
+    other_source, other_voice = "source-overlap-other", "voice-overlap-other"
+    other_attestation, other_revision_id = "att-overlap-other", "voice-rev-overlap-other"
+    facts = json.loads(json.dumps(recorded["facts"]))
+    # 第二份批准来自同一产品路径,只是身份不同:另一个 voice 与它自己的 source。
+    facts["source_approval_id"] = other_source
+    facts["public_document"]["voice_id"] = other_voice
+    facts["attestation"]["attestation_id"] = other_attestation
+    db.execute(
+        "INSERT INTO speech_builtin_voice_source_approvals "
+        "(source_approval_id,voice_id,source_revision,source_digest,native_speaker_id,expires_at) "
+        "SELECT %s,%s,source_revision,source_digest,native_speaker_id,expires_at "
+        "FROM speech_builtin_voice_source_approvals WHERE source_approval_id=%s AND voice_id=%s",
+        (other_source, other_voice, SOURCE, VOICE),
+    )
+    db.execute(
+        "INSERT INTO speech_builtin_voice_approvals "
+        "(approval_id,voice_id,revision,revision_id,binding_revision_id,source_approval_id,"
+        " facts,expires_at) "
+        "SELECT %s,%s,revision,%s,binding_revision_id,%s,CAST(%s AS jsonb),expires_at "
+        "FROM speech_builtin_voice_approvals WHERE approval_id=%s",
+        (other_approval, other_voice, other_revision_id, other_source, json.dumps(facts), APPROVAL),
+    )
+    # 批准行必须由它自己的一致声明支撑,而不是靠标签复制。
+    db.execute(
+        "INSERT INTO speech_builtin_voice_operator_attestations "
+        "SELECT (jsonb_populate_record(NULL::speech_builtin_voice_operator_attestations, "
+        "to_jsonb(a) || jsonb_build_object("
+        "'attestation_id',%s::text,'approval_id',%s::text,'voice_id',%s::text,"
+        "'revision_id',%s::text,'source_approval_id',%s::text))).* "
+        "FROM speech_builtin_voice_operator_attestations a WHERE a.approval_id=%s",
+        (
+            other_attestation,
+            other_approval,
+            other_voice,
+            other_revision_id,
+            other_source,
+            APPROVAL,
+        ),
+    )
+    # 序列不是事务性的:第二个触发器调用拿到 2,所以只有第一个写者会慢下来,
+    # 与两个线程谁先到达无关。
+    db.execute("CREATE SEQUENCE synthetic_hold_sequence")
+    db.execute(f'GRANT USAGE ON SEQUENCE synthetic_hold_sequence TO "{role}"')
+    db.execute(
+        "CREATE FUNCTION synthetic_hold_voice_intent() RETURNS trigger LANGUAGE plpgsql "
+        "AS $$ BEGIN IF nextval('synthetic_hold_sequence') = 1 THEN "
+        "PERFORM pg_sleep(0.4); END IF; RETURN NEW; END $$"
+    )
+    db.execute(
+        "CREATE TRIGGER synthetic_hold_voice_intent BEFORE INSERT ON "
+        "speech_builtin_voice_publish_intents FOR EACH ROW "
+        "EXECUTE FUNCTION synthetic_hold_voice_intent()"
+    )
+    stores = {APPROVAL: ledger.publisher(role), other_approval: ledger.publisher(role)}
+    key = "sha256:" + "3" * 64
+
+    def attempt(approval_id: str) -> dict[str, Any]:
+        return publish_builtin_voice(
+            stores[approval_id],
+            key_digest=key,
+            approval_id=approval_id,
+            database=ledger.database,
+            schema=schema,
+            installation_id=ledger.installation_id,
+            expected_head=None,
+            **ledger.release(),
+        )
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = {approval_id: pool.submit(attempt, approval_id) for approval_id in stores}
+            published: list[tuple[str, dict[str, Any]]] = []
+            rejected: list[BuiltinVoicePublicationRejectedError] = []
+            for approval_id, future in futures.items():
+                try:
+                    published.append((approval_id, future.result()))
+                except BuiltinVoicePublicationRejectedError as error:
+                    rejected.append(error)
+        assert len(published) == 1 and len(rejected) == 1
+        winner, receipt = published[0]
+        assert receipt["status"] == "created"
+        assert "idempotency_conflict" in str(rejected[0])
+        assert db.execute(
+            "SELECT voice_id FROM speech_builtin_voice_publish_intents"
+        ).fetchall() == [{"voice_id": receipt["voice_id"]}]
+        assert db.execute(
+            "SELECT object_id FROM speech_publications WHERE kind='voice'"
+        ).fetchall() == [{"object_id": receipt["voice_id"]}]
+        replay = attempt(winner)
+        assert replay["status"] == "replay" and replay["voice_id"] == receipt["voice_id"]
+        assert db.execute(
+            "SELECT count(*) AS n FROM speech_builtin_voice_publish_intents"
+        ).fetchone() == {"n": 1}
+    finally:
+        _close(ledger)

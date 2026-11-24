@@ -38,6 +38,8 @@ from speechnexus_backend.workbench.infrastructure.postgres_versions import (
     PostgresVersionUnitOfWork,
     _Session,
 )
+from speechnexus_backend.workbench.infrastructure.version_schema import schema_identifier
+from speechnexus_portable_sql.keyed_lock import acquire_async as acquire_keyed_lock_async
 from speechnexus_portable_sql.vendor import Jsonb, class_row
 
 
@@ -161,6 +163,42 @@ async def _load_result(
 
     return DeletionResult(
         targets(row.deleted), targets(row.retained_independent_copies), row.id, row.completed_at
+    )
+
+
+def deletion_receipt_digest(workspace_id: str, family: DeletionFamily, key: str) -> str:
+    """删除受理的请求键摘要:``sha256(请求键)``,与迁移前完全一致.
+
+    单独成函数的理由与 ``deletion_claim_lock_key`` 同:受理身份、键锁文本与用例必须从
+    同一处推出摘要,否则「同一个键算出两把锁」这类错误在用例里看不出来。
+    """
+
+    if (
+        not 1 <= len(workspace_id) <= 128
+        or not 1 <= len(key) <= 128
+        or family not in {"plan", "create"}
+    ):
+        raise ValueError("invalid deletion receipt identity")
+    return hashlib.sha256(key.encode()).hexdigest()
+
+
+def deletion_claim_lock_key(
+    schema: str, workspace_id: str, family: DeletionFamily, digest: str
+) -> str:
+    """删除受理那把键锁的完整键:族名 + 命名空间 + 工作区 + 家族 + 请求键摘要(规范 JSON).
+
+    文本与迁移前喂给 advisory lock 的 preimage **逐字相同**,只有载体变了:同一个受理键
+    在任何进程里都折到同一行。命名空间段由 ``schema_identifier`` 渲染 —— 与限定表名的是
+    同一次调用,所以「键里的命名空间」与「锁行落在哪个 schema」不可能分叉(advisory lock
+    没有表,只能把 schema 拼进哈希;行锁的表本身已经承载了命名空间,这一段因此只是保留了
+    旧键的形状,不再承担区分实例的职责)。
+
+    为什么单独一个函数:桶号只从这段文本推出,而「哪些东西算进键」必须只有一个定义点;
+    调用点与用例各拼一份,碰撞用例就会证明一个产品路径并不使用的桶号。
+    """
+
+    return json.dumps(
+        ["workbench-deletion", schema_identifier(schema).as_string(), workspace_id, family, digest]
     )
 
 
@@ -406,13 +444,7 @@ class _DeletionSession:
         )
 
     def _key(self, workspace_id: str, family: DeletionFamily, key: str) -> str:
-        if (
-            not 1 <= len(workspace_id) <= 128
-            or not 1 <= len(key) <= 128
-            or family not in {"plan", "create"}
-        ):
-            raise ValueError("invalid deletion receipt identity")
-        return hashlib.sha256(key.encode()).hexdigest()
+        return deletion_receipt_digest(workspace_id, family, key)
 
     async def claim_receipt(
         self,
@@ -421,19 +453,16 @@ class _DeletionSession:
         key: str,
     ) -> DeletionReceipt | None:
         digest = self._key(workspace_id, family, key)
-        lock = hashlib.sha256(
-            json.dumps(
-                [
-                    "workbench-deletion",
-                    self._base._schema.as_string(),
-                    workspace_id,
-                    family,
-                    digest,
-                ]
-            ).encode()
-        ).digest()[:8]
-        await self._base._execute(
-            "SELECT pg_advisory_xact_lock(?)", (int.from_bytes(lock, signed=True),)
+        # 同键串行由一行真实的行锁给出(``speechnexus_portable_sql.keyed_lock``),不再用
+        # PostgreSQL 专有的 ``pg_advisory_xact_lock``。桶号只决定「等哪一行」;完整受理身份
+        # 仍是 ``deletion_receipts`` 的主键(workspace, family, key_digest),所以碰撞只增加
+        # 竞争,不能别名一次重放。迁移前的 ``int.from_bytes(…, signed=True)`` 是 advisory
+        # lock 的 int8 键空间读法;锁行表的 ``bucket_no`` 定为非负,这里只交文本,桶号由
+        # 原语自己算,不再经过那个有符号整数。
+        await acquire_keyed_lock_async(
+            self._base._connection,
+            key=deletion_claim_lock_key(self._base._schema_name, workspace_id, family, digest),
+            schema=self._base._schema_name,
         )
         self._claims.add((workspace_id, family, digest))
         row = await self._base._one(

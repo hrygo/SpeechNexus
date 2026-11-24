@@ -30,7 +30,7 @@
 
 #### 部署顺序：迁移（含授权重放）先于新构建
 
-顺序是硬约束，不是建议：先把库迁到 head（当前是 `0066_claim_bucket_table`，它包含
+顺序是硬约束，不是建议：先把库迁到 head（当前是 `0067_coordination_keyed_locks`，它包含
 `0064` 加上的 `bucket_no` 与 `due_at`），重放下节三个身份的 `coordination_jobs` INSERT 授权，
 **再**启动新构建。新构建的 Job 写入在 INSERT 里固定提供 `bucket_no` 与 `due_at`
 （`backend/src/speechnexus_backend/speech/infrastructure/job_writer_columns.py:29`），
@@ -63,6 +63,7 @@ for table coordination_jobs`（见下节），所以迁移与授权重放必须�
 | `0064_canonical_jobs_columns` | `coordination_jobs` 加 canonical 列 `bucket_no`、`due_at`、`claim_expires_at`、`last_event_seq` 并按既有 epoch 列回填（`0` → `NULL`、UTC 墙上时间、`bucket_for(job_id)`）；纯加法，无读取者，`downgrade` 只删这四列 |
 | `0065_canonical_jobs_reconcile` | 重跑 0064 的回填，覆盖 0064 之后写入、只有草案列的行；`claim_expires_at` 与 `due_at` 是 **fill-if-null**（只在 canonical 列为 `NULL` 时从草案 epoch 列／`speech_jobs.created_at_us` 换算，canonical 一旦写下就是权威，重跑不覆盖在飞租约），`bucket_no` 仍按 `bucket_for(job_id)` 重算；按 `MAX(speech_job_events.event_seq)` 回填 `last_event_seq`（无事件为 `0`）；提交前对账四条不变量（含「每行都有 `bucket_no`」与「草案说已领取的行必须已在 canonical 有租约」）。**不收紧 `bucket_no`**：写入切换（#1176）已让两个写入者在 INSERT 时提供 `bucket_for(job_id)`，但 `NOT NULL` 仍由后续修订落地；`downgrade` 把 `last_event_seq` 归零并防御性清掉 `NOT NULL`，不删列，也不回退 `claim_expires_at`（那可能是在飞租约） |
 | `0066_claim_bucket_table` | 建 `coordination_claim_buckets`（`bucket_no` `DECIMAL(38,0)` 主键、`claim_owner_id` `VARCHAR(128)`、`lease_until` `TIMESTAMP(6)`、`version` `DECIMAL(38,0)` NOT NULL，即 `migrations/0003_portable_claim_buckets.sql` 的 canonical 形状），并按 Python 的 `BUCKETS` 常量（256）播种 256 个 `version = 0`、无 owner、无租约的空桶；已存在的桶不重写，重入只补缺失的那些；`downgrade` 只 DROP 这张表 |
+| `0067_coordination_keyed_locks` | 建 `coordination_keyed_locks`：协调命名空间的键锁行表（`bucket_no` `DECIMAL(38,0)` 主键、`version` `DECIMAL(38,0)` 行锁许可列、`created_at` `TIMESTAMP(6)`），供 backend 与执行网关两个角色在同一行上取 `FOR UPDATE`；纯建表、不播种，行由第一次用到该桶的事务懒建，`downgrade` 只 DROP 这张表 |
 | `0008_runtime_delivery` | 参数标记迁到 `?` 契约后，迁移把唯一的占位符内联成迁移事务时间戳；行为不变，仍给旧 outbox 行补 `unknown` 投递相位 |
 | `0023_publication_lifecycle`（视图定义） | 视图里的 `::numeric` 改成标准 `CAST(... AS numeric)`，语义等价；只在重新 bootstrap 时生效，不新增迁移 |
 
@@ -74,7 +75,7 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
   'select version_num from speech.alembic_version'
 ```
 
-第二段的期望输出是 `0066_claim_bucket_table`。迁移身份是独立 DDL 身份
+第二段的期望输出是 `0067_coordination_keyed_locks`。迁移身份是独立 DDL 身份
 （`SPEECHNEXUS_MIGRATION_DATABASE_URL`），不要用 `sn_api`。`0058`–`0063` 六个 revision 的
 `downgrade` 全部显式 `raise`（计划是删除凭据、账本是删除事实、索引是轮询读的访问路径），
 回退没有 `alembic downgrade` 这条路径，只能显式处理数据后手工回收。`0064` 只删自己加的
@@ -82,7 +83,8 @@ canonical 列，`0065` 把 `last_event_seq` 归零（并防御性清掉 `bucket_
 `NOT NULL`）而不删列：`last_event_seq` 当前没有任何读取者，`claim_expires_at` 不回退是因为它
 可能已是新的认领路径写下的在飞租约，擦掉它等于让 Job 失权。
 `0066` 的 `downgrade` 只 DROP `coordination_claim_buckets`：种子是表的内容，回到 0065 时这张表
-本该不存在，其余协调对象与行都不动。
+本该不存在，其余协调对象与行都不动。`0067` 的 `downgrade` 同样只 DROP
+`coordination_keyed_locks`：表里的行是锁行本身，没有别的表引用它，也没有需要保留的内容。
 
 核实：**实跑 + 读代码**。2026-11-20 在临时 PostgreSQL 18.6 上以
 `SPEECHNEXUS_MIGRATION_DATABASE_URL` 跑 `speechnexus-job-migrate --schema speech`，
@@ -350,7 +352,11 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 | `binding_lifecycle_grants` | `publication_lifecycle_schema.py` | 未变（同文件，DDL 的 `::` 改为 `CAST`） |
 | `binding_publication_grants` | `publication_lifecycle_schema.py` | 未变（同文件，DDL 的 `::` 改为 `CAST`） |
 | `settlement_worker_grants` | `settlement_worker_verifier.py` | 未变（参数标记迁移） |
-| `job_dispatch_grants` | `job_schema.py` | 未变 |
+| `job_dispatch_grants` | `job_schema.py` | **变**：末尾追加 `coordination_keyed_lock_grants` 的四条（`USAGE`、`SELECT (bucket_no)`、`INSERT (bucket_no)`、`UPDATE (version)`），见第 6 条 |
+| `coordination_keyed_lock_grants` | `coordination_keyed_lock_schema.py` | **新增**，见第 6 条 |
+| `gateway_keyed_lock_grants` | `gateway_query_grants.py` | **新增**，见第 6 条 |
+| `gateway_query_grants` | `gateway_query_grants.py` | 未变（同文件被改，函数体没动；只读读者的授权面由 `reader_authority.py` 逐列核对，本次没有扩它） |
+| `gateway_query_target_grants` | `gateway_query_grants.py` | 未变 |
 
 ### 5. 重跑 `coordination_runtime_grants`：网关改为锁 canonical Job 行读围栏
 
@@ -413,6 +419,97 @@ coordination_jobs` 失败；再重放这两条语句后恢复成功。围栏的
 写入端由 `test_job_cancellation_fence_pg.py` 的
 `test_acceptance_lock_waits_for_submit_and_then_refuses` 在真库上钉住「提交在 Job 行锁上
 等待，受理提交后拒绝创建执行」。
+
+### 6. 重跑 Job 写入/派发身份与 `sn_gateway`：新增 `coordination_keyed_locks`
+
+catalog 的那把互斥此前是 `pg_advisory_xact_lock(hashtextextended('speechnexus:catalog:…'))`，
+两侧分别是 backend 与执行网关。它们**是 `speech` schema 里的两个不同角色**，所以替代它的行锁
+表必须落在两侧都已有关系的 `speech`，而不是任何一侧自己的命名空间：只在一侧够得到的表会让
+互斥**静默裂成两把**，而两侧依赖的正是这一份排序。这是本次新增 `coordination_keyed_locks`
+的唯一理由。
+
+**本次没有任何调用点迁移。** 生产源码里 `pg_advisory_*lock` 出现 31 行（含语句文本与注释，
+其中 `speechnexus:catalog` 键前缀 18 处），这一批一行都没改，所以下面这两条授权**不影响任何
+现有行为**：不重放，现有路径照常工作；重放，只是让两个身份提前拿到一张空表的锁行授权。
+真正开始使用它的是后续切片，那时这两条授权必须已经在位。
+
+列名取自 `speechnexus_portable_sql.keyed_lock` 的唯一清单（桶号 + 行锁许可列），与 workbench
+的 `keyed_locks` 是同一组列。两处差异是刻意的，也都在 DDL 里写死：
+
+| 列 | 本表 | workbench `keyed_locks` | 为什么不同 |
+| --- | --- | --- | --- |
+| `bucket_no` / `version` | `DECIMAL(38,0)`，无 `CHECK` | `numeric(19,0)`，`CHECK (>= 0)` | 与同 schema 的 `coordination_claim_buckets` 一致；桶号由 `bucket_for_key` 算出，越界值不会被取用，只是多一行死数据 |
+| `created_at` | `TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP` | 无 | 桶行懒建，记下第一次被用到的时间；没有任何运行角色读写它，所以它不产生授权事实 |
+
+`version` 是**行锁许可列**，不是 CAS 版本：PostgreSQL 的 `FOR UPDATE` 要求行上某列有
+`UPDATE` 权限，这一列就是那份许可，没有写入者。
+
+授权面按事实只有一个定义点（`coordination_keyed_lock_grants`），两个入口都调它，不各写一份：
+
+| 身份 | 授权组 | 得到什么 |
+| --- | --- | --- |
+| Job writer / dispatcher | `job_dispatch_grants` | `SELECT (bucket_no)`、`INSERT (bucket_no)`、`UPDATE (version)` |
+| `sn_gateway`（执行网关） | `gateway_keyed_lock_grants` | 同上，逐字相同 |
+
+**`sn_api` 不在本次范围内。** 它由 `coordination_runtime_grants` 预置，而这个函数不给键锁行
+授权：那把互斥的两侧只需要 writer/dispatcher 与执行网关。等开始迁移调用点、真正有 `sn_api`
+一侧要取同一个键时，`coordination_runtime_grants` 补一条 `coordination_keyed_lock_grants`
+即可（同一个函数，不新增定义点）。这一条是已知的待办，不是遗漏。
+
+`INSERT` 是必需的：桶行懒建，第一次用到该桶的事务把它插进来。列级而非表级，是为了让角色不能
+顺手改桶号（行身份）。重放拷贝（`SN_ADMIN_DSN` 是 owner/DDL 身份，经批准的秘密渠道提供）：
+
+```bash
+set -a; . deploy/compose.env; set +a
+export SN_ADMIN_DSN='<owner/DDL 身份的 DSN，经批准的秘密渠道提供>'
+uv run --all-packages python - <<'SCRIPT'
+import os
+from urllib.parse import unquote, urlsplit
+
+import psycopg
+
+from speechnexus_backend.speech.infrastructure.gateway_query_grants import (
+    gateway_keyed_lock_grants,
+)
+from speechnexus_backend.speech.infrastructure.job_schema import job_dispatch_grants
+
+schema = os.environ.get("SN_SCHEMA", "speech")
+
+
+def role(key: str) -> str:
+    name = unquote(urlsplit(os.environ[key]).username or "")
+    if not name:
+        raise SystemExit(f"{key} does not name a role")
+    return name
+
+
+statements = [
+    *job_dispatch_grants(schema, role("SPEECHNEXUS_JOB_WRITER_DATABASE_URL")),
+    *job_dispatch_grants(schema, role("SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL")),
+    *gateway_keyed_lock_grants(schema, os.environ.get("SN_GATEWAY_ROLE", "sn_gateway")),
+]
+with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as connection:
+    for statement in statements:
+        connection.execute(statement)
+print(len(statements), "grant statements replayed")
+SCRIPT
+```
+
+**启动闸门同步了。** Job writer 的启动核对
+（`backend/src/speechnexus_backend/job_runtime.py`）会拒绝**任何**授权面外的表，所以新表与它的
+列级 `UPDATE (version)` 都从同一个声明（`coordination_keyed_lock_schema`）进了
+`_JOB_DECLARED_TABLES`、`_JOB_UPDATE_SURFACE` 与 `_JOB_INSERT_SURFACE`，并按「允许但不要求」
+校验（`_JOB_OPTIONAL_TABLES`）：单角色部署或没装派发授权组的 login 仍然启动，只是那把锁不在
+这个身份上。这仍然要求**先迁移再加新构建**：声明表在库里不存在时，`information_schema` 查询
+拿不到列，闸门会按缺列判红。
+
+核实：**实跑 + 读代码**。2026-11-24 本机 PostgreSQL 18.6（`SPEECHNEXUS_TEST_DATABASE_URL`）：
+空 schema 上 `alembic upgrade head` 后 head 为 `0067_coordination_keyed_locks`，
+`coordination_keyed_locks` 的列、类型与主键与本节一致；
+`tests/integration/test_coordination_keyed_lock_pg.py` 用**两个真实角色**（Job writer 身份的
+backend、`gateway_keyed_lock_grants` 授权的网关）在同一键上取锁：第二个连接在
+`pg_blocking_pids` 里点名等第一个，第一个提交后两笔都完成；异键两笔互不等待。撤掉网关的
+`UPDATE (version)` 后，同一段代码以 `42501` 失败而不是静默放行。
 
 ## 边界澄清（行为未变）
 

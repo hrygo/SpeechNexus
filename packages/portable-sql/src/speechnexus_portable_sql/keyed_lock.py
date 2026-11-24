@@ -87,8 +87,9 @@ STATEMENTS = {
 }
 
 #: 命名空间标识符:与 `schema_identifier` / `checked_sql_name` 同一条字符集,这里只做收窄,
-#: 不做任何改写(写错了要在发出前失败,而不是被悄悄折成合法名字)。
-_NAMESPACE = re.compile(r"\A[a-z][a-z0-9_]{0,62}\Z")
+#: 不做任何改写(写错了要在发出前失败,而不是被悄悄折成合法名字)。表名与 schema 同一判据:
+#: 两者都是调用方给的、要插值进语句的标识符,规则写两遍就是两份实现。
+_IDENTIFIER = re.compile(r"\A[a-z][a-z0-9_]{0,62}\Z")
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,31 +105,37 @@ class KeyedLock:
     created: bool
 
 
-def _target(schema: str | None) -> str:
-    """把命名空间折成语句里的表引用;`None` 表示按会话 `search_path` 解析.
+def _target(schema: str | None, table: str = KEYED_LOCK_TABLE) -> str:
+    """把命名空间与表名折成语句里的表引用;`schema=None` 按会话 `search_path` 解析.
 
     标识符不能被参数化,所以这里是唯一的插值点:名字先过字符集,再拼进已登记的模板。
     `public` / `information_schema` / `pg_` 前缀直接拒绝 —— 锁行不是公共对象,也不该落进
     系统命名空间。
+
+    表名是参数而不是常量:同一个原语要服务多个命名空间,而各命名空间对这张表有自己的命名
+    (workbench 的 `keyed_locks`、协调命名空间的 `coordination_keyed_locks`)。语句模板仍只有
+    `STATEMENTS` 一份,派生方式不变。
     """
 
+    if not _IDENTIFIER.match(table):
+        raise ContractError("table must be a plain lowercase SQL identifier")
     if schema is None:
-        return KEYED_LOCK_TABLE
-    if not _NAMESPACE.match(schema) or schema in {"public", "information_schema"}:
+        return table
+    if not _IDENTIFIER.match(schema) or schema in {"public", "information_schema"}:
         raise ContractError("schema must be a plain lowercase SQL identifier")
     if schema.startswith("pg_"):
         raise ContractError("schema must not name a system namespace")
-    return f"{schema}.{KEYED_LOCK_TABLE}"
+    return f"{schema}.{table}"
 
 
-def lock_statements(schema: str | None = None) -> tuple[str, str]:
-    """`(插入, 加锁)` 两条语句,表引用按 `schema` 解析。
+def lock_statements(schema: str | None = None, *, table: str = KEYED_LOCK_TABLE) -> tuple[str, str]:
+    """`(插入, 加锁)` 两条语句,表引用按 `schema` / `table` 解析。
 
     返回文本而不是执行:调用方可能要把语句喂给带 `row_factory` 的游标,或者在测试里逐字
     比对。两条语句的顺序不能交换 —— 先保证行存在,再锁它。
     """
 
-    target = _target(schema)
+    target = _target(schema, table)
     return (
         STATEMENTS["keyed_lock.insert"].format(target=target),
         STATEMENTS["keyed_lock.lock"].format(target=target),
@@ -167,7 +174,13 @@ def _require_transaction(connection: object) -> None:
         raise ContractError("a keyed lock needs an open transaction, not a bare autocommit call")
 
 
-def acquire(connection: Connection, *, key: str, schema: str | None = None) -> KeyedLock:
+def acquire(
+    connection: Connection,
+    *,
+    key: str,
+    schema: str | None = None,
+    table: str = KEYED_LOCK_TABLE,
+) -> KeyedLock:
     """在调用方的事务里锁住 `key` 对应的行,返回锁住的桶号.
 
     顺序固定:插入(已存在则只回滚到保存点)→ `SELECT … FOR UPDATE`。插入那一步只为了让行
@@ -176,10 +189,13 @@ def acquire(connection: Connection, *, key: str, schema: str | None = None) -> K
 
     事务边界由调用方拥有:本函数不 `commit` 也不 `rollback`。同一事务内重复取同一个键不
     自阻塞(第二次插入走冲突分支,行锁已在手)。
+
+    `table` 默认是 workbench 的 `keyed_locks`;协调命名空间传 `coordination_keyed_locks`,
+    语句本身不变 —— 派生表的仍是同一个 `lock_statements`,没有第二份实现。
     """
 
     _require_transaction(connection)
-    insert_statement, lock_statement = lock_statements(schema)
+    insert_statement, lock_statement = lock_statements(schema, table=table)
     bucket = bucket_for_key(key)
     digest = key_digest(key)
     cursor = connection.cursor()
@@ -187,16 +203,18 @@ def acquire(connection: Connection, *, key: str, schema: str | None = None) -> K
         created = insert_if_absent(cursor, insert_statement, (bucket,))
         cursor.execute(lock_statement, (bucket,))
         if len(cursor.fetchall()) != 1:
-            raise ContractError(
-                f"{KEYED_LOCK_TABLE} row {bucket} disappeared between insert and lock"
-            )
+            raise ContractError(f"{table} row {bucket} disappeared between insert and lock")
     finally:
         cursor.close()
     return KeyedLock(bucket_no=bucket, digest=digest, created=created)
 
 
 async def acquire_async(
-    connection: AsyncConnection, *, key: str, schema: str | None = None
+    connection: AsyncConnection,
+    *,
+    key: str,
+    schema: str | None = None,
+    table: str = KEYED_LOCK_TABLE,
 ) -> KeyedLock:
     """`acquire` 的异步形态:同一组语句、同一个桶号、同一份碰撞契约.
 
@@ -205,7 +223,7 @@ async def acquire_async(
     """
 
     _require_transaction(connection)
-    insert_statement, lock_statement = lock_statements(schema)
+    insert_statement, lock_statement = lock_statements(schema, table=table)
     bucket = bucket_for_key(key)
     digest = key_digest(key)
     cursor = connection.cursor()
@@ -213,9 +231,7 @@ async def acquire_async(
         created = await insert_if_absent_async(cursor, insert_statement, (bucket,))
         await cursor.execute(lock_statement, (bucket,))
         if len(await cursor.fetchall()) != 1:
-            raise ContractError(
-                f"{KEYED_LOCK_TABLE} row {bucket} disappeared between insert and lock"
-            )
+            raise ContractError(f"{table} row {bucket} disappeared between insert and lock")
     finally:
         await cursor.close()
     return KeyedLock(bucket_no=bucket, digest=digest, created=created)

@@ -42,6 +42,9 @@ from speechnexus_backend.speech.infrastructure.coordination_grants import (
     SPEECH_UPDATES,
     coordination_runtime_grants,
 )
+from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
+    COORDINATION_KEYED_LOCK_TABLE,
+)
 from speechnexus_backend.speech.infrastructure.coordination_schema import COORDINATION_DDL
 from speechnexus_backend.speech.infrastructure.execution_release_schema import (
     RELEASE_GUARD_DDL,
@@ -436,6 +439,10 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
         if db.dialect == "postgresql"
         else set()
     )
+    # The coordination keyed-lock rows (0067). Grant is column-level and belongs
+    # to the dispatch writer and the gateway only; neither coordination owner
+    # holds table-level rights, so it sits outside the shared grant surface.
+    keyed_lock_tables = {COORDINATION_KEYED_LOCK_TABLE} if db.dialect == "postgresql" else set()
     # The accepted workspace command ledger (0049). It is a private
     # workspace-writer table, outside the shared coordination surface.
     workspace_command_tables = (
@@ -496,6 +503,7 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
         - quarantine_release_tables
         - qualification_provenance_tables
         - deletion_plan_tables
+        - keyed_lock_tables
         == (set(SPEECH_UPDATES) | set(GATEWAY_UPDATES))
     )
     if db.dialect == "postgresql":
@@ -514,6 +522,7 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
                 | quarantine_release_tables
                 | qualification_provenance_tables
                 | deletion_plan_tables
+                | keyed_lock_tables
             ):
                 with (
                     pytest.raises(psycopg.errors.InsufficientPrivilege),

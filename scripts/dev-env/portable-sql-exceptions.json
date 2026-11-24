@@ -35,22 +35,6 @@
     },
     {
       "rule": "advisory-lock",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/tts_settlement_postgres.py",
-      "count": 1,
-      "card": "#1095",
-      "reason": "由 claim bucket / bucket fencing 原语替代后失效",
-      "release": "#1095 完成时删除本条目"
-    },
-    {
-      "rule": "advisory-lock",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/tts_settlement_sql.py",
-      "count": 1,
-      "card": "#1095",
-      "reason": "由 claim bucket / bucket fencing 原语替代后失效",
-      "release": "#1095 完成时删除本条目"
-    },
-    {
-      "rule": "advisory-lock",
       "path": "backend/src/speechnexus_backend/workbench/infrastructure/postgres_deletions.py",
       "card": "#1100",
       "reason": "workbench 行的第三方类型/参数标记,整块由 #1102 处理"

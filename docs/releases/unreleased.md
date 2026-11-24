@@ -351,7 +351,7 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 | `audit_reader_grants` | `publication_lifecycle_schema.py` | 未变（同文件，DDL 的 `::` 改为 `CAST`，授权列未动） |
 | `binding_lifecycle_grants` | `publication_lifecycle_schema.py` | 未变（同文件，DDL 的 `::` 改为 `CAST`） |
 | `binding_publication_grants` | `publication_lifecycle_schema.py` | 未变（同文件，DDL 的 `::` 改为 `CAST`） |
-| `settlement_worker_grants` | `settlement_worker_verifier.py` | 未变（参数标记迁移） |
+| `settlement_worker_grants` | `settlement_worker_verifier.py` | **变**：末尾追加 `coordination_keyed_lock_grants` 的四条（`USAGE`、`SELECT (bucket_no)`、`INSERT (bucket_no)`、`UPDATE (version)`），见第 8 条 |
 | `job_dispatch_grants` | `job_schema.py` | **变**：末尾追加 `coordination_keyed_lock_grants` 的四条（`USAGE`、`SELECT (bucket_no)`、`INSERT (bucket_no)`、`UPDATE (version)`），见第 6 条 |
 | `coordination_keyed_lock_grants` | `coordination_keyed_lock_schema.py` | **新增**，见第 6 条 |
 | `gateway_keyed_lock_grants` | `gateway_query_grants.py` | **新增**，见第 6 条 |
@@ -753,6 +753,62 @@ GRANTS
   `lock_catalog` 全部换回咨询锁，
   `test_publication_waits_for_retirement_and_rejects_old_observation` 以
   `publication did not wait on the binding lock` 失败。
+
+### 8. 重跑 `settlement_worker_grants`：TTS 取消/准入屏障改用 `coordination_keyed_locks` 行锁
+
+同步 TTS 的**准入**与**取消**串行化同一个 `operation_id`。这一对不能在天然行上做：取消行在没有
+人取消时不存在，而准入插 `speech_tts_settlement`、取消插 `speech_tts_cancellation`，两侧没有共同
+行可锁；`SELECT … FOR UPDATE` 在行不存在时不锁任何东西，而结算扫描只从结算行读 `abort_reason`，
+原因没在准入时快照进去就没有补救路径。所以两侧都改成锁
+`coordination_keyed_locks` 上该操作的那一行（键文本不变：
+`'speechnexus:tts-cancel:' || current_schema() || ':' || <operation_id>`，拼接只在
+`tts_cancel_barrier.tts_cancel_lock_key` 一处）。
+
+`settlement_worker_grants` 因此多出 `coordination_keyed_lock_grants` 的四条（`USAGE`、
+`SELECT (bucket_no)`、`INSERT (bucket_no)`、`UPDATE (version)`）：取消事务的第一把锁就是这一行。
+准入侧不需要新授权——`sn_api` 的键锁面早已由 `coordination_runtime_grants` 给出，本次没有扩它。
+
+停在旧授权上的部署，两条路径的症状不同，但都必须重放：
+
+| 路径 | 现象 |
+| --- | --- |
+| 结算 worker 启动 | `verify_settlement_worker` 逐列比对时点名 `coordination_keyed_locks` 缺列（或迁移 `0067` 未跑时点名关系不存在），进程拒绝启动 |
+| 同步 TTS 取消 | 若绕过启动闸门直接取锁，第一条 `INSERT INTO coordination_keyed_locks` 以 `42501 permission denied for table coordination_keyed_locks` 失败 |
+
+按 `provision-job-roles.py` 的 owner 身份重放一次即可（它调同一个 `settlement_worker_grants`）；
+单角色部署直接对 `sn_speech_settlement` 重跑这一组语句：
+
+```bash
+python - <<'SCRIPT'
+import os
+import psycopg
+
+from speechnexus_backend.speech.infrastructure.settlement_worker_verifier import (
+    settlement_worker_grants,
+)
+
+schema = os.environ.get("SN_SCHEMA", "speech")
+with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as connection:
+    for statement in settlement_worker_grants(schema, "sn_speech_settlement"):
+        connection.execute(statement)
+SCRIPT
+```
+
+`coordination_keyed_locks` 的列清单只有一个定义点（`coordination_keyed_lock_schema`）：DDL、这套
+授权和两个启动闸门都按它核对，所以不要用 `GRANT ALL` 或表级 `GRANT` 代替 —— 列级授权是行身份
+的一部分（`INSERT` 只能写桶号，`UPDATE` 只能碰行锁许可列），而表级探针在列级授权下恒为假。
+
+核实：**实跑 + 读代码**。2026-11-25 本机 PostgreSQL（`SPEECHNEXUS_TEST_DATABASE_URL`）：
+
+- `tests/integration/test_tts_durable_pg.py` 里两条 oracle：持有该操作的行锁时，同一操作的准入与
+  取消**同时**出现在 `pg_blocking_pids` 里（两个 backend 都等同一个持有者），提交后两侧都落地且
+  结算根的 `abort_reason` 是取消原因；持有 A 操作的行锁时，B 操作的取消不等。
+- `tests/integration/test_tts_factory_pg.py::test_tts_admission_rechecks_expiry_after_final_lock`
+  的「结算锁」变体现在改用该行锁：准入确实等待，授权在等待期间过期后仍按 `SpeechUnavailableError`
+  拒绝且不写结算根。
+- `tests/ci/test_tts_cancel_keyed_lock.py` 钉住键文本只有一个拼写点、两个站点只调
+  `lock_tts_cancel` 且不再出现 `pg_advisory_xact_lock`；注入第二份键前缀或放回 advisory lock
+  都会红。
 
 ## 边界澄清（行为未变）
 

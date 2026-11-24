@@ -11,6 +11,7 @@ from speechnexus_backend.speech.domain.tts_settlement import (
     TtsSettlementTarget,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
+from speechnexus_backend.speech.infrastructure.tts_cancel_barrier import lock_tts_cancel
 from speechnexus_portable_sql.clock import now_us
 from speechnexus_portable_sql.transaction import insert_if_absent
 
@@ -58,7 +59,13 @@ class PostgresTtsSettlementStore:
         return result
 
     def request_cancellation(self, operation_id: str, reason: AbortReason) -> None:
-        """Persist the original operation even when admission has not committed yet."""
+        """Persist the original operation even when admission has not committed yet.
+
+        The ``coordination_keyed_locks`` row lock for this operation is this
+        transaction's first lock (``lock_tts_cancel``): an admission of the same
+        operation either snapshotted a reason before this insert, or reads this
+        committed cancellation — never a half-ordered pair.
+        """
         from speechnexus_backend.speech.domain.runtime_intents import identifier
 
         identifier(operation_id)
@@ -66,11 +73,7 @@ class PostgresTtsSettlementStore:
             raise ValueError("Invalid TTS cancellation reason")
         with self._pool.connection(timeout=self._timeout) as conn:
             self._deadline(conn)
-            conn.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended('speechnexus:tts-cancel:' "
-                "|| current_schema() || ':' || ?, 0))",
-                (operation_id,),
-            )
+            lock_tts_cancel(conn, operation_id)
             insert_if_absent(
                 conn,
                 "INSERT INTO speech_tts_cancellation (operation_id,reason,requested_at_us) "

@@ -794,7 +794,11 @@ def test_tts_admission_rechecks_expiry_after_final_lock(
         PostgresTtsFacts,
         _identities,
     )
+    from speechnexus_backend.speech.infrastructure.tts_cancel_barrier import (
+        tts_cancel_lock_key,
+    )
     from speechnexus_backend.speech.infrastructure.tts_recipe import load_tts_recipe
+    from speechnexus_portable_sql.keyed_lock import bucket_for_key
 
     _voice(admission_database)
     db = admission_database.runtime.foundation.database
@@ -849,10 +853,19 @@ def test_tts_admission_rechecks_expiry_after_final_lock(
                 "SELECT * FROM resource_pools WHERE pool_id=%s FOR UPDATE", (PLAN.binding.pool_id,)
             )
         else:
+            # The operation's cancel/admission barrier is the ``coordination_keyed_locks``
+            # row both sites take; holding the old advisory lock would no longer make the
+            # admission wait, because a row lock and an advisory lock never contend.
+            held = _identities(selected.request_id)[0].operation_id
+            bucket = bucket_for_key(tts_cancel_lock_key(db.schema, held))
             blocker.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended('speechnexus:tts-cancel:' "
-                "|| current_schema() || ':' || %s, 0))",
-                (_identities(selected.request_id)[0].operation_id,),
+                "INSERT INTO coordination_keyed_locks (bucket_no) VALUES (%s) "
+                "ON CONFLICT (bucket_no) DO NOTHING",
+                (bucket,),
+            )
+            blocker.execute(
+                "SELECT bucket_no FROM coordination_keyed_locks WHERE bucket_no=%s FOR UPDATE",
+                (bucket,),
             )
         with ThreadPoolExecutor(max_workers=1) as executor:
             pending = executor.submit(service.admit, selected)

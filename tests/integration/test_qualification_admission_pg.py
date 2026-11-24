@@ -292,10 +292,24 @@ def _assert_final_lock_expiry_rolls_back(
     pools_before = db.query("SELECT * FROM resource_pools ORDER BY pool_id")
     blocker = db.blocker()
     try:
+        # The settlement root's admission opens on the operation's keyed-lock row; the
+        # old advisory lock is a different resource and would let the admission through.
+        from speechnexus_backend.speech.infrastructure.tts_cancel_barrier import (
+            tts_cancel_lock_key,
+        )
+        from speechnexus_portable_sql.keyed_lock import bucket_for_key
+
+        bucket = bucket_for_key(
+            tts_cancel_lock_key(db.schema, command.request.identity.operation_id)
+        )
         blocker.execute(
-            "SELECT pg_advisory_xact_lock(hashtextextended('speechnexus:tts-cancel:' "
-            "|| current_schema() || ':' || %s, 0))",
-            (command.request.identity.operation_id,),
+            "INSERT INTO coordination_keyed_locks (bucket_no) VALUES (%s) "
+            "ON CONFLICT (bucket_no) DO NOTHING",
+            (bucket,),
+        )
+        blocker.execute(
+            "SELECT bucket_no FROM coordination_keyed_locks WHERE bucket_no=%s FOR UPDATE",
+            (bucket,),
         )
         with ThreadPoolExecutor(max_workers=1) as executor:
             pending = executor.submit(port.admit_recipe, command)

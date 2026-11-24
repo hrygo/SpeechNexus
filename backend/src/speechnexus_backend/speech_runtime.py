@@ -91,16 +91,20 @@ def build_speech(settings: Settings) -> SpeechSynthesis | None:
     settlement: TtsSettlementRuntime | None = None
     try:
         pool.open()
+        # Order is part of the contract: ``require_complete_tts_roots`` is the first gate and
+        # reports an unmigrated cluster as one ``FAIL:`` line. Verifying the keyed lock
+        # surface before it would raise a traceback for the same missing-migration cause and
+        # take that documented refusal away from the operator.
+        require_complete_tts_roots(pool, timeout_seconds=settings.speech_storage_timeout_seconds)
         # The synchronous admission opens by locking the binding row, so this identity's
-        # keyed lock surface is a startup condition: a deployment that never ran 0067 (or
-        # a role provisioned from a stale grant set) is refused here, not on the first
+        # keyed lock surface is a startup condition: a deployment that never ran 0067 (or a
+        # role provisioned from a stale grant set) is refused here, not on the first
         # synthesis request.
         with pool.connection(timeout=3) as connection:
             connection.execute("SET LOCAL statement_timeout='3s'")
             require_coordination_keyed_lock_grants(
                 connection, settings.database_schema, subject="Synchronous speech"
             )
-        require_complete_tts_roots(pool, timeout_seconds=settings.speech_storage_timeout_seconds)
         facts = QualifiedPostgresSpeechFacts(
             pool, recipe, timeout_seconds=settings.speech_storage_timeout_seconds
         )

@@ -222,6 +222,50 @@ def test_two_concurrent_same_key_requests_serialise_to_one_identity(
     assert database.count("speech_workspace_commands") == 1
 
 
+def test_two_concurrent_same_key_creates_overlap_and_the_key_decides(
+    database: Database,
+) -> None:
+    """Two identities, one key, overlapping transactions: the key must decide.
+
+    A sequence-backed trigger sleeps inside whichever writer reaches the ledger
+    first, so the other one is still in flight when it tries to record the same
+    key. ``test_two_concurrent_same_key_requests_serialise_to_one_identity``
+    cannot show this on its own: it gives each writer the same ledger key but
+    the two identities differ, and on a quiet machine the first writer commits
+    before the second one even starts, so the "concurrency" is sequencing. It
+    also passes without the key's uniqueness, because the identity primary key
+    is what collapses the two attempts. Here the identities differ as well, so
+    only the key's uniqueness can collapse them.
+    """
+
+    command = create("Concurrent overlap", key="workspace-create-key-overlap")
+    # 序列不是事务性的:第二个触发器调用拿到 2,所以只有第一个写者会慢下来,
+    # 与两个线程谁先到达无关。
+    database.admin.execute("CREATE SEQUENCE synthetic_hold_sequence")
+    database.admin.execute(f'GRANT USAGE ON SEQUENCE synthetic_hold_sequence TO "{database.role}"')
+    database.admin.execute(
+        "CREATE FUNCTION synthetic_hold_command() RETURNS trigger LANGUAGE plpgsql "
+        "AS $$ BEGIN IF nextval('synthetic_hold_sequence') = 1 THEN "
+        "PERFORM pg_sleep(0.4); END IF; RETURN NEW; END $$"
+    )
+    database.admin.execute(
+        "CREATE TRIGGER synthetic_hold_command BEFORE INSERT ON speech_workspace_commands "
+        "FOR EACH ROW EXECUTE FUNCTION synthetic_hold_command()"
+    )
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        receipts = [
+            future.result()
+            for future in [
+                pool.submit(database.writes.create, command, workspace_id=f"workspace-overlap-{i}")
+                for i in range(2)
+            ]
+        ]
+    assert len({receipt.workspace.workspace_id for receipt in receipts}) == 1
+    assert sorted(receipt.replayed for receipt in receipts) == [False, True]
+    assert database.workspaces() == 1
+    assert database.count("speech_workspace_commands") == 1
+
+
 def test_identity_collision_is_reported_without_a_second_row(database: Database) -> None:
     database.writes.create(create("Original", key=None), workspace_id="workspace-taken")
     with pytest.raises(WorkspaceConflictError) as error:

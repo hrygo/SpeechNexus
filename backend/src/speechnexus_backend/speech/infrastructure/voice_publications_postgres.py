@@ -176,11 +176,9 @@ class PostgresVoicePublications:
         request_digest: str,
         key_digest: str | None,
     ) -> tuple[dict[str, Any], bool]:
-        cursor.execute(
-            "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:voice-publication:' || current_schema() || ':' || ?, 0))",
-            (draft_id,),
-        )
+        # 草稿行锁就是这次发布的唯一串行点:键里只有 draft_id,而下一句按同一个主键
+        # `FOR UPDATE` 锁住同一行,两个同草稿的写者必然排队。锁行不存在的草稿时不取任何
+        # 锁,但两条路径随后都只会读到空集并报 not_found,没有可竞争的状态。
         cursor.execute(_SELECT_DRAFT + " FOR UPDATE", (draft_id,))
         drafts = cursor.fetchall()
         if len(drafts) != 1:

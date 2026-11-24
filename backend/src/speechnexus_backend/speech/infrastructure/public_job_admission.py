@@ -618,12 +618,20 @@ def _custom_voice(
     if material.media_type != "audio/wav":
         raise PublicJobAdmissionRejectedError("job_binding_incomplete")
     # Serialize with confirmed deletion: the deleter takes FOR UPDATE on this same
-    # draft before it re-reads this revision, so a shared lock here decides whether
-    # this admission pins the revision into an intent or observes it deleted. The
-    # intent has no foreign key to the revision, so this row lock is the only
+    # draft before it re-reads this revision, so this lock decides whether this
+    # admission pins the revision into an intent or observes it deleted. The intent
+    # has no foreign key to the revision, so this row lock is the only
     # serialization point. Lock order is draft row first, then the revision/asset
     # reads, matching the deletion path.
-    cursor.execute("SELECT 1 FROM speech_voice_drafts WHERE draft_id=? FOR SHARE", (draft_id,))
+    #
+    # The draft row always takes FOR UPDATE: here, in ``_lock_validation_target`` and
+    # ``_lock_preview_target`` (public_jobs_postgres), and in the deletion executor.
+    # Admission only reads the row, so ``FOR SHARE`` also serialized with the deleter;
+    # what it did not do is state one rule for the row. Two creates pinning the same
+    # draft then hold two compatible locks, and the module's answer to "how is this
+    # row taken" stopped being a single verb. tests/ci/test_draft_row_lock_strength.py
+    # asserts the one verb and the statement count.
+    cursor.execute("SELECT 1 FROM speech_voice_drafts WHERE draft_id=? FOR UPDATE", (draft_id,))
     cursor.execute(
         "SELECT asset_state, purpose, object_key, sha256, bytes, expires_at_us "
         "FROM speech_assets WHERE workspace_id=? AND asset_id=?",
@@ -1077,12 +1085,13 @@ def build_public_job_admission(
             business_value["model_binding"] = public_pin
     else:
         draft_id, draft_revision = _validation_target(intent)
-        # Same serialization point as the custom-voice path. A pinned create
-        # already holds FOR UPDATE from ``_lock_validation_target``, but an
-        # unpinned create reaches this read first; taking FOR SHARE here covers
+        # Same serialization point as the custom-voice path: the draft row under
+        # ``FOR UPDATE``. A pinned create already holds that same strength from
+        # ``_lock_validation_target`` (which is why re-taking it is a no-op), and
+        # an unpinned create reaches this read first; either way one verb covers
         # both and keeps deletion from removing the revision between this read and
         # the intent insert.
-        cursor.execute("SELECT 1 FROM speech_voice_drafts WHERE draft_id=? FOR SHARE", (draft_id,))
+        cursor.execute("SELECT 1 FROM speech_voice_drafts WHERE draft_id=? FOR UPDATE", (draft_id,))
         # A revision that is gone is a binding the caller can fix by pinning a new
         # one, not a store that refused the read, so it must not answer
         # ``job_unavailable`` -- that code is reserved for a genuinely unavailable

@@ -164,7 +164,7 @@ def deletion_execution_grants(schema: str, role: str) -> tuple[str, ...]:
         f"GRANT UPDATE ({columns(ARTIFACT_UPDATE_COLUMNS)}) "
         f'ON "{schema}".speech_artifacts TO "{role}"',
         # Row lock only: execution takes FOR UPDATE on the draft to serialize with
-        # admission's FOR SHARE before it re-reads the revision dependencies. The
+        # admission's FOR UPDATE before it re-reads the revision dependencies. The
         # column is never assigned by this route.
         f'GRANT UPDATE ("head_revision") ON "{schema}".speech_voice_drafts TO "{role}"',
         f"GRANT UPDATE ({columns(LEGACY_INTENT_UPDATE_COLUMNS)}) "

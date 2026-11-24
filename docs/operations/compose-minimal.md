@@ -2209,7 +2209,7 @@ DSN）。健康检查打 `/v1/workbench/status`，它只在真实 lifespan 预�
 | `SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL` | `sn_job_dispatch` | `job-dispatch` profile 派发 | 空值 → 启动闸门点名拒绝启动，不领取 Job | 预置 | 覆盖+Job |
 | `SPEECHNEXUS_DISABLE_DATABASE_URL` | `sn_disable_scan` | `binding-disable` profile 扫描 | 空值 → worker 启动即退出并点名显式连接 | 预置 | 覆盖 |
 | `SPEECHNEXUS_DISABLE_SETTLEMENT_DATABASE_URL` | `sn_disable_settle` | 停用租约结算 | 空值 → worker 启动即退出并点名显式连接（与扫描角色同一条拒绝） | 预置 | 覆盖 |
-| `SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL` | `sn_speech_settlement` | 同步 TTS 与同步 ASR 的结算运行时（独立连接池）：租约结算的列级读写、`speech_tts_settlement`/`speech_tts_cancellation` 与 `speech_asr_settlement` 的结算面 | 空值 → 同步 TTS 与同步 ASR 均不可用：转写路由 `503` 并点名该键；配了 DSN 但角色授权与声明不符时启动拒绝服务 | 预置 | 覆盖+角色 |
+| `SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL` | `sn_speech_settlement` | 同步 TTS 与同步 ASR 的结算运行时（独立连接池）：租约结算的列级读写、`speech_tts_settlement`/`speech_tts_cancellation` 与 `speech_asr_settlement` 的结算面，以及 TTS 取消屏障的 `coordination_keyed_locks` 列级授权（`bucket_no` 的 `SELECT`/`INSERT`、`version` 的 `UPDATE`） | 空值 → 同步 TTS 与同步 ASR 均不可用：转写路由 `503` 并点名该键；配了 DSN 但角色授权与声明不符时启动拒绝服务 | 预置 | 覆盖+角色 |
 | `SPEECHNEXUS_MODEL_CATALOG_READER_DATABASE_URL` | `sn_catalog_reader` | `GET /v1/models`、`GET /v1/models/{model}`、`GET /v1/nexus/voices` | `503 model_catalogue_unavailable`、`503 voice_catalogue_unavailable` | 预置 | 覆盖+角色 |
 | `SPEECHNEXUS_ARTIFACT_READER_DATABASE_URL` | `sn_artifact_reader` | Artifact 元数据与内容 | `503 artifact_service_unavailable` | 预置 | 覆盖+角色 |
 | `SPEECHNEXUS_ARTIFACT_RETENTION_DATABASE_URL` | `sn_artifact_retention` | `artifact-retention` profile 的保留期清理 | 空值 → 容器启动即失败（无身份）；共用 `sn_api` 等宽权限身份时启动点名拒绝 | 预置 | 覆盖+角色 |

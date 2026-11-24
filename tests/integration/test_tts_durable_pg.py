@@ -279,7 +279,50 @@ def test_cancellation_is_persisted_across_admission_order(
         pool.close()
 
 
-def test_cancellation_waits_for_operation_lock(admission_database: AdmissionDatabase) -> None:
+def _hold_cancel_row(blocker: Any, schema: str, operation_id: str) -> None:
+    """Hold the operation's keyed-lock row in ``blocker`` until it commits.
+
+    The row is the carrier both sites take (``tts_cancel_barrier.lock_tts_cancel``), so a
+    competing transaction must wait here -- an advisory lock would not: the two mechanisms
+    are different resources and never contend.
+    """
+
+    from speechnexus_backend.speech.infrastructure.tts_cancel_barrier import (
+        tts_cancel_lock_key,
+    )
+    from speechnexus_portable_sql.keyed_lock import bucket_for_key
+
+    bucket = bucket_for_key(tts_cancel_lock_key(schema, operation_id))
+    blocker.execute(
+        "INSERT INTO coordination_keyed_locks (bucket_no) VALUES (?) "
+        "ON CONFLICT (bucket_no) DO NOTHING",
+        (bucket,),
+    )
+    blocker.execute(
+        "SELECT bucket_no FROM coordination_keyed_locks WHERE bucket_no=? FOR UPDATE",
+        (bucket,),
+    )
+
+
+def _await_blocked_by(db: Any, blocker_pid: int, *, expected: int, what: str) -> None:
+    """Wait until exactly ``expected`` backends are blocked by the lock holder."""
+
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        blocked = db.query(
+            "SELECT count(DISTINCT pid) AS n FROM pg_stat_activity "
+            "WHERE %s=ANY(pg_blocking_pids(pid))",
+            (blocker_pid,),
+        )[0]["n"]
+        if blocked >= expected:
+            return
+        time.sleep(0.01)
+    pytest.fail(f"{what} did not wait for the operation's keyed lock")
+
+
+def test_cancellation_waits_for_the_operation_key_lock(
+    admission_database: AdmissionDatabase,
+) -> None:
     from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
     from speechnexus_backend.speech.infrastructure.tts_admission import _identities
     from speechnexus_backend.speech.infrastructure.tts_settlement_postgres import (
@@ -293,35 +336,130 @@ def test_cancellation_waits_for_operation_lock(admission_database: AdmissionData
     pool.open()
     blocker = db.blocker()
     try:
-        blocker.execute(
-            "SELECT pg_advisory_xact_lock(hashtextextended('speechnexus:tts-cancel:' "
-            "|| current_schema() || ':' || %s, 0))",
-            (operation_id,),
-        )
+        _hold_cancel_row(blocker, db.schema, operation_id)
         with ThreadPoolExecutor(max_workers=1) as executor:
             pending = executor.submit(
                 PostgresTtsSettlementStore(pool).request_cancellation,
                 operation_id,
                 "client_cancelled",
             )
-            deadline = time.monotonic() + 2
-            while time.monotonic() < deadline:
-                if db.query(
-                    "SELECT pid FROM pg_stat_activity WHERE %s=ANY(pg_blocking_pids(pid))",
-                    (blocker.info.backend_pid,),
-                ):
-                    break
-                if pending.done():
-                    pytest.fail("cancellation did not wait for operation lock")
-                time.sleep(0.01)
-            else:
-                pytest.fail("no cancellation transaction waited for operation lock")
+            _await_blocked_by(
+                db,
+                blocker.info.backend_pid,
+                expected=1,
+                what="cancellation of the locked operation",
+            )
+            assert not pending.done()
             blocker.commit()
             pending.result(timeout=3)
         assert (
             db.query("SELECT reason FROM speech_tts_cancellation")[0]["reason"]
             == "client_cancelled"
         )
+    finally:
+        blocker.close()
+        pool.close()
+
+
+def test_admission_and_cancellation_serialise_on_one_keyed_lock_row(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """The same operation's admission and cancellation wait on one row, then both land.
+
+    The cancellation row does not exist yet and the two writers own different tables, so
+    the only shared object they can queue on is ``coordination_keyed_locks``. Both are
+    observed blocked by the same holder before it commits; afterwards every ordering ends
+    with the settlement root carrying the cancellation reason (``due()`` never re-reads
+    ``speech_tts_cancellation``).
+    """
+
+    from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
+    from speechnexus_backend.speech.infrastructure.tts_admission import _identities
+    from speechnexus_backend.speech.infrastructure.tts_settlement_postgres import (
+        PostgresTtsSettlementStore,
+    )
+
+    service = adapter(admission_database)
+    db = admission_database.runtime.foundation.database
+    operation_id = _identities("request-test")[0].operation_id
+    pool = speech_pool(db.url, schema=db.schema, name="tts-cancel-race-test")
+    pool.open()
+    blocker = db.blocker()
+    try:
+        _hold_cancel_row(blocker, db.schema, operation_id)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            admitted = executor.submit(service.admit, plan())
+            cancelled = executor.submit(
+                PostgresTtsSettlementStore(pool).request_cancellation,
+                operation_id,
+                "client_cancelled",
+            )
+            _await_blocked_by(
+                db,
+                blocker.info.backend_pid,
+                expected=2,
+                what="admission and cancellation of the same operation",
+            )
+            assert not admitted.done() and not cancelled.done()
+            blocker.commit()
+            admitted.result(timeout=10)
+            cancelled.result(timeout=10)
+        cancellation = db.query(
+            "SELECT reason FROM speech_tts_cancellation WHERE operation_id=?", (operation_id,)
+        )
+        settlement = db.query(
+            "SELECT abort_reason FROM speech_tts_settlement WHERE operation_id=?", (operation_id,)
+        )
+        assert [row["reason"] for row in cancellation] == ["client_cancelled"]
+        # ``due()`` never re-reads the cancellation table: the reason must be snapshotted.
+        assert [row["abort_reason"] for row in settlement] == ["client_cancelled"]
+    finally:
+        blocker.close()
+        pool.close()
+
+
+def test_a_different_operation_key_does_not_block_cancellation(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """Different operations land on different rows: a held key must not serialise them."""
+
+    from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
+    from speechnexus_backend.speech.infrastructure.tts_admission import _identities
+    from speechnexus_backend.speech.infrastructure.tts_settlement_postgres import (
+        PostgresTtsSettlementStore,
+    )
+
+    adapter(admission_database)
+    db = admission_database.runtime.foundation.database
+    held, other = (
+        _identities("request-test")[0].operation_id,
+        _identities("request-other")[0].operation_id,
+    )
+    pool = speech_pool(db.url, schema=db.schema, name="tts-cancel-other-test")
+    pool.open()
+    blocker = db.blocker()
+    try:
+        _hold_cancel_row(blocker, db.schema, held)
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            pending = executor.submit(
+                PostgresTtsSettlementStore(pool).request_cancellation,
+                other,
+                "client_cancelled",
+            )
+            # The holder is still uncommitted and this operation is not under it.
+            pending.result(timeout=5)
+            assert (
+                db.query(
+                    "SELECT count(*) AS n FROM pg_stat_activity "
+                    "WHERE %s=ANY(pg_blocking_pids(pid))",
+                    (blocker.info.backend_pid,),
+                )[0]["n"]
+                == 0
+            )
+        assert [
+            row["operation_id"]
+            for row in db.query("SELECT operation_id FROM speech_tts_cancellation")
+        ] == [other]
     finally:
         blocker.close()
         pool.close()

@@ -8,6 +8,7 @@ from typing import Any, Protocol, cast
 from speechnexus_contracts.execution import parse
 
 from speechnexus_backend.speech.domain.admission import AdmissionRejectedError
+from speechnexus_backend.speech.infrastructure.tts_cancel_barrier import lock_tts_cancel
 from speechnexus_portable_sql.transaction import insert_if_absent
 
 
@@ -17,7 +18,15 @@ class SettlementCursor(Protocol):
 
 
 def insert_tts_settlement(cursor: SettlementCursor, request: Any, deadline_at_us: int) -> None:
-    """Caller verifies TTS authority and admission; conflicting roots fail closed."""
+    """Caller verifies TTS authority and admission; conflicting roots fail closed.
+
+    The operation's cancel/admission barrier is the ``coordination_keyed_locks`` row
+    lock (``lock_tts_cancel``), taken at this step of the admission transaction -- after
+    the binding keyed lock and the capacity/lease rows, before the reason is read below.
+    A cancellation of the same operation either committed before that read or waits
+    until this root is visible to its backfill; the cancellation side takes the same row
+    as its first lock and holds nothing this transaction waits for.
+    """
     gateway = parse("SubmitExecutionRequest", request)
     if gateway["command"]["kind"] != "tts" or gateway["command"]["task_kind"] != "tts_file":
         raise AdmissionRejectedError("invalid_execution_request")
@@ -44,11 +53,7 @@ def insert_tts_settlement(cursor: SettlementCursor, request: Any, deadline_at_us
         sort_keys=True,
         separators=(",", ":"),
     )
-    cursor.execute(
-        "SELECT pg_advisory_xact_lock(hashtextextended('speechnexus:tts-cancel:' "
-        "|| current_schema() || ':' || ?, 0))",
-        (gateway["operation_id"],),
-    )
+    lock_tts_cancel(cursor, gateway["operation_id"])
     cursor.execute(
         "SELECT reason FROM speech_tts_cancellation WHERE operation_id=?",
         (gateway["operation_id"],),

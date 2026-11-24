@@ -52,6 +52,7 @@ __all__ = [
     "COORDINATION_KEYED_LOCK_TABLE",
     "COORDINATION_KEYED_LOCK_UPDATE_COLUMNS",
     "coordination_keyed_lock_grants",
+    "coordination_keyed_lock_privileges",
     "require_coordination_keyed_lock_grants",
 ]
 
@@ -99,6 +100,21 @@ COORDINATION_KEYED_LOCK_DDL: tuple[str, ...] = (
 )
 
 
+def coordination_keyed_lock_privileges() -> dict[str, tuple[str, ...]]:
+    """键锁行的列级授权面,按权限名分组:``{SELECT: …, INSERT: …, UPDATE: …}``.
+
+    授权语句与启动闸门读的是同一份声明:``coordination_keyed_lock_grants`` 按它拼 ``GRANT``,
+    需要核对身份的角色按它逐列问 ``has_column_privilege``。所以「哪些列允许哪些权限」只有
+    一个定义点 —— 加一列时三处(DDL、授权、判据)一起走 ``KEYED_LOCK_COLUMNS``。
+    """
+
+    return {
+        "SELECT": COORDINATION_KEYED_LOCK_SELECT_COLUMNS,
+        "INSERT": COORDINATION_KEYED_LOCK_INSERT_COLUMNS,
+        "UPDATE": COORDINATION_KEYED_LOCK_UPDATE_COLUMNS,
+    }
+
+
 def coordination_keyed_lock_grants(schema: str, role: str) -> tuple[str, ...]:
     """键锁行的完整运行授权面:`SELECT` + 懒建 `INSERT` + 行锁 `UPDATE`。
 
@@ -112,15 +128,10 @@ def coordination_keyed_lock_grants(schema: str, role: str) -> tuple[str, ...]:
 
     schema, role = checked_sql_name(schema), checked_sql_name(role)
     target = f'"{schema}".{COORDINATION_KEYED_LOCK_TABLE}'
-    return (
-        f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"',
-        f"GRANT SELECT ({', '.join(COORDINATION_KEYED_LOCK_SELECT_COLUMNS)}) "
-        f'ON {target} TO "{role}"',
-        f"GRANT INSERT ({', '.join(COORDINATION_KEYED_LOCK_INSERT_COLUMNS)}) "
-        f'ON {target} TO "{role}"',
-        f"GRANT UPDATE ({', '.join(COORDINATION_KEYED_LOCK_UPDATE_COLUMNS)}) "
-        f'ON {target} TO "{role}"',
-    )
+    statements = [f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"']
+    for privilege, columns in coordination_keyed_lock_privileges().items():
+        statements.append(f'GRANT {privilege} ({", ".join(columns)}) ON {target} TO "{role}"')
+    return tuple(statements)
 
 
 def require_coordination_keyed_lock_grants(

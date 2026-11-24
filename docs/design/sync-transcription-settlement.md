@@ -245,7 +245,7 @@ worker 在调用释放前查询一次网关执行状态（`GatewayExecutionClien
 | 环境键 | `SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL`（容器内即此名） |
 | 角色 | `sn_speech_settlement`：非 owner、无 `SET ROLE`、无 `CREATEROLE`/`SUPERUSER`/`BYPASSRLS`，PostgreSQL 16+ |
 | 复用理由 | `disable_settlement_grants` 已经给出**通用**的释放边界（对任何 admission lease 的释放列级授权）。新增第二个角色只会复制同一套通用释放授权，扩大而不是缩小 blast radius；root 表只增加工作项生命周期，不增加释放能力 |
-| 不放宽的部分 | 两个 worker 的启动自检都逐列比对「允许的额外表」；共用同一角色后，两边的允许集合都是 `speech_tts_settlement`/`speech_tts_cancellation`/`speech_asr_settlement` 三张表，任何额外的表级/列级权限仍拒绝启动 |
+| 不放宽的部分 | 两个 worker 的启动自检都逐列比对「允许的额外表」；共用同一角色后，两边的允许集合都是 `speech_tts_settlement`/`speech_tts_cancellation`/`speech_asr_settlement` 三张表加上 TTS 取消屏障用的 `coordination_keyed_locks`（`bucket_no` 的 `SELECT`/`INSERT` 与行锁许可列 `version` 的 `UPDATE`），任何额外的表级/列级权限仍拒绝启动 |
 | 残留边界 | TTS 进程因此也能写 ASR root 的 `settled_at_us`。该写不归还容量，且被 §7.3 的「标记不撒谎」检查与债探针捕获；要求两个 worker 互相不可写就要第二个角色/DSN 与两条 provisioning 路径，本设计不采用 |
 
 ### 7.2 Grants
@@ -255,6 +255,7 @@ worker 在调用释放前查询一次网关执行状态（`GatewayExecutionClien
 | `asr_settlement_writer_grants(schema, "sn_api")` | 准入身份 | 新表列级 `SELECT` 与 `INSERT`：`lease_id, operation_id, attempt_id, gateway_id, host_node_id, next_check_at_us, settled_at_us` |
 | `asr_settlement_worker_grants(schema, role)` | 结算身份 | 新表 `SELECT` 与列级 `UPDATE (next_check_at_us, settled_at_us)` |
 | `disable_settlement_grants(schema, role)` | 结算身份 | 既有释放边界（`resource_pools`、`workspace_quotas`、`host_nodes`、`engine_instances`、`admission_attempts`、`admission_leases`、`submit_intents`、`execution_stop_evidence`、release guard 视图） |
+| `coordination_keyed_lock_grants(schema, role)` | 结算身份 | TTS 取消屏障的键锁行：`SELECT (bucket_no)`、`INSERT (bucket_no)` 与行锁许可 `UPDATE (version)`；列清单由 `coordination_keyed_lock_schema` 唯一声明 |
 
 没有 `DELETE`、`TRUNCATE`、`REFERENCES`、DDL 或 schema 级 `CREATE`；root 行不删除，历史随释放保留。
 

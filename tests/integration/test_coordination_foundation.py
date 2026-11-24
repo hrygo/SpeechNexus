@@ -442,7 +442,8 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
     # The coordination keyed-lock rows (0067). Grant is column-level and belongs
     # to the dispatch writer and the gateway only; neither coordination owner
     # holds table-level rights, so it sits outside the shared grant surface.
-    keyed_lock_tables = {COORDINATION_KEYED_LOCK_TABLE} if db.dialect == "postgresql" else set()
+    # 键锁表在两个引擎上都由同一份装配建出来(它是跨方言互斥的实现),所以这里不按方言分支。
+    keyed_lock_tables = {COORDINATION_KEYED_LOCK_TABLE}
     # The accepted workspace command ledger (0049). It is a private
     # workspace-writer table, outside the shared coordination surface.
     workspace_command_tables = (

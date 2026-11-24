@@ -36,6 +36,7 @@ from speechnexus_backend.speech.infrastructure.binding_publication_evidence_sql 
     find_binding_revision_document,
     find_evidence,
 )
+from speechnexus_backend.speech.infrastructure.catalog_keyed_lock import lock_voice
 from speechnexus_backend.speech.infrastructure.publications_postgres import PostgresPublications
 from speechnexus_backend.speech.infrastructure.publications_sql import find_publication
 from speechnexus_backend.speech.interfaces.binding_release_evidence import (
@@ -183,11 +184,7 @@ def record_operator_attestation(
         if len(identities) != 1 or identities[0]["forbidden"]:
             raise OperatorAttestationError("writer_identity_forbidden")
         lock_binding(cursor, request.binding_id)
-        cursor.execute(
-            "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:'||current_schema()||':voice:'||?,0))",
-            (request.voice_id,),
-        )
+        lock_voice(cursor, request.voice_id)
         cursor.execute(
             "SELECT current_database() AS database,current_schema() AS schema,"
             "CAST(installation_id AS text) AS installation_id FROM speech_publication_installation "

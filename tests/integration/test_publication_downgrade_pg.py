@@ -20,6 +20,9 @@ from sqlalchemy.pool import NullPool
 from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.speech.domain.publications import Publication
+from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
+    COORDINATION_KEYED_LOCK_DDL,
+)
 from speechnexus_backend.speech.infrastructure.publications_sql import append_publication
 
 pytestmark = pytest.mark.integration
@@ -44,6 +47,10 @@ def historical_schema() -> Iterator[HistoricalSchema]:
             config.attributes["connection"] = connection
             command.upgrade(config, "0023_publication_lifecycle")
         admin.execute(f'SET search_path TO "{schema}", pg_catalog')
+        # 0023 还没有键锁行表(0067 才建),但产品侧的发布适配器现在会在事务里先锁目录
+        # 身份行。这张表是纯追加的,建在这里不改变本用例的主题(0023 的降级判据)。
+        for statement in COORDINATION_KEYED_LOCK_DDL:
+            admin.execute(statement)
         yield url, schema, engine, config, admin
     finally:
         admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
@@ -61,7 +68,8 @@ def test_later_lower_revision_refuses_downgrade_and_preserves_history(
     historical_schema: HistoricalSchema,
 ) -> None:
     _, _, engine, config, admin = historical_schema
-    with admin.cursor(row_factory=dict_row) as cursor:
+    # 目录身份键锁要求调用方已在事务里;autocommit 连接必须先开事务块。
+    with admin.transaction(), admin.cursor(row_factory=dict_row) as cursor:
         assert append_publication(
             cursor, Publication("voice", "voice-test", 10, "voice-rev-10", 100)
         )
@@ -101,7 +109,7 @@ def test_downgrade_waits_for_committed_writer_then_refuses(
     historical_schema: HistoricalSchema,
 ) -> None:
     url, schema, engine, config, admin = historical_schema
-    with admin.cursor(row_factory=dict_row) as cursor:
+    with admin.transaction(), admin.cursor(row_factory=dict_row) as cursor:
         assert append_publication(
             cursor, Publication("voice", "voice-test", 10, "voice-rev-10", 100)
         )

@@ -1,6 +1,6 @@
 """Fail-closed lookup of independently approved builtin voice publications.
 
-The caller holds the voice catalogue advisory lock in its admission transaction.
+The caller holds the voice catalogue keyed lock in its admission transaction.
 This module never creates or updates qualification evidence.
 """
 

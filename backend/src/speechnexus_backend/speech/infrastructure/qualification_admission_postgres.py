@@ -29,6 +29,7 @@ from speechnexus_backend.speech.infrastructure.binding_disable_barrier import (
     lock_binding,
     revision_is_disabled,
 )
+from speechnexus_backend.speech.infrastructure.catalog_keyed_lock import lock_voice
 from speechnexus_backend.speech.infrastructure.leases_postgres import _DeadlineCursor
 from speechnexus_backend.speech.infrastructure.runtime_observation_codec import decode_observation
 from speechnexus_backend.speech.infrastructure.transcription_submit import (
@@ -283,11 +284,7 @@ class PostgresQualificationAdmission(PostgresAdmissionTransactions):
         }:
             raise AdmissionRejectedError("policy_or_resource_disabled")
         lock_binding(cursor, auth["binding_id"])
-        cursor.execute(
-            "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:' || current_schema() || ':voice:' || ?, 0))",
-            (auth["voice_id"],),
-        )
+        lock_voice(cursor, auth["voice_id"])
         # Recheck single-use and the original after waiting for the common locks.
         cursor.execute(
             "SELECT operation_id FROM speech_builtin_voice_probe_admissions "

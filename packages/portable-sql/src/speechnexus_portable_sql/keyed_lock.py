@@ -24,7 +24,7 @@ advisory lock,能表达的只有**行锁**:先让这个键对应的行存在(`IN
 之前;本模块不认识那些表,只钉住「键锁是这笔事务的第一把锁」这一条。
 
 **跨部署的身份。** 同一个键可能由两个独立部署各取一次(backend 的绑定禁用栅栏与执行网关
-的提交屏障),所以表名(`COORDINATION_KEYED_LOCK_TABLE`)与键文本(`binding_lock_key`)都定义
+的提交屏障),所以表名(`COORDINATION_KEYED_LOCK_TABLE`)与键文本(`catalog_lock_key`)都定义
 在本包:两侧都调同一个函数,「同键 → 同一行」才是构造上的结论,而不是两处字符串碰巧相同。
 行锁落在这笔事务的第一把锁的位置上 —— 它之前不许有任何行锁或 advisory lock。
 
@@ -65,8 +65,10 @@ __all__ = [
     "acquire_in",
     "binding_lock_key",
     "bucket_for_key",
+    "catalog_lock_key",
     "key_digest",
     "lock_statements",
+    "voice_lock_key",
 ]
 
 #: 桶数。`KEYED_LOCK_TABLE` 的行数上界就是它;扩大只改变竞争分布,不改变任何判定。
@@ -87,6 +89,15 @@ _KEY_PREFIX = "speechnexus:catalog"
 
 #: 绑定禁用栅栏的键种类段。
 _BINDING_KIND = "binding"
+
+#: 声音发布/撤销/准入的键种类段。
+_VOICE_KIND = "voice"
+
+#: 键种类段的字符集。种类段与业务身份之间用 ``:`` 分隔,所以种类里再出现 ``:`` 就会把
+#: 一条键折进另一族;这里按「一个短小写词」收窄,与 ``PublicationKind`` 的四个取值
+#: (``profile`` / ``binding`` / ``voice`` / ``pronunciation``)相容,但不复制那份枚举 ——
+#: 枚举属于领域,键文法属于本包,两者一旦各写一份就会有一份先过期。
+_KEY_SEGMENT = re.compile(r"\A[a-z][a-z0-9_]{0,31}\Z")
 
 #: 行的身份列。桶号是锁行的主键,也是唯一被语句读写的列。
 KEYED_LOCK_BUCKET_COLUMN = "bucket_no"
@@ -171,12 +182,36 @@ def key_digest(key: str) -> str:
     return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def catalog_lock_key(kind: str, object_id: str) -> str:
+    """目录身份互斥的完整键:``speechnexus:catalog:<kind>:<object_id>``,全仓唯一的拼法.
+
+    一条目录事实(绑定、声音、发音、档案)在发布、退役、撤销、准入、探针授权、操作员认证里
+    被**同一把**逻辑锁排序,所以键文法是**一种**,不是每种发布形态一种。``kind`` 因此是
+    参数而不是本模块的几个常量:``publications_sql`` 的通用站点拿到的就是 ``PublicationKind``
+    本身,它必须和绑定/声音专用站点算出**逐字相同**的键,否则同一个身份的发布与退役会各锁
+    各的,而且不报错。
+
+    键里为什么**没有** schema —— 与 ``binding_lock_key`` 同一条理由(那里写了全文):advisory
+    lock 只能靠键文本区分实例,行锁的行身份是(``search_path`` 解析出的锁行表, 桶号),schema
+    由表承载。把 ``current_schema()`` 留在键里只会多出一条会分叉的推导:两侧 ``search_path``
+    首个条目不同而表解析到同一张时,同一个逻辑键会算出两个桶,互斥静默裂成两把。
+    """
+
+    if not isinstance(kind, str) or not _KEY_SEGMENT.match(kind):
+        raise ContractError("kind must be one lowercase key segment")
+    text = require_text(object_id, field="object_id", max_bytes=512)
+    return f"{_KEY_PREFIX}:{kind}:{text}"
+
+
 def binding_lock_key(binding_id: str) -> str:
     """绑定禁用栅栏那把互斥的完整键:``speechnexus:catalog:binding:<binding_id>``.
 
     为什么这个函数在本包:该键的两侧分别是 backend 与执行网关,它们是两个独立部署,
     谁都不能导入对方的模块,而「同一个绑定 → 同一行」只有在两侧**逐字相同**地拼这个文本
     时成立。定义点放在两者唯一共享的底层,任何一侧都不可能悄悄换一种拼法。
+
+    拼法本身不再写在这里:它就是 ``catalog_lock_key(kind, object_id)``,绑定只是 ``kind``
+    取 ``binding`` 的那一支。绑定/声音/通用发布站点因此共用一条键文法,专用函数只固定种类段。
 
     为什么键里不再有 schema:旧键把会话的 ``current_schema()`` 也拼进文本
     (``'speechnexus:catalog:' || current_schema() || ':binding:' || ?``),那是 advisory
@@ -188,8 +223,19 @@ def binding_lock_key(binding_id: str) -> str:
     两个 —— 互斥静默裂成两把,正是这次迁移要防的失效。
     """
 
-    text = require_text(binding_id, field="binding_id", max_bytes=512)
-    return f"{_KEY_PREFIX}:{_BINDING_KIND}:{text}"
+    return catalog_lock_key(_BINDING_KIND, binding_id)
+
+
+def voice_lock_key(voice_id: str) -> str:
+    """声音身份互斥的完整键:``speechnexus:catalog:voice:<voice_id>``.
+
+    声音族的全部参与者(发布、撤销、来源批准、TTS 准入、探针授权/批准)都在 ``backend``
+    这一个部署里,但它与绑定族共用 ``coordination_keyed_locks`` 的同一张表:锁序要求
+    「绑定行 → 声音行」,而两族共表是这条顺序能靠表本身成立的前提。所以拼法仍只走
+    ``catalog_lock_key``,本函数只固定种类段。
+    """
+
+    return catalog_lock_key(_VOICE_KIND, voice_id)
 
 
 def bucket_for_key(key: str, *, buckets: int = KEYED_LOCK_BUCKETS) -> Decimal:

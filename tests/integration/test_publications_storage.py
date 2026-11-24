@@ -26,6 +26,9 @@ from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.binding_documents import encode_document
 from speechnexus_backend.speech.domain.publications import Publication
 from speechnexus_backend.speech.infrastructure.binding_draft_schema import binding_draft_grants
+from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
+    COORDINATION_KEYED_LOCK_DDL,
+)
 from speechnexus_backend.speech.infrastructure.model_catalog_postgres import PostgresModelCatalog
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool, speech_pool
 from speechnexus_backend.speech.infrastructure.public_jobs_postgres import PostgresPublicJobs
@@ -94,6 +97,11 @@ def sandbox(request: pytest.FixtureRequest) -> Iterator[Sandbox]:
         engine.dispose()
     admin = portable_pg_connect(url, autocommit=True)
     admin.execute(f'SET search_path TO "{schema}", pg_catalog')
+    if legacy_migration_test:
+        # 0023 还没有键锁行表(0067 才建),而产品侧的发布适配器现在会在事务里先锁目录
+        # 身份行。它是纯追加的表,建在这里不改变本用例的主题(0023 的降级判据)。
+        for statement in COORDINATION_KEYED_LOCK_DDL:
+            admin.execute(statement)
     admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{PASSWORD}'")
     for grant in (
         *publication_grants(schema, role),

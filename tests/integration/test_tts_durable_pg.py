@@ -39,6 +39,9 @@ from speechnexus_backend.speech.infrastructure.admission_grants import (
 from speechnexus_backend.speech.infrastructure.admission_postgres import (
     PostgresAdmissionTransactions,
 )
+from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
+    COORDINATION_KEYED_LOCK_TABLE,
+)
 from speechnexus_backend.speech.infrastructure.job_schema import (
     job_dispatch_grants,
     job_runtime_grants,
@@ -56,6 +59,7 @@ from speechnexus_backend.speech.infrastructure.tts_admission import (
 from speechnexus_backend.speech.infrastructure.tts_settlement_schema import (
     tts_settlement_writer_grants,
 )
+from speechnexus_portable_sql.keyed_lock import acquire, voice_lock_key
 
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
@@ -185,32 +189,36 @@ def test_retirement_waits_and_new_admission_rechecks(admission_database: Admissi
     db = admission_database.runtime.foundation.database
     blocker = db.blocker()
     try:
-        blocker.execute(
-            "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:' || current_schema() || ':voice:' || %s, 0))",
-            ("voice-test",),
-        )
-        with ThreadPoolExecutor(max_workers=1) as worker:
-            pending = worker.submit(service.admit, plan())
-            deadline = time.monotonic() + 5
-            while time.monotonic() < deadline:
-                if db.query(
-                    "SELECT pid FROM pg_stat_activity WHERE %s=ANY(pg_blocking_pids(pid))",
-                    (blocker.info.backend_pid,),
-                ):
-                    break
-                if pending.done():
-                    pending.result()
-                    pytest.fail("admission completed before the voice lock was released")
-                time.sleep(0.01)
-            else:
-                pytest.fail("no admission transaction waited on the voice lock")
-            blocker.execute(
-                "INSERT INTO speech_publication_retirements "
-                "(kind,object_id,revision,revision_id,retired_at_us) "
-                "VALUES ('voice','voice-test','2','voice-revision-test',2)"
+        # The retirement side now holds the voice identity's row lock, not an advisory key:
+        # the same carrier the admission transaction takes. A row lock must be taken inside
+        # an open transaction, which is also what makes the retirement visible at commit.
+        with blocker.transaction():
+            acquire(
+                blocker,
+                key=voice_lock_key("voice-test"),
+                schema=db.schema,
+                table=COORDINATION_KEYED_LOCK_TABLE,
             )
-            blocker.commit()
+            with ThreadPoolExecutor(max_workers=1) as worker:
+                pending = worker.submit(service.admit, plan())
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    if db.query(
+                        "SELECT pid FROM pg_stat_activity WHERE %s=ANY(pg_blocking_pids(pid))",
+                        (blocker.info.backend_pid,),
+                    ):
+                        break
+                    if pending.done():
+                        pending.result()
+                        pytest.fail("admission completed before the voice lock was released")
+                    time.sleep(0.01)
+                else:
+                    pytest.fail("no admission transaction waited on the voice lock")
+                blocker.execute(
+                    "INSERT INTO speech_publication_retirements "
+                    "(kind,object_id,revision,revision_id,retired_at_us) "
+                    "VALUES ('voice','voice-test','2','voice-revision-test',2)"
+                )
             with pytest.raises(SpeechUnavailableError):
                 pending.result(timeout=10)
         assert db.query("SELECT count(*) AS n FROM admission_operations")[0]["n"] == 0

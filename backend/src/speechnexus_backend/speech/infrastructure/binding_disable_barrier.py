@@ -11,7 +11,7 @@ literals that happen to match.
 Lock order. The binding row lock is the **first** lock of the transaction and is held
 until commit:
 
-    coordination_keyed_locks(binding key) -> catalog voice advisory lock -> admission
+    coordination_keyed_locks(binding key) -> coordination_keyed_locks(voice key) -> admission
     capacity/lease rows -> claim bucket -> canonical Job -> public Job/outbox/cancellation
 
 Every caller below takes it before any other row lock; the gateway takes it before it

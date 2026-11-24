@@ -9,6 +9,9 @@ Three identities are provisioned from declarations here, never by startup DDL:
   advance the narrow head and catalogue-version columns in the same transaction.
 """
 
+from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
+    coordination_keyed_lock_grants,
+)
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 
 PRONUNCIATION_DRAFT_DDL = (
@@ -98,4 +101,7 @@ def pronunciation_publication_grants(schema: str, role: str) -> tuple[str, ...]:
         f"ON {prefix}speech_publication_heads TO {target}",
         f"GRANT SELECT, UPDATE (revision, generated_at_us) "
         f"ON {prefix}speech_catalog_state TO {target}",
+        # The publication append serializes on the pronunciation identity's row lock;
+        # it is the only participant of that key, but the carrier is the shared one.
+        *coordination_keyed_lock_grants(schema, role),
     )

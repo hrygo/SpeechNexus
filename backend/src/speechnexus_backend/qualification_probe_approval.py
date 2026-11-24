@@ -14,11 +14,15 @@ from speechnexus_backend.qualification_probe_artifacts import VerifiedLocalArtif
 from speechnexus_backend.qualification_probe_execution import VerifiedProbeExecution
 from speechnexus_backend.speech.domain.builtin_voice_qualification import BuiltinVoiceFacts
 from speechnexus_backend.speech.domain.publications import publication_digest
-from speechnexus_backend.speech.infrastructure.binding_disable_barrier import revision_is_disabled
+from speechnexus_backend.speech.infrastructure.binding_disable_barrier import (
+    lock_binding,
+    revision_is_disabled,
+)
 from speechnexus_backend.speech.infrastructure.binding_publication_evidence_sql import (
     find_binding_revision_document,
     find_evidence,
 )
+from speechnexus_backend.speech.infrastructure.catalog_keyed_lock import lock_voice
 from speechnexus_backend.speech.infrastructure.publications_postgres import PostgresPublications
 from speechnexus_backend.speech.infrastructure.publications_sql import find_publication
 from speechnexus_backend.speech.interfaces.binding_release_evidence import (
@@ -156,16 +160,8 @@ def _commit_verified_probe(
         ):
             if original_identity.get(key) != auth[key]:
                 raise ProbeApprovalError("probe_approval_conflict")
-        cursor.execute(
-            "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:'||current_schema()||':binding:'||?,0))",
-            (auth["binding_id"],),
-        )
-        cursor.execute(
-            "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:'||current_schema()||':voice:'||?,0))",
-            (auth["voice_id"],),
-        )
+        lock_binding(cursor, auth["binding_id"])
+        lock_voice(cursor, auth["voice_id"])
         cursor.execute(
             "SELECT current_database() AS db,current_schema() AS schema,"
             "CAST(installation_id AS text) AS installation_id FROM speech_publication_installation "

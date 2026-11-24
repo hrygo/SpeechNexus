@@ -15,7 +15,7 @@ from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import psycopg
 import pytest
@@ -60,12 +60,16 @@ from speechnexus_backend.speech.infrastructure.binding_drafts_postgres import Po
 from speechnexus_backend.speech.infrastructure.binding_publication_evidence_schema import (
     publication_evidence_grants,
 )
+from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
+    COORDINATION_KEYED_LOCK_TABLE,
+)
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool, speech_pool
 from speechnexus_backend.speech.infrastructure.public_jobs_postgres import PostgresPublicJobs
 from speechnexus_backend.speech.infrastructure.publication_schema import publication_grants
 from speechnexus_backend.speech.infrastructure.publications_postgres import PostgresPublications
 from speechnexus_backend.speech.infrastructure.publications_sql import retire_publication
 from speechnexus_backend.speech.interfaces.binding_drafts import prepare_binding_draft
+from speechnexus_portable_sql.keyed_lock import acquire, catalog_lock_key
 
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
@@ -556,10 +560,16 @@ def test_publication_waits_for_retirement_and_rejects_old_observation(sandbox: S
 
     blocker_pid = sandbox.admin.info.backend_pid
     with ThreadPoolExecutor(max_workers=1) as executor, sandbox.admin.transaction():
-        sandbox.admin.execute(
-            "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:' || current_schema() || ':binding:' || %s, 0))",
-            (first_draft.binding_id,),
+        # The publication transaction takes the binding identity's row lock, so the
+        # blocker holds that same row: an advisory key here would let the publication
+        # through without waiting, which is the failure this case exists to catch.
+        acquire(
+            # `admin` is the portable connection; its field annotation is psycopg's, and
+            # the portable protocol is a structural superset.
+            cast(Any, sandbox.admin),
+            key=catalog_lock_key("binding", first_draft.binding_id),
+            schema=sandbox.schema,
+            table=COORDINATION_KEYED_LOCK_TABLE,
         )
         future = executor.submit(submit)
         deadline = time.monotonic() + 2

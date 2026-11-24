@@ -14,6 +14,8 @@ from speechnexus_backend.speech.infrastructure.publications_sql import (
     find_publication,
     list_publications,
 )
+from speechnexus_portable_sql.keyed_lock import bucket_for_key, catalog_lock_key
+from tests.support.keyed_lock_double import answer_keyed_lock, business_inserts
 
 
 class DuplicateKeyError(Exception):
@@ -34,14 +36,21 @@ class Cursor:
         self.rowcount = rowcount
         self.duplicate = duplicate
         self.calls: list[tuple[str, tuple[object, ...]]] = []
+        self._current: list[dict[str, Any]] | None = None
 
     def execute(self, query: str, parameters: tuple[object, ...] = ()) -> None:
         self.calls.append((query, parameters))
+        answered = answer_keyed_lock(query, parameters)
+        if answered is not None:
+            # 键锁的保存点、懒建桶行与 FOR UPDATE 由共用替身回答,不消耗业务行。
+            self._current = answered
+            return
+        self._current = None
         if self.duplicate and query.lstrip().startswith("INSERT INTO speech_publications"):
             raise DuplicateKeyError(self.duplicate)
 
     def fetchall(self) -> list[dict[str, Any]]:
-        return self.rows
+        return self.rows if self._current is None else self._current
 
 
 def row(revision: int = 1, revision_id: str = "binding-rev-1") -> dict[str, Any]:
@@ -59,13 +68,18 @@ def test_append_uses_insert_if_absent_and_reports_whether_it_inserted() -> None:
     cursor = Cursor(rowcount=1)
 
     assert append_publication(cursor, publication) is True
-    lock_query, lock_parameters = cursor.calls[0]
-    savepoint_query, _ = cursor.calls[1]
-    insert_query, insert_parameters = cursor.calls[2]
-    assert "pg_advisory_xact_lock" in lock_query
-    assert lock_parameters == ("voice", "binding-tts")
+    # 目录身份互斥是键锁表上的一行:先懒建桶行,再锁它,两条语句同一个桶号。
+    bucket = bucket_for_key(catalog_lock_key("voice", "binding-tts"))
+    lock_calls = [call for call in cursor.calls if "coordination_keyed_locks" in call[0]]
+    assert [query.split()[0] for query, _ in lock_calls] == ["INSERT", "SELECT"]
+    assert [parameters for _, parameters in lock_calls] == [(bucket,), (bucket,)]
+    assert lock_calls[1][0].endswith("FOR UPDATE")
     # 受限方言没有 `ON CONFLICT`:插入包在保存点里,冲突靠回滚到保存点处理。
+    savepoint_query, _ = next(call for call in cursor.calls if call[0].startswith("SAVEPOINT"))
     assert savepoint_query.startswith("SAVEPOINT")
+    insert_query, insert_parameters = next(
+        call for call in cursor.calls if "INSERT INTO speech_publications" in call[0]
+    )
     assert insert_query.count("INSERT INTO speech_publications") == 1
     assert "ON CONFLICT" not in insert_query
     assert insert_parameters[2] == "1"
@@ -79,10 +93,12 @@ def test_new_binding_requires_observed_head_and_rejects_stale_before_writes() ->
     missing = Cursor()
     with pytest.raises(BindingHeadPreconditionError, match="expected_current_revision_required"):
         append_publication(missing, publication)
-    assert not any("INSERT INTO" in sql for sql, _ in missing.calls)
+    assert business_inserts(missing.calls) == []
 
     class HeadCursor(Cursor):
         def fetchall(self) -> list[dict[str, Any]]:
+            if self._current is not None:
+                return self._current
             if "speech_catalog_state" in self.calls[-1][0]:
                 return [{"revision": 1}]
             if "speech_publication_heads" in self.calls[-1][0]:
@@ -94,16 +110,15 @@ def test_new_binding_requires_observed_head_and_rejects_stale_before_writes() ->
         append_publication(
             stale, publication, expected_current_revision=None, expected_catalog_revision=1
         )
-    assert not any("INSERT INTO" in sql for sql, _ in stale.calls)
+    assert business_inserts(stale.calls) == []
 
 
 def test_existing_binding_replay_precedes_cas_and_never_changes_head() -> None:
     publication = Publication("binding", "binding-tts", 1, "binding-rev-1", 1)
     cursor = Cursor([row()])
     assert not append_publication(cursor, publication, expected_current_revision="9")
-    assert not any(
-        "speech_publication_heads" in sql or "INSERT INTO" in sql for sql, _ in cursor.calls
-    )
+    assert not any("speech_publication_heads" in sql for sql, _ in cursor.calls)
+    assert business_inserts(cursor.calls) == []
 
 
 def test_find_publication_returns_the_exact_full_identity() -> None:

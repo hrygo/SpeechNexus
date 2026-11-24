@@ -17,11 +17,15 @@ from speechnexus_backend.speech.domain.qualification_native_observation import (
     ExpectedNativeRuntime,
     require_native_ready,
 )
-from speechnexus_backend.speech.infrastructure.binding_disable_barrier import revision_is_disabled
+from speechnexus_backend.speech.infrastructure.binding_disable_barrier import (
+    lock_binding,
+    revision_is_disabled,
+)
 from speechnexus_backend.speech.infrastructure.binding_publication_evidence_sql import (
     find_binding_revision_document,
     find_evidence,
 )
+from speechnexus_backend.speech.infrastructure.catalog_keyed_lock import lock_voice
 from speechnexus_backend.speech.infrastructure.gateway_execution_client import (
     GatewayExecutionClient,
 )
@@ -132,16 +136,8 @@ def issue_probe_authorization(
         raise ProbeAuthorizationError("probe_authorization_unverified") from None
 
     def operation(cursor: Any) -> str:
-        cursor.execute(
-            "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:'||current_schema()||':binding:'||?,0))",
-            (auth["binding_id"],),
-        )
-        cursor.execute(
-            "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:'||current_schema()||':voice:'||?,0))",
-            (auth["voice_id"],),
-        )
+        lock_binding(cursor, auth["binding_id"])
+        lock_voice(cursor, auth["voice_id"])
         cursor.execute(
             "SELECT current_database() AS db,current_schema() AS schema,"
             "CAST(installation_id AS text) AS installation_id FROM speech_publication_installation "

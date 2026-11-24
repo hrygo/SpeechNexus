@@ -8,6 +8,9 @@
 
 from __future__ import annotations
 
+from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
+    coordination_keyed_lock_grants,
+)
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 
 
@@ -30,4 +33,8 @@ def tts_voice_admission_grants(schema: str, role: str) -> tuple[str, ...]:
         f'ON "{schema}".speech_publications TO "{role}"',
         f"GRANT SELECT (kind, object_id, revision, revision_id) "
         f'ON "{schema}".speech_publication_retirements TO "{role}"',
+        # New TTS admission keeps the voice identity's row lock until commit, so this
+        # identity needs the keyed lock surface: without it the first admission of a
+        # voice is a 42501, not a slower admission.
+        *coordination_keyed_lock_grants(schema, role),
     )

@@ -345,7 +345,7 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 | `coordination_runtime_grants` | `coordination_grants.py` | **变**：`coordination_jobs` 的 INSERT 列加 `bucket_no`、`due_at`（见第 1 条）；给 speech 角色 `coordination_claim_buckets` 的 `SELECT` 与 `claim_owner_id`／`lease_until`／`version` 三列 `UPDATE`，不给 `INSERT`／`DELETE`；gateway 角色新增 `coordination_jobs` 的 `UPDATE (claim_version)` 行锁许可（见第 5 条，不写这一列）。迁移后重放一次即可（`provision-job-roles.py` 会带上） |
 | `public_job_admission_grants` | `public_job_admission_grants.py` | **变**：`coordination_jobs` 的 INSERT 列加 `bucket_no`、`due_at`，见第 1 条 |
 | `binding_disable_admission_grants` | `admission_postgres.py` | 未变（SQL 参数标记迁到 `?`，授权列未动） |
-| `tts_voice_admission_grants` | `admission_postgres.py` | 未变（同文件，参数标记迁移） |
+| `tts_voice_admission_grants` | `admission_grants.py` | **变**：追加 `coordination_keyed_lock_grants` 的四条，见第 7 条 |
 | `speech_synthesis_reader_grants` | `qualified_speech_facts_postgres.py` | 未变（参数标记迁移） |
 | `runtime_delivery_grants` | `runtime_delivery_schema.py` | 未变（参数标记迁移） |
 | `audit_reader_grants` | `publication_lifecycle_schema.py` | 未变（同文件，DDL 的 `::` 改为 `CAST`，授权列未动） |
@@ -451,7 +451,7 @@ catalog 的绑定互斥此前是 `pg_advisory_xact_lock(hashtextextended('speech
 
 ```
 coordination_keyed_locks(binding 键)
-  → voice 咨询锁(:voice:)
+  → coordination_keyed_locks(voice 键)
   → 准入容量/租约行
   → claim bucket
   → canonical Job
@@ -491,10 +491,10 @@ coordination_keyed_locks(binding 键)
 
 | 授权函数 | 本版 |
 | --- | --- |
-| `builtin_publisher_grants` | 未改 |
-| `builtin_source_approval_writer_grants` | 未改 |
+| `builtin_publisher_grants` | **变**：追加 `coordination_keyed_lock_grants` 的四条，见第 7 条 |
+| `builtin_source_approval_writer_grants` | **变**：同上，见第 7 条 |
 | `qualification_reader_grants` | 未改 |
-| `qualification_writer_grants` | 未改 |
+| `qualification_writer_grants` | **变**：同上，见第 7 条 |
 | `operator_attestation_writer_grants` | 多一条 `UPDATE (version)`（行锁许可） |
 
 **启动闸门从「允许」改成「要求」。** 迁移前这张表只登记为「可以存在」，因为还没有调用点用它；
@@ -594,6 +594,165 @@ SCRIPT
   一行。
 - `test_job_cancellation_fence_pg.py::test_acceptance_lock_waits_for_submit_and_then_refuses` 未
   改动照常通过（它是 Job 行锁与取消围栏的同一套排序）。
+
+### 7. 目录身份锁族整族迁到 `coordination_keyed_locks`
+
+catalog 族**其余的 14 个站点**此前仍是
+`pg_advisory_xact_lock(hashtextextended('speechnexus:catalog:' || current_schema() || ':…'))`：
+3 个绑定键、8 个声音键，以及 3 个 `(kind, object_id)` 通用站点。它们与第 6 条那条绑定互斥是
+**同一把逻辑锁**——发布、退役、撤销、来源批准、TTS 准入、探针授权与批准、操作员认证都在它下面
+判定「我看到的目录事实仍是最新的」。所以载体也只能是同一张表上的同一行：参与者里有一半在目录
+事实**还不存在**时运行（来源批准、探针授权、操作员认证），而 `SELECT … FOR UPDATE` 在行不存在
+时两引擎都不锁任何东西——「每处各找一条天然行」换出来的不是弱一点的锁，是静默失效。
+
+| 站点 | 文件 | 键 |
+| --- | --- | --- |
+| `append_publication`、`retire_publication` | `speech/infrastructure/publications_sql.py` | `(kind, object_id)` |
+| `publish_binding_revision` | `speech/infrastructure/publications_postgres.py` | `(kind, object_id)` |
+| `publish_builtin_voice` | `builtin_voice_publication.py` | `binding:<id>` → `voice:<id>` |
+| `revoke_builtin_voice` | `builtin_voice_revocation.py` | `voice:<id>` |
+| `approve_builtin_voice_source` | `builtin_voice_source_approval.py` | `voice:<id>` |
+| 探针授权签发 | `qualification_probe_authorizer.py` | `binding:<id>` → `voice:<id>` |
+| 探针批准 | `qualification_probe_approval.py` | `binding:<id>` → `voice:<id>` |
+| 操作员认证资格 | `operator_attested_qualification.py` | `voice:<id>` |
+| `_lock_tts_voice` | `speech/infrastructure/admission_postgres.py` | `voice:<id>` |
+| 资格准入 | `speech/infrastructure/qualification_admission_postgres.py` | `voice:<id>` |
+
+**一次提交整族切换，不分批。** 咨询锁与行锁是两个互不相交的载体：同键文本下，持行锁的事务与取
+咨询锁的事务**互不等待**（证据见本节末）。所以「先迁一半」得到的不是「一侧更慢」，而是**静默
+双锁**：已迁站点之间串行、未迁站点之间串行、两组之间不串行，任何一侧都不报错。14 个站点在这次
+提交里一起换，混合载体的窗口不存在。
+
+**取锁点与键文本各只有一个定义点。** 新增的 `speech/infrastructure/catalog_keyed_lock.py` 是
+「按目录身份取行锁」的唯一入口（`lock_catalog(kind, object_id)`、`lock_voice(voice_id)`）；绑定
+族的入口仍是 `binding_disable_barrier.lock_binding`（执行网关也调它，不能再开第二个），所以
+`builtin_voice_publication`、探针授权/批准、操作员认证里的绑定侧都改为调它。键文本只由
+`speechnexus_portable_sql.keyed_lock` 拼：
+
+- `catalog_lock_key(kind, object_id)` → `speechnexus:catalog:<kind>:<object_id>`；
+- `voice_lock_key(voice_id)` → `speechnexus:catalog:voice:<voice_id>`，
+  `binding_lock_key(binding_id)` 同样收敛到 `catalog_lock_key`（三个函数，一份拼接）；
+- `kind` 必须是单个小写键片段（`[a-z][a-z0-9_]{0,31}`），`object_id` 仍走 `require_text`。
+
+相对迁移前的键文本，**`current_schema()` 被去掉了**。理由与第 6 条同源：行身份是「(表所在
+schema, 桶号)」，而两侧的池把 `search_path` 都设成 `{schema},pg_catalog,pg_temp`；把 schema
+拼进键文本只多一个静默分裂口（首个 `search_path` 条目不同、但表其实是同一张），换不来额外保证。
+这次键文本变化**不需要**与未迁写者协商：它们根本不与行锁竞争——无论键文本是否相同，咨询锁与
+行锁都不互相阻塞（本节末第 4 条实测）。两种载体能共存的唯一形态是整族一次切换，这正是本次提交
+做的事。
+
+**锁序不变。** 该行锁是事务的**第一把行锁**，持到提交：
+
+```text
+coordination_keyed_locks(binding 键) → coordination_keyed_locks(voice 键)
+  → 准入容量/租约行 → claim bucket → canonical Job → public Job / outbox / 取消围栏
+```
+
+绑定在前、声音在后，全部参与者一致。同一事务里重复取同一个键不自阻塞（桶行已插、行锁在手，
+第二次 `INSERT` 走唯一冲突分支）。三处站点在这把行锁之前还持有一把**非 catalog** 的咨询锁
+（`builtin_voice_publication` 的 `builtin-voice-intent`、`builtin_voice_source_approval` 的
+`source-approval`、`publications_postgres` 的 `publish-intent`）：咨询锁与行锁不在同一命名空间，
+也不参与行锁排序，所以「第一把行锁」这条不变量仍然成立。
+
+**这次没有迁的 catalog 邻居。** `binding_lifecycle_postgres.py:375` 的 `:idempotency:` 咨询锁
+留在原处：它在此前就被登记为**删除**目标——唯一索引 + 「先插入」已经替代了它，不是待迁的行锁。
+`session-tuning` 与迁移期的咨询锁同样不在本族内。
+
+**授权面。** 这些身份现在都要能取那把行锁，所以 10 个授权函数末尾追加
+`coordination_keyed_lock_grants` 的四条（`USAGE`、`SELECT (bucket_no)`、`INSERT (bucket_no)`、
+`UPDATE (version)`）；`coordination_keyed_lock_grants` 本身没有改。
+
+| 授权函数 | 文件 | 变了什么 |
+| --- | --- | --- |
+| `publication_grants` | `publication_schema.py` | **变**：追加键锁四条（发布/退役 CLI 的写者身份） |
+| `model_catalog_reader_grants` | `publication_schema.py` | 未变（同文件被改，函数体没动） |
+| `voice_publication_grants` | `voice_publication_schema.py` | **变**：追加键锁四条（声音发布身份） |
+| `voice_draft_publication_reader_grants` | `voice_publication_schema.py` | 未变（同文件被改，函数体没动） |
+| `voice_evidence_recorder_grants` | `voice_publication_schema.py` | 未变（同文件被改，函数体没动） |
+| `pronunciation_publication_grants` | `pronunciation_draft_schema.py` | **变**：追加键锁四条（发音发布身份） |
+| `pronunciation_draft_grants` | `pronunciation_draft_schema.py` | 未变（同文件被改，函数体没动） |
+| `qualification_authorizer_grants` | `qualification_admission_grants.py` | **变**：追加键锁四条（探针授权签发） |
+| `qualification_admission_grants` | `qualification_admission_grants.py` | 未变（同文件被改，函数体没动；该身份从 `public_job_admission_grants` 已拿到键锁） |
+| `tts_voice_admission_grants` | `admission_grants.py` | **变**：追加键锁四条（TTS 准入的语音侧） |
+
+`builtin_publisher_grants`、`builtin_source_approval_writer_grants`、`qualification_writer_grants`
+的三条变更登记在第 6 条的同一张表里。
+
+**启动闸门跟着扩。** 两个身份此前没有这张表的授权，启动核对把「别的表上的任何授权」判成越权，
+所以扩授权必须同时扩判据，否则身份直接起不来：
+
+- 发音发布身份（`pronunciation_runtime.verify_publisher_role`）与声音发布身份
+  （`job_runtime._verify_publication_surface`，新常量 `_PUBLICATION_DECLARED_RELATIONS`）把
+  `coordination_keyed_locks` 登记为**已声明的关系**，再调同一个
+  `require_coordination_keyed_lock_grants` 逐列核对面——列级授权下按表判恒为假，所以放行只在
+  「已声明」这一侧做一次，判据仍只有一份。漏掉这一步的后果是**身份起不来**：
+  `test_public_jobs_http.py::test_lifespan_uses_a_separate_verified_publisher_role` 在旧判据下
+  以 `Public Job writer startup rejected` 失败。
+- 其余新拿授权的身份（TTS 准入、探针授权/批准、来源批准、内置发布）**没有**新增启动闸门：缺
+  授权时会在第一条锁语句上以 `42501` 失败。这是已知缺口，与第 6 条网关侧那条同类。
+
+**重放授权（顺序：先迁移、再授权、最后启动新构建）。**
+
+```bash
+uv run python - <<'GRANTS'
+import os, psycopg
+from speechnexus_backend.speech.infrastructure.admission_grants import tts_voice_admission_grants
+from speechnexus_backend.speech.infrastructure.builtin_voice_grants import (
+    builtin_publisher_grants,
+    builtin_source_approval_writer_grants,
+    qualification_writer_grants,
+)
+from speechnexus_backend.speech.infrastructure.pronunciation_draft_schema import (
+    pronunciation_publication_grants,
+)
+from speechnexus_backend.speech.infrastructure.publication_schema import publication_grants
+from speechnexus_backend.speech.infrastructure.qualification_admission_grants import (
+    qualification_authorizer_grants,
+)
+from speechnexus_backend.speech.infrastructure.voice_publication_schema import (
+    voice_publication_grants,
+)
+
+schema = os.environ["SN_SCHEMA"]
+statements = [
+    *publication_grants(schema, os.environ["SPEECHNEXUS_PUBLICATION_WRITER_ROLE"]),
+    *voice_publication_grants(schema, os.environ["SPEECHNEXUS_VOICE_PUBLISHER_ROLE"]),
+    *pronunciation_publication_grants(schema, os.environ["SPEECHNEXUS_PRONUNCIATION_PUBLISHER_ROLE"]),
+    *builtin_publisher_grants(schema, os.environ["SPEECHNEXUS_BUILTIN_VOICE_PUBLISHER_ROLE"]),
+    *builtin_source_approval_writer_grants(
+        schema, os.environ["SPEECHNEXUS_BUILTIN_SOURCE_APPROVAL_ROLE"]
+    ),
+    *qualification_writer_grants(schema, os.environ["SPEECHNEXUS_BUILTIN_QUALIFICATION_ROLE"]),
+    *qualification_authorizer_grants(schema, os.environ["SPEECHNEXUS_QUALIFICATION_AUTHORIZER_ROLE"]),
+    *tts_voice_admission_grants(schema, os.environ["SPEECHNEXUS_TTS_ADMISSION_ROLE"]),
+]
+with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as connection:
+    for statement in statements:
+        connection.execute(statement)
+print(len(statements), "grant statements replayed")
+GRANTS
+```
+
+角色名按部署实际取值；单角色部署把同一个 login 传进去即可（重复授权是幂等的）。**不要**用
+`GRANT ALL` 代替：列级授权是行身份的一部分（`INSERT` 只能写桶号、`UPDATE` 只能碰许可列）。
+
+核实：**实跑 + 读代码**。2026-11-24 本机 PostgreSQL 18.6：
+
+- 真库并发判据（真 schema、真非 owner 角色、真迁移 DDL）：同键第二个会话在 `pg_blocking_pids`
+  里点名等持锁方（`wait_event_type=Lock`、`wait_event=transactionid`）；异键、以及同 id 的绑定
+  键，在声音键持有期间立刻拿到锁。
+- **混合载体不互相阻塞**：持行锁期间，另一会话以同一键文本取 `pg_advisory_xact_lock` 立刻成功
+  ——这就是「整族必须一次切换」的实测依据。
+- 守卫 `check-portable-sql.py`：`catalog` 族的 `advisory-lock` 站点从 146 条基线降到 132 条，
+  `fixed=14`、`new=0`；异常清单同步删掉 7 条、改写 3 条计数。
+- 四个跨进程用例从「等咨询锁」改为「等行锁」：`test_tts_durable_pg.py`、
+  `test_builtin_voice_qualification.py`、`test_builtin_voice_source_approval_pg.py`、
+  `test_binding_publication_cli.py`。注入验证：把 `_lock_tts_voice` 换回咨询锁，
+  `test_retirement_waits_and_new_admission_rechecks` 以
+  `admission completed before the voice lock was released` 失败；把发布路径上的三处
+  `lock_catalog` 全部换回咨询锁，
+  `test_publication_waits_for_retirement_and_rejects_old_observation` 以
+  `publication did not wait on the binding lock` 失败。
 
 ## 边界澄清（行为未变）
 

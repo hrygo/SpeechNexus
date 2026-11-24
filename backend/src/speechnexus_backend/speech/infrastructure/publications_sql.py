@@ -10,6 +10,7 @@ from speechnexus_backend.speech.application.binding_publication import (
 )
 from speechnexus_backend.speech.domain.configuration import revision_number
 from speechnexus_backend.speech.domain.publications import Publication, PublicationKind
+from speechnexus_backend.speech.infrastructure.catalog_keyed_lock import lock_catalog
 from speechnexus_portable_sql.transaction import insert_if_absent
 
 
@@ -48,15 +49,11 @@ def append_publication(
 
     ``verify_catalog`` protects a caller that observed the catalogue version
     before its transaction. The HTTP publication path reads the selected head
-    under the binding advisory lock in the same transaction, so it passes
+    under the binding keyed lock in the same transaction, so it passes
     ``False``: the head CAS is its exact precondition and an unrelated object's
     publication must not turn its request into a spurious conflict.
     """
-    cursor.execute(
-        "SELECT pg_advisory_xact_lock(hashtextextended("
-        "'speechnexus:catalog:' || current_schema() || ':' || ? || ':' || ?, 0))",
-        (publication.kind, publication.object_id),
-    )
+    lock_catalog(cursor, publication.kind, publication.object_id)
     if publication.kind == "binding":
         existing = find_publication(
             cursor, publication.kind, publication.object_id, publication.revision
@@ -130,7 +127,7 @@ def advance_publication_head(cursor: PublicationCursor, publication: Publication
 
     受限方言没有 `ON CONFLICT … DO UPDATE`,也没有 `RETURNING`,所以用「先更新、再插入」:
     更新命中说明头行已存在(绝大多数路径);未命中说明是第一次发布,插入;若插入也失败,
-    说明另一个写者刚好抢先插入,再更新一次即可。同一把 `pg_advisory_xact_lock` 在前面已经持有,
+    说明另一个写者刚好抢先插入,再更新一次即可。同一把目录身份键锁在前面已经持有,
     所以这段不会被并发穿插。
     """
 
@@ -232,11 +229,7 @@ def retire_publication(
     """
     # Publication and retirement paths take this same transaction-scoped lock,
     # so the current-revision check cannot be split by a newer publication.
-    cursor.execute(
-        "SELECT pg_advisory_xact_lock(hashtextextended("
-        "'speechnexus:catalog:' || current_schema() || ':' || ? || ':' || ?, 0))",
-        (publication.kind, publication.object_id),
-    )
+    lock_catalog(cursor, publication.kind, publication.object_id)
     current = find_current_publication(cursor, publication.kind, publication.object_id)
     if (
         current is None

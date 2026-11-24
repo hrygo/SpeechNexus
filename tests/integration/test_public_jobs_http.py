@@ -730,7 +730,7 @@ def test_undeclared_table_rejection_says_how_to_extend_the_whitelist(
             _verify_publication_privileges(connection, jobs_db.schema)
         message = str(caught.value)
         assert "speech_publication_retirements" in message
-        assert "_PUBLICATION_REQUIRED_SELECT" in message
+        assert "_PUBLICATION_DECLARED_RELATIONS" in message
     finally:
         jobs_db.admin.execute(f'DROP OWNED BY "{role}"')
         jobs_db.admin.execute(f'DROP ROLE IF EXISTS "{role}"')

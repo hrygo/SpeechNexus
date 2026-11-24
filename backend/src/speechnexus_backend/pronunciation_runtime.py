@@ -16,6 +16,10 @@ from collections.abc import Callable
 from pydantic import SecretStr
 
 from speechnexus_backend.settings import Settings
+from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
+    COORDINATION_KEYED_LOCK_TABLE,
+    require_coordination_keyed_lock_grants,
+)
 from speechnexus_backend.speech.infrastructure.postgres_pool import (
     SpeechConnection,
     SpeechPool,
@@ -221,16 +225,20 @@ def verify_publisher_role(connection: SpeechConnection, schema: str, role: str) 
     """
     _require_non_owner(connection, schema, role)
     tables = _require_arity(_PUBLISHER_TABLES, 6)
+    # The catalog identity row lock is a declared part of this identity's surface: the
+    # publication append serializes published-vs-retired on it, so it is excluded from
+    # the "no other relation" judgment here and verified on its own below (its
+    # privileges are column-level, which the table-level judgment would misread).
     other = connection.execute(
         "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
         "WHERE n.nspname=? AND c.relkind IN ('r','p','v','m','f') "
-        "AND c.relname NOT IN (?, ?, ?, ?, ?, ?) AND ("
+        "AND c.relname NOT IN (?, ?, ?, ?, ?, ?, ?) AND ("
         "pg_catalog.has_table_privilege(CAST(? AS name),c.oid,"
         "'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') OR "
         "pg_catalog.has_any_column_privilege(CAST(? AS name),c.oid,"
         "'SELECT,INSERT,UPDATE,REFERENCES'))) AS forbidden",
-        (schema, *tables, role, role),
+        (schema, *tables, COORDINATION_KEYED_LOCK_TABLE, role, role),
     ).fetchone()
     if other is None or other["forbidden"]:
         raise ValueError("Pronunciation publisher requires exactly its declared tables")
@@ -284,6 +292,9 @@ def verify_publisher_role(connection: SpeechConnection, schema: str, role: str) 
         raise ValueError("Pronunciation publisher holds a column INSERT outside its tables")
     if observed != expected:
         raise ValueError("Pronunciation publisher column UPDATEs do not match the declared set")
+    # Required, not optional: publishing opens by locking the pronunciation identity
+    # row, so a role without that surface would fail on its first publish.
+    require_coordination_keyed_lock_grants(connection, schema, subject="Pronunciation publisher")
 
 
 class _PronunciationRuntime:

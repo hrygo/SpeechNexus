@@ -532,6 +532,32 @@ def selftest() -> list[str]:
         if rule not in found:
             problems.append(f"{rule} did not fire for its injection")
 
+    # `TEXT` 既是列类型,也常是列名(`c.text`、INSERT 列清单)。两个方向都必须有提交的用例:
+    # 只测「真实类型仍报」时,把规则退回全文正则会静默放过一批标识符;只测「标识符不报」时,
+    # 把规则删掉也会绿。每条样本都走 scan_python,断言的是守卫真正读的那条判定。
+    type_position_cases: tuple[tuple[str, bool], ...] = (
+        ("SELECT CAST(installation_id AS text) AS installation_id FROM t", True),
+        ("SELECT CAST(NULL AS text) FROM t WHERE job_id = ?", True),
+        ("CREATE TABLE t (job_id VARCHAR(32), payload TEXT)", True),
+        ("SELECT created_at FROM t WHERE created_at > CAST(? AS timestamptz)", True),
+        ("SELECT CAST(node_ids AS text[]) FROM t WHERE pool_id = ?", True),
+        ("ALTER TABLE t ADD COLUMN observation_document TEXT", True),
+        ("SELECT id, title, ordinal, text, text_revision FROM chapters WHERE id = ?", False),
+        ("INSERT INTO chapters (id, title, ordinal, text) VALUES (?, ?, ?, ?)", False),
+        ("SELECT c.text FROM chapters c JOIN books b ON b.id = c.book_id", False),
+        ("UPDATE chapters SET text = ? WHERE id = ?", False),
+        ("configured but SPEECHNEXUS_ASSET_INSPECTOR=text; select audio instead", False),
+    )
+    for statement, expected in type_position_cases:
+        found = {
+            finding.rule for finding in scan_python("backend/src/case.py", f'SQL = "{statement}"')
+        }
+        fired = "vendor-type" in found
+        if fired and not expected:
+            problems.append(f"vendor-type treated an identifier position as a type: {statement}")
+        elif expected and not fired:
+            problems.append(f"vendor-type missed a type position: {statement}")
+
     ddl_cases: tuple[tuple[str, str], ...] = (
         ("ddl-type", "CREATE TABLE t (a TEXT);\n"),
         ("ddl-type", "CREATE TABLE t (a BIGINT);\n"),

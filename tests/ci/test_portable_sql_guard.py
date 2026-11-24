@@ -136,6 +136,52 @@ class PortableSqlGuardTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("selftest OK", result.stdout)
 
+    def test_identifier_and_type_positions_are_judged_by_statement_structure(self) -> None:
+        # 同一条规则、同一个词:`c.text` 是列名,`CAST(x AS text)` 是类型。两个方向都必须
+        # 由守卫本身判出来——放开标识符时这里变红,退回全文正则时这里也变红。
+        self.write(f"{BACKEND}/identifiers.py", 'SQL = "SELECT c.text FROM chapters c"\n')
+        clean = run_guard("--root", str(self.root), "--baseline", str(self.baseline))
+        self.assertEqual(clean.returncode, 0, clean.stdout + clean.stderr)
+        self.assertNotIn("NEW vendor-type", clean.stdout)
+        self.write(f"{BACKEND}/typed.py", 'SQL = "SELECT CAST(c.text AS text) FROM chapters c"\n')
+        red = run_guard("--root", str(self.root), "--baseline", str(self.baseline))
+        self.assertEqual(red.returncode, 1, red.stdout)
+        self.assertIn(f"NEW vendor-type {BACKEND}/typed.py", red.stdout)
+
+
+class TypePositionTests(unittest.TestCase):
+    """`TEXT` 的两种用法各有一组提交的断言:类型位置的样本必须报,标识符位置的样本必须不报。"""
+
+    def rules(self, statement: str) -> set[str]:
+        return {
+            finding.rule
+            for finding in GUARD.scan_python(f"{BACKEND}/case.py", f'SQL = "{statement}"')
+        }
+
+    def test_type_positions_still_report(self) -> None:
+        for statement in (
+            "SELECT CAST(installation_id AS text) FROM speech_publication_installation",
+            "SELECT CAST(NULL AS text) FROM speech_publication_installation",
+            "CREATE TABLE t (job_id VARCHAR(32), payload TEXT)",
+            "ALTER TABLE t ADD COLUMN observation_document TEXT",
+            "SELECT created_at FROM t WHERE created_at > CAST(? AS timestamptz)",
+            "SELECT CAST(node_ids AS text[]) FROM resource_pools",
+        ):
+            with self.subTest(statement=statement):
+                self.assertIn("vendor-type", self.rules(statement))
+
+    def test_identifier_positions_do_not_report(self) -> None:
+        for statement in (
+            "SELECT id, title, ordinal, text, text_revision FROM chapters WHERE id = ?",
+            "INSERT INTO chapters (id, title, ordinal, text) VALUES (?, ?, ?, ?)",
+            "SELECT b.id AS parent_id, c.id, c.text"
+            " FROM books b JOIN chapters c ON c.book_id = b.id",
+            "UPDATE chapters SET text = ? WHERE id = ?",
+            "configured but SPEECHNEXUS_ASSET_INSPECTOR=text; select audio instead",
+        ):
+            with self.subTest(statement=statement):
+                self.assertNotIn("vendor-type", self.rules(statement))
+
 
 class GuardScopeTests(unittest.TestCase):
     """豁免范围必须是可核对的固定集合,不能因为新目录出现而静默扩大。"""

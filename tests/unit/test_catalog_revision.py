@@ -20,6 +20,8 @@ from speechnexus_backend.speech.infrastructure.publication_schema import (
     publication_grants,
 )
 from speechnexus_backend.speech.infrastructure.publications_sql import retire_publication
+from speechnexus_portable_sql.keyed_lock import bucket_for_key, catalog_lock_key
+from tests.support.keyed_lock_double import answer_keyed_lock, business_inserts
 
 
 class DuplicateRetirementError(Exception):
@@ -47,9 +49,11 @@ class Cursor:
         self.calls.append((query, parameters))
         if self.duplicate_retirement and query.startswith("INSERT INTO speech_publication"):
             raise DuplicateRetirementError(query)
-        if query.startswith(("SAVEPOINT ", "ROLLBACK TO SAVEPOINT", "RELEASE SAVEPOINT")):
-            # 插入走保存点(受限方言没有 `ON CONFLICT`);控制语句不消耗脚本化的结果。
-            self.rowcount = 0
+        answered = answer_keyed_lock(query, parameters)
+        if answered is not None:
+            # 目录身份键锁的保存点、懒建桶行与 FOR UPDATE:由共用替身回答,
+            # 不消耗脚本化的业务结果,所以脚本仍按业务语句逐条对位。
+            self._current, self.rowcount = answered, 0
             return
         self._current = next(self._results)
         self.rowcount = next(self._rowcounts)
@@ -108,17 +112,26 @@ def test_publication_writer_can_insert_tombstones_and_advance_the_counter() -> N
 
 def test_retirement_of_the_current_revision_inserts_one_visible_tombstone() -> None:
     publication = Publication("binding", "binding-tts", 1, "binding-rev-1", 1)
-    cursor = Cursor([[], [row()], [], []], [0, 0, 1, 1])
+    # 键锁的语句由共用替身回答,不占脚本位;脚本只按业务语句逐条对位。
+    cursor = Cursor([[row()], [], []], [0, 1, 1])
 
     assert retire_publication(cursor, publication, 1_700_000_000_000_001) is True
 
-    lock_query, lock_parameters = cursor.calls[0]
-    select_query, select_parameters = cursor.calls[1]
-    savepoint_query = cursor.calls[2][0]
-    insert_query, insert_parameters = cursor.calls[3]
-    clear_query, clear_parameters = cursor.calls[-1]
-    assert "pg_advisory_xact_lock" in lock_query
-    assert lock_parameters == ("binding", "binding-tts")
+    bucket = bucket_for_key(catalog_lock_key("binding", "binding-tts"))
+    lock_calls = [call for call in cursor.calls if "coordination_keyed_locks" in call[0]]
+    assert [query.split()[0] for query, _ in lock_calls] == ["INSERT", "SELECT"]
+    assert [parameters for _, parameters in lock_calls] == [(bucket,), (bucket,)]
+    assert lock_calls[1][0].endswith("FOR UPDATE")
+    select_query, select_parameters = next(
+        call for call in cursor.calls if "FROM speech_publication_heads AS h" in call[0]
+    )
+    savepoint_query = next(call[0] for call in cursor.calls if call[0].startswith("SAVEPOINT"))
+    insert_query, insert_parameters = next(
+        call for call in cursor.calls if call[0].startswith(f"INSERT INTO {RETIREMENT_TABLE}")
+    )
+    clear_query, clear_parameters = next(
+        call for call in cursor.calls if "DELETE FROM speech_publication_heads" in call[0]
+    )
     assert "FROM speech_publication_heads AS h" in select_query
     assert "JOIN speech_publications AS p" in select_query
     assert select_parameters == ("binding", "binding-tts")
@@ -141,23 +154,29 @@ def test_retirement_of_the_current_revision_inserts_one_visible_tombstone() -> N
 
 def test_repeating_a_retirement_does_not_insert_or_advance_again() -> None:
     publication = Publication("binding", "binding-tts", 1, "binding-rev-1", 1)
-    cursor = Cursor([[], [row()], []], [0, 0, 0], duplicate_retirement=True)
+    cursor = Cursor([[row()]], [0], duplicate_retirement=True)
 
     assert retire_publication(cursor, publication, 1_700_000_000_000_001) is False
-    # 锁、读当前版本、保存点、插入(撞唯一索引)、回滚到保存点、释放保存点。
-    assert len(cursor.calls) == 6
-    assert cursor.calls[4][0].startswith("ROLLBACK TO SAVEPOINT")
+    # 键锁四条(懒建桶行、`FOR UPDATE`,各配一条保存点控制)、读当前版本,再是
+    # 保存点、插入(撞唯一索引)、回滚到保存点、释放保存点。
+    assert len(cursor.calls) == 9
+    insert_at = next(
+        index
+        for index, call in enumerate(cursor.calls)
+        if call[0].startswith(f"INSERT INTO {RETIREMENT_TABLE}")
+    )
+    assert cursor.calls[insert_at + 1][0].startswith("ROLLBACK TO SAVEPOINT")
 
 
 def test_retirement_must_name_the_current_exact_revision() -> None:
     publication = Publication("binding", "binding-tts", 1, "binding-rev-1", 1)
-    superseded = Cursor([[], [row(2, "binding-rev-2")], []], [0, 0, 0])
+    superseded = Cursor([[row(2, "binding-rev-2")], []], [0, 0])
 
     with pytest.raises(ValueError, match="current published revision"):
         retire_publication(superseded, publication, 1_700_000_000_000_001)
-    assert len(superseded.calls) == 3
+    assert business_inserts(superseded.calls) == []
 
-    mismatched = Cursor([[], [row(1, "binding-rev-other")], []], [0, 0, 0])
+    mismatched = Cursor([[row(1, "binding-rev-other")], []], [0, 0])
     with pytest.raises(ValueError, match="current published revision"):
         retire_publication(mismatched, publication, 1_700_000_000_000_001)
-    assert len(mismatched.calls) == 3
+    assert business_inserts(mismatched.calls) == []

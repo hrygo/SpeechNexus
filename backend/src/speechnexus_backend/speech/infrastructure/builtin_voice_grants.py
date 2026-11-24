@@ -17,6 +17,10 @@ def builtin_source_approval_writer_grants(schema: str, role: str) -> tuple[str, 
         f"GRANT INSERT (source_approval_id,voice_id,source_revision,source_digest,"
         f'native_speaker_id,expires_at) ON "{schema}".speech_builtin_voice_source_approvals '
         f'TO "{role}"',
+        # Approving a source takes the voice identity's row lock before it reads the
+        # revocations this approval must not survive; the lock is the barrier's voice
+        # side, so the column surface comes from the lock's own declaration.
+        *coordination_keyed_lock_grants(schema, role),
     )
 
 
@@ -35,6 +39,9 @@ def qualification_writer_grants(schema: str, role: str) -> tuple[str, ...]:
         f'TO "{role}"',
         f'GRANT SELECT, INSERT ON "{schema}".speech_builtin_voice_source_revocations, '
         f'"{schema}".speech_builtin_voice_revocations TO "{role}"',
+        # Revocation is the other side of the same voice row lock the publisher holds,
+        # and probe approval takes the binding/voice pair before it re-reads them.
+        *coordination_keyed_lock_grants(schema, role),
     )
 
 
@@ -66,6 +73,9 @@ def builtin_publisher_grants(schema: str, role: str) -> tuple[str, ...]:
         f'GRANT INSERT ON "{schema}".speech_builtin_voice_qualifications, '
         f'"{schema}".speech_builtin_voice_qualification_provenance TO "{role}"',
         f'GRANT SELECT, INSERT ON "{schema}".speech_builtin_voice_publish_intents TO "{role}"',
+        # Publishing reads the binding head and rechecks revocations under the catalog
+        # identity row lock, so the publisher takes the same rows as the revoker.
+        *coordination_keyed_lock_grants(schema, role),
     )
 
 

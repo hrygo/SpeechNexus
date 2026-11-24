@@ -18,6 +18,9 @@ opening the evidence ledger to the API identity, so a draft that has been
 published stays readable instead of violating its own response contract.
 """
 
+from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
+    coordination_keyed_lock_grants,
+)
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 
 EVIDENCE_TABLE = "speech_voice_capability_evidence"
@@ -221,4 +224,7 @@ def voice_publication_grants(schema: str, role: str) -> tuple[str, ...]:
         f'GRANT UPDATE (revision, generated_at_us) ON "{schema}".speech_catalog_state TO "{role}"',
         f'GRANT UPDATE (status) ON "{schema}".speech_voice_drafts TO "{role}"',
         f'GRANT SELECT, INSERT ON "{schema}".speech_asset_references TO "{role}"',
+        # The publish transaction appends the voice's publication row, and that append
+        # serializes published-vs-retired on the voice identity row lock.
+        *coordination_keyed_lock_grants(schema, role),
     )

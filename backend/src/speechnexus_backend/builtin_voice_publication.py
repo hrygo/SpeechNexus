@@ -13,10 +13,12 @@ from speechnexus_contracts.voice_catalogue_http import validate_response
 
 from speechnexus_backend.speech.domain.builtin_voice_qualification import BuiltinVoiceFacts
 from speechnexus_backend.speech.domain.publications import Publication
+from speechnexus_backend.speech.infrastructure.binding_disable_barrier import lock_binding
 from speechnexus_backend.speech.infrastructure.binding_publication_evidence_sql import (
     find_binding_revision_document,
     find_evidence,
 )
+from speechnexus_backend.speech.infrastructure.catalog_keyed_lock import lock_voice
 from speechnexus_backend.speech.infrastructure.publications_postgres import PostgresPublications
 from speechnexus_backend.speech.infrastructure.publications_sql import (
     append_publication,
@@ -140,16 +142,8 @@ def publish_builtin_voice(
         ) * 1_000_000 + expiry_delta.microseconds
         if expiry_us != f["expires_at_us"]:
             raise BuiltinVoicePublicationRejectedError("expiry_mismatch")
-        cursor.execute(
-            "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:' || current_schema() || ':binding:' || ?, 0))",
-            (f["binding_id"],),
-        )
-        cursor.execute(
-            "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:' || current_schema() || ':voice:' || ?, 0))",
-            (a["voice_id"],),
-        )
+        lock_binding(cursor, f["binding_id"])
+        lock_voice(cursor, a["voice_id"])
         cursor.execute(
             "SELECT 1 FROM speech_publication_heads WHERE kind='binding' "
             "AND object_id=? AND revision=? AND revision_id=?",

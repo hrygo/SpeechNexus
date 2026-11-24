@@ -33,6 +33,7 @@ from speechnexus_backend.speech.infrastructure.binding_disable_barrier import (
     lock_binding,
     revision_is_disabled,
 )
+from speechnexus_backend.speech.infrastructure.catalog_keyed_lock import lock_voice
 from speechnexus_backend.speech.infrastructure.leases_postgres import (
     _BudgetExpiredError,
     _DeadlineCursor,
@@ -201,11 +202,7 @@ class PostgresAdmissionTransactions:
         if self._require_builtin_voice is None:
             raise AdmissionRejectedError("reconciliation_required")
         if not recheck:
-            cursor.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended("
-                "'speechnexus:catalog:' || current_schema() || ':voice:' || ?, 0))",
-                (voice_id,),
-            )
+            lock_voice(cursor, voice_id)
             # A duplicate admission can commit while the voice lock is awaited.
             existing = read_original(
                 cursor,

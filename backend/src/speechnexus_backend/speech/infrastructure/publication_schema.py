@@ -10,6 +10,9 @@ from speechnexus_backend.speech.infrastructure.catalog_revision_schema import (
     RETIREMENT_TABLE,
     STATE_TABLE,
 )
+from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
+    coordination_keyed_lock_grants,
+)
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 
 TABLE = "speech_publications"
@@ -61,6 +64,9 @@ def publication_grants(schema: str, role: str) -> tuple[str, ...]:
         f'GRANT SELECT, INSERT ON "{schema}".speech_binding_publish_intents TO {target}',
         f'GRANT SELECT, INSERT, UPDATE, DELETE ON "{schema}".speech_publication_heads TO {target}',
         f'GRANT SELECT, UPDATE (revision, generated_at_us) ON "{schema}".{STATE_TABLE} TO {target}',
+        # The publication append serializes published-vs-retired on the object's catalog
+        # identity row lock; the row's columns come from the lock's own declaration.
+        *coordination_keyed_lock_grants(schema, role),
     )
 
 

@@ -402,7 +402,15 @@ def test_new_admission_locks_before_retirement_and_qualification(
 
     class Cursor:
         def execute(self, sql: str, parameters: Any = ()) -> None:
-            events.append("lock" if "pg_advisory_xact_lock" in sql else "publication")
+            if "coordination_keyed_locks" in sql and "FOR UPDATE" in sql:
+                events.append("lock")
+            elif "coordination_keyed_locks" in sql or sql.startswith(
+                ("SAVEPOINT", "RELEASE SAVEPOINT", "ROLLBACK TO SAVEPOINT")
+            ):
+                # 键锁的懒建桶行与保存点控制是这把锁自己的语句,不改变业务次序。
+                return
+            else:
+                events.append("publication")
 
         def fetchall(self) -> list[dict[str, str]]:
             return [{"revision_id": "voice-revision-test"}]

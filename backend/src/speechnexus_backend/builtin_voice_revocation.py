@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+from speechnexus_backend.speech.infrastructure.catalog_keyed_lock import lock_voice
 from speechnexus_backend.speech.infrastructure.publications_postgres import PostgresPublications
 from speechnexus_backend.speech.infrastructure.publications_sql import PublicationCursor
 
@@ -64,11 +65,7 @@ def revoke_builtin_voice(
         approvals_found = cursor.fetchall()
         if len(approvals_found) != 1:
             raise BuiltinVoiceRevocationRejectedError("approval_not_found")
-        cursor.execute(
-            "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:' || current_schema() || ':voice:' || ?, 0))",
-            (approvals_found[0]["voice_id"],),
-        )
+        lock_voice(cursor, approvals_found[0]["voice_id"])
         if source:
             cursor.execute(
                 "SELECT reason FROM speech_builtin_voice_source_revocations "

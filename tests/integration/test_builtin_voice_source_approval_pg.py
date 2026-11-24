@@ -8,7 +8,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import psycopg
 import pytest
@@ -28,8 +28,12 @@ from speechnexus_backend.speech.domain.publications import PublicationUnavailabl
 from speechnexus_backend.speech.infrastructure.builtin_voice_grants import (
     builtin_source_approval_writer_grants,
 )
+from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
+    COORDINATION_KEYED_LOCK_TABLE,
+)
 from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
 from speechnexus_backend.speech.infrastructure.publications_postgres import PostgresPublications
+from speechnexus_portable_sql.keyed_lock import acquire, voice_lock_key
 
 pytestmark = pytest.mark.integration
 
@@ -147,10 +151,15 @@ def test_source_writer_authority_replay_and_narrow_grants(
         }
         with portable_pg_connect(url) as blocker:
             blocker.execute(f'SET search_path TO "{schema}",pg_catalog')
-            blocker.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended("
-                "'speechnexus:catalog:'||current_schema()||':voice:'||%s,0))",
-                (waiting["voice_id"],),
+            # The approval takes the voice identity's row lock; the blocker must hold the
+            # same row, or the wait below proves nothing.
+            acquire(
+                # The helper returns the portable connection; the annotation above it is
+                # psycopg's, and the portable protocol is a structural superset.
+                cast(Any, blocker),
+                key=voice_lock_key(waiting["voice_id"]),
+                schema=schema,
+                table=COORDINATION_KEYED_LOCK_TABLE,
             )
             with ThreadPoolExecutor(max_workers=1) as executor:
                 pending = executor.submit(approve_builtin_voice_source, store, **waiting)

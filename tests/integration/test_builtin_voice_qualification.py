@@ -29,9 +29,13 @@ from speechnexus_backend.speech.infrastructure.builtin_voice_grants import (
 from speechnexus_backend.speech.infrastructure.builtin_voice_qualification import (
     require_builtin_voice,
 )
+from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
+    COORDINATION_KEYED_LOCK_TABLE,
+)
 from speechnexus_backend.speech.infrastructure.qualification_source_evidence import (
     SOURCE_UNVERIFIED,
 )
+from speechnexus_portable_sql.keyed_lock import acquire, voice_lock_key
 
 pytestmark = pytest.mark.integration
 
@@ -231,23 +235,27 @@ def test_migration_admission_revocation_and_reader_permissions(
         _require(cursor)
     with db.cursor() as cursor, pytest.raises(AdmissionRejectedError):
         _require(cursor, 2)
-    # Revocation and first admission serialize on the voice advisory lock.
+    # Revocation and first admission serialize on the voice identity's row lock.
     second = portable_pg_connect(os.environ["SPEECHNEXUS_TEST_DATABASE_URL"], row_factory=dict_row)
     second.execute(f'SET search_path TO "{schema}", pg_catalog')
     pid = second.info.backend_pid
-    lock_sql = (
-        "SELECT pg_advisory_xact_lock(hashtextextended("
-        "'speechnexus:catalog:' || current_schema() || ':voice:' || %s, 0))"
-    )
+
+    def take_voice_lock(connection: Any) -> None:
+        acquire(
+            connection,
+            key=voice_lock_key("voice-vivian"),
+            schema=schema,
+            table=COORDINATION_KEYED_LOCK_TABLE,
+        )
 
     def blocked_admission() -> None:
         with second.transaction():
-            second.execute(lock_sql, ("voice-vivian",))
+            take_voice_lock(second)
             with second.cursor() as cursor, pytest.raises(AdmissionRejectedError):
                 _require(cursor)
 
     with ThreadPoolExecutor(max_workers=1) as executor, db.transaction():
-        db.execute(lock_sql, ("voice-vivian",))
+        take_voice_lock(db)
         future = executor.submit(blocked_admission)
         deadline = time.monotonic() + 3
         while time.monotonic() < deadline:

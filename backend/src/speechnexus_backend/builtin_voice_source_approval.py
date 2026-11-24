@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import UUID
 
+from speechnexus_backend.speech.infrastructure.catalog_keyed_lock import lock_voice
 from speechnexus_backend.speech.infrastructure.publications_postgres import PostgresPublications
 from speechnexus_backend.speech.infrastructure.publications_sql import PublicationCursor
 from speechnexus_portable_sql.clock import ClockReader
@@ -126,11 +127,7 @@ def approve_builtin_voice_source(
             "'speechnexus:source-approval:'||current_schema()||':'||?,0))",
             (source_approval_id,),
         )
-        cursor.execute(
-            "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:'||current_schema()||':voice:'||?,0))",
-            (voice_id,),
-        )
+        lock_voice(cursor, voice_id)
         cursor.execute(
             "SELECT voice_id,source_revision,source_digest,native_speaker_id,expires_at "
             "FROM speech_builtin_voice_source_approvals WHERE source_approval_id=?",

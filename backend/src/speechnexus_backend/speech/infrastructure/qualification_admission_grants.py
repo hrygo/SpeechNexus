@@ -1,5 +1,8 @@
 """Separate database roles for approving and executing bounded qualification probes."""
 
+from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
+    coordination_keyed_lock_grants,
+)
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 from speechnexus_backend.speech.infrastructure.tts_settlement_schema import (
     tts_settlement_writer_grants,
@@ -33,6 +36,10 @@ def qualification_authorizer_grants(schema: str, role: str) -> tuple[str, ...]:
         f'generated_pcm_samples) ON "{schema}".submit_intents TO "{role}"',
         f"GRANT SELECT (submit_intent_id,evidence_kind,evidence_digest,execution_stopped,"
         f'resources_released,observed_at_us) ON "{schema}".execution_stop_evidence TO "{role}"',
+        # Issuing a probe authorization first locks the binding row and then the voice
+        # row (the publication path holds the same pair), so this identity takes the
+        # keyed lock before it reads any of the authorities it cross-checks.
+        *coordination_keyed_lock_grants(schema, role),
     )
 
 

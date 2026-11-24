@@ -35,6 +35,7 @@ from speechnexus_backend.speech.infrastructure.binding_publication_evidence_sql 
     find_evidence,
     insert_evidence,
 )
+from speechnexus_backend.speech.infrastructure.catalog_keyed_lock import lock_catalog
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.publications_sql import (
     append_publication,
@@ -200,11 +201,7 @@ class PostgresPublications:
         def write_publication(
             cursor: _Cursor,
         ) -> tuple[Publication, BindingPublicationEvidence, bool]:
-            cursor.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended("
-                "'speechnexus:catalog:' || current_schema() || ':' || ? || ':' || ?, 0))",
-                (publication.kind, publication.object_id),
-            )
+            lock_catalog(cursor, publication.kind, publication.object_id)
             existing = find_publication(
                 cursor, publication.kind, publication.object_id, publication.revision
             )

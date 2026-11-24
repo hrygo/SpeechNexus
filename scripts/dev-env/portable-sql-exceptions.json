@@ -586,14 +586,6 @@
       "reason": "workbench 行的第三方类型/参数标记,整块由 #1102 处理"
     },
     {
-      "rule": "vendor-lock",
-      "path": "backend/src/speechnexus_backend/speech/infrastructure/public_job_admission.py",
-      "count": 2,
-      "card": "#1100",
-      "reason": "随所属语句族重写",
-      "release": "#1100 完成时删除本条目"
-    },
-    {
       "rule": "vendor-time",
       "path": "backend/src/speechnexus_backend/speech/infrastructure/readiness.py",
       "count": 2,

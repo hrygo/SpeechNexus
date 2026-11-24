@@ -81,7 +81,6 @@
     "vendor-json::backend/src/speechnexus_backend/workbench/infrastructure/postgres_minutes_tasks.py": 1,
     "vendor-json::backend/src/speechnexus_backend/workbench/infrastructure/postgres_render_units.py": 3,
     "vendor-json::backend/src/speechnexus_backend/workbench/infrastructure/postgres_versions.py": 4,
-    "vendor-lock::backend/src/speechnexus_backend/speech/infrastructure/public_job_admission.py": 2,
     "vendor-time::backend/src/speechnexus_backend/speech/infrastructure/readiness.py": 2,
     "vendor-time::backend/src/speechnexus_backend/workbench/infrastructure/postgres_versions.py": 1,
     "vendor-type::backend/src/speechnexus_backend/builtin_voice_publication.py": 1,

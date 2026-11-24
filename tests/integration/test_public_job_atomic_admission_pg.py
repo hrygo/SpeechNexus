@@ -813,10 +813,10 @@ def test_voice_validation_admission_waits_for_a_deletion_draft_lock(
     when a caller supplied ``expected_binding``, so otherwise this revision read
     is the first draft touch. The deleting transaction holds the draft row
     ``FOR UPDATE`` and has deleted the revision but not committed. Admission must
-    wait on its own ``FOR SHARE``
-    and, once the deletion commits, find no revision and refuse with
-    ``job_unavailable`` (the existing refusal for a vanished revision). Without
-    that shared lock it reads the pre-delete row and builds an admission whose
+    wait on its own ``FOR UPDATE`` of that row -- the same strength the pinned
+    path takes upstream -- and, once the deletion commits, find no revision and
+    refuse with ``job_binding_incomplete`` (the refusal for a vanished revision).
+    Without that lock it reads the pre-delete row and builds an admission whose
     later intent would name a deleted revision.
     """
     _seed(admission_database)
@@ -855,11 +855,12 @@ def test_voice_validation_admission_waits_for_a_deletion_draft_lock(
 
         thread = threading.Thread(target=admit)
         thread.start()
-        waited = _wait_for_backend(db, "speech_voice_drafts", "FOR SHARE")
-        if not waited:
-            # No lock means admission already read the pre-delete revision; let
-            # that attempt finish so the outcome below is stable and observable.
-            thread.join(5)
+        # Hard failure, not a fallback: a create that never takes the draft row
+        # under FOR UPDATE cannot wait here, and the assertion that follows is
+        # then decided by pre-delete reads instead of by the lock.
+        assert _wait_for_backend(db, "speech_voice_drafts", "FOR UPDATE"), (
+            "admission did not wait on the draft row lock"
+        )
         deleting.commit()
         thread.join(30)
         assert not thread.is_alive()

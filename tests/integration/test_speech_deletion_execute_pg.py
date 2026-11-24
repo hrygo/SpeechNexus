@@ -1483,12 +1483,12 @@ async def test_voice_revision_deletion_serializes_with_a_concurrent_intent(
 ) -> None:
     """The deletion locks the draft before it re-reads, so a racing intent wins or loses.
 
-    The second connection holds the admission's ``FOR SHARE`` on the draft and has
+    The second connection holds the admission's ``FOR UPDATE`` on the draft and has
     already read the revision, exactly where admission sits before it inserts its
-    intent. The deletion must wait on ``FOR UPDATE``; when the intent commits, the
-    post-lock re-read sees it and answers ``409 deletion_plan_changed``. Removing
-    the deletion lock lets the DELETE commit first and leaves an intent pointing
-    at a missing revision, which is the dangling state this test forbids.
+    intent. The deletion must wait on that same ``FOR UPDATE``; when the intent
+    commits, the post-lock re-read sees it and answers ``409 deletion_plan_changed``.
+    Removing the deletion lock lets the DELETE commit first and leaves an intent
+    pointing at a missing revision, which is the dangling state this test forbids.
     """
     _seed_unreferenced_revision(sandbox)
     app, pool, _objects, _artifacts = _app(sandbox)
@@ -1500,7 +1500,7 @@ async def test_voice_revision_deletion_serializes_with_a_concurrent_intent(
         admission.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
         admission.execute("SET TIME ZONE 'UTC'")
         admission.execute(
-            "SELECT 1 FROM speech_voice_drafts WHERE draft_id = %s FOR SHARE", (DRAFT,)
+            "SELECT 1 FROM speech_voice_drafts WHERE draft_id = %s FOR UPDATE", (DRAFT,)
         )
         admission.execute(
             "SELECT input_json FROM speech_voice_draft_revisions "

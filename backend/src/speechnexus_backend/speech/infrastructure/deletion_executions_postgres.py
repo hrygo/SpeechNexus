@@ -105,8 +105,8 @@ _PRIVILEGES: tuple[tuple[str, str, str | None], ...] = (
     ("SELECT", "speech_job_intents", None),
     ("SELECT", "speech_voice_draft_revisions", None),
     ("SELECT", "speech_voice_drafts", None),
-    # Row lock only: admission holds FOR SHARE on the draft while it reads the
-    # revision, so the executor needs UPDATE to take FOR UPDATE. No column is
+    # Row lock only: admission takes FOR UPDATE on the draft while it reads the
+    # revision, so the executor needs UPDATE to take the same lock. No column is
     # ever assigned by this route.
     ("UPDATE", "speech_voice_drafts", "head_revision"),
     ("SELECT", "speech_voice_capability_evidence", None),
@@ -476,9 +476,9 @@ class _DeletionExecution:
         if not plan.eligible:
             return self._blocked(plan, request, key_digest, intent_digest, request_id)
         if plan.target.kind == "voice_revision":
-            # Admission takes a FOR SHARE lock on the same draft row before it
-            # reads the revision it is about to pin into a Job intent. Taking the
-            # row exclusively here, before the dependency re-read, makes that
+            # Admission takes FOR UPDATE on the same draft row before it reads the
+            # revision it is about to pin into a Job intent. Taking the same row
+            # exclusively here, before the dependency re-read, makes that
             # read-or-delete decision one serial order: either admission commits
             # its intent first and the snapshot below sees it, or this deletion
             # commits first and admission finds no revision. Without this lock the

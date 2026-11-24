@@ -601,14 +601,6 @@
     },
     {
       "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/asset_runtime.py",
-      "count": 1,
-      "card": "#1102",
-      "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
-      "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-type",
       "path": "backend/src/speechnexus_backend/builtin_voice_publication.py",
       "count": 1,
       "card": "#1102",
@@ -708,24 +700,6 @@
       "card": "#1102",
       "reason": "逻辑类型 → 物理类型映射由物理 profile 给出",
       "release": "#1102 完成时删除本条目"
-    },
-    {
-      "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/postgres_books.py",
-      "card": "#1100",
-      "reason": "workbench 行的第三方类型/参数标记,整块由 #1102 处理"
-    },
-    {
-      "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/postgres_render_units.py",
-      "card": "#1100",
-      "reason": "workbench 行的第三方类型/参数标记,整块由 #1102 处理"
-    },
-    {
-      "rule": "vendor-type",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/postgres_versions.py",
-      "card": "#1100",
-      "reason": "参数标记与行工厂第三方类型,见 #1102"
     },
     {
       "rule": "vendor-type",

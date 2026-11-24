@@ -84,7 +84,6 @@
     "vendor-lock::backend/src/speechnexus_backend/speech/infrastructure/public_job_admission.py": 2,
     "vendor-time::backend/src/speechnexus_backend/speech/infrastructure/readiness.py": 2,
     "vendor-time::backend/src/speechnexus_backend/workbench/infrastructure/postgres_versions.py": 1,
-    "vendor-type::backend/src/speechnexus_backend/asset_runtime.py": 1,
     "vendor-type::backend/src/speechnexus_backend/builtin_voice_publication.py": 1,
     "vendor-type::backend/src/speechnexus_backend/builtin_voice_revocation.py": 1,
     "vendor-type::backend/src/speechnexus_backend/builtin_voice_source_approval.py": 3,
@@ -98,9 +97,6 @@
     "vendor-type::backend/src/speechnexus_backend/speech/infrastructure/qualification_admission_postgres.py": 3,
     "vendor-type::backend/src/speechnexus_backend/speech/infrastructure/qualified_speech_facts_postgres.py": 1,
     "vendor-type::backend/src/speechnexus_backend/speech/infrastructure/resource_pools_postgres.py": 1,
-    "vendor-type::backend/src/speechnexus_backend/workbench/infrastructure/postgres_books.py": 3,
-    "vendor-type::backend/src/speechnexus_backend/workbench/infrastructure/postgres_render_units.py": 1,
-    "vendor-type::backend/src/speechnexus_backend/workbench/infrastructure/postgres_versions.py": 3,
     "vendor-type::execution-gateway/src/speechnexus_gateway/infrastructure/reader_authority.py": 1,
     "vendor-type::node-controller/src/speechnexus_node_controller/infrastructure/sqlite_intent_store.py": 3
   }

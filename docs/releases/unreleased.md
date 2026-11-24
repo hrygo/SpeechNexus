@@ -682,9 +682,12 @@ coordination_keyed_locks(binding 键) → coordination_keyed_locks(voice 键)
 所以扩授权必须同时扩判据，否则身份直接起不来：
 
 - 发音发布身份（`pronunciation_runtime.verify_publisher_role`）与声音发布身份
-  （`job_runtime._verify_publication_surface`）把 `coordination_keyed_locks` 登记为**已声明的
-  关系**，再调同一个 `require_coordination_keyed_lock_grants` 逐列核对面——列级授权下按表判恒为
-  假，所以放行只在「已声明」这一侧做一次，判据仍只有一份。
+  （`job_runtime._verify_publication_surface`，新常量 `_PUBLICATION_DECLARED_RELATIONS`）把
+  `coordination_keyed_locks` 登记为**已声明的关系**，再调同一个
+  `require_coordination_keyed_lock_grants` 逐列核对面——列级授权下按表判恒为假，所以放行只在
+  「已声明」这一侧做一次，判据仍只有一份。漏掉这一步的后果是**身份起不来**：
+  `test_public_jobs_http.py::test_lifespan_uses_a_separate_verified_publisher_role` 在旧判据下
+  以 `Public Job writer startup rejected` 失败。
 - 其余新拿授权的身份（TTS 准入、探针授权/批准、来源批准、内置发布）**没有**新增启动闸门：缺
   授权时会在第一条锁语句上以 `42501` 失败。这是已知缺口，与第 6 条网关侧那条同类。
 

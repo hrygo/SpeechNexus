@@ -109,6 +109,15 @@ _PUBLICATION_REQUIRED_SELECT = (
 )
 _PUBLICATION_REQUIRED_INSERT = (*_PUBLICATION_APPEND_ONLY, "speech_publication_heads")
 
+#: Every relation the voice publisher may hold authority on. The catalog identity row lock
+#: is declared here but not in ``_PUBLICATION_REQUIRED_SELECT``: its privileges are
+#: column-level (``SELECT``/``INSERT`` the bucket, ``UPDATE`` the row-lock allowance), so a
+#: table-level "must have SELECT" assertion would misreport a correct role. It is verified
+#: through its own declaration instead -- a publish append opens by locking that row, so
+#: the relation is not optional and ``require_coordination_keyed_lock_grants`` names any
+#: missing column.
+_PUBLICATION_DECLARED_RELATIONS = (*_PUBLICATION_REQUIRED_SELECT, COORDINATION_KEYED_LOCK_TABLE)
+
 # The deletion routes are two routes; their grants are checked when those routes
 # are used, not as a process-wide startup condition. A writer that never serves
 # them must still boot, and a deployment that forgets the grants gets a
@@ -853,10 +862,14 @@ def _verify_publication_surface(connection: SpeechConnection, schema: str) -> No
         connection,
         None,
         schema,
-        _PUBLICATION_REQUIRED_SELECT,
+        _PUBLICATION_DECLARED_RELATIONS,
         subject=_PUBLICATION_SUBJECT,
-        declared_hint="_PUBLICATION_REQUIRED_SELECT",
+        declared_hint="_PUBLICATION_DECLARED_RELATIONS",
     )
+    # Required, not optional: the publication append opens by locking the object's catalog
+    # identity row, so a publisher without that surface would fail on its first publish
+    # instead of at startup.
+    require_coordination_keyed_lock_grants(connection, schema, subject=_PUBLICATION_SUBJECT)
 
 
 def _verify_publication_privileges(connection: SpeechConnection, schema: str) -> None:

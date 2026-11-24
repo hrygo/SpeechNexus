@@ -313,7 +313,9 @@ def test_two_creates_on_one_draft_serialize_under_for_update_and_both_admit(
         assert len(probe_errors) == 1 and isinstance(probe_errors[0], psycopg.errors.QueryCanceled)
 
         second, second_result = _create_in_thread(store, _draft_job("second"))
-        create_wait = _await_waits(db, "pg_advisory_xact_lock")
+        # 第二笔 create 的第一把锁是绑定行锁(键锁表),所以它停在那里;草稿行的
+        # `FOR UPDATE` 与准入咨询锁都在其后,不再是被观察到的第一条等待边。
+        create_wait = _await_waits(db, "coordination_keyed_locks")
         assert create_wait is not None, "the second create never waited for the first"
         assert holder in create_wait["blockers"], (create_wait, holder)
         pause.release.set()

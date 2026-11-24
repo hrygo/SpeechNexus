@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import random
 import time
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 from speechnexus_contracts.validation import validate_coordination
 
@@ -33,6 +33,12 @@ class _BudgetExpiredError(Exception):
     """The enclosing transaction must roll back before attempting commit."""
 
 
+class _Closable(Protocol):
+    """驱动游标才能关:``LeaseCursor`` 只说「能执行、能取行」。"""
+
+    def close(self) -> None: ...
+
+
 class _DeadlineCursor:
     def __init__(self, cursor: LeaseCursor, deadline: float) -> None:
         self._cursor = cursor
@@ -43,16 +49,24 @@ class _DeadlineCursor:
         return self._cursor.rowcount
 
     def execute(self, query: str, parameters: tuple[object, ...] = ()) -> object:
+        # 保存点控制先于预算判定:事务被取消或唯一冲突之后,这条语句是唯一还能执行的一条,
+        # 而且它不可能等待,所以既不该被预算拦住,也不该先发一条 `set_config`(那会在中止
+        # 的事务里直接失败,把整个事务赔进去)。
+        if is_savepoint_control(query):
+            return self._cursor.execute(query, parameters)
         remaining = self._deadline - time.monotonic()
         if remaining <= 0:
             raise _BudgetExpiredError
-        if is_savepoint_control(query):
-            return self._cursor.execute(query, parameters)
         self._cursor.execute(
             "SELECT set_config('statement_timeout', ?, true)",
             (str(max(1, int(remaining * 1000))),),
         )
         return self._cursor.execute(query, parameters)
+
+    def close(self) -> None:
+        """关掉被包装的游标:键锁路径自己开游标,所以也要自己关(借用型调用方不调它)."""
+
+        cast(_Closable, self._cursor).close()
 
     def fetchall(self) -> list[dict[str, Any]]:
         return self._cursor.fetchall()

@@ -28,6 +28,7 @@ from speechnexus_backend.speech.domain.public_jobs import (
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.public_jobs_postgres import PostgresPublicJobs
+from tests.support.keyed_lock_double import business_inserts
 from tests.unit.backend.test_public_job_pin_postgres import Pool, Rows, _public_row, _request
 from tests.unit.backend.test_public_jobs import _pin_facts, _pinned_body, _service
 
@@ -60,15 +61,31 @@ class Transaction:
     def __init__(self, pool: BarrierPool) -> None:
         self.pool = pool
         self.key_held = self.staged = False
+        self._rows = Rows([])
+
+    def cursor(self) -> Transaction:
+        # 键锁自己开游标;替身既是连接也是那条游标。
+        return self
+
+    def close(self) -> None:
+        return None
+
+    def fetchall(self) -> list[dict[str, Any]]:
+        return self._rows.fetchall()
 
     def execute(self, query: str, parameters: tuple[object, ...] = ()) -> Rows:
+        self._rows = self._dispatch(query, parameters)
+        return self._rows
+
+    def _dispatch(self, query: str, parameters: tuple[object, ...] = ()) -> Rows:
         pool = self.pool
-        if "speechnexus:catalog:" in query:
+        if "coordination_keyed_locks" in query and "FOR UPDATE" in query:
             assert not self.key_held, "the writer already holds the binding lock"
             if not pool.binding_lock.acquire(blocking=False):
                 pool.waiter_at_lock.set()
                 assert pool.binding_lock.acquire(timeout=3), "synthetic binding wait timed out"
             self.key_held = True
+            return Rows([{"bucket_no": parameters[0]}])
         if query.startswith("SELECT h.revision"):
             reference = json.loads(pool.request.submission.effective_configuration_json)["models"][
                 pool.request.kind
@@ -187,7 +204,7 @@ def test_early_rejection_waits_for_in_flight_keyed_writer(
 def test_replay_lock_failure_cannot_report_absence_or_write(error: type[psycopg.Error]) -> None:
     class BrokenPool(Pool):
         def execute(self, query: str, parameters: tuple[object, ...] = ()) -> Rows:
-            if "speechnexus:catalog:" in query:
+            if "coordination_keyed_locks" in query and "FOR UPDATE" in query:
                 raise error("synthetic binding settlement unavailable")
             return super().execute(query, parameters)
 
@@ -201,7 +218,7 @@ def test_replay_lock_failure_cannot_report_absence_or_write(error: type[psycopg.
             binding_id=pool.request.model_id,
         )
     assert pool.rollbacks == 1
-    assert not any(query.startswith("INSERT") for query, _ in pool.calls)
+    assert business_inserts(pool.calls) == []
 
 
 def test_keyless_create_does_not_read_or_write_a_key() -> None:
@@ -220,7 +237,7 @@ def test_deadline_exhausted_after_binding_wait_never_reads_absence_or_inserts(
 
         def execute(self, query: str, parameters: tuple[object, ...] = ()) -> Rows:
             rows = super().execute(query, parameters)
-            if "speechnexus:catalog:" in query:
+            if "coordination_keyed_locks" in query and "FOR UPDATE" in query:
                 self.elapsed = 3.1
             return rows
 
@@ -241,7 +258,7 @@ def test_deadline_exhausted_after_binding_wait_never_reads_absence_or_inserts(
                 pool.request.retry_of_job_id,
                 binding_id=pool.request.model_id,
             )
-    assert not any(query.startswith("INSERT") for query, _ in pool.calls)
+    assert business_inserts(pool.calls) == []
     if not write:
         # The settlement read is the only key read and it must not happen after
         # the lock consumed the budget; the write path's early lookup is lock-free.

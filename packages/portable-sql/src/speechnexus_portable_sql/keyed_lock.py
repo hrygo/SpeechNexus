@@ -23,6 +23,11 @@ advisory lock,能表达的只有**行锁**:先让这个键对应的行存在(`IN
 锁序:这把锁必须在一笔事务里**最先**取,排在 `bucket → canonical Job → public Job/outbox`
 之前;本模块不认识那些表,只钉住「键锁是这笔事务的第一把锁」这一条。
 
+**跨部署的身份。** 同一个键可能由两个独立部署各取一次(backend 的绑定禁用栅栏与执行网关
+的提交屏障),所以表名(`COORDINATION_KEYED_LOCK_TABLE`)与键文本(`binding_lock_key`)都定义
+在本包:两侧都调同一个函数,「同键 → 同一行」才是构造上的结论,而不是两处字符串碰巧相同。
+行锁落在这笔事务的第一把锁的位置上 —— 它之前不许有任何行锁或 advisory lock。
+
 时间与身份都由调用方给:本模块不读时钟、不生成身份、不改任何业务行。
 """
 
@@ -32,6 +37,7 @@ import hashlib
 import re
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any, cast
 
 from speechnexus_portable_sql.contract import (
     AsyncConnection,
@@ -46,6 +52,7 @@ from speechnexus_portable_sql.transaction import (
 from speechnexus_portable_sql.types import require_text
 
 __all__ = [
+    "COORDINATION_KEYED_LOCK_TABLE",
     "KEYED_LOCK_BUCKETS",
     "KEYED_LOCK_BUCKET_COLUMN",
     "KEYED_LOCK_COLUMNS",
@@ -55,6 +62,8 @@ __all__ = [
     "KeyedLock",
     "acquire",
     "acquire_async",
+    "acquire_in",
+    "binding_lock_key",
     "bucket_for_key",
     "key_digest",
     "lock_statements",
@@ -65,6 +74,19 @@ KEYED_LOCK_BUCKETS = 1024
 
 #: 锁行表的唯一名字定义点:各命名空间的 DDL 与授权都从这里取,不各写一份。
 KEYED_LOCK_TABLE = "keyed_locks"
+
+#: 协调命名空间的锁行表名。backend 与执行网关是 import-linter 明令独立的两个部署,
+#: 谁都不能导入对方,而它们必须锁**同一张物理表** —— 本包是两者唯一共享的底层,所以
+#: 这个名字定义在这里;``coordination_keyed_lock_schema``(DDL 与授权面)从本模块再导出,
+#: 全仓不出现第二份字面量。
+COORDINATION_KEYED_LOCK_TABLE = "coordination_keyed_locks"
+
+#: 键文本前缀。catalog 互斥的键文法是仓库级约定(``speechnexus:catalog:<段>…``),
+#: 只在这里拼,免得两侧或后续迁移各自写一份前缀。
+_KEY_PREFIX = "speechnexus:catalog"
+
+#: 绑定禁用栅栏的键种类段。
+_BINDING_KIND = "binding"
 
 #: 行的身份列。桶号是锁行的主键,也是唯一被语句读写的列。
 KEYED_LOCK_BUCKET_COLUMN = "bucket_no"
@@ -149,6 +171,27 @@ def key_digest(key: str) -> str:
     return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def binding_lock_key(binding_id: str) -> str:
+    """绑定禁用栅栏那把互斥的完整键:``speechnexus:catalog:binding:<binding_id>``.
+
+    为什么这个函数在本包:该键的两侧分别是 backend 与执行网关,它们是两个独立部署,
+    谁都不能导入对方的模块,而「同一个绑定 → 同一行」只有在两侧**逐字相同**地拼这个文本
+    时成立。定义点放在两者唯一共享的底层,任何一侧都不可能悄悄换一种拼法。
+
+    为什么键里不再有 schema:旧键把会话的 ``current_schema()`` 也拼进文本
+    (``'speechnexus:catalog:' || current_schema() || ':binding:' || ?``),那是 advisory
+    lock 唯一的命名空间手段 —— 哈希值没有表,只能靠键文本区分实例。行锁不需要它:行的
+    身份是(`search_path` 解析出的锁行表, 桶号),schema 那一段由表本身承载,而两侧在同一
+    部署里用同一个 ``search_path`` 取同一张表,所以「同键 → 同一行」由表保证。反过来,
+    把 ``current_schema()`` 留在键里会多出一条**会分叉**的推导:两侧 search_path 首个条目
+    不同(例如一侧 ``a, speech``、另一侧 ``speech``)而表都解析到 ``speech`` 时,桶号会算成
+    两个 —— 互斥静默裂成两把,正是这次迁移要防的失效。
+    """
+
+    text = require_text(binding_id, field="binding_id", max_bytes=512)
+    return f"{_KEY_PREFIX}:{_BINDING_KIND}:{text}"
+
+
 def bucket_for_key(key: str, *, buckets: int = KEYED_LOCK_BUCKETS) -> Decimal:
     """完整键 → 桶号:`sha256(键)` 前 8 字节对 `buckets` 取模。
 
@@ -160,6 +203,20 @@ def bucket_for_key(key: str, *, buckets: int = KEYED_LOCK_BUCKETS) -> Decimal:
         raise ContractError("bucket count must be at least 1")
     digest = hashlib.sha256(text.encode("utf-8")).digest()
     return Decimal(int.from_bytes(digest[:8], "big") % buckets)
+
+
+def _own_cursor(connection: object) -> tuple[Any, bool]:
+    """`(要用的游标, 是否由这里关闭)`;连接才开新游标,自带游标的执行者就用自己的.
+
+    生产路径传进来的是连接(开一条游标、用完关掉)或游标(`acquire_in` 已经换成它的连接)。
+    单元用例的替身有些本身就既是连接又是游标 —— 只有 `execute`/`fetchall`,没有 `cursor()`;
+    对它们来说「用它自己」就是同一笔事务里的同一份语句,所以这里不另造一层适配。
+    """
+
+    open_cursor = getattr(connection, "cursor", None)
+    if open_cursor is None:
+        return connection, False
+    return open_cursor(), True
 
 
 def _require_transaction(connection: object) -> None:
@@ -198,14 +255,15 @@ def acquire(
     insert_statement, lock_statement = lock_statements(schema, table=table)
     bucket = bucket_for_key(key)
     digest = key_digest(key)
-    cursor = connection.cursor()
+    cursor, opened = _own_cursor(connection)
     try:
         created = insert_if_absent(cursor, insert_statement, (bucket,))
         cursor.execute(lock_statement, (bucket,))
         if len(cursor.fetchall()) != 1:
             raise ContractError(f"{table} row {bucket} disappeared between insert and lock")
     finally:
-        cursor.close()
+        if opened:
+            cursor.close()
     return KeyedLock(bucket_no=bucket, digest=digest, created=created)
 
 
@@ -235,3 +293,29 @@ async def acquire_async(
     finally:
         await cursor.close()
     return KeyedLock(bucket_no=bucket, digest=digest, created=created)
+
+
+def acquire_in(
+    executor: Any,
+    *,
+    key: str,
+    schema: str | None = None,
+    table: str = KEYED_LOCK_TABLE,
+) -> KeyedLock:
+    """在 `executor` 所属的那笔事务里取键锁(游标或连接都可以).
+
+    调用点手上常常只有游标(`with connection.cursor() as cursor:`),而 `acquire` 需要连接
+    来读驱动的事务状态并开自己的游标。所以「哪个连接拥有这个执行者」只在这里判定一次:
+    游标的 `connection` 是持有它的连接,而 psycopg 的连接对它自己返回自身。用 `getattr`
+    而不是断言属性存在,是因为集成用例的替身只实现 `execute`/`cursor`。
+
+    这不是第二种取锁做法:桶号、语句与提交边界都还是 `acquire` 的那一套。
+    """
+
+    owner = getattr(executor, "connection", None)
+    return acquire(
+        cast(Connection, owner if owner is not None else executor),
+        key=key,
+        schema=schema,
+        table=table,
+    )

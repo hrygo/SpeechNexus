@@ -98,6 +98,7 @@ from speechnexus_gateway.infrastructure.submit_sql import (
 )
 from speechnexus_portable_sql.clock import ClockReader
 from speechnexus_portable_sql.clock import now_us as _portable_now_us
+from speechnexus_portable_sql.transaction import is_savepoint_control
 from speechnexus_portable_sql.vendor import PoolClosed, PoolTimeout, TooManyRequests, psycopg
 
 _Result = TypeVar("_Result")
@@ -119,6 +120,11 @@ class _DeadlineCursor:
         return self._cursor.rowcount
 
     def execute(self, query: str, parameters: tuple[object, ...] = ()) -> object:
+        if is_savepoint_control(query):
+            # A savepoint rollback is the *only* statement that works in an aborted
+            # transaction; arming the timeout first would fail and take the whole
+            # submit transaction with it, so control statements run unarmed.
+            return self._cursor.execute(query, parameters)
         remaining = self._deadline - time.monotonic()
         if remaining <= 0:
             raise _BudgetExpiredError

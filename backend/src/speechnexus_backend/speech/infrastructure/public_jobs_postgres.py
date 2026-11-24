@@ -67,6 +67,7 @@ from speechnexus_backend.speech.infrastructure.leases_postgres import (
     _BudgetExpiredError,
     _DeadlineCursor,
 )
+from speechnexus_backend.speech.infrastructure.leases_sql import LeaseCursor
 from speechnexus_backend.speech.infrastructure.postgres_pool import (
     SpeechConnection,
     SpeechPool,
@@ -211,6 +212,15 @@ class _DeadlineConnection:
     def admission_cursor(self) -> Iterator[_DeadlineCursor]:
         with self.raw.cursor() as raw:
             yield _DeadlineCursor(raw, self.deadline)
+
+    def cursor(self) -> _DeadlineCursor:
+        """给 ``keyed_lock.acquire`` 开一条自己的游标:锁语句同样受这笔事务的预算约束.
+
+        ``acquire`` 自己开、自己关游标,所以这里不能用 ``admission_cursor`` 的上下文形态;
+        返回的对象与准入路径是同一个 ``_DeadlineCursor``,上限与语句改写都只有一份。
+        """
+
+        return _DeadlineCursor(cast(LeaseCursor, self.raw.cursor()), self.deadline)
 
 
 def _unavailable_detail(error: BaseException) -> str | None:
@@ -1135,8 +1145,15 @@ class PostgresPublicJobs:
         deadline = time.monotonic() + self._timeout
         try:
             with self._transaction(deadline) as connection:
-                connection.execute("SET TRANSACTION READ ONLY")
-                if binding_lock is not None:
+                # A keyed lock is a row lock: PostgreSQL refuses both the lazy bucket
+                # INSERT and `SELECT ... FOR UPDATE` in a read-only transaction, so the
+                # settling lookup cannot also be read-only. Only the transaction mode is
+                # given up -- the statement below is a single SELECT and the role-level
+                # authority that used to back this up is unchanged; the one row this
+                # transaction may write is the lock's own bucket row.
+                if binding_lock is None:
+                    connection.execute("SET TRANSACTION READ ONLY")
+                else:
                     # Settlement, not exclusion: a same-key writer takes this same
                     # binding lock before it re-checks its key and holds it until
                     # commit, so waiting here makes the lookup observe that writer

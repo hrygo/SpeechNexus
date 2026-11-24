@@ -11,6 +11,9 @@ from speechnexus_backend.speech.infrastructure.claim_bucket_schema import (
     CLAIM_BUCKET_TABLE,
     CLAIM_BUCKET_UPDATE_COLUMNS,
 )
+from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
+    coordination_keyed_lock_grants,
+)
 from speechnexus_backend.speech.infrastructure.execution_release_schema import release_guard_grants
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 from speechnexus_backend.speech.infrastructure.job_writer_columns import (
@@ -166,4 +169,15 @@ def coordination_runtime_grants(
     grants.append(
         f'GRANT UPDATE (claim_version) ON "{schema}".coordination_jobs TO "{gateway_role}"'
     )
-    return (*grants, *release_guard_grants(schema, speech_role))
+    # Both identities of this pair take the binding row lock: the API on the synchronous
+    # admission path (``PostgresAdmissionTransactions`` opens by locking the binding) and
+    # the gateway before it creates a submit intent. The privileges themselves are
+    # declared once in ``coordination_keyed_lock_schema``; provisioning both roles here
+    # means one call covers the pair, and ``gateway_keyed_lock_grants`` remains the
+    # gateway-only entry for deployments that grant the two sides separately.
+    return (
+        *grants,
+        *coordination_keyed_lock_grants(schema, speech_role),
+        *coordination_keyed_lock_grants(schema, gateway_role),
+        *release_guard_grants(schema, speech_role),
+    )

@@ -12,8 +12,9 @@ schema 里的两个不同角色。锁行建在其中一侧够不到的命名空�
 **形状。** 与 workbench 的 `keyed_locks` 同源。桶号与列名来自
 ``speechnexus_portable_sql.keyed_lock`` 的唯一清单(``KEYED_LOCK_COLUMNS``),本模块只补三方
 面命名空间自己的东西:物理类型(``DECIMAL(38,0)``,与 ``coordination_claim_buckets`` 一致,
-桶号是 Python 侧算出的 ``Decimal``)、``created_at``(行是懒建的,记下它第一次被用到的时间
-供排查锁竞争用;没有任何运行角色读写这一列,所以它不产生授权事实)、以及主键。
+桶号是 Python 侧算出的 ``Decimal``)与主键。表里没有时间戳列:它没有写者也没有读者,
+而带小数的 ``TIMESTAMP(6)`` 上 ``DEFAULT CURRENT_TIMESTAMP`` 在 MySQL 是非法默认值,
+两引擎在这一处拼写不同,少一列就少一处差异。
 
 **授权面按事实拆,不按表拆。** 键锁对运行角色需要三件事,每件事只有一个定义点:
 
@@ -30,19 +31,29 @@ schema 里的两个不同角色。锁行建在其中一侧够不到的命名空�
 
 from __future__ import annotations
 
+from speechnexus_backend.speech.infrastructure.job_schema_preflight import (
+    require_migrated_schema,
+)
+from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechConnection
 from speechnexus_portable_sql.keyed_lock import (
+    COORDINATION_KEYED_LOCK_TABLE,
     KEYED_LOCK_BUCKET_COLUMN,
     KEYED_LOCK_COLUMNS,
     KEYED_LOCK_ROW_LOCK_COLUMN,
 )
 
-#: 协调命名空间里的表名。workbench 那张叫 `keyed_locks`;这里沿用 ``coordination_`` 前缀,
-#: 与 `coordination_jobs` / `coordination_outbox` / `coordination_claim_buckets` 一致。
-COORDINATION_KEYED_LOCK_TABLE = "coordination_keyed_locks"
-
-#: 行首次被用到的时间。**唯一**一个不出现在 ``KEYED_LOCK_COLUMNS`` 里的列:它不参与加锁、
-#: 不被任何运行角色读写,所以它不引入第四条授权事实。
-COORDINATION_KEYED_LOCK_CREATED_AT_COLUMN = "created_at"
+#: 协调命名空间里的表名。名字的唯一字面量在 ``speechnexus_portable_sql.keyed_lock`` ——
+#: 执行网关是独立部署、导入不了本模块,而两侧必须锁同一张表,所以物理名字留在两者共享的
+#: 底层,这里只再导出(DDL 与授权仍只由本模块声明)。
+__all__ = [
+    "COORDINATION_KEYED_LOCK_DDL",
+    "COORDINATION_KEYED_LOCK_INSERT_COLUMNS",
+    "COORDINATION_KEYED_LOCK_SELECT_COLUMNS",
+    "COORDINATION_KEYED_LOCK_TABLE",
+    "COORDINATION_KEYED_LOCK_UPDATE_COLUMNS",
+    "coordination_keyed_lock_grants",
+    "require_coordination_keyed_lock_grants",
+]
 
 #: 加锁语句读的列。与 ``keyed_lock.STATEMENTS['keyed_lock.lock']`` 的投影逐字一致。
 COORDINATION_KEYED_LOCK_SELECT_COLUMNS: tuple[str, ...] = (KEYED_LOCK_BUCKET_COLUMN,)
@@ -62,20 +73,21 @@ assert (
     "privilege decision; a new column in the portable keyed lock needs one here"
 )
 
-#: 逐列的物理类型。顺序与 ``KEYED_LOCK_COLUMNS`` 一致,`created_at` 排在最后。
+#: 逐列的物理类型。顺序与 ``KEYED_LOCK_COLUMNS`` 一致。
+#:
+#: 表里**没有** ``created_at``:它没有写者也没有读者,而带小数的 ``TIMESTAMP(6)`` 上
+#: ``DEFAULT CURRENT_TIMESTAMP`` 在 MySQL 是非法默认值(必须写 ``CURRENT_TIMESTAMP(6)``),
+#: 两引擎在这一处拼写不同。少一列就少一处引擎差异。
 _COLUMN_DEFINITIONS: tuple[tuple[str, str], ...] = (
     (KEYED_LOCK_BUCKET_COLUMN, "DECIMAL(38,0) NOT NULL"),
     (KEYED_LOCK_ROW_LOCK_COLUMN, "DECIMAL(38,0) NOT NULL DEFAULT 0"),
-    (
-        COORDINATION_KEYED_LOCK_CREATED_AT_COLUMN,
-        "TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP",
-    ),
 )
 
-assert tuple(name for name, _ in _COLUMN_DEFINITIONS) == (
-    *KEYED_LOCK_COLUMNS,
-    COORDINATION_KEYED_LOCK_CREATED_AT_COLUMN,
-), "the DDL column order must be the portable declaration plus created_at"
+assert tuple(name for name, _ in _COLUMN_DEFINITIONS) == KEYED_LOCK_COLUMNS, (
+    "the DDL columns must be exactly the portable declaration: a column outside it has no "
+    "writer and no reader, and an extra defaulted timestamp is the one thing PostgreSQL and "
+    "MySQL spell differently (CURRENT_TIMESTAMP vs CURRENT_TIMESTAMP(6))"
+)
 
 #: 建表语句的唯一副本:生产由 alembic ``0067`` 执行,集成用例按同一份装配。
 #: ``IF NOT EXISTS`` 与迁移树其余部分一致:若干集成用例把 ``alembic_version`` 回退再
@@ -111,12 +123,36 @@ def coordination_keyed_lock_grants(schema: str, role: str) -> tuple[str, ...]:
     )
 
 
-__all__ = [
-    "COORDINATION_KEYED_LOCK_CREATED_AT_COLUMN",
-    "COORDINATION_KEYED_LOCK_DDL",
-    "COORDINATION_KEYED_LOCK_INSERT_COLUMNS",
-    "COORDINATION_KEYED_LOCK_SELECT_COLUMNS",
-    "COORDINATION_KEYED_LOCK_TABLE",
-    "COORDINATION_KEYED_LOCK_UPDATE_COLUMNS",
-    "coordination_keyed_lock_grants",
-]
+def require_coordination_keyed_lock_grants(
+    connection: SpeechConnection, schema: str, *, subject: str
+) -> None:
+    """启动闸门:这个身份此刻就能取协调键锁,缺表或缺列在启动时点名.
+
+    这张表原先登记为「允许但不要求」,因为还没有调用点用它;绑定禁用栅栏迁移到行锁之后,
+    取不到它的角色不再只是少一条授权,而是**第一条锁语句就 42501**。所以判据从「允许」
+    改成「必须有」:关系不存在或列级许可缺一列,都在启动核对时按名字失败。
+
+    三件事分别判,不合成一句 ``has_table_privilege``:列级授权下按表判恒为假,会把一份
+    正确的列级授权判成缺授权。存在性先判 —— ``has_column_privilege`` 对不存在的关系是
+    报错而不是返回空,先查再判才能给出「没跑迁移」这个可读结论(#920 的同一条理由)。
+    """
+
+    # 存在性复用唯一的「关系是否已迁移」判定点,不在这里另写一份 pg_class 查询。
+    require_migrated_schema(connection, schema, (COORDINATION_KEYED_LOCK_TABLE,))
+    qualified = f"{schema}.{COORDINATION_KEYED_LOCK_TABLE}"
+    for privilege, columns in (
+        ("SELECT", COORDINATION_KEYED_LOCK_SELECT_COLUMNS),
+        ("INSERT", COORDINATION_KEYED_LOCK_INSERT_COLUMNS),
+        ("UPDATE", COORDINATION_KEYED_LOCK_UPDATE_COLUMNS),
+    ):
+        for column in columns:
+            row = connection.execute(
+                "SELECT pg_catalog.has_column_privilege(CURRENT_USER, ?, ?, ?) AS held",
+                (qualified, column, privilege),
+            ).fetchone()
+            if row is None or not row["held"]:
+                raise ValueError(
+                    f"{subject} cannot take the {COORDINATION_KEYED_LOCK_TABLE} row lock: "
+                    f"missing {privilege} on {COORDINATION_KEYED_LOCK_TABLE}.{column}; "
+                    "re-provision the role from its grant function"
+                )

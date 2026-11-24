@@ -9,6 +9,9 @@ from speechnexus_backend.speech.infrastructure.catalog_revision_schema import (
     RETIREMENT_TABLE,
     STATE_TABLE,
 )
+from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
+    coordination_keyed_lock_grants,
+)
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 from speechnexus_backend.speech.infrastructure.publication_schema import TABLE as PUBLICATION_TABLE
 
@@ -126,6 +129,9 @@ def binding_lifecycle_grants(schema: str, role: str) -> tuple[str, ...]:
         # reads only the columns its predicate needs.
         f"GRANT SELECT (consumer_kind, consumer_id, consumer_revision, released_at_us), "
         f'UPDATE (released_at_us) ON "{schema}".speech_asset_references TO {target}',
+        # Disabling a binding serializes with the binding mutex, so the lifecycle writer
+        # takes the coordination keyed lock before it appends the retirement row.
+        *coordination_keyed_lock_grants(schema, role),
     )
 
 

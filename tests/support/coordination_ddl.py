@@ -1,7 +1,8 @@
 """Canonical coordination DDL, taken from the generators instead of a copied file.
 
 生产 DDL 由 `coordination_schema.COORDINATION_DDL`(13 张表)、`job_schema.JOB_DDL`
-(2 张表)与 `claim_bucket_schema.CLAIM_BUCKET_DDL`(1 张表,0066)生成。根目录的
+(2 张表)、`claim_bucket_schema.CLAIM_BUCKET_DDL`(1 张表,0066)与
+`coordination_keyed_lock_schema.COORDINATION_KEYED_LOCK_DDL`(1 张表,0067)生成。根目录的
 `migrations/0001_cluster_coordination_draft.sql` 曾是这两处的文本副本,不参与产品迁移链,
 已于本轮删除 —— 保留它等于维护两份真源。
 """
@@ -9,6 +10,9 @@
 from __future__ import annotations
 
 from speechnexus_backend.speech.infrastructure.claim_bucket_schema import CLAIM_BUCKET_DDL
+from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
+    COORDINATION_KEYED_LOCK_DDL,
+)
 from speechnexus_backend.speech.infrastructure.coordination_schema import COORDINATION_DDL
 from speechnexus_backend.speech.infrastructure.job_schema import CANONICAL_JOB_DDL, JOB_DDL
 
@@ -17,7 +21,7 @@ from speechnexus_backend.speech.infrastructure.job_schema import CANONICAL_JOB_D
 #: 改写已发布迁移;而按 ``JOB_DDL`` 直接建表的验证 schema 必须与迁移后的生产形状一致,
 #: 否则同一段写入代码会在「跑迁移的 PG」与「按 DDL 建表的库」之间分叉。
 COORDINATION_DDL_STATEMENTS: tuple[str, ...] = (
-    COORDINATION_DDL + JOB_DDL + CANONICAL_JOB_DDL + CLAIM_BUCKET_DDL
+    COORDINATION_DDL + JOB_DDL + CANONICAL_JOB_DDL + CLAIM_BUCKET_DDL + COORDINATION_KEYED_LOCK_DDL
 )
 
 #: 同一批语句的整段文本,供按正则检查时使用。

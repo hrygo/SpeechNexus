@@ -22,6 +22,8 @@ from speechnexus_backend.speech.infrastructure.public_jobs_postgres import (
     _lock_validation_target,
     _validate_pinned_create,
 )
+from speechnexus_portable_sql.keyed_lock import binding_lock_key, bucket_for_key
+from tests.support.keyed_lock_double import business_inserts
 from tests.unit.backend.test_public_jobs import BINDING, NOW, _pin_facts, _pinned_body, _service
 
 
@@ -76,6 +78,24 @@ class Rows:
         return self.rows[:size]
 
 
+class _PoolCursor:
+    """键锁开出来的游标:只要 execute / fetchall / close 三件事."""
+
+    def __init__(self, pool: Pool) -> None:
+        self._pool = pool
+        self._rows = Rows([])
+
+    def execute(self, query: str, parameters: tuple[object, ...] = ()) -> Rows:
+        self._rows = self._pool.execute(query, parameters)
+        return self._rows
+
+    def fetchall(self) -> list[dict[str, Any]]:
+        return self._rows.fetchall()
+
+    def close(self) -> None:
+        return None
+
+
 class Pool:
     def __init__(self, request: NewPublicJob) -> None:
         self.request = request
@@ -109,10 +129,16 @@ class Pool:
         else:
             self.commits += 1
 
+    def cursor(self) -> Any:
+        # 键锁(``keyed_lock.acquire``)自己开、自己关游标。
+        return _PoolCursor(self)
+
     def execute(self, query: str, parameters: tuple[object, ...] = ()) -> Rows:
         self.calls.append((query, parameters))
-        if "speechnexus:catalog:" in query:
+        if "coordination_keyed_locks" in query and "FOR UPDATE" in query:
+            # 键锁的 ``SELECT … FOR UPDATE`` 必须读回它锁住的那一行。
             self.locked = True
+            return Rows([{"bucket_no": parameters[0]}])
         if query.startswith("SELECT h.revision"):
             return Rows([{"revision": str(BINDING.revision)}])
         if "AS is_current" in query:
@@ -150,11 +176,21 @@ def test_create_locks_then_revalidates_before_any_insert_and_keeps_original_pin(
     key_lookup = next(
         i for i, query in enumerate(queries) if "j.idempotency_key_digest = ?" in query
     )
-    lock = next(i for i, query in enumerate(queries) if "speechnexus:catalog:" in query)
+    lock = next(
+        i
+        for i, query in enumerate(queries)
+        if "coordination_keyed_locks" in query and "FOR UPDATE" in query
+    )
     validation = next(i for i, query in enumerate(queries) if "AS is_current" in query)
-    first_insert = next(i for i, query in enumerate(queries) if query.startswith("INSERT"))
+    first_insert = next(
+        i
+        for i, query in enumerate(queries)
+        if query.startswith("INSERT") and "coordination_keyed_locks" not in query
+    )
     assert key_lookup < lock < validation < first_insert
-    assert "'speechnexus:catalog:' || current_schema()" in queries[lock]
+    # 锁行由共享键推出:同一个绑定在 backend 与执行网关算出的桶号必须一样,所以断言
+    # 参数就是唯一那份键推导的结果,而不是另拼一个字符串。
+    assert pool.calls[lock][1] == (bucket_for_key(binding_lock_key(BINDING.object_id)),)
     original = next(
         parameters
         for query, parameters in pool.calls
@@ -178,7 +214,7 @@ def test_visibility_changed_since_resolution_rolls_back_without_insert(
     pool.binding_rows[0][field] = field == "is_retired"
     with pytest.raises(ModelBindingError, match=code):
         _driver(pool).create(pool.request)
-    assert not any(query.startswith("INSERT") for query, _ in pool.calls)
+    assert business_inserts(pool.calls) == []
     assert pool.rollbacks == 1 and pool.commits == 0
 
 
@@ -188,9 +224,8 @@ def test_replay_discovered_after_lock_beats_retirement_and_has_no_write() -> Non
     pool.binding_rows[0]["is_retired"] = True
     result = _driver(pool).create(pool.request)
     assert result.outcome == "replayed" and result.job is not None
-    assert not any(
-        query.startswith("INSERT") or "AS is_current" in query for query, _ in pool.calls
-    )
+    assert business_inserts(pool.calls) == []
+    assert not any("AS is_current" in query for query, _ in pool.calls)
 
 
 def test_stored_revision_identity_changed_fails_closed() -> None:
@@ -199,7 +234,7 @@ def test_stored_revision_identity_changed_fails_closed() -> None:
     with pytest.raises(ModelBindingError, match="model_binding_not_current"):
         _driver(pool).create(pool.request)
     assert pool.rollbacks == 1
-    assert not any(query.startswith("INSERT") for query, _ in pool.calls)
+    assert business_inserts(pool.calls) == []
 
 
 def test_domain_refuses_dropped_pin_expectation() -> None:

@@ -9,6 +9,7 @@ import pytest
 
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.public_jobs_postgres import PostgresPublicJobs
+from tests.support.keyed_lock_double import is_keyed_lock_insert
 from tests.unit.backend.test_public_job_pin_postgres import Pool, Rows, _request
 
 
@@ -33,8 +34,8 @@ class TimedPool(Pool):
         self.elapsed += self.commit_cost
 
     def execute(self, query: str, parameters: tuple[object, ...] = ()) -> Rows:
-        if "speechnexus:catalog:" in query:
-            # The binding lock is the only cross-transaction wait a create makes;
+        if "coordination_keyed_locks" in query and "FOR UPDATE" in query:
+            # The binding row lock is the only cross-transaction wait a create makes;
             # waiting on it is how a transaction can burn most of its budget.
             self.elapsed += 2.8
         elif "set_config" in query:
@@ -44,7 +45,7 @@ class TimedPool(Pool):
         else:
             self.elapsed += self.cost
         result = super().execute(query, parameters)
-        if self.fail_unique and query.startswith("INSERT"):
+        if self.fail_unique and query.startswith("INSERT") and not is_keyed_lock_insert(query):
             self.fail_unique = False
             raise psycopg.errors.UniqueViolation("synthetic rollback")
         return result

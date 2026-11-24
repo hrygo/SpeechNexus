@@ -33,18 +33,21 @@ import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import psycopg
 import pytest
 from alembic import command
 from alembic.config import Config
 from psycopg.conninfo import make_conninfo
+from psycopg.rows import dict_row
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 
+from speechnexus_backend.speech.infrastructure.binding_disable_barrier import (
+    lock_binding as backend_lock_binding,
+)
 from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
-    COORDINATION_KEYED_LOCK_CREATED_AT_COLUMN,
     COORDINATION_KEYED_LOCK_TABLE,
     COORDINATION_KEYED_LOCK_UPDATE_COLUMNS,
 )
@@ -54,6 +57,9 @@ from speechnexus_backend.speech.infrastructure.gateway_query_grants import (
 from speechnexus_backend.speech.infrastructure.job_schema import (
     job_dispatch_grants,
     job_runtime_grants,
+)
+from speechnexus_gateway.infrastructure.binding_disable_guard import (
+    lock_binding as gateway_lock_binding,
 )
 from speechnexus_portable_sql.keyed_lock import KEYED_LOCK_COLUMNS, acquire, bucket_for_key
 from speechnexus_portable_sql.psycopg_driver import connect as portable_connect
@@ -187,7 +193,8 @@ def _connection(dsn: str, *, autocommit: bool = True) -> Any:
 def _pid(connection: Any) -> int:
     row = connection.execute("SELECT pg_backend_pid()").fetchone()
     assert row is not None
-    return int(row[0])
+    # 元组行与 dict 行两种形态都出现过:被测的两条路径各自用自己那一份。
+    return int(row["pg_backend_pid"] if isinstance(row, dict) else row[0])
 
 
 def _blockers(observer: Any, pid: int) -> set[int]:
@@ -270,16 +277,15 @@ def test_the_table_and_both_roles_come_from_the_production_declarations(
         "ORDER BY ordinal_position",
         (sandbox.schema, COORDINATION_KEYED_LOCK_TABLE),
     ).fetchall()
-    assert [row[0] for row in rows] == [
-        *KEYED_LOCK_COLUMNS,
-        COORDINATION_KEYED_LOCK_CREATED_AT_COLUMN,
-    ], "the migrated table does not follow the portable declaration plus created_at"
+    assert [row[0] for row in rows] == [*KEYED_LOCK_COLUMNS], (
+        "the migrated table does not follow the portable declaration"
+    )
     by_name = {row[0]: row for row in rows}
     for column in KEYED_LOCK_COLUMNS:
         assert by_name[column][1] == "numeric", by_name[column]
         assert (by_name[column][3], by_name[column][4]) == (38, 0), by_name[column]
         assert by_name[column][2] == "NO", f"{column} must not be nullable"
-    assert by_name[COORDINATION_KEYED_LOCK_CREATED_AT_COLUMN][1] == "timestamp without time zone"
+
     primary_key = sandbox.admin.execute(
         "SELECT a.attname FROM pg_catalog.pg_index i "
         "JOIN pg_catalog.pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey) "
@@ -328,8 +334,14 @@ def test_the_gateway_waits_for_the_backend_on_the_same_key(sandbox: Sandbox) -> 
     _warm(sandbox, KEY)
     assert _row_count(sandbox, KEY) == 1
     backend = _connection(sandbox.backend_dsn)
-    gateway = _connection(sandbox.gateway_dsn)
+    # 网关的游标按列名读行(生产的 `PortableCursor` 就是 dict 行),所以这里也给它同一形态。
+    gateway = portable_connect(sandbox.gateway_dsn, row_factory=dict_row)
+    gateway.execute("SET TimeZone TO 'UTC'")
     observer = _connection(sandbox.dsn)
+    # 两个生产池都把 search_path 钉成 ``{schema},pg_catalog,pg_temp``,所以两侧的锁语句用
+    # 不带 schema 的表名 —— 这里照同一份设置,否则测的是「谁把表名写全了」。
+    for connection in (backend, gateway):
+        connection.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog, pg_temp')
     backend_pid, gateway_pid = _pid(backend), _pid(gateway)
     held, release = threading.Event(), threading.Event()
     finished: list[str] = []
@@ -369,7 +381,7 @@ def test_the_gateway_waits_for_the_backend_on_the_same_key(sandbox: Sandbox) -> 
             blockers = _await_blockers(observer, gateway_pid)
             assert backend_pid in blockers, (
                 "the gateway transaction did not wait on the backend holding the same key: "
-                f"blockers={sorted(blockers)} backend={backend_pid}"
+                f"blockers={sorted(blockers)} backend={backend_pid} errors={errors}"
             )
             assert waiter.is_alive(), "the gateway finished although the key was still held"
             assert "gateway" not in finished
@@ -465,3 +477,99 @@ def test_a_gateway_without_the_row_lock_privilege_fails_loudly(sandbox: Sandbox)
         ), str(caught.value)
     finally:
         connection.close()
+
+
+def test_the_two_barrier_functions_contend_on_the_same_binding_row(sandbox: Sandbox) -> None:
+    """两侧的**生产函数**在同一 binding 上互斥,而不是只有原语在同一键上互斥。
+
+    调用的是迁移后的两个 ``lock_binding``:backend 的禁用栅栏与执行网关的提交前屏障。谁把
+    键、表或推导换成另一套,这里就变成两把互不相干的锁 —— 网关不再等待,`_await_blockers`
+    拿到空集,第一条断言失败。这条同时钉住「键里不再含 schema」也没有把两侧拆开:两个角色
+    的 ``search_path`` 都指向同一个 schema,行身份由(表所在 schema, 桶号)决定。
+    """
+
+    sandbox.admin.execute(
+        psycopg.sql.SQL("GRANT SELECT ON {schema}.speech_binding_revisions TO {role}").format(
+            schema=psycopg.sql.Identifier(sandbox.schema),
+            role=psycopg.sql.Identifier(sandbox.gateway_role),
+        )
+    )
+    sandbox.admin.execute(
+        "INSERT INTO speech_binding_families (binding_id, latest_revision) "
+        "VALUES ('tts-quality', '1')"
+    )
+    sandbox.admin.execute(
+        "INSERT INTO speech_binding_commands "
+        "(key_digest, binding_id, document_version, intent_json, request_digest) "
+        "VALUES ('sha256:" + "a" * 64 + "', 'tts-quality', 1, '{}', 'sha256:" + "c" * 64 + "')"
+    )
+    sandbox.admin.execute(
+        "INSERT INTO speech_binding_revisions "
+        "(binding_id, revision, revision_id, key_digest, document_version, definition_json,"
+        " definition_digest, request_digest, created_at_us) "
+        "VALUES ('tts-quality', '1', 'binding-test', 'sha256:" + "a" * 64 + "', 1, '{}',"
+        " 'sha256:" + "b" * 64 + "', 'sha256:" + "c" * 64 + "', 1)"
+    )
+    backend = _connection(sandbox.backend_dsn)
+    # 网关的游标按列名读行(生产的 `PortableCursor` 就是 dict 行),所以这里也给它同一形态。
+    gateway = portable_connect(sandbox.gateway_dsn, row_factory=dict_row)
+    gateway.execute("SET TimeZone TO 'UTC'")
+    observer = _connection(sandbox.dsn)
+    # 两个生产池都把 search_path 钉成 ``{schema},pg_catalog,pg_temp``,所以两侧的锁语句用
+    # 不带 schema 的表名 —— 这里照同一份设置,否则测的是「谁把表名写全了」。
+    for connection in (backend, gateway):
+        connection.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog, pg_temp')
+    backend_pid, gateway_pid = _pid(backend), _pid(gateway)
+    held, release = threading.Event(), threading.Event()
+    seen: list[tuple[str, str]] = []
+    errors: list[BaseException] = []
+
+    def hold_the_binding() -> None:
+        try:
+            with backend.transaction():
+                backend_lock_binding(cast(Any, backend), "tts-quality")
+                held.set()
+                assert release.wait(30), "the release event never arrived"
+        except BaseException as error:
+            errors.append(error)
+        finally:
+            backend.close()
+
+    def take_the_same_binding() -> None:
+        try:
+            with gateway.transaction(), gateway.cursor() as cursor:
+                seen.append(gateway_lock_binding(cast(Any, cursor), "binding-test"))
+        except BaseException as error:
+            errors.append(error)
+        finally:
+            gateway.close()
+
+    holder = threading.Thread(target=hold_the_binding, name="barrier-backend")
+    holder.start()
+    try:
+        assert held.wait(30), f"the backend barrier never took the binding row: {errors}"
+        waiter = threading.Thread(target=take_the_same_binding, name="barrier-gateway")
+        waiter.start()
+        try:
+            blockers = _await_blockers(observer, gateway_pid)
+            assert backend_pid in blockers, (
+                "the gateway barrier did not wait on the backend holding the same binding: "
+                f"blockers={sorted(blockers)} backend={backend_pid} errors={errors}"
+            )
+            status = observer.execute(
+                "SELECT wait_event_type, wait_event FROM pg_stat_activity WHERE pid = ?",
+                (gateway_pid,),
+            ).fetchone()
+            assert status is not None and tuple(status) == ("Lock", "transactionid"), status
+            assert waiter.is_alive(), "the gateway finished although the binding row was held"
+        finally:
+            release.set()
+            waiter.join(30)
+            assert not waiter.is_alive(), "the gateway barrier never completed after release"
+    finally:
+        holder.join(30)
+        assert not holder.is_alive(), "the backend barrier never completed"
+    assert errors == [], f"a side failed instead of queueing: {errors[0]!r}"
+    # 网关这一侧是用 revision_id 查到 binding 之后才取锁的:返回的是它读到的权威。
+    assert seen == [("tts-quality", "1")]
+    observer.close()

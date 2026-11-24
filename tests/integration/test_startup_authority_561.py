@@ -410,6 +410,23 @@ JOB_MISGRANTS = (
         "undeclared table speech_pronunciation_families",
     ),
     (
+        # 绑定互斥的行锁许可:缺 INSERT 拿不到桶行,缺 UPDATE 拿不到行锁,缺 SELECT 读不回
+        # 锁住的那一行。三列都是启动条件,不是第一次请求时才失败。
+        "keyed-lock-missing-insert",
+        'REVOKE INSERT (bucket_no) ON "{schema}".coordination_keyed_locks FROM "{role}"',
+        "INSERT columns do not match the declared surface on coordination_keyed_locks",
+    ),
+    (
+        "keyed-lock-missing-row-lock-update",
+        'REVOKE UPDATE (version) ON "{schema}".coordination_keyed_locks FROM "{role}"',
+        "lacks UPDATE on coordination_keyed_locks.version",
+    ),
+    (
+        "keyed-lock-missing-select",
+        'REVOKE SELECT (bucket_no) ON "{schema}".coordination_keyed_locks FROM "{role}"',
+        "missing SELECT on coordination_keyed_locks.bucket_no",
+    ),
+    (
         "schema-create",
         'GRANT CREATE ON SCHEMA "{schema}" TO "{role}"',
         "must not hold CREATE on schema",

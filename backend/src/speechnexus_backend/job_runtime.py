@@ -23,6 +23,7 @@ from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema im
     COORDINATION_KEYED_LOCK_INSERT_COLUMNS,
     COORDINATION_KEYED_LOCK_TABLE,
     COORDINATION_KEYED_LOCK_UPDATE_COLUMNS,
+    require_coordination_keyed_lock_grants,
 )
 from speechnexus_backend.speech.infrastructure.deletion_executions_postgres import (
     PostgresDeletionExecutions,
@@ -128,14 +129,14 @@ DELETION_EXECUTION_TABLES = (
     "speech_asset_events",
     "speech_deletion_ledger",
 )
-# Allowed but not required. A role may hold these grants (the reference
-# deployment does) or none at all (a writer that never serves the route, or a
-# single-role deployment whose login does not carry the dispatch set). The keyed
-# lock row is here for the second reason: it is one table shared by two roles, and
-# whether this login carries its grant depends on which provisioning path built it.
-_JOB_OPTIONAL_TABLES = frozenset(
-    (*DELETION_PREVIEW_TABLES, *DELETION_EXECUTION_TABLES, COORDINATION_KEYED_LOCK_TABLE)
-)
+# Allowed but not required: a role may hold these grants (the reference deployment
+# does) or none at all (a writer that never serves the route).
+#
+# The keyed lock row used to be here too, on the grounds that nothing used it yet.
+# It is *required* now: opening a Job takes the binding row lock first, so a login
+# without the row fails on its first admission instead of at startup. A missing
+# relation or a column short of the declaration is refused below by name.
+_JOB_OPTIONAL_TABLES = frozenset((*DELETION_PREVIEW_TABLES, *DELETION_EXECUTION_TABLES))
 REQUIRED_SELECT = (
     "speech_workspaces",
     "speech_publications",
@@ -188,6 +189,10 @@ REQUIRED_UPDATE_COLUMNS: dict[str, tuple[str, ...]] = {
         "generation_job_id",
     ),
     "speech_jobs": ("state", "status_version", "result_json", "error_code", "updated_at_us"),
+    # The row-lock allowance of the binding mutex the writer itself takes first. Not a
+    # CAS version and never written: PostgreSQL only needs some column of the locked
+    # row to carry UPDATE. Required, because the lock is no longer optional.
+    COORDINATION_KEYED_LOCK_TABLE: COORDINATION_KEYED_LOCK_UPDATE_COLUMNS,
 }
 
 _JOB_SUBJECT = "Public Job writer"
@@ -364,7 +369,11 @@ class JobRuntime:
                     require_migrated_schema(
                         connection,
                         self._settings.database_schema,
-                        (*REQUIRED_SELECT, *_ADMISSION_REQUIRED_SELECT),
+                        (
+                            *REQUIRED_SELECT,
+                            *_ADMISSION_REQUIRED_SELECT,
+                            COORDINATION_KEYED_LOCK_TABLE,
+                        ),
                     )
                     _verify_privileges(connection, self._settings.database_schema)
                 admission_pool = self._open_admission_pool()
@@ -823,6 +832,11 @@ def _verify_privileges(connection: SpeechConnection, schema: str) -> None:
                 f"{_JOB_SUBJECT} UPDATE columns do not match the declared surface on "
                 f"{table}; revoke the extra column grant or restore the declared column"
             )
+    # The binding mutex is a column-level surface (SELECT the bucket, lazily INSERT it,
+    # and the UPDATE that `FOR UPDATE` needs), so it is verified through its own
+    # declaration: `has_table_privilege` stays false under a column grant and would
+    # misreport a correct role as unprivileged.
+    require_coordination_keyed_lock_grants(connection, schema, subject=_JOB_SUBJECT)
 
 
 def _verify_publication_surface(connection: SpeechConnection, schema: str) -> None:
@@ -965,6 +979,9 @@ def _verify_publication_privileges(connection: SpeechConnection, schema: str) ->
 
 def _verify_admission_privileges(connection: SpeechConnection, schema: str) -> None:
     """The admission role must read every frozen fact and write every reservation."""
+    # An admission transaction opens by locking the binding row, so the lock surface is
+    # required here rather than discovered on the first create (#1100).
+    require_coordination_keyed_lock_grants(connection, schema, subject="Public Job admission role")
     for table in _ADMISSION_REQUIRED_SELECT:
         allowed = connection.execute(
             "SELECT pg_catalog.has_table_privilege(CURRENT_USER, ?, 'SELECT') AS ok",

@@ -1,5 +1,8 @@
 """Provisioning declarations for separate builtin voice trust boundaries."""
 
+from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
+    coordination_keyed_lock_grants,
+)
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 
 
@@ -77,8 +80,12 @@ def operator_attestation_writer_grants(schema: str, role: str) -> tuple[str, ...
     attestations, binding revisions with their release evidence, publications and
     retirements (for the revision number this declaration points at), registered
     instances, resource pools and workspace quotas. It cannot read
-    ``speech_publication_heads`` and never receives UPDATE, DELETE or TRUNCATE on
-    anything, so a recorded attestation cannot be rewritten or superseded.
+    ``speech_publication_heads`` and never receives DELETE or TRUNCATE anywhere. The one
+    UPDATE it carries is the keyed lock's row-lock allowance
+    (``coordination_keyed_locks.version``): the attestation transaction opens by locking
+    the binding row, and PostgreSQL refuses ``FOR UPDATE`` on a row whose columns are not
+    updatable. That column is never written, so a recorded attestation still cannot be
+    rewritten or superseded.
     """
     schema, role = checked_sql_name(schema), checked_sql_name(role)
     return (
@@ -101,4 +108,8 @@ def operator_attestation_writer_grants(schema: str, role: str) -> tuple[str, ...
         f'source_approval_id, facts, expires_at) ON "{schema}".speech_builtin_voice_approvals '
         f'TO "{role}"',
         f'GRANT INSERT ON "{schema}".speech_builtin_voice_operator_attestations TO "{role}"',
+        # The attestation transaction opens by locking the binding row (that is what
+        # orders the disable check against the attestation), so this identity needs the
+        # keyed lock surface. Its own column list comes from the lock's declaration.
+        *coordination_keyed_lock_grants(schema, role),
     )

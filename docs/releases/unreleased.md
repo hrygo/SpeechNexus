@@ -420,44 +420,104 @@ coordination_jobs` 失败；再重放这两条语句后恢复成功。围栏的
 `test_acceptance_lock_waits_for_submit_and_then_refuses` 在真库上钉住「提交在 Job 行锁上
 等待，受理提交后拒绝创建执行」。
 
-### 6. 重跑 Job 写入/派发身份与 `sn_gateway`：新增 `coordination_keyed_locks`
+### 6. 重跑六个身份的键锁授权：绑定禁用栅栏改用 `coordination_keyed_locks` 行锁
 
-catalog 的那把互斥此前是 `pg_advisory_xact_lock(hashtextextended('speechnexus:catalog:…'))`，
+catalog 的绑定互斥此前是 `pg_advisory_xact_lock(hashtextextended('speechnexus:catalog:…'))`，
 两侧分别是 backend 与执行网关。它们**是 `speech` schema 里的两个不同角色**，所以替代它的行锁
-表必须落在两侧都已有关系的 `speech`，而不是任何一侧自己的命名空间：只在一侧够得到的表会让
-互斥**静默裂成两把**，而两侧依赖的正是这一份排序。这是本次新增 `coordination_keyed_locks`
-的唯一理由。
+表落在两侧都已有关系的 `speech`，而不是任何一侧自己的命名空间：只在一侧够得到的表会让互斥
+**静默裂成两把**，而两侧依赖的正是这一份排序。这就是 `0067_coordination_keyed_locks` 建出
+`coordination_keyed_locks` 的唯一理由。
 
-**本次没有任何调用点迁移。** 生产源码里 `pg_advisory_*lock` 出现 31 行（含语句文本与注释，
-其中 `speechnexus:catalog` 键前缀 18 处），这一批一行都没改，所以下面这两条授权**不影响任何
-现有行为**：不重放，现有路径照常工作；重放，只是让两个身份提前拿到一张空表的锁行授权。
-真正开始使用它的是后续切片，那时这两条授权必须已经在位。
+**本版把两侧一起迁过去了。** 互斥是跨进程的，只能同进：只改一侧会得到「两侧各锁各的」，
+而不是「一侧更慢」——
 
-列名取自 `speechnexus_portable_sql.keyed_lock` 的唯一清单（桶号 + 行锁许可列），与 workbench
-的 `keyed_locks` 是同一组列。两处差异是刻意的，也都在 DDL 里写死：
+| 侧 | 位置 | 迁移前 | 迁移后 |
+| --- | --- | --- | --- |
+| backend 禁用栅栏 | `backend/src/speechnexus_backend/speech/infrastructure/binding_disable_barrier.py` | `pg_advisory_xact_lock`，键含 `current_schema()` | `coordination_keyed_locks` 上的行锁 |
+| 执行网关提交 | `execution-gateway/src/speechnexus_gateway/infrastructure/binding_disable_guard.py` | 同上 | 同一行 |
+
+两侧都通过 `speechnexus_portable_sql.keyed_lock` 取值，而它列在两侧都允许导入的那一层：
+
+- 键文本：`binding_lock_key(binding_id)` → `speechnexus:catalog:binding:<binding_id>`；
+- 行身份：`bucket_for_key(...)` = `sha256(键)[:8] % 1024`，所以表最多 1024 行；
+- 表名：`COORDINATION_KEYED_LOCK_TABLE`，唯一的字面量也在同一个模块；
+- 语句：`insert_if_absent`（懒建桶行、唯一冲突回滚到保存点）+ `SELECT … FOR UPDATE`。
+
+键文本里**没有 schema**：行身份是「(表所在 schema, 桶号)」，而两侧的池把 `search_path` 都设成
+`{schema},pg_catalog,pg_temp`，同一张表由同一个解析得到。把 schema 拼进键文本反而留下一个
+静默分裂口（首个 `search_path` 条目不同、但表其实是同一张），却换不来任何额外保证。
+
+**锁序。** 绑定行锁是该事务的**第一把锁**，一直持到提交：
+
+```
+coordination_keyed_locks(binding 键)
+  → voice 咨询锁(:voice:)
+  → 准入容量/租约行
+  → claim bucket
+  → canonical Job
+  → public Job / outbox / 取消围栏
+```
+
+网关侧在同一位置取同一行，之后才读 `submit_intents` 与 `speech_publication_retirements`；
+禁用提交后网关读得到那条 retirement，正是因为写者持着同一行写完它。反序只在一侧改成「先读后
+锁」会把串行化变成死锁，所以两侧在同一版里一起换。
+
+**列与授权。** 列名取自 `speechnexus_portable_sql.keyed_lock` 的唯一清单（桶号 + 行锁许可列），
+与 workbench 的 `keyed_locks` 是同一组列。两处差异是刻意的，也都在 DDL 里写死：
 
 | 列 | 本表 | workbench `keyed_locks` | 为什么不同 |
 | --- | --- | --- | --- |
 | `bucket_no` / `version` | `DECIMAL(38,0)`，无 `CHECK` | `numeric(19,0)`，`CHECK (>= 0)` | 与同 schema 的 `coordination_claim_buckets` 一致；桶号由 `bucket_for_key` 算出，越界值不会被取用，只是多一行死数据 |
 | `created_at` | `TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP` | 无 | 桶行懒建，记下第一次被用到的时间；没有任何运行角色读写它，所以它不产生授权事实 |
 
-`version` 是**行锁许可列**，不是 CAS 版本：PostgreSQL 的 `FOR UPDATE` 要求行上某列有
-`UPDATE` 权限，这一列就是那份许可，没有写入者。
+`version` 是**行锁许可列**，不是 CAS 版本：PostgreSQL 的 `FOR UPDATE` 要求行上某列有 `UPDATE`
+权限，这一列就是那份许可，没有写入者。
 
-授权面按事实只有一个定义点（`coordination_keyed_lock_grants`），两个入口都调它，不各写一份：
+授权面按事实只有一个定义点（`coordination_keyed_lock_schema.coordination_keyed_lock_grants`），
+每个入口都调它，不各写一份。取这把锁的身份从两个扩到六个：
 
-| 身份 | 授权组 | 得到什么 |
+| 身份 | 授权入口 | 为什么取这把锁 |
 | --- | --- | --- |
-| Job writer / dispatcher | `job_dispatch_grants` | `SELECT (bucket_no)`、`INSERT (bucket_no)`、`UPDATE (version)` |
-| `sn_gateway`（执行网关） | `gateway_keyed_lock_grants` | 同上，逐字相同 |
+| Job writer / dispatcher | `job_dispatch_grants` | 公开 Job 创建与派发写者 |
+| `sn_api` | `coordination_runtime_grants` | 同步准入（`PostgresAdmissionTransactions`）与 TTS 恢复在同一事务里先取锁 |
+| `sn_job_admission` | `public_job_admission_grants` | 准入事务先取锁 |
+| `sn_binding_lifecycle` | `binding_lifecycle_grants` | `model_binding.disable` 先取锁再追加 retirement |
+| `sn_operator_attestation` | `operator_attestation_writer_grants` | 运营者认证事务先取锁 |
+| `sn_gateway`（执行网关） | `gateway_keyed_lock_grants` | 提交意图创建前取同一行 |
 
-**`sn_api` 不在本次范围内。** 它由 `coordination_runtime_grants` 预置，而这个函数不给键锁行
-授权：那把互斥的两侧只需要 writer/dispatcher 与执行网关。等开始迁移调用点、真正有 `sn_api`
-一侧要取同一个键时，`coordination_runtime_grants` 补一条 `coordination_keyed_lock_grants`
-即可（同一个函数，不新增定义点）。这一条是已知的待办，不是遗漏。
+`sn_operator_attestation` 此前**任何表都没有 `UPDATE`**。行锁许可让它多一条
+`UPDATE (version)`，而这一列从不被写值，所以「已记录的认证不可被改写」仍然成立。同一个文件里
+其余三个授权函数逐字未变，登记在此是因为 `builtin_voice_grants.py` 作为整体被复核过：
 
-`INSERT` 是必需的：桶行懒建，第一次用到该桶的事务把它插进来。列级而非表级，是为了让角色不能
-顺手改桶号（行身份）。重放拷贝（`SN_ADMIN_DSN` 是 owner/DDL 身份，经批准的秘密渠道提供）：
+| 授权函数 | 本版 |
+| --- | --- |
+| `builtin_publisher_grants` | 未改 |
+| `builtin_source_approval_writer_grants` | 未改 |
+| `qualification_reader_grants` | 未改 |
+| `qualification_writer_grants` | 未改 |
+| `operator_attestation_writer_grants` | 多一条 `UPDATE (version)`（行锁许可） |
+
+**启动闸门从「允许」改成「要求」。** 迁移前这张表只登记为「可以存在」，因为还没有调用点用它；
+现在缺表或缺授权不再是「少一条授权」，而是**第一条锁语句就 `42501`**。所以：
+
+- Job writer（`job_runtime._verify_privileges`）与准入身份（`_verify_admission_privileges`）
+  在启动核对里点名这张表，并要求 `SELECT (bucket_no)` / `INSERT (bucket_no)` /
+  `UPDATE (version)` 逐列到位；库没迁移时按 `schema_not_migrated` 判红，而不是报「缺授权」。
+- `sn_binding_lifecycle`（`binding_runtime`）、`sn_api`（`speech_runtime.build_speech`）同样在
+  启动时核对这一面，走的是同一个 `require_coordination_keyed_lock_grants`。
+- `require_coordination_keyed_lock_grants` 先探表存在、再逐列问授权：表不存在时
+  `has_column_privilege` 本身会抛错，所以「没迁移」与「缺授权」是两条不同的启动失败。
+- 网关侧没有启动闸门：它在第一次提交时取这把行锁，缺表或缺授权以
+  `503 control_store_unavailable` 暴露，而不是在启动时点名。这一条是已知的缺口，不是遗漏
+  —— 网关的核对需要一条真跑锁再回滚的探针，属于后续切片。
+
+**一处刻意的收窄。** 公开 Job 的结算型查找（`public_jobs_postgres._read` 带 `binding_lock`）
+此前一律 `SET TRANSACTION READ ONLY`。只读事务里 PostgreSQL 既禁止 `INSERT`（懒建桶行）也禁止
+`SELECT … FOR UPDATE`，所以这一条现在只在**不带锁**时置只读；语句仍是单条 `SELECT`，该事务唯一
+可能写入的就是锁自己的桶行。
+
+**重放授权（顺序：先迁移、再授权、最后启动新构建）。** 这六个函数用同一个 `SN_ADMIN_DSN`
+（owner/DDL 身份，经批准的秘密渠道提供）：
 
 ```bash
 set -a; . deploy/compose.env; set +a
@@ -468,10 +528,22 @@ from urllib.parse import unquote, urlsplit
 
 import psycopg
 
+from speechnexus_backend.speech.infrastructure.builtin_voice_grants import (
+    operator_attestation_writer_grants,
+)
+from speechnexus_backend.speech.infrastructure.coordination_grants import (
+    coordination_runtime_grants,
+)
 from speechnexus_backend.speech.infrastructure.gateway_query_grants import (
     gateway_keyed_lock_grants,
 )
 from speechnexus_backend.speech.infrastructure.job_schema import job_dispatch_grants
+from speechnexus_backend.speech.infrastructure.public_job_admission_grants import (
+    public_job_admission_grants,
+)
+from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema import (
+    binding_lifecycle_grants,
+)
 
 schema = os.environ.get("SN_SCHEMA", "speech")
 
@@ -479,13 +551,25 @@ schema = os.environ.get("SN_SCHEMA", "speech")
 def role(key: str) -> str:
     name = unquote(urlsplit(os.environ[key]).username or "")
     if not name:
-        raise SystemExit(f"{key} does not name a role")
+        raise SystemExit(f"{key} is blank, so there is no identity to grant")
     return name
 
 
 statements = [
     *job_dispatch_grants(schema, role("SPEECHNEXUS_JOB_WRITER_DATABASE_URL")),
     *job_dispatch_grants(schema, role("SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL")),
+    *coordination_runtime_grants(
+        schema,
+        speech_role=role("SPEECHNEXUS_API_DATABASE_URL"),
+        gateway_role=os.environ.get("SN_GATEWAY_ROLE", "sn_gateway"),
+    ),
+    *public_job_admission_grants(
+        schema, role("SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL")
+    ),
+    *binding_lifecycle_grants(schema, role("SPEECHNEXUS_BINDING_LIFECYCLE_DATABASE_URL")),
+    *operator_attestation_writer_grants(
+        schema, role("SPEECHNEXUS_OPERATOR_ATTESTATION_DATABASE_URL")
+    ),
     *gateway_keyed_lock_grants(schema, os.environ.get("SN_GATEWAY_ROLE", "sn_gateway")),
 ]
 with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as connection:
@@ -495,21 +579,21 @@ print(len(statements), "grant statements replayed")
 SCRIPT
 ```
 
-**启动闸门同步了。** Job writer 的启动核对
-（`backend/src/speechnexus_backend/job_runtime.py`）会拒绝**任何**授权面外的表，所以新表与它的
-列级 `UPDATE (version)` 都从同一个声明（`coordination_keyed_lock_schema`）进了
-`_JOB_DECLARED_TABLES`、`_JOB_UPDATE_SURFACE` 与 `_JOB_INSERT_SURFACE`，并按「允许但不要求」
-校验（`_JOB_OPTIONAL_TABLES`）：单角色部署或没装派发授权组的 login 仍然启动，只是那把锁不在
-这个身份上。这仍然要求**先迁移再加新构建**：声明表在库里不存在时，`information_schema` 查询
-拿不到列，闸门会按缺列判红。
+单角色部署里没有对应 DSN 的身份跳过那一段即可；**不要**用 `GRANT ALL` 代替：列级授权是行身份
+的一部分（`INSERT` 只能写桶号、`UPDATE` 只能碰许可列）。
 
 核实：**实跑 + 读代码**。2026-11-24 本机 PostgreSQL 18.6（`SPEECHNEXUS_TEST_DATABASE_URL`）：
-空 schema 上 `alembic upgrade head` 后 head 为 `0067_coordination_keyed_locks`，
-`coordination_keyed_locks` 的列、类型与主键与本节一致；
-`tests/integration/test_coordination_keyed_lock_pg.py` 用**两个真实角色**（Job writer 身份的
-backend、`gateway_keyed_lock_grants` 授权的网关）在同一键上取锁：第二个连接在
-`pg_blocking_pids` 里点名等第一个，第一个提交后两笔都完成；异键两笔互不等待。撤掉网关的
-`UPDATE (version)` 后，同一段代码以 `42501` 失败而不是静默放行。
+
+- `tests/integration/test_coordination_keyed_lock_pg.py` 用两个真实角色在同一键上取锁：第二个
+  连接在 `pg_blocking_pids` 里点名等第一个，异键互不等待；撤掉网关的 `UPDATE (version)` 后同一
+  段代码以 `42501` 失败而不是静默放行。
+- `test_gateway_disable_submit_barrier_pg.py` 是跨角色 oracle：禁用侧用 `binding_lock_key` 取行
+  锁并写 retirement，网关提交在 `pg_blocking_pids` 里等它（`wait_event_type=Lock`、
+  `wait_event=transactionid`），提交后网关答 `409 policy_or_resource_disabled` 且没有写入
+  `submit_intents`；禁用侧事务内读到的正是 `bucket_for_key(binding_lock_key('tts-quality'))` 那
+  一行。
+- `test_job_cancellation_fence_pg.py::test_acceptance_lock_waits_for_submit_and_then_refuses` 未
+  改动照常通过（它是 Job 行锁与取消围栏的同一套排序）。
 
 ## 边界澄清（行为未变）
 

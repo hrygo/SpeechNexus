@@ -24,6 +24,7 @@ from speechnexus_backend.speech.interfaces.http.binding_ingress import (
     RETIRE_OPERATION,
 )
 from speechnexus_backend.speech.interfaces.http.binding_lifecycle import _command
+from tests.support.keyed_lock_double import answer_keyed_lock
 from tests.unit.test_binding_lifecycle import receipt
 
 
@@ -41,7 +42,12 @@ class Cursor:
 
     def execute(self, query: str, parameters: tuple[object, ...] = ()) -> None:
         self.rows, self.rowcount = [], 0
+        answered = answer_keyed_lock(query, parameters)
+        if answered is not None:
+            self.rows = answered
+            return
         if "pg_advisory_xact_lock" in query:
+            # 幂等键仍在用咨询锁,与本切片的绑定行锁无关。
             return
         if query.startswith("SELECT * FROM speech_publication_lifecycle_events"):
             self.rows = [e for e in self.events if e["key"] == parameters[0]]

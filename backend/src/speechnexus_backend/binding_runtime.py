@@ -31,6 +31,10 @@ from speechnexus_backend.speech.infrastructure.catalog_revision_schema import (
     RETIREMENT_TABLE,
     STATE_TABLE,
 )
+from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
+    COORDINATION_KEYED_LOCK_TABLE,
+    require_coordination_keyed_lock_grants,
+)
 from speechnexus_backend.speech.infrastructure.postgres_pool import (
     SpeechConnection,
     SpeechPool,
@@ -524,16 +528,21 @@ class BindingLifecycleRuntime:
         ).fetchone()
         if row is None or row["forbidden"]:
             raise ValueError("Binding lifecycle requires a non-owner runtime identity")
+        # The keyed lock row is a declared part of this identity's surface: disabling a
+        # binding opens by locking it, so it is excluded from the "no other relation"
+        # judgment here and verified on its own below (its privileges are column-level,
+        # which the table-level judgment in this query would misread).
+        declared = (*_LIFECYCLE_TABLES, COORDINATION_KEYED_LOCK_TABLE)
         other = connection.execute(
             "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c "
             "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
             "WHERE n.nspname=? AND c.relkind IN ('r','p','v','m','f') "
-            "AND c.relname NOT IN (" + ",".join("%s" for _ in _LIFECYCLE_TABLES) + ") AND ("
+            "AND c.relname NOT IN (" + ",".join("%s" for _ in declared) + ") AND ("
             "pg_catalog.has_table_privilege(CAST(? AS name),c.oid,"
             "'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') "
             "OR pg_catalog.has_any_column_privilege(CAST(? AS name),c.oid,"
             "'SELECT,INSERT,UPDATE,REFERENCES'))) AS forbidden",
-            (schema, *_LIFECYCLE_TABLES, role, role),
+            (schema, *declared, role, role),
         ).fetchone()
         if other is None or other["forbidden"]:
             raise ValueError("Binding lifecycle cannot hold other speech table privileges")
@@ -596,6 +605,11 @@ class BindingLifecycleRuntime:
             allowed = _LIFECYCLE_UPDATABLE_COLUMNS.get(table, frozenset())
             if _updated_columns(connection, role, schema, table, qualified) != set(allowed):
                 raise ValueError("Binding lifecycle columns do not match the port")
+        # Required, not optional: disable opens by locking the binding row, so a role
+        # without that surface would fail on its first disable instead of at startup.
+        require_coordination_keyed_lock_grants(
+            connection, schema, subject="Binding lifecycle writer"
+        )
 
     def close(self) -> None:
         with self._lifetime:

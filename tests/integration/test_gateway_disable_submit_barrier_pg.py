@@ -15,6 +15,15 @@ from tests.integration.test_publications_storage import DEFINITION, create_bindi
 from speechnexus_backend.speech.infrastructure.gateway_abort_intent_schema import (
     gateway_binding_barrier_grants,
 )
+from speechnexus_backend.speech.infrastructure.gateway_query_grants import (
+    gateway_keyed_lock_grants,
+)
+from speechnexus_portable_sql.keyed_lock import (
+    COORDINATION_KEYED_LOCK_TABLE,
+    acquire_in,
+    binding_lock_key,
+    bucket_for_key,
+)
 
 pytestmark = [
     pytest.mark.integration,
@@ -32,37 +41,52 @@ def test_gateway_submit_waits_for_disable_then_never_dispatches(
         "INSERT INTO speech_publications (kind,object_id,revision,revision_id,published_at_us) "
         "VALUES ('binding','tts-quality','1','binding-test',1)"
     )
-    for statement in gateway_binding_barrier_grants(db.schema, foundation.gateway_role):
+    # 网关侧的授权面:绑定屏障 + 键锁行(两者在部署里由 provision-roles 一起下发)。
+    for statement in (
+        *gateway_binding_barrier_grants(db.schema, foundation.gateway_role),
+        *gateway_keyed_lock_grants(db.schema, foundation.gateway_role),
+    ):
         db.query(statement)
     gateway.ledger._enforce_binding_barrier = True
     identity = identity_for(LEASE, submit_intent_id="intent-http")
     with ThreadPoolExecutor(max_workers=1) as executor:
-        with db.blocker() as disable:
-            disable.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended("
-                "'speechnexus:catalog:' || current_schema() || ':binding:' || %s,0))",
-                ("tts-quality",),
+        # `transaction()` 显式开事务块:行锁必须落在事务里,提交才放锁(与生产路径一致)。
+        with db.blocker() as disable, disable.transaction():
+            # 禁用侧取的就是写者/网关用的那把行锁:同一个键推导,同一张表。
+            acquire_in(
+                disable,
+                key=binding_lock_key("tts-quality"),
+                table=COORDINATION_KEYED_LOCK_TABLE,
             )
             disable.execute(
                 "INSERT INTO speech_publication_retirements "
                 "(kind,object_id,revision,revision_id,retired_at_us,mode,reason) "
                 "VALUES ('binding','tts-quality','1','binding-test',2,'disable','synthetic')"
             )
+            # 禁用侧锁住的那一行就是共享键推出的桶行;两侧要是算出不同的行,这里先红。
+            # 在禁用事务自己内部读:行还没提交,别的连接看不到。
+            bucket = bucket_for_key(binding_lock_key("tts-quality"))
+            assert disable.execute(
+                "SELECT 1 AS present FROM coordination_keyed_locks WHERE bucket_no=%s",
+                (bucket,),
+            ).fetchall() == [{"present": 1}]
             future = executor.submit(gateway.submit, identity, contract_command())
             end = time.monotonic() + 2
             while time.monotonic() < end:
                 rows = db.query(
-                    "SELECT count(*) AS n FROM pg_stat_activity WHERE usename=%s "
+                    "SELECT wait_event_type, wait_event FROM pg_stat_activity WHERE usename=%s "
                     "AND cardinality(pg_blocking_pids(pid)) > 0",
                     (foundation.gateway_role,),
                 )
-                if rows[0]["n"]:
+                if rows:
                     break
                 time.sleep(0.01)
             else:
                 pytest.fail("gateway submit did not wait for the binding lock")
+            # 等的是**行锁**:`transactionid` 说明对方持着行/事务锁,而不是表锁或队列。
+            assert (rows[0]["wait_event_type"], rows[0]["wait_event"]) == ("Lock", "transactionid")
         response = future.result(timeout=5)
-    assert response.status_code == 409
+    assert response.status_code == 409, response.text
     assert response.json()["error"]["code"] == "policy_or_resource_disabled"
     assert gateway.engine.dispatch_count == 0
     assert (
@@ -83,7 +107,11 @@ def test_existing_submit_remains_replayable_after_disable(
         "INSERT INTO speech_publications (kind,object_id,revision,revision_id,published_at_us) "
         "VALUES ('binding','tts-quality','1','binding-test',1)"
     )
-    for statement in gateway_binding_barrier_grants(db.schema, foundation.gateway_role):
+    # 网关侧的授权面:绑定屏障 + 键锁行(两者在部署里由 provision-roles 一起下发)。
+    for statement in (
+        *gateway_binding_barrier_grants(db.schema, foundation.gateway_role),
+        *gateway_keyed_lock_grants(db.schema, foundation.gateway_role),
+    ):
         db.query(statement)
     gateway.ledger._enforce_binding_barrier = True
     identity = identity_for(LEASE, submit_intent_id="intent-http")
@@ -128,7 +156,11 @@ def test_submit_waiting_for_disable_recovers_concurrent_original_identity(
         "INSERT INTO speech_publications (kind,object_id,revision,revision_id,published_at_us) "
         "VALUES ('binding','tts-quality','1','binding-test',1)"
     )
-    for statement in gateway_binding_barrier_grants(db.schema, foundation.gateway_role):
+    # 网关侧的授权面:绑定屏障 + 键锁行(两者在部署里由 provision-roles 一起下发)。
+    for statement in (
+        *gateway_binding_barrier_grants(db.schema, foundation.gateway_role),
+        *gateway_keyed_lock_grants(db.schema, foundation.gateway_role),
+    ):
         db.query(statement)
     gateway.ledger._enforce_binding_barrier = True
     command = contract_command()
@@ -147,18 +179,20 @@ def test_submit_waiting_for_disable_recovers_concurrent_original_identity(
         output_stream_id=request.output_stream_id,
     )
     with ThreadPoolExecutor(max_workers=1) as executor:
-        with db.blocker() as disable:
-            disable.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended("
-                "'speechnexus:catalog:' || current_schema() || ':binding:' || %s,0))",
-                ("tts-quality",),
+        # `transaction()` 显式开事务块:行锁必须落在事务里,提交才放锁(与生产路径一致)。
+        with db.blocker() as disable, disable.transaction():
+            # 禁用侧取的就是写者/网关用的那把行锁:同一个键推导,同一张表。
+            acquire_in(
+                disable,
+                key=binding_lock_key("tts-quality"),
+                table=COORDINATION_KEYED_LOCK_TABLE,
             )
             disable.execute(
                 "INSERT INTO speech_publication_retirements "
                 "(kind,object_id,revision,revision_id,retired_at_us,mode,reason) "
                 "VALUES ('binding','tts-quality','1','binding-test',2,'disable','synthetic')"
             )
-            with db.blocker() as original:
+            with db.blocker() as original, original.transaction():
                 with original.cursor() as cursor:
                     create_submit_in_transaction(
                         cursor, intent, request.request_document, clock=lambda: now

@@ -382,6 +382,107 @@ def test_committed_reply_loss_replays_original_and_rejects_changed_intent(
     assert counts(sandbox) == (1, 1, 1)
 
 
+def test_two_concurrent_same_key_publications_keep_one_identity(sandbox: Sandbox) -> None:
+    """Two bindings, one key, overlapping transactions: the key must decide.
+
+    ``test_repeated_publish_of_the_same_triple_keeps_the_row_count`` reuses one
+    identity, so on a quiet machine the first writer commits before the second
+    one starts and whatever collapses the two attempts is not the intent key.
+    Here both writers name a different binding under the same idempotency key,
+    and a sequence-backed trigger holds the first intent row for ~0.4s so the
+    other writer is genuinely in flight. Only one identity may survive, and the
+    other must learn that the key already recorded a different request.
+    """
+    first = create_draft(sandbox)
+    second_result = PostgresBindingDrafts(sandbox.pool).create(
+        prepare_binding_draft(
+            {**binding_request(), "binding_id": "asr-quality-second"}, "publication-overlap-draft"
+        )
+    )
+    assert second_result.draft is not None
+    second = second_result.draft
+    # 序列不是事务性的:第二个触发器调用拿到 2,所以只有第一个写者会慢下来,
+    # 与两个线程谁先到达无关。
+    sandbox.admin.execute("CREATE SEQUENCE synthetic_hold_sequence")
+    sandbox.admin.execute(f'GRANT USAGE ON SEQUENCE synthetic_hold_sequence TO "{sandbox.role}"')
+    sandbox.admin.execute(
+        "CREATE FUNCTION synthetic_hold_intent() RETURNS trigger LANGUAGE plpgsql "
+        "AS $$ BEGIN IF nextval('synthetic_hold_sequence') = 1 THEN "
+        "PERFORM pg_sleep(0.4); END IF; RETURN NEW; END $$"
+    )
+    sandbox.admin.execute(
+        "CREATE TRIGGER synthetic_hold_intent BEFORE INSERT ON speech_binding_publish_intents "
+        "FOR EACH ROW EXECUTE FUNCTION synthetic_hold_intent()"
+    )
+    observed = PostgresPublications(sandbox.pool).observe_binding_head(first.binding_id)
+    drafts = {first.binding_id: first, second.binding_id: second}
+    intents = {
+        binding_id: BindingPublishIntent.from_request(
+            installation_id=str(observed["installation_id"]),
+            database=str(observed["database_name"]),
+            schema=sandbox.schema,
+            expected_current_revision=None,
+            expected_catalog_revision=int(observed["catalog_revision"]),
+            idempotency_key="publication-overlap-key",
+        )
+        for binding_id in drafts
+    }
+
+    def attempt(binding_id: str) -> BindingPublicationResult:
+        draft = drafts[binding_id]
+        return publish_binding(
+            database_url=sandbox.writer_url,
+            schema=sandbox.schema,
+            binding_id=draft.binding_id,
+            revision=int(draft.revision),
+            revision_id=draft.revision_id,
+            capacity_manifest_id=CAPACITY,
+            qualification_report_id=REPORT,
+            expected_current_revision=None,
+            intent=intents[binding_id],
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = {binding_id: pool.submit(attempt, binding_id) for binding_id in drafts}
+        published: list[BindingPublicationResult] = []
+        rejected: list[BindingIntentConflictError] = []
+        for future in futures.values():
+            try:
+                published.append(future.result())
+            except BindingIntentConflictError as error:
+                rejected.append(error)
+    assert len(published) == 1 and len(rejected) == 1
+    assert rejected[0].args[0] == "idempotency_conflict"
+    winner = published[0].publication.object_id
+    loser = next(binding_id for binding_id in drafts if binding_id != winner)
+    assert counts(sandbox) == (1, 2, 1)
+    assert sandbox.admin.execute(
+        "SELECT binding_id FROM speech_binding_publish_intents"
+    ).fetchall() == [(winner,)], "the key must record exactly one identity"
+
+    replay = publish_binding(
+        database_url=sandbox.writer_url,
+        schema=sandbox.schema,
+        binding_id=published[0].publication.object_id,
+        revision=int(drafts[winner].revision),
+        revision_id=drafts[winner].revision_id,
+        capacity_manifest_id=CAPACITY,
+        qualification_report_id=REPORT,
+        expected_current_revision=None,
+        intent=intents[winner],
+    )
+    assert replay.outcome == "replay" and not replay.created
+    assert replay.publication == published[0].publication
+    assert counts(sandbox) == (1, 2, 1), "a replay must not write another row"
+    assert sandbox.admin.execute(
+        "SELECT binding_id FROM speech_binding_publish_intents"
+    ).fetchall() == [(winner,)]
+    assert loser not in {
+        row[0]
+        for row in sandbox.admin.execute("SELECT object_id FROM speech_publications").fetchall()
+    }
+
+
 def test_empty_head_aba_rejects_stale_catalogue_observation(sandbox: Sandbox) -> None:
     first_draft = create_draft(sandbox)
     second_result = PostgresBindingDrafts(sandbox.pool).create(

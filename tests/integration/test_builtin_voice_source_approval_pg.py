@@ -336,3 +336,118 @@ def test_source_writer_authority_replay_and_narrow_grants(
             cleanup.execute(text(f'DROP ROLE IF EXISTS "{business}"'))
             cleanup.execute(text(f'DROP ROLE IF EXISTS "{qualification_role}"'))
         engine.dispose()
+
+
+def test_two_concurrent_approvals_sharing_an_id_keep_one_identity() -> None:
+    """Two voices, one ``source_approval_id``, overlapping transactions.
+
+    ``test_source_writer_authority_replay_and_narrow_grants`` reuses one
+    identity, so on a quiet machine the first writer commits before the second
+    one starts and the "replay" proves sequencing, not the identity key. Here
+    both writers name a different voice under the same ``source_approval_id``,
+    and a sequence-backed trigger holds the first row for ~0.4s so the other
+    writer is genuinely in flight. Only one identity may survive, and the other
+    must be told the identifier already records a different decision.
+    """
+    url = os.environ.get("SPEECHNEXUS_TEST_DATABASE_URL")
+    if not url:
+        pytest.fail(
+            "Configure an isolated PostgreSQL DSN in SPEECHNEXUS_TEST_DATABASE_URL; "
+            "skip is not evidence"
+        )
+    suffix = uuid.uuid4().hex[:10]
+    schema, writer = "sn_src_ov_" + suffix, "sn_src_ov_w_" + suffix
+    password = "synthetic_source_overlap"
+    engine = create_engine(
+        url.replace("postgresql://", "postgresql+psycopg://", 1), poolclass=NullPool
+    )
+    config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
+    config.attributes["schema"] = schema
+    writer_pool = speech_pool(
+        make_conninfo(url, user=writer, password=password),
+        schema=schema,
+        max_size=2,
+        name="test-source-overlap",
+    )
+    try:
+        with engine.connect() as migration_connection:
+            config.attributes["connection"] = migration_connection
+            command.upgrade(config, "head")
+        with portable_pg_connect(url, autocommit=True) as admin:
+            admin.execute(f'SET search_path TO "{schema}",pg_catalog')
+            admin.execute(f"CREATE ROLE \"{writer}\" LOGIN PASSWORD '{password}'")
+            for statement in builtin_source_approval_writer_grants(schema, writer):
+                admin.execute(statement)
+            installation = admin.execute(
+                "SELECT installation_id::text FROM speech_publication_installation"
+            ).fetchone()
+            database = admin.execute("SELECT current_database()").fetchone()
+            assert installation is not None and database is not None
+            # 序列不是事务性的:第二个触发器调用拿到 2,所以只有第一个写者会慢下来,
+            # 与两个线程谁先到达无关。
+            admin.execute("CREATE SEQUENCE synthetic_hold_sequence")
+            admin.execute(f'GRANT USAGE ON SEQUENCE synthetic_hold_sequence TO "{writer}"')
+            admin.execute(
+                "CREATE FUNCTION synthetic_hold_source_approval() RETURNS trigger "
+                "LANGUAGE plpgsql AS $$ BEGIN "
+                "IF nextval('synthetic_hold_sequence') = 1 THEN "
+                "PERFORM pg_sleep(0.4); END IF; RETURN NEW; END $$"
+            )
+            admin.execute(
+                "CREATE TRIGGER synthetic_hold_source_approval BEFORE INSERT ON "
+                "speech_builtin_voice_source_approvals FOR EACH ROW "
+                "EXECUTE FUNCTION synthetic_hold_source_approval()"
+            )
+        writer_pool.open()
+        store = PostgresPublications(writer_pool, timeout_seconds=10)
+        shared: dict[str, Any] = {
+            "database": database[0],
+            "schema": schema,
+            "installation_id": installation[0],
+            "source_approval_id": "source-overlap",
+            "source_revision": "synthetic-revision",
+            "source_digest": "sha256:" + "a" * 64,
+            "native_speaker_id": "Vivian",
+            "expires_at": datetime.now(UTC).replace(microsecond=0) + timedelta(minutes=5),
+        }
+        candidates = {
+            "voice-vivian": shared | {"voice_id": "voice-vivian"},
+            "voice-overlap-other": shared | {"voice_id": "voice-overlap-other"},
+        }
+
+        def record(voice_id: str) -> dict[str, str]:
+            return approve_builtin_voice_source(store, **candidates[voice_id])
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = {voice_id: pool.submit(record, voice_id) for voice_id in candidates}
+            recorded: list[tuple[str, dict[str, str]]] = []
+            rejected: list[BuiltinSourceApprovalError] = []
+            for voice_id, future in futures.items():
+                try:
+                    recorded.append((voice_id, future.result()))
+                except BuiltinSourceApprovalError as error:
+                    rejected.append(error)
+        assert len(recorded) == 1 and len(rejected) == 1
+        winner, receipt = recorded[0]
+        assert receipt["outcome"] == "recorded"
+        assert "intent_conflict" in str(rejected[0])
+        with portable_pg_connect(url, autocommit=True) as observer:
+            observer.execute(f'SET search_path TO "{schema}",pg_catalog')
+            rows = observer.execute(
+                "SELECT source_approval_id, voice_id FROM speech_builtin_voice_source_approvals"
+            ).fetchall()
+            assert rows == [("source-overlap", winner)]
+        replayed = approve_builtin_voice_source(store, **candidates[winner])
+        assert replayed["outcome"] == "replayed"
+        assert replayed["source_approval_id"] == "source-overlap"
+        with portable_pg_connect(url, autocommit=True) as observer:
+            observer.execute(f'SET search_path TO "{schema}",pg_catalog')
+            assert observer.execute(
+                "SELECT count(*) FROM speech_builtin_voice_source_approvals"
+            ).fetchone() == (1,)
+    finally:
+        writer_pool.close()
+        with engine.begin() as cleanup:
+            cleanup.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+            cleanup.execute(text(f'DROP ROLE IF EXISTS "{writer}"'))
+        engine.dispose()

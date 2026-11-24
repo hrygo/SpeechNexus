@@ -38,6 +38,7 @@ from speechnexus_backend.workbench.domain.versions import (
 )
 from speechnexus_backend.workbench.infrastructure.version_schema import schema_identifier
 from speechnexus_portable_sql.contract import ConflictError, PortableSqlError
+from speechnexus_portable_sql.keyed_lock import acquire_async as acquire_keyed_lock_async
 from speechnexus_portable_sql.psycopg_driver import connect_async as portable_connect_async
 from speechnexus_portable_sql.psycopg_driver import portable_error
 from speechnexus_portable_sql.vendor import class_row, psycopg, sql
@@ -177,6 +178,17 @@ _RECEIPT_UNION = """
         """
 
 
+def receipt_lock_key(schema: str, scope: MutationScope, digest: str) -> str:
+    """回执键锁的完整键:命名空间 + 范围 + 完整键摘要,规范 JSON(分隔符与顺序固定).
+
+    为什么单独一个函数:键锁只拿这个文本算桶号,而「哪些东西算进键」必须只有一个定义点 ——
+    否则调用点与用例各拼一份,碰撞测试就会证明一个产品路径并不使用的桶号。规范 JSON 顺带
+    消除分隔符歧义(`a:b` + `c` 与 `a` + `b:c` 不能拼成同一个键)。
+    """
+
+    return json.dumps([schema, *scope, digest], separators=(",", ":"))
+
+
 @dataclass(frozen=True)
 class _ReceiptRow:
     intent_digest: str
@@ -207,6 +219,9 @@ class PostgresVersionUnitOfWork:
         cleanup_timeout: float = 1,
     ) -> None:
         self._schema = schema_identifier(schema)
+        # 键锁语句里的表引用需要命名空间的名字本身(标识符不能被参数化),而
+        # `schema_identifier` 已经校验过同一条字符集。
+        self._schema_name = schema
         if not 1 <= max_connections <= 64 or not 0 < transaction_timeout <= 60:
             raise ValueError("invalid workbench connection bounds")
         if not 1 <= lock_timeout_ms <= statement_timeout_ms <= 60000:
@@ -295,7 +310,7 @@ class PostgresVersionUnitOfWork:
                             "'speechnexus-workbench-versions', true)",
                             (str(self._lock_ms), str(self._statement_ms), str(self._statement_ms)),
                         )
-                        session = _Session(connection, self._schema)
+                        session = _Session(connection, self._schema, self._schema_name)
                         yield session
                     except BaseException as error:
                         # A failed body never commits. Disconnect instead of issuing
@@ -341,10 +356,14 @@ class PostgresVersionUnitOfWork:
 
 class _Session:
     def __init__(
-        self, connection: psycopg.AsyncConnection[tuple[object, ...]], schema: sql.Identifier
+        self,
+        connection: psycopg.AsyncConnection[tuple[object, ...]],
+        schema: sql.Identifier,
+        schema_name: str,
     ) -> None:
         self._connection = connection
         self._schema = schema
+        self._schema_name = schema_name
         self._active = True
         self._projects: dict[str, Project] = {}
         self._transcripts: dict[str, Transcript] = {}
@@ -773,15 +792,14 @@ class _Session:
         self, scope: MutationScope, key: str
     ) -> MutationReceipt | ErasedMutationReceipt | None:
         digest = self._receipt_key(scope, key)
-        # Hash is only a transaction-lock bucket; the complete scoped digest is the PK.
-        # A bucket collision adds contention but cannot alias a replay identity.
-        lock_bytes = hashlib.sha256(
-            json.dumps([self._schema.as_string(), *scope, digest], separators=(",", ":")).encode(
-                "utf-8"
-            )
-        ).digest()[:8]
-        lock_id = int.from_bytes(lock_bytes, signed=True)
-        await self._execute("SELECT pg_advisory_xact_lock(?)", (lock_id,))
+        # 同键串行由一行真实的行锁给出(``speechnexus_portable_sql.keyed_lock``),不再用
+        # PostgreSQL 专有的 ``pg_advisory_xact_lock``。桶号只决定「等哪一行」;完整范围摘要
+        # 仍是 ``mutation_receipts`` 的主键,所以碰撞只增加竞争,不能别名一次重放。
+        await acquire_keyed_lock_async(
+            self._connection,
+            key=receipt_lock_key(self._schema_name, scope, digest),
+            schema=self._schema_name,
+        )
         self._claims.add((scope, digest))
         # Erased receipts carry no project/transcript identity, so their NULL arms need
         # no type name; see `_RECEIPT_UNION`.

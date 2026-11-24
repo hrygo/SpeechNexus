@@ -55,7 +55,7 @@ from speechnexus_backend.workbench.infrastructure.version_schema import (
 )
 from speechnexus_portable_sql.vendor import sql
 
-SCHEMA_REVISION = 11
+SCHEMA_REVISION = 12
 TABLES = frozenset(
     {
         "projects",
@@ -63,6 +63,7 @@ TABLES = frozenset(
         "transcripts",
         "transcript_revisions",
         "mutation_receipts",
+        "keyed_locks",
         "deletion_plans",
         "deletion_records",
         "resource_tombstones",

@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from speechnexus_portable_sql.transaction import insert_if_absent
+from speechnexus_portable_sql.transaction import insert_if_absent, insert_if_absent_async
 
 
 class _UniqueViolationError(Exception):
@@ -77,3 +77,45 @@ def test_autocommit_connection_still_reports_a_duplicate_as_no_insert() -> None:
 
     assert insert_if_absent(cursor, "INSERT INTO t (a) VALUES (?)", (1,)) is False
     assert cursor.statements == ["INSERT INTO t (a) VALUES (?)"]
+
+
+class _AsyncCursor:
+    """异步形态的同一替身:动作相同,只是每个动作都要 `await`."""
+
+    def __init__(self, *, fails: Exception | None = None, autocommit: bool = False) -> None:
+        self.statements: list[str] = []
+        self._fails = fails
+        self.connection = type("_AsyncAutocommit", (), {"autocommit": autocommit})()
+
+    async def execute(self, statement: str, params: Any = ()) -> None:
+        self.statements.append(statement)
+        if statement.startswith("INSERT") and self._fails is not None:
+            raise self._fails
+
+
+async def test_the_async_form_emits_exactly_the_same_statements_as_the_sync_form() -> None:
+    """两条路径共用保存点名字与冲突判定,所以文本序列必须逐字相同."""
+
+    sync_cursor = _Cursor()
+    async_cursor = _AsyncCursor()
+
+    assert insert_if_absent(sync_cursor, "INSERT INTO t (a) VALUES (?)", (1,)) is True
+    assert await insert_if_absent_async(async_cursor, "INSERT INTO t (a) VALUES (?)", (1,)) is True
+    assert async_cursor.statements == sync_cursor.statements
+
+
+async def test_the_async_form_rolls_back_to_the_savepoint_on_a_duplicate() -> None:
+    cursor = _AsyncCursor(fails=_UniqueViolationError("duplicate key"))
+
+    assert await insert_if_absent_async(cursor, "INSERT INTO t (a) VALUES (?)", (1,)) is False
+    assert cursor.statements[-2:] == [
+        "ROLLBACK TO SAVEPOINT portable_sql_insert_if_absent",
+        "RELEASE SAVEPOINT portable_sql_insert_if_absent",
+    ]
+
+
+async def test_the_async_form_does_not_translate_other_errors() -> None:
+    cursor = _AsyncCursor(fails=_OtherError("serialization failure"))
+
+    with pytest.raises(_OtherError):
+        await insert_if_absent_async(cursor, "INSERT INTO t (a) VALUES (?)", (1,))

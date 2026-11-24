@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator
-from contextlib import contextmanager, suppress
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager, suppress
 from typing import Any
 
 from speechnexus_portable_sql.contract import (
@@ -16,9 +16,12 @@ from speechnexus_portable_sql.contract import (
 
 __all__ = [
     "SAVEPOINT_CONTROL",
+    "in_transaction",
     "insert_if_absent",
+    "insert_if_absent_async",
     "is_savepoint_control",
     "savepoint",
+    "savepoint_async",
     "transaction",
 ]
 
@@ -72,6 +75,18 @@ def is_savepoint_control(statement: str) -> bool:
 _SAVEPOINT_NAME = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
+def _savepoint_control(name: str) -> tuple[str, str, str]:
+    """保存点控制语句的唯一拼写点:`(开始, 回滚到, 释放)`.
+
+    同步与异步两份上下文管理器共用这一段,所以两个形态发出的文本不可能分叉 —— 名字校验、
+    关键字顺序与空格都只写一次。
+    """
+
+    if not _SAVEPOINT_NAME.match(name):
+        raise ValueError("a savepoint name must be a plain SQL identifier")
+    return "SAVEPOINT " + name, "ROLLBACK TO SAVEPOINT " + name, "RELEASE SAVEPOINT " + name
+
+
 @contextmanager
 def savepoint(cursor: Any, name: str = "portable_sql_sp") -> Iterator[None]:
     """在一个保存点内执行语句,失败时回滚到保存点而不是放弃整个事务.
@@ -85,18 +100,38 @@ def savepoint(cursor: Any, name: str = "portable_sql_sp") -> Iterator[None]:
     MySQL/InnoDB 都支持,所以这层不引入品牌分支。
     """
 
-    if not _SAVEPOINT_NAME.match(name):
-        raise ValueError("a savepoint name must be a plain SQL identifier")
-    cursor.execute("SAVEPOINT " + name)
+    begin, rollback, release = _savepoint_control(name)
+    cursor.execute(begin)
     try:
         yield
     except BaseException:
         # 回滚到保存点后还要释放,否则保存点会在事务里越积越多。
-        cursor.execute("ROLLBACK TO SAVEPOINT " + name)
-        cursor.execute("RELEASE SAVEPOINT " + name)
+        cursor.execute(rollback)
+        cursor.execute(release)
         raise
     else:
-        cursor.execute("RELEASE SAVEPOINT " + name)
+        cursor.execute(release)
+
+
+@asynccontextmanager
+async def savepoint_async(cursor: Any, name: str = "portable_sql_sp") -> AsyncIterator[None]:
+    """`savepoint` 的异步形态:控制语句与回滚语义完全相同,只有 `await` 不同.
+
+    为什么必须有这一份:`await` 不能放进同步上下文管理器里。异步路径(`psycopg` 的
+    `AsyncConnection`,workbench 的会话就是它)没有别的办法在唯一冲突后让事务回到可用状态,
+    所以「同一机制」在这里表现为同一段控制语句 + 同一套异常规则,而不是第二种插入做法。
+    """
+
+    begin, rollback, release = _savepoint_control(name)
+    await cursor.execute(begin)
+    try:
+        yield
+    except BaseException:
+        await cursor.execute(rollback)
+        await cursor.execute(release)
+        raise
+    else:
+        await cursor.execute(release)
 
 
 #: 唯一约束冲突的 SQLSTATE。标准值,PostgreSQL 与 MySQL 都用它。
@@ -116,14 +151,37 @@ def _is_unique_violation(error: BaseException) -> bool:
     return len(args) > 0 and args[0] == _MYSQL_DUP_ENTRY
 
 
-def _in_autocommit(cursor: Any) -> bool:
-    """连接是否处于自动提交模式;取不到状态时按「有事务」处理.
+#: 驱动的事务状态里「此刻没有事务块」的那一个。按名字比较,不导入任何厂商枚举类型。
+_IDLE_STATUS = "IDLE"
 
-    取不到就当有事务,是因为错开保存点的代价(事务被中止)远大于多开一个保存点的代价。
+
+def in_transaction(connection: Any) -> bool:
+    """连接上此刻是否有一个保存点可用的事务块(唯一判定点).
+
+    `autocommit` 只说明驱动会不会自动提交**语句**,不说明现在有没有事务块:psycopg 的
+    `AsyncConnection` 可以在 `autocommit=True` 时由调用方显式开一个事务块(workbench 的会话
+    正是如此),那时 `SAVEPOINT` 合法,而按 `autocommit` 判定会错误地跳过保存点 —— 一次唯一
+    冲突就会中止整个事务块。所以先读驱动报告的事务状态(这是适配点,只在这里读),读不到时
+    才退回 `autocommit`。
+
+    读不到状态时按「有事务」处理:错开保存点的代价(事务被中止)远大于多开一个保存点的代价。
     """
 
-    connection = getattr(cursor, "connection", None)
-    return bool(getattr(connection, "autocommit", False))
+    status = getattr(getattr(connection, "info", None), "transaction_status", None)
+    name = getattr(status, "name", None)
+    if isinstance(name, str):
+        return name != _IDLE_STATUS
+    return not bool(getattr(connection, "autocommit", False))
+
+
+def _in_autocommit(cursor: Any) -> bool:
+    """游标所在的连接现在没有事务块(此时不能开保存点)."""
+
+    return not in_transaction(getattr(cursor, "connection", None))
+
+
+#: 插入式保存点的名字只在这里出现一次:同步与异步两条路径用的是同一个名字。
+_INSERT_SAVEPOINT = "portable_sql_insert_if_absent"
 
 
 def insert_if_absent(cursor: Any, statement: str, params: Any = ()) -> bool:
@@ -153,8 +211,34 @@ def insert_if_absent(cursor: Any, statement: str, params: Any = ()) -> bool:
             raise
         return True
     try:
-        with savepoint(cursor, name="portable_sql_insert_if_absent"):
+        with savepoint(cursor, name=_INSERT_SAVEPOINT):
             cursor.execute(statement, params)
+    except Exception as error:
+        if _is_unique_violation(error):
+            return False
+        raise
+    return True
+
+
+async def insert_if_absent_async(cursor: Any, statement: str, params: Any = ()) -> bool:
+    """`insert_if_absent` 的异步形态:同一个名字、同一条冲突判定、同一份返回语义.
+
+    这不是第二种插入做法:保存点名字来自 `_INSERT_SAVEPOINT`,冲突判定来自
+    `_is_unique_violation`,自动提交分支的理由与同步形态逐条相同。区别只有 `await` ——
+    异步连接上的游标无法被同步上下文管理器驱动。
+    """
+
+    if _in_autocommit(cursor):
+        try:
+            await cursor.execute(statement, params)
+        except Exception as error:
+            if _is_unique_violation(error):
+                return False
+            raise
+        return True
+    try:
+        async with savepoint_async(cursor, name=_INSERT_SAVEPOINT):
+            await cursor.execute(statement, params)
     except Exception as error:
         if _is_unique_violation(error):
             return False

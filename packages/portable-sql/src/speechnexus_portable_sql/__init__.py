@@ -61,6 +61,8 @@ from speechnexus_portable_sql.claims import (
     utc_from_epoch_us,
 )
 from speechnexus_portable_sql.contract import (
+    AsyncConnection,
+    AsyncCursor,
     CommitUnknownError,
     Connection,
     ConnectionFactory,
@@ -83,6 +85,22 @@ from speechnexus_portable_sql.credit import (
     DualLane,
     LaneAdmission,
     LedgerInvariantError,
+)
+from speechnexus_portable_sql.keyed_lock import (
+    KEYED_LOCK_BUCKETS,
+    KEYED_LOCK_COLUMNS,
+    KEYED_LOCK_ROW_LOCK_COLUMN,
+    KEYED_LOCK_TABLE,
+    KeyedLock,
+    bucket_for_key,
+    key_digest,
+    lock_statements,
+)
+from speechnexus_portable_sql.keyed_lock import (
+    acquire as acquire_keyed_lock,
+)
+from speechnexus_portable_sql.keyed_lock import (
+    acquire_async as acquire_keyed_lock_async,
 )
 from speechnexus_portable_sql.logical_schema import (
     ALLOWED_TYPES,
@@ -129,7 +147,7 @@ from speechnexus_portable_sql.subset import (
     placeholder_count,
     validate,
 )
-from speechnexus_portable_sql.transaction import transaction
+from speechnexus_portable_sql.transaction import insert_if_absent_async, transaction
 from speechnexus_portable_sql.types import (
     digest_hex,
     new_identity,
@@ -154,10 +172,16 @@ __all__ = [
     "COLUMN_KINDS",
     "EVENT_DIGEST_FIELDS",
     "FORBIDDEN",
+    "KEYED_LOCK_BUCKETS",
+    "KEYED_LOCK_COLUMNS",
+    "KEYED_LOCK_ROW_LOCK_COLUMN",
+    "KEYED_LOCK_TABLE",
     "PARAMETER_MARKERS",
     "SCHEMA_META_ID",
     "STATEMENTS",
     "TRANSACTION_BOUNDARIES",
+    "AsyncConnection",
+    "AsyncCursor",
     "AuthorityMismatchError",
     "AuthorityProbe",
     "AuthorityProbePool",
@@ -182,6 +206,7 @@ __all__ = [
     "Grant",
     "HistoricalEvent",
     "IntervalOverlapError",
+    "KeyedLock",
     "LaneAdmission",
     "LedgerInvariantError",
     "ListMarker",
@@ -208,10 +233,13 @@ __all__ = [
     "UsageAppend",
     "UsageInterval",
     "acquire_bucket",
+    "acquire_keyed_lock",
+    "acquire_keyed_lock_async",
     "adopt_historical_events",
     "append_event",
     "append_usage_interval",
     "bucket_for",
+    "bucket_for_key",
     "candidates",
     "canonical_job_from_draft",
     "canonical_statements_json",
@@ -233,12 +261,15 @@ __all__ = [
     "hold_budget",
     "hold_quota",
     "insert_grant",
+    "insert_if_absent_async",
+    "key_digest",
     "keyset_page",
     "load_logical_schema",
     "load_manifest",
     "load_profile_registry",
     "lock_budget",
     "lock_quota",
+    "lock_statements",
     "mark_outbox_delivered",
     "new_identity",
     "optional_text",

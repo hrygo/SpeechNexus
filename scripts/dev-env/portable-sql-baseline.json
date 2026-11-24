@@ -21,7 +21,6 @@
     "advisory-lock::backend/src/speechnexus_backend/workbench/infrastructure/postgres_deletions.py": 1,
     "advisory-lock::backend/src/speechnexus_backend/workbench/infrastructure/postgres_meetings.py": 1,
     "advisory-lock::backend/src/speechnexus_backend/workbench/infrastructure/postgres_minutes_tasks.py": 1,
-    "advisory-lock::backend/src/speechnexus_backend/workbench/infrastructure/postgres_versions.py": 1,
     "advisory-lock::execution-gateway/src/speechnexus_gateway/infrastructure/binding_disable_guard.py": 1,
     "cte::backend/src/speechnexus_backend/model_catalog_runtime.py": 1,
     "cte::backend/src/speechnexus_backend/workbench/runtime.py": 1,

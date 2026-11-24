@@ -2050,3 +2050,131 @@ receipt 走 replay,不会再写围栏;`ON CONFLICT (job_id) DO NOTHING` 与主�
 
 守卫基线 169 → 166(`version_ports.py` 2、`postgres_versions.py` 1),`new=0`;登记表
 107 → 105,两条 `vendor-error-branch` 登记随条目一起删除(留着会 `STALE-EXCEPTION` 判红)。
+
+### 8.80 键锁:一行行锁替代 advisory lock,基线的 workbench advisory lock 归零
+
+**为什么换。** `pg_advisory_xact_lock` 表达的规则是领域规则——「同一个业务键的处理串行,
+不同键互不影响」——但实现只有 PostgreSQL 有,受限方言里没有对应语法,所以每个用到它的写入
+路径都同时是「不可移植」和「不可用 MySQL 验证」的路径。能表达的只有**行锁**:先让这个键对应
+的行存在(`INSERT`,不存在才插),再 `SELECT … FOR UPDATE` 锁住它。同键事务因此必然排队,锁随
+提交或回滚由引擎自己释放,不需要解锁语句,也不会像 advisory lock 那样在连接复用时留下残留。
+这一处原本是基线 151 条里 `advisory-lock` 的最后一处 workbench 条目。
+
+**原语**(`packages/portable-sql/src/speechnexus_portable_sql/keyed_lock.py`)。
+
+- `acquire(connection, *, key, schema=None)` / `acquire_async(...)`:固定两步——插入
+  (`insert_if_absent`,已存在则回滚到保存点并返回 `False`)→ `SELECT … FOR UPDATE`;返回
+  `KeyedLock(bucket_no, digest, created)`。事务边界仍归调用方,本函数不提交、不回滚。
+- 复用既有机制,不另起一套:唯一冲突判定走 `transaction._is_unique_violation`,插入走
+  `insert_if_absent` 的保存点,表名与列名只来自本模块的 `KEYED_LOCK_TABLE` /
+  `KEYED_LOCK_COLUMNS` 清单(`STATEMENTS` 由它们拼出,不存在第二份列名)。
+- 语句只有两条、参数只有桶号;没有品牌分支、没有 `SKIP LOCKED`/`NOWAIT`,也没有第二个
+  「先查后插」的做法。
+- 没有事务块时直接 `ContractError`(自动提交连接上一句就结束,锁等于没锁,静默退化是最坏
+  结果)。判定与 `insert_if_absent` 共用 `transaction.in_transaction`:驱动报的事务状态优先,
+  `autocommit` 只作回退——`autocommit=True` 的连接上调用方仍可显式开一个事务块(workbench
+  会话正是这样),那时保存点合法、锁也真能持到提交。
+- 异步形态 `insert_if_absent_async` / `savepoint_async` 与同步形态共用保存点名字、冲突判定与
+  语句文本(`keyed_lock` 的两条语句只由 `lock_statements()` 生成)。异步路径没有第二种插入
+  做法:`await` 放不进同步上下文管理器,而冲突与回滚语义一字不差。
+
+**碰撞契约(行身份是桶,不是键)。**
+
+- 桶号 = `sha256(键)` 前 8 字节 mod `KEYED_LOCK_BUCKETS`(1024)。推导只依赖键文本,不含
+  进程、连接、时钟或会话状态,所以**同键在任何进程、任何时刻都落到同一行**。
+- 一行一个完整键会让锁行随幂等键无界增长,而锁行永远不能回收(删掉就是放开互斥);按桶折叠
+  后表最多 1024 行,行在被第一次用到时懒建。
+- **异键可能同桶,后果只是竞争**:两笔无关事务互等,吞吐下降;重放判据始终是完整摘要本身
+  (`mutation_receipts` 的 `(operation, scope_id, key_digest)` 主键),键锁从不参与「这是不是
+  同一次操作」的判定,所以碰撞不能别名一次重放。写下的口径与
+  `speech/infrastructure/workspaces_postgres.py` 原有的注释一致。
+- `digest` 字段只作日志与证据,不是行身份;`version` 列是**行锁许可列**(PostgreSQL 的
+  `FOR UPDATE` 要求行上某列有 `UPDATE` 权限),没有写入者,也不是 CAS 版本。
+
+**锁序。** 键锁行是一笔事务的**第一把**锁,排在 `bucket → canonical Job → public Job/outbox`
+之前;一笔事务最多取一行键锁,所以不会与 Job 侧的行锁、bucket 锁组成环。workbench 回执路径
+只有这把锁(它不碰 speech 的 Job),顺序约束在那里是空真的。
+
+**DDL 与授权放在哪(这一节没有 alembic revision,是刻意的)。** 新表 `keyed_locks` 落在
+**使用它的命名空间**里,而不是 `speech` 的 alembic 分支:
+
+- 运行时角色的授权只覆盖自己的命名空间(`workbench/migrate.py` 明确拒绝 `speech`;
+  `grant_runtime_sql` 只授 workbench schema),所以 `speech` 里的表对唯一迁移的那个角色不可达,
+  建了也是死 DDL。
+- 没有写入者的 speech 侧表会连带一条 `speech` 侧授权,而 `job_runtime` 的启动闸门**拒绝任何
+  写入者不碰的表被授权**——为一张没人用的表去扩声明面,是把调试成本换成了启动失败。
+- 因此表由 workbench 既有的单一定义点派生:`version_schema._V1`(DDL,列名与表名来自
+  `keyed_lock` 的清单)+ `grant_runtime_sql`(`SELECT, INSERT` 加列级 `UPDATE (version)`),
+  `runtime_schema.TABLES` 增一行,`runtime._UPDATE_COLUMNS` 增 `{"version"}`(启动闸门
+  逐列核对 UPDATE 面),`SCHEMA_REVISION` 11 → 12。既有 dev 命名空间会按设计在
+  `workbench/migrate.py` 的校验上失败(它从不修复漂移),需要重建命名空间,不是加兼容分支。
+
+**迁移的那一处。** `workbench/infrastructure/postgres_versions.py` 的
+`_Session.claim_receipt`:`SELECT pg_advisory_xact_lock(?)` 换成
+`acquire_async(..., key=receipt_lock_key(schema, scope, digest), schema=...)`。
+`receipt_lock_key` 是键文本的单一定义点(命名空间 + 范围 + 完整键摘要,规范 JSON),调用点与
+碰撞用例都只经过它。重放语义不变:摘要仍是 `mutation_receipts` 主键,`claim_receipt` 的返回
+契约不变。
+
+**四条判据与注入**(`tests/integration/test_workbench_keyed_lock_pg.py`,真 PG、真 runtime
+角色;锁等待由第三个连接读 `pg_stat_activity` 的 `wait_event_type='Lock'` 观测,不靠 sleep;
+库侧用全量 `bootstrap_sql` + `runtime_grants_sql` 装配,与生产同一份 DDL 与授权):
+
+| 判据 | 观测 | 注入 | 红在哪 |
+| --- | --- | --- | --- |
+| 同键串行 | 第二个受理在行锁上等到 `wait_event_type='Lock'`,释放后两笔都完成 | 删 `FOR UPDATE` | 桶行已提交存在时插入走冲突分支,`waits == 0` → `assert waits >= 1` 红 |
+| 异键并行 | 第一把键被持有时,另一个键照常提交 | 把键锁键改成常量 | 第二个键也等同一行,`asyncio.wait_for(second, 15)` 抛 `TimeoutError` 红 |
+| 碰撞只加竞争 | 两个键强制同桶:第二个等锁;两笔回执身份互不覆盖,各自重放自己的结果 | 删 `FOR UPDATE` | 同「同键串行」:`waits == 0` 红 |
+| 授权面与启动闸门自洽 | `check_database` 接受新表(表集合、表级 INSERT、列级 UPDATE 面逐项核对) | 撤掉列级 `UPDATE (version)` | 期望 `RuntimeStartupError`,闸门若放行则 `DID NOT RAISE` 红 |
+
+用例先做一次**已提交**的取锁热身,让桶行存在:桶行懒建时第一次插入会被唯一索引挡住(未提交
+的索引项),那段等待与行锁无关,只有行已存在时同键排序才完全由 `SELECT … FOR UPDATE` 给出——
+那也是重放路径的真实形态。
+
+三注入均实测:删 `FOR UPDATE` 时「同键串行」与「碰撞」两条红(`assert 0 >= 1`),「异键并行」
+仍绿(它与该行锁无关);常量键时只有「异键并行」红(`TimeoutError`),另两条仍绿(它们本就该
+排队);撤掉列级授权时闸门拒绝启动,证明那一列不是装饰。每次注入后按 sha256 恢复并逐字节核对
+一致,注入前后清理 `*.pyc`(注入前 63 个 → 0,恢复后 0)。
+
+**守卫基线。** 151 → 150,`new=0`;登记表 96 → 95,删掉
+`advisory-lock::backend/src/speechnexus_backend/workbench/infrastructure/postgres_versions.py`
+(留着会 `STALE-EXCEPTION` 判红——实测该条目已红过一次)。用 HEAD 的 151 基线跑当前树得到
+`FIXED advisory-lock …postgres_versions.py (1)`、`baseline=151 new=0 fixed=1`;提交后基线
+150、`fixed=0`。
+
+**剩下 27 处。** 基线里仍有 20 个文件、27 处 `advisory-lock`(`builtin_voice_*`、
+`qualification_probe_*`、`speech/infrastructure/*`、`execution-gateway/.../binding_disable_guard.py`
+等)。它们逐个迁移时共用本节的 `keyed_lock` 原语,但每处要自己解决两件本节只做了一次的事:
+一是把 `keyed_locks` 建到**该角色可达的命名空间**并在那里唯一的授权定义点上授
+`SELECT, INSERT` 与列级 `UPDATE (version)`;二是确认那处路径里键锁是事务的第一把锁,若它原本
+先锁 Job 行,交换顺序才能避开环。本切片只改 workbench 一处,其余 27 处与其 DDL/授权未动。
+
+**CI 首跑失败的不是授权面,是合成登录的认证面。** 首个 PR 运行在这两条用例上红,报的是
+`Workbench runtime database is unavailable or unsafe`(旧文案不带任何条件,所以无法据此判断
+被拒的是哪一步)。实测结论:
+
+- 授权面本身可移植。用 PostgreSQL **16.15**(与 CI 同一小版本,`postgresql-binaries` 提供)
+  的私有 socket 集群跑同一组用例:5 passed,启动闸门接受 `SELECT, INSERT` + 列级
+  `UPDATE (version)` 这一面。因此本失败**与 PostgreSQL 大版本无关**,`has_column_privilege`
+  在 16 与 18 上都返回同一份逐列结果。
+- 真正的差异是认证方式。CI 的 `SPEECHNEXUS_TEST_DATABASE_URL` 指向 TCP 的
+  `postgres:16.15-alpine` 服务容器(host 认证 scram),而本机集群走 trust;用例里的
+  `CREATE ROLE … LOGIN` 没有口令,于是运行时角色在**第一条连接**就被拒;本地 trust 隐藏了
+  这一点。旁证:同一组用例在 PG 18 + scram 上同样 4 failed,在 PG 16 + trust 上 5 passed。
+- 修法在用例侧:合成登录带上合成口令,连接用 `make_conninfo(..., password=…)`——与本仓
+  `test_startup_authority_561.py` 等既有 workbench 用例同一口径,生产授权与闸门一字未动。
+
+**启动闸门现在点名被拒的检查。** `RuntimeStartupError` 仍以固定句
+`Workbench runtime database is unavailable or unsafe.` 开头(既有断言依赖该前缀),其后追加
+两件事:哪一个检查拒绝(如 `startup check column UPDATE surface refused: missing=['keyed_locks.version']`)
+或哪一步抛了驱动错误(`startup check connect raised OperationalError: … password
+authentication failed for user "…"`),以及驱动给的原始诊断(优先 `diag.message_primary`)。
+驱动文本经 `_database_error_detail` 清洗:DSN、`key=value` 形式的 conninfo 项、libpq 打印的
+服务器地址/端口/socket 路径都替换为占位符;SQLSTATE 不读取——本模块只按目录事实判定,不按
+厂商错误码分支(`check-portable-sql.py` 的 `vendor-error-branch` 保持 0 新增)。
+`test_workbench_runtime_refusal.py` 逐条钉住这四个清洗面与固定前缀。
+
+**注入与反例。** 撤掉列级 `UPDATE (version)` 时,失败消息点名
+`missing=['keyed_locks.version']` 且不含被配置的 schema;把 `_UPDATE_COLUMNS` 里的键锁项删掉,
+「授权面与启动闸门自洽」用例红(闸门拒绝 `unexpected=['keyed_locks.version']`);把列级比较
+短路掉,该反例用例 `DID NOT RAISE` 红。两条注入后均按拷贝恢复并逐字节核对。

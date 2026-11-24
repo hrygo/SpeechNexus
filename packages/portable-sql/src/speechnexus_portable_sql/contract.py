@@ -22,6 +22,8 @@ from speechnexus_portable_sql.markers import PYFORMAT, placeholder_positions
 from speechnexus_portable_sql.subset import placeholder_count, validate
 
 __all__ = [
+    "AsyncConnection",
+    "AsyncCursor",
     "CommitUnknownError",
     "ConflictError",
     "Connection",
@@ -172,6 +174,32 @@ class Cursor(Protocol):
     def fetchall(self) -> list[Row]: ...
 
     def close(self) -> None: ...
+
+
+@runtime_checkable
+class AsyncCursor(Protocol):
+    """异步游标的同一子集:动作相同,只是每个动作都被 `await`.
+
+    单独一份而不是给 `Cursor` 加 `Awaitable`:同一段业务代码不会先同步后异步,而混进
+    `Awaitable` 会让「忘了 await」从类型错误退化成运行期行为。异步路径目前只有 workbench,
+    它拿到的行是驱动原始行(不是契约 `Row`),所以这里只声明本层真正用到的动作。
+    """
+
+    @property
+    def rowcount(self) -> int: ...
+
+    async def execute(self, sql: str, params: Params = ()) -> object: ...
+
+    async def fetchall(self) -> Sequence[object]: ...
+
+    async def close(self) -> object: ...
+
+
+@runtime_checkable
+class AsyncConnection(Protocol):
+    """异步连接:本层只需要「开一个游标」,事务边界仍由调用方自己的事务对象拥有。"""
+
+    def cursor(self) -> AsyncCursor: ...
 
 
 @runtime_checkable

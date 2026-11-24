@@ -8,6 +8,11 @@ from __future__ import annotations
 
 import re
 
+from speechnexus_portable_sql.keyed_lock import (
+    KEYED_LOCK_BUCKET_COLUMN,
+    KEYED_LOCK_ROW_LOCK_COLUMN,
+    KEYED_LOCK_TABLE,
+)
 from speechnexus_portable_sql.vendor import sql
 
 
@@ -30,13 +35,33 @@ def grant_runtime_sql(schema: str, role: str) -> sql.Composed:
     return sql.SQL("""
         GRANT USAGE ON SCHEMA {s} TO {r};
         GRANT SELECT, INSERT ON {s}.projects, {s}.project_versions,
-            {s}.transcripts, {s}.transcript_revisions, {s}.mutation_receipts TO {r};
+            {s}.transcripts, {s}.transcript_revisions, {s}.mutation_receipts,
+            {s}.{lock} TO {r};
         GRANT UPDATE (metadata_revision) ON {s}.projects TO {r};
         GRANT UPDATE (head_revision) ON {s}.transcripts TO {r};
-    """).format(s=schema_identifier(schema), r=sql.Identifier(role))
+        GRANT UPDATE ({row_lock}) ON {s}.{lock} TO {r};
+    """).format(
+        s=schema_identifier(schema),
+        r=sql.Identifier(role),
+        lock=sql.Identifier(KEYED_LOCK_TABLE),
+        row_lock=sql.Identifier(KEYED_LOCK_ROW_LOCK_COLUMN),
+    )
 
 
-_V1 = """
+#: 键锁行表:名字与列名来自 `speechnexus_portable_sql.keyed_lock` 的唯一清单,物理类型
+#: 用本命名空间的写法(`numeric(19,0)`,与其它 workbench 表一致)。行在第一次用到该桶时
+#: 才插入,所以运行时角色需要 `INSERT`;`version` 只是行锁许可列(PostgreSQL 的
+#: `FOR UPDATE` 要求行上某列有 `UPDATE` 权限),当前没有写入者,不是 CAS 版本。
+_KEYED_LOCK_DDL = f"""
+CREATE TABLE {{s}}.{KEYED_LOCK_TABLE} (
+    {KEYED_LOCK_BUCKET_COLUMN} numeric(19,0) PRIMARY KEY CHECK ({KEYED_LOCK_BUCKET_COLUMN} >= 0),
+    {KEYED_LOCK_ROW_LOCK_COLUMN} numeric(19,0) NOT NULL DEFAULT 0
+        CHECK ({KEYED_LOCK_ROW_LOCK_COLUMN} >= 0)
+);
+"""
+
+_V1 = (
+    """
 CREATE SCHEMA {s};
 REVOKE ALL ON SCHEMA {s} FROM PUBLIC;
 
@@ -120,3 +145,5 @@ CREATE TABLE {s}.mutation_receipts (
 CREATE INDEX receipts_project ON {s}.mutation_receipts(project_id, project_revision);
 CREATE INDEX receipts_transcript ON {s}.mutation_receipts(transcript_id, transcript_revision);
 """
+    + _KEYED_LOCK_DDL
+)

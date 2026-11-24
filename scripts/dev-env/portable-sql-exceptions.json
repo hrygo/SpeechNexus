@@ -145,12 +145,6 @@
     },
     {
       "rule": "advisory-lock",
-      "path": "backend/src/speechnexus_backend/workbench/infrastructure/postgres_versions.py",
-      "card": "#1100",
-      "reason": "workbench 行的第三方类型/参数标记,整块由 #1102 处理"
-    },
-    {
-      "rule": "advisory-lock",
       "path": "execution-gateway/src/speechnexus_gateway/infrastructure/binding_disable_guard.py",
       "count": 1,
       "card": "#1095",

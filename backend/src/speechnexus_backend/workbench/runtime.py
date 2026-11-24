@@ -86,6 +86,9 @@ from speechnexus_portable_sql.vendor import dict_row, psycopg, sql
 _READ_ONLY = frozenset({"erased_mutation_receipts", "deletion_ledger", "runtime_schema_revision"})
 _INSERT = TABLES - _READ_ONLY
 _UPDATE_COLUMNS = {
+    # 键锁行的 `version` 只是行锁许可列:``FOR UPDATE`` 要求行上某列有 ``UPDATE`` 权限,
+    # 写入路径从不改它。列级授权在这里逐列核对,所以这一项必须与 ``grant_runtime_sql`` 一致。
+    "keyed_locks": {"version"},
     "content_write_intents": {
         "token",
         "intent",

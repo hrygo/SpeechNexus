@@ -382,8 +382,10 @@ def test_0066_migration_re_entry_repairs_only_missing_buckets(sandbox: Sandbox) 
     assert _bucket_row(sandbox, 3) == ("live-owner", live_lease, Decimal(7))
     for bucket in (0, 1):
         assert _bucket_row(sandbox, bucket) == (None, None, Decimal(0))
+    # 只断言本修订已被应用,不断言它是 head:后续修订(0067 起)会把 head 推走,
+    # 把这条写成 == REVISION 会让每个新增迁移都来改这张卡的用例。
     assert (
-        sandbox.admin.execute("SELECT version_num FROM alembic_version").fetchone()[0] == REVISION
+        sandbox.admin.execute("SELECT version_num FROM alembic_version").fetchone()[0] != PREVIOUS
     )
 
 

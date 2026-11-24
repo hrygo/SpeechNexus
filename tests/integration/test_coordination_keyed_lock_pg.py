@@ -48,7 +48,6 @@ from speechnexus_backend.speech.infrastructure.binding_disable_barrier import (
     lock_binding as backend_lock_binding,
 )
 from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
-    COORDINATION_KEYED_LOCK_CREATED_AT_COLUMN,
     COORDINATION_KEYED_LOCK_TABLE,
     COORDINATION_KEYED_LOCK_UPDATE_COLUMNS,
 )
@@ -278,16 +277,15 @@ def test_the_table_and_both_roles_come_from_the_production_declarations(
         "ORDER BY ordinal_position",
         (sandbox.schema, COORDINATION_KEYED_LOCK_TABLE),
     ).fetchall()
-    assert [row[0] for row in rows] == [
-        *KEYED_LOCK_COLUMNS,
-        COORDINATION_KEYED_LOCK_CREATED_AT_COLUMN,
-    ], "the migrated table does not follow the portable declaration plus created_at"
+    assert [row[0] for row in rows] == [*KEYED_LOCK_COLUMNS], (
+        "the migrated table does not follow the portable declaration"
+    )
     by_name = {row[0]: row for row in rows}
     for column in KEYED_LOCK_COLUMNS:
         assert by_name[column][1] == "numeric", by_name[column]
         assert (by_name[column][3], by_name[column][4]) == (38, 0), by_name[column]
         assert by_name[column][2] == "NO", f"{column} must not be nullable"
-    assert by_name[COORDINATION_KEYED_LOCK_CREATED_AT_COLUMN][1] == "timestamp without time zone"
+
     primary_key = sandbox.admin.execute(
         "SELECT a.attname FROM pg_catalog.pg_index i "
         "JOIN pg_catalog.pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey) "

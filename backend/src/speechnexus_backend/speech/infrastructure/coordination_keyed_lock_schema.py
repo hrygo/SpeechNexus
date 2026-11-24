@@ -12,8 +12,9 @@ schema 里的两个不同角色。锁行建在其中一侧够不到的命名空�
 **形状。** 与 workbench 的 `keyed_locks` 同源。桶号与列名来自
 ``speechnexus_portable_sql.keyed_lock`` 的唯一清单(``KEYED_LOCK_COLUMNS``),本模块只补三方
 面命名空间自己的东西:物理类型(``DECIMAL(38,0)``,与 ``coordination_claim_buckets`` 一致,
-桶号是 Python 侧算出的 ``Decimal``)、``created_at``(行是懒建的,记下它第一次被用到的时间
-供排查锁竞争用;没有任何运行角色读写这一列,所以它不产生授权事实)、以及主键。
+桶号是 Python 侧算出的 ``Decimal``)与主键。表里没有时间戳列:它没有写者也没有读者,
+而带小数的 ``TIMESTAMP(6)`` 上 ``DEFAULT CURRENT_TIMESTAMP`` 在 MySQL 是非法默认值,
+两引擎在这一处拼写不同,少一列就少一处差异。
 
 **授权面按事实拆,不按表拆。** 键锁对运行角色需要三件事,每件事只有一个定义点:
 
@@ -45,7 +46,6 @@ from speechnexus_portable_sql.keyed_lock import (
 #: 执行网关是独立部署、导入不了本模块,而两侧必须锁同一张表,所以物理名字留在两者共享的
 #: 底层,这里只再导出(DDL 与授权仍只由本模块声明)。
 __all__ = [
-    "COORDINATION_KEYED_LOCK_CREATED_AT_COLUMN",
     "COORDINATION_KEYED_LOCK_DDL",
     "COORDINATION_KEYED_LOCK_INSERT_COLUMNS",
     "COORDINATION_KEYED_LOCK_SELECT_COLUMNS",
@@ -54,10 +54,6 @@ __all__ = [
     "coordination_keyed_lock_grants",
     "require_coordination_keyed_lock_grants",
 ]
-
-#: 行首次被用到的时间。**唯一**一个不出现在 ``KEYED_LOCK_COLUMNS`` 里的列:它不参与加锁、
-#: 不被任何运行角色读写,所以它不引入第四条授权事实。
-COORDINATION_KEYED_LOCK_CREATED_AT_COLUMN = "created_at"
 
 #: 加锁语句读的列。与 ``keyed_lock.STATEMENTS['keyed_lock.lock']`` 的投影逐字一致。
 COORDINATION_KEYED_LOCK_SELECT_COLUMNS: tuple[str, ...] = (KEYED_LOCK_BUCKET_COLUMN,)
@@ -77,20 +73,21 @@ assert (
     "privilege decision; a new column in the portable keyed lock needs one here"
 )
 
-#: 逐列的物理类型。顺序与 ``KEYED_LOCK_COLUMNS`` 一致,`created_at` 排在最后。
+#: 逐列的物理类型。顺序与 ``KEYED_LOCK_COLUMNS`` 一致。
+#:
+#: 表里**没有** ``created_at``:它没有写者也没有读者,而带小数的 ``TIMESTAMP(6)`` 上
+#: ``DEFAULT CURRENT_TIMESTAMP`` 在 MySQL 是非法默认值(必须写 ``CURRENT_TIMESTAMP(6)``),
+#: 两引擎在这一处拼写不同。少一列就少一处引擎差异。
 _COLUMN_DEFINITIONS: tuple[tuple[str, str], ...] = (
     (KEYED_LOCK_BUCKET_COLUMN, "DECIMAL(38,0) NOT NULL"),
     (KEYED_LOCK_ROW_LOCK_COLUMN, "DECIMAL(38,0) NOT NULL DEFAULT 0"),
-    (
-        COORDINATION_KEYED_LOCK_CREATED_AT_COLUMN,
-        "TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP",
-    ),
 )
 
-assert tuple(name for name, _ in _COLUMN_DEFINITIONS) == (
-    *KEYED_LOCK_COLUMNS,
-    COORDINATION_KEYED_LOCK_CREATED_AT_COLUMN,
-), "the DDL column order must be the portable declaration plus created_at"
+assert tuple(name for name, _ in _COLUMN_DEFINITIONS) == KEYED_LOCK_COLUMNS, (
+    "the DDL columns must be exactly the portable declaration: a column outside it has no "
+    "writer and no reader, and an extra defaulted timestamp is the one thing PostgreSQL and "
+    "MySQL spell differently (CURRENT_TIMESTAMP vs CURRENT_TIMESTAMP(6))"
+)
 
 #: 建表语句的唯一副本:生产由 alembic ``0067`` 执行,集成用例按同一份装配。
 #: ``IF NOT EXISTS`` 与迁移树其余部分一致:若干集成用例把 ``alembic_version`` 回退再

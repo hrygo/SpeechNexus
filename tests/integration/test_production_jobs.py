@@ -36,6 +36,9 @@ from tests.support.portable_pg import connect_kwargs as portable_connect_kwargs
 from speechnexus_backend.speech.application.jobs import CreateJobService, JobTransactions
 from speechnexus_backend.speech.domain.jobs import CreateJob
 from speechnexus_backend.speech.infrastructure.claim_bucket_schema import CLAIM_BUCKET_DDL
+from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
+    COORDINATION_KEYED_LOCK_DDL,
+)
 from speechnexus_backend.speech.infrastructure.job_schema import (
     CANONICAL_JOB_DDL,
     JOB_DDL,
@@ -187,7 +190,12 @@ def database(request: pytest.FixtureRequest) -> Iterator[JobDatabase]:
                 f"CREATE DATABASE `{schema}` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin"
             )
             cursor.execute(f"USE `{schema}`")
-            for ddl in (*JOB_DDL, *CANONICAL_JOB_DDL, *CLAIM_BUCKET_DDL):
+            for ddl in (
+                *JOB_DDL,
+                *CANONICAL_JOB_DDL,
+                *CLAIM_BUCKET_DDL,
+                *COORDINATION_KEYED_LOCK_DDL,
+            ):
                 cursor.execute(ddl.replace('COLLATE "C"', "COLLATE utf8mb4_0900_bin"))
             cursor.execute(f"CREATE USER '{role}'@'%' IDENTIFIED BY 'synthetic_job_test'")
             # 列清单直接取写入者声明,不在这里手写第五份副本:漏一列的后果是运行期

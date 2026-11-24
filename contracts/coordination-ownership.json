@@ -4,19 +4,25 @@
   "ports": {
     "acquire_owner": {
       "owner": "A",
-      "writes": ["resource_pools"],
+      "writes": [
+        "resource_pools"
+      ],
       "producer": "Scheduler",
       "consumer": "owner repository"
     },
     "renew_owner": {
       "owner": "A",
-      "writes": ["resource_pools"],
+      "writes": [
+        "resource_pools"
+      ],
       "producer": "Scheduler",
       "consumer": "owner repository"
     },
     "activate_owner": {
       "owner": "A",
-      "writes": ["resource_pools"],
+      "writes": [
+        "resource_pools"
+      ],
       "producer": "Scheduler reconciler",
       "consumer": "owner repository"
     },
@@ -38,13 +44,18 @@
     },
     "create_job": {
       "owner": "A",
-      "writes": ["coordination_jobs", "coordination_outbox"],
+      "writes": [
+        "coordination_jobs",
+        "coordination_outbox"
+      ],
       "producer": "speech application",
       "consumer": "job transaction"
     },
     "claim_job": {
       "owner": "A",
-      "writes": ["coordination_jobs"],
+      "writes": [
+        "coordination_jobs"
+      ],
       "producer": "Worker",
       "consumer": "job repository"
     },
@@ -98,43 +109,61 @@
     },
     "seal_barrier": {
       "owner": "B",
-      "writes": ["gateway_fencing_barriers"],
+      "writes": [
+        "gateway_fencing_barriers"
+      ],
       "producer": "gateway ingress",
       "consumer": "gateway transaction"
     },
     "create_submit": {
       "owner": "B",
-      "writes": ["submit_intents", "output_stream_heads"],
+      "writes": [
+        "submit_intents",
+        "output_stream_heads"
+      ],
       "producer": "gateway application",
       "consumer": "execution transaction"
     },
     "mark_execution_unknown": {
       "owner": "B",
-      "writes": ["submit_intents"],
+      "writes": [
+        "submit_intents"
+      ],
       "producer": "gateway reconciler",
       "consumer": "execution transaction"
     },
     "record_stop": {
       "owner": "B",
-      "writes": ["execution_stop_evidence", "submit_intents"],
+      "writes": [
+        "execution_stop_evidence",
+        "submit_intents"
+      ],
       "producer": "verified engine/controller/operator observation",
       "consumer": "execution transaction"
     },
     "record_execution_observation": {
       "owner": "B",
-      "writes": ["submit_intents"],
+      "writes": [
+        "submit_intents"
+      ],
       "producer": "gateway adapter",
       "consumer": "execution transaction"
     },
     "redact_execution_command": {
       "owner": "B",
-      "writes": ["submit_intents"],
+      "writes": [
+        "submit_intents"
+      ],
       "producer": "deletion coordinator",
       "consumer": "gateway cleanup transaction"
     },
     "append_interval": {
       "owner": "B",
-      "writes": ["output_stream_heads", "output_sample_intervals", "submit_intents"],
+      "writes": [
+        "output_stream_heads",
+        "output_sample_intervals",
+        "submit_intents"
+      ],
       "producer": "gateway meter",
       "consumer": "interval transaction"
     },
@@ -164,7 +193,8 @@
     "output_stream_heads": "B",
     "execution_stop_evidence": "B",
     "output_sample_intervals": "B",
-    "runtime_intent_deliveries": "A"
+    "runtime_intent_deliveries": "A",
+    "coordination_keyed_locks": "C"
   },
   "query_outcome": {
     "pool": {

@@ -15,6 +15,9 @@ from speechnexus_backend.speech.infrastructure.coordination_grants import (
     SPEECH_UPDATES,
     coordination_runtime_grants,
 )
+from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
+    COORDINATION_KEYED_LOCK_DDL,
+)
 from speechnexus_backend.speech.infrastructure.coordination_schema import COORDINATION_DDL
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
     cancellation_reconciliation_grants,
@@ -35,12 +38,17 @@ def test_production_storage_and_dml_owners_match_the_authoritative_matrix() -> N
             *ADMISSION_COMMAND_DDL,
             *RUNTIME_DELIVERY_DDL,
             *CLAIM_BUCKET_DDL,
+            *COORDINATION_KEYED_LOCK_DDL,
         )
         if (match := re.match(r"CREATE TABLE (?:IF NOT EXISTS )?(\w+)", ddl))
     }
     assert tables == set(owners)
     assert set(SPEECH_UPDATES) == {table for table, owner in owners.items() if owner == "A"}
     assert set(GATEWAY_UPDATES) == {table for table, owner in owners.items() if owner == "B"}
+    # C 是共享互斥表:两个角色都只有列级授权,不属于任何一方的表级更新面。
+    shared = {table for table, owner in owners.items() if owner == "C"}
+    assert shared, "the shared column-level mutex table must stay declared"
+    assert not shared & (set(SPEECH_UPDATES) | set(GATEWAY_UPDATES))
 
 
 def test_cancellation_fence_gateway_and_worker_column_grants_stay_separate() -> None:

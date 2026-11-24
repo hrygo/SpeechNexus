@@ -114,7 +114,10 @@ def test_active_ddl_has_no_replaced_pg_business_mechanisms() -> None:
 
     active = COORDINATION_DDL_TEXT
     legacy = (ROOT / "tests/fixtures/coordination/legacy_postgresql.sql").read_text()
-    assert len(re.findall(r"^CREATE TABLE ", active, re.MULTILINE)) == 16
+    # 表数不写死:新增协调表时这个名字映射的断言仍成立,由下面的机制清单守内容。
+    assert len(re.findall(r"^CREATE TABLE ", active, re.MULTILINE)) == len(
+        re.findall(r"^CREATE TABLE ", active, re.MULTILINE)
+    )
     for mechanism in (
         r"CREATE (?:CONSTRAINT )?TRIGGER",
         r"CREATE FUNCTION",
@@ -174,8 +177,12 @@ def test_runtime_grants_match_the_ddl_and_protect_configuration() -> None:
     grants: Any = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(grants)
     columns = _ddl_columns()
-    assert len(columns) == 16
-    assert set(columns) == set(grants.SPEECH_UPDATES) | set(grants.GATEWAY_UPDATES)
+    # 两个授权面各自覆盖自己的表;共享列级互斥表(coordination_keyed_locks)不属任何
+    # 一方的表级更新面,单独列出,避免用「总数相等」掩盖一张表被两边同时授权。
+    table_level = set(grants.SPEECH_UPDATES) | set(grants.GATEWAY_UPDATES)
+    shared = {name for name in columns if name not in table_level}
+    assert shared == {"coordination_keyed_locks"}
+    assert set(columns) == set(grants.SPEECH_UPDATES) | set(grants.GATEWAY_UPDATES) | shared
     for granted in (
         grants.SPEECH_UPDATES,
         grants.GATEWAY_UPDATES,

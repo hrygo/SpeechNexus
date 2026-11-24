@@ -18,8 +18,6 @@ cursor so both dispatch branches are compared under one construction.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
@@ -34,6 +32,7 @@ from speechnexus_backend.speech.infrastructure import public_jobs_postgres
 from speechnexus_backend.speech.infrastructure.leases_postgres import _BudgetExpiredError
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.public_jobs_postgres import PostgresPublicJobs
+from tests.support.keyed_lock_double import answer_keyed_lock, business_inserts
 from tests.unit.backend.test_public_job_pin_postgres import Pool, Rows, _request
 
 START = 1_000.0
@@ -67,16 +66,31 @@ class RefusingCursor:
     def __init__(self, failure: BaseException | None) -> None:
         self.failure = failure
         self.calls: list[tuple[str, tuple[object, ...]]] = []
+        self.rows: list[dict[str, object]] = []
 
     def execute(self, query: str, parameters: tuple[object, ...] = ()) -> RefusingCursor:
         self.calls.append((query, parameters))
         if "set_config" in query:
             return self
+        answered = answer_keyed_lock(query, parameters)
+        if answered is not None:
+            # 绑定行锁先于准入读;它由共享替身回答,不是这次拒绝要模拟的那条语句。
+            self.rows = answered
+            return self
         assert self.failure is not None, "the real budget guard was expected to refuse first"
         raise self.failure
 
     def fetchall(self) -> list[dict[str, object]]:
-        return []
+        return self.rows
+
+    def __enter__(self) -> RefusingCursor:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
 
 
 class AdmissionPool(Pool):
@@ -99,11 +113,11 @@ class AdmissionPool(Pool):
             return Rows([{"now": _epoch_us(NOW_US)}])
         return super().execute(query, parameters)
 
-    @contextmanager
-    def cursor(self) -> Iterator[RefusingCursor]:
+    def cursor(self) -> RefusingCursor:
+        # 与真实驱动一致:``cursor()`` 直接给游标(游标本身支持 ``with``),而不是上下文管理器。
         cursor = RefusingCursor(self.cursor_failure)
         self.cursors.append(cursor)
-        yield cursor
+        return cursor
 
 
 def _driver(
@@ -136,9 +150,9 @@ def _driver(
 
 def _assert_rolled_back_unknown(pool: AdmissionPool, result: JobCreateResult) -> None:
     assert (result.outcome, result.error_code) == ("unknown", "outcome_unknown")
-    assert len(pool.cursors) == 1, "the admission cursor was never handed out"
-    assert not any(query.startswith("INSERT") for query, _ in pool.calls), (
-        "the admission transaction wrote rows after its budget ran out"
+    assert pool.cursors, "no admission cursor was ever handed out"
+    assert business_inserts(pool.calls) == [], (
+        "the admission transaction wrote business rows after its budget ran out"
     )
     assert pool.commits == 0 and pool.rollbacks == 1, (
         "expected one rolled-back transaction and no commit, got "
@@ -155,9 +169,9 @@ def test_the_real_budget_guard_is_answered_as_an_unknown_outcome(
     result = jobs.create(request)
 
     _assert_rolled_back_unknown(pool, result)
-    # No exception was scripted: the leases cursor's own deadline check refused
-    # before its raw cursor touched the database.
-    assert pool.cursors[0].calls == []
+    # No exception was scripted: 准入游标自己的预算检查在触库之前就拒绝,
+    # 所以它一条语句都没发出去(绑定行锁走的是写者连接上的另一条游标)。
+    assert pool.cursors[-1].calls == []
 
 
 @pytest.mark.parametrize(
@@ -176,6 +190,7 @@ def test_both_admission_refusal_types_share_one_unknown_answer(
     _assert_rolled_back_unknown(pool, result)
     # The refusal happened mid-transaction: the timeout install and the first
     # admission read were already issued before the cursor refused.
-    calls = pool.cursors[0].calls
+    calls = pool.cursors[-1].calls
     assert calls[0][0] == SET_TIMEOUT
-    assert len(calls) == 2 and calls[1][0] != SET_TIMEOUT
+    # 拒绝发生在事务中途:超时已经装好,随后有一条非超时语句被拒。
+    assert len(calls) >= 2 and calls[-1][0] != SET_TIMEOUT

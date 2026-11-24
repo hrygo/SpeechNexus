@@ -18,6 +18,9 @@ from speechnexus_backend.speech.infrastructure.admission_postgres import (
 from speechnexus_backend.speech.infrastructure.builtin_voice_qualification import (
     require_builtin_voice,
 )
+from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
+    require_coordination_keyed_lock_grants,
+)
 from speechnexus_backend.speech.infrastructure.gateway_execution_client import (
     GatewayExecutionClient,
     MinioExecutionResultObjects,
@@ -88,6 +91,15 @@ def build_speech(settings: Settings) -> SpeechSynthesis | None:
     settlement: TtsSettlementRuntime | None = None
     try:
         pool.open()
+        # The synchronous admission opens by locking the binding row, so this identity's
+        # keyed lock surface is a startup condition: a deployment that never ran 0067 (or
+        # a role provisioned from a stale grant set) is refused here, not on the first
+        # synthesis request.
+        with pool.connection(timeout=3) as connection:
+            connection.execute("SET LOCAL statement_timeout='3s'")
+            require_coordination_keyed_lock_grants(
+                connection, settings.database_schema, subject="Synchronous speech"
+            )
         require_complete_tts_roots(pool, timeout_seconds=settings.speech_storage_timeout_seconds)
         facts = QualifiedPostgresSpeechFacts(
             pool, recipe, timeout_seconds=settings.speech_storage_timeout_seconds

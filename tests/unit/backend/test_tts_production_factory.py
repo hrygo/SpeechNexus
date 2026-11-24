@@ -2,6 +2,8 @@
 
 import hashlib
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +23,27 @@ from speechnexus_backend.speech.infrastructure.qualified_speech_facts_postgres i
 from speechnexus_backend.speech.infrastructure.tts_recipe import load_tts_recipe
 from tests.unit.backend.test_health import _settings
 from tests.unit.backend.test_transcription_recipe import _document
+
+
+class _StartupConnection:
+    """``build_speech`` 的启动核对连接:装语句超时的那一句,其余由桩函数回答。"""
+
+    def execute(self, query: str, parameters: tuple[object, ...] = ()) -> _StartupConnection:
+        return self
+
+
+class _StartupPool:
+    closed = True
+
+    def open(self) -> None:
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+
+    @contextmanager
+    def connection(self, *, timeout: float) -> Iterator[_StartupConnection]:
+        yield _StartupConnection()
 
 
 def recipe_file(tmp_path: Path) -> Path:
@@ -80,18 +103,14 @@ def test_factory_without_qualified_voice_closes_pool(
         }
     )
 
-    class Pool:
-        closed = True
+    pool_type = _StartupPool
 
-        def open(self) -> None:
-            self.closed = False
-
-        def close(self) -> None:
-            self.closed = True
-
-    pool = Pool()
+    pool = pool_type()
     monkeypatch.setattr(speech_runtime, "speech_pool", lambda *a, **k: pool)
     monkeypatch.setattr(speech_runtime, "require_complete_tts_roots", lambda *a, **k: None)
+    monkeypatch.setattr(
+        speech_runtime, "require_coordination_keyed_lock_grants", lambda *a, **k: None
+    )
     monkeypatch.setattr(QualifiedPostgresSpeechFacts, "has_qualified_voice", lambda self: False)
     assert speech_runtime.build_speech(settings) is None
     assert pool.closed
@@ -158,14 +177,7 @@ async def test_default_factory_builds_and_lifespan_closes_owned_resources(
         }
     )
 
-    class Pool:
-        closed = True
-
-        def open(self) -> None:
-            self.closed = False
-
-        def close(self) -> None:
-            self.closed = True
+    pool_type = _StartupPool
 
     class Gateway:
         def __init__(self) -> None:
@@ -192,9 +204,12 @@ async def test_default_factory_builds_and_lifespan_closes_owned_resources(
             pass
 
     monkeypatch.setattr(speech_runtime, "TtsSettlementRuntime", FakeSettlement)
-    pool, gateway, results = Pool(), Gateway(), Results()
+    pool, gateway, results = pool_type(), Gateway(), Results()
     monkeypatch.setattr(speech_runtime, "speech_pool", lambda *a, **k: pool)
     monkeypatch.setattr(speech_runtime, "require_complete_tts_roots", lambda *a, **k: None)
+    monkeypatch.setattr(
+        speech_runtime, "require_coordination_keyed_lock_grants", lambda *a, **k: None
+    )
     monkeypatch.setattr(QualifiedPostgresSpeechFacts, "has_qualified_voice", lambda self: True)
     monkeypatch.setattr(speech_runtime, "MinioExecutionResultObjects", lambda **kwargs: results)
 

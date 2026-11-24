@@ -21,6 +21,7 @@ from speechnexus_backend.speech.infrastructure.binding_lifecycle_postgres import
     PostgresBindingLifecycle,
 )
 from tests.support.binding_examples import binding_request
+from tests.support.keyed_lock_double import answer_keyed_lock
 
 DIGEST = "sha256:" + "a" * 64
 NOW = 1_700_000_000_000_003
@@ -88,8 +89,11 @@ class Cursor:
     def execute(self, query: str, parameters: tuple[object, ...] = ()) -> None:
         self.statements.append(query)
         self.query, self.parameters, self.rowcount = query, parameters, 0
-        if "pg_advisory_xact_lock" in query:
-            self.rows: list[dict[str, Any]] = []
+        answered = answer_keyed_lock(query, parameters)
+        if answered is not None:
+            self.rows: list[dict[str, Any]] = answered
+        elif "pg_advisory_xact_lock" in query:
+            self.rows = []
         elif "FROM speech_publication_lifecycle_events" in query:
             self.rows = [] if self.replay is None else [self.replay]
         elif "FROM speech_publications AS p" in query:

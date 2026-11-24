@@ -1,5 +1,7 @@
 """Default composition owns a separate query pool and refuses unsafe reader authority."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, cast
 from uuid import UUID
@@ -11,7 +13,22 @@ from speechnexus_gateway.app import _build_control, _close_control
 from speechnexus_gateway.infrastructure.execution_reader import PostgresExecutionReader
 from speechnexus_gateway.infrastructure.reader_authority import ExecutionReaderTarget
 from speechnexus_gateway.settings import Settings
+from tests.support.keyed_lock_double import answer_keyed_lock
 from tests.unit.gateway.test_barrier_http import settings_for
+
+
+class Connection:
+    """网关启动探针要取的那把行锁:语句与它读回的行都由共享替身回答."""
+
+    def execute(self, query: str, parameters: tuple[object, ...] = ()) -> Connection:
+        self.rows = answer_keyed_lock(query, parameters) or []
+        return self
+
+    def fetchall(self) -> list[dict[str, Any]]:
+        return self.rows
+
+    def rollback(self) -> None:
+        return None
 
 
 class Pool:
@@ -23,6 +40,10 @@ class Pool:
 
     def close(self) -> None:
         self.events.append(self.name + ":close")
+
+    @contextmanager
+    def connection(self, *, timeout: float) -> Iterator[Connection]:
+        yield Connection()
 
 
 def test_default_control_requires_explicit_reader_before_opening_ownership(

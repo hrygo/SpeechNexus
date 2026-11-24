@@ -30,15 +30,30 @@ schema 里的两个不同角色。锁行建在其中一侧够不到的命名空�
 
 from __future__ import annotations
 
+from speechnexus_backend.speech.infrastructure.job_schema_preflight import (
+    require_migrated_schema,
+)
+from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechConnection
 from speechnexus_portable_sql.keyed_lock import (
+    COORDINATION_KEYED_LOCK_TABLE,
     KEYED_LOCK_BUCKET_COLUMN,
     KEYED_LOCK_COLUMNS,
     KEYED_LOCK_ROW_LOCK_COLUMN,
 )
 
-#: 协调命名空间里的表名。workbench 那张叫 `keyed_locks`;这里沿用 ``coordination_`` 前缀,
-#: 与 `coordination_jobs` / `coordination_outbox` / `coordination_claim_buckets` 一致。
-COORDINATION_KEYED_LOCK_TABLE = "coordination_keyed_locks"
+#: 协调命名空间里的表名。名字的唯一字面量在 ``speechnexus_portable_sql.keyed_lock`` ——
+#: 执行网关是独立部署、导入不了本模块,而两侧必须锁同一张表,所以物理名字留在两者共享的
+#: 底层,这里只再导出(DDL 与授权仍只由本模块声明)。
+__all__ = [
+    "COORDINATION_KEYED_LOCK_CREATED_AT_COLUMN",
+    "COORDINATION_KEYED_LOCK_DDL",
+    "COORDINATION_KEYED_LOCK_INSERT_COLUMNS",
+    "COORDINATION_KEYED_LOCK_SELECT_COLUMNS",
+    "COORDINATION_KEYED_LOCK_TABLE",
+    "COORDINATION_KEYED_LOCK_UPDATE_COLUMNS",
+    "coordination_keyed_lock_grants",
+    "require_coordination_keyed_lock_grants",
+]
 
 #: 行首次被用到的时间。**唯一**一个不出现在 ``KEYED_LOCK_COLUMNS`` 里的列:它不参与加锁、
 #: 不被任何运行角色读写,所以它不引入第四条授权事实。
@@ -111,12 +126,36 @@ def coordination_keyed_lock_grants(schema: str, role: str) -> tuple[str, ...]:
     )
 
 
-__all__ = [
-    "COORDINATION_KEYED_LOCK_CREATED_AT_COLUMN",
-    "COORDINATION_KEYED_LOCK_DDL",
-    "COORDINATION_KEYED_LOCK_INSERT_COLUMNS",
-    "COORDINATION_KEYED_LOCK_SELECT_COLUMNS",
-    "COORDINATION_KEYED_LOCK_TABLE",
-    "COORDINATION_KEYED_LOCK_UPDATE_COLUMNS",
-    "coordination_keyed_lock_grants",
-]
+def require_coordination_keyed_lock_grants(
+    connection: SpeechConnection, schema: str, *, subject: str
+) -> None:
+    """启动闸门:这个身份此刻就能取协调键锁,缺表或缺列在启动时点名.
+
+    这张表原先登记为「允许但不要求」,因为还没有调用点用它;绑定禁用栅栏迁移到行锁之后,
+    取不到它的角色不再只是少一条授权,而是**第一条锁语句就 42501**。所以判据从「允许」
+    改成「必须有」:关系不存在或列级许可缺一列,都在启动核对时按名字失败。
+
+    三件事分别判,不合成一句 ``has_table_privilege``:列级授权下按表判恒为假,会把一份
+    正确的列级授权判成缺授权。存在性先判 —— ``has_column_privilege`` 对不存在的关系是
+    报错而不是返回空,先查再判才能给出「没跑迁移」这个可读结论(#920 的同一条理由)。
+    """
+
+    # 存在性复用唯一的「关系是否已迁移」判定点,不在这里另写一份 pg_class 查询。
+    require_migrated_schema(connection, schema, (COORDINATION_KEYED_LOCK_TABLE,))
+    qualified = f"{schema}.{COORDINATION_KEYED_LOCK_TABLE}"
+    for privilege, columns in (
+        ("SELECT", COORDINATION_KEYED_LOCK_SELECT_COLUMNS),
+        ("INSERT", COORDINATION_KEYED_LOCK_INSERT_COLUMNS),
+        ("UPDATE", COORDINATION_KEYED_LOCK_UPDATE_COLUMNS),
+    ):
+        for column in columns:
+            row = connection.execute(
+                "SELECT pg_catalog.has_column_privilege(CURRENT_USER, ?, ?, ?) AS held",
+                (qualified, column, privilege),
+            ).fetchone()
+            if row is None or not row["held"]:
+                raise ValueError(
+                    f"{subject} cannot take the {COORDINATION_KEYED_LOCK_TABLE} row lock: "
+                    f"missing {privilege} on {COORDINATION_KEYED_LOCK_TABLE}.{column}; "
+                    "re-provision the role from its grant function"
+                )

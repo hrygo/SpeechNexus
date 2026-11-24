@@ -30,6 +30,7 @@ from speechnexus_backend.speech.interfaces.http.binding_ingress import (
     RETIRE_PATH,
 )
 from tests.support.binding_examples import binding_request
+from tests.support.keyed_lock_double import answer_keyed_lock
 from tests.unit.backend.test_health import _settings
 
 RETIRE_URL = RETIRE_PATH.format(binding_id="asr-quality", revision="1")
@@ -291,11 +292,21 @@ async def test_activation_conflict_explains_the_head_observed_by_the_adapter(
     class Cursor:
         query = ""
 
+        def __init__(self) -> None:
+            # 键锁路径把「锁住的那一行」写在这里;每个用例一份,类属性会在用例之间串味。
+            self.rows: list[dict[str, Any]] = []
+
         def execute(self, query: str, parameters: tuple[object, ...] = ()) -> None:
+            answered = answer_keyed_lock(query, parameters)
+            if answered is not None:
+                # 绑定行锁(含懒建桶行的保存点)在冲突判定之前,不是业务写入。
+                self.rows = answered
+                return
             assert query.startswith("SELECT "), "a stale activation must not write"
             self.query = query
+            self.rows = self._select_rows()
 
-        def fetchall(self) -> list[dict[str, Any]]:
+        def _select_rows(self) -> list[dict[str, Any]]:
             if "FROM speech_publications AS p" in self.query:
                 return [{"published_at_us": 1, "retired_at_us": None}]
             assert "FROM speech_publication_heads" in self.query
@@ -304,6 +315,9 @@ async def test_activation_conflict_explains_the_head_observed_by_the_adapter(
                 if current_revision is None
                 else [{"revision": current_revision, "revision_id": "private-revision-identity"}]
             )
+
+        def fetchall(self) -> list[dict[str, Any]]:
+            return self.rows
 
     command = BindingActivationCommand(
         binding_id="asr-quality",

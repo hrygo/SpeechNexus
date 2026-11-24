@@ -9,6 +9,9 @@ separate transaction. No DELETE, DDL, claim UPDATE or body UPDATE is granted.
 from __future__ import annotations
 
 from speechnexus_backend.speech.infrastructure.coordination_grants import DIMENSIONS
+from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
+    coordination_keyed_lock_grants,
+)
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 from speechnexus_backend.speech.infrastructure.job_writer_columns import (
     ADMISSION_OPERATION_INSERT_COLUMNS,
@@ -132,6 +135,9 @@ def public_job_admission_grants(schema: str, role: str) -> tuple[str, ...]:
     for table, columns in _UPDATE_COLUMNS.items():
         listed = ", ".join(columns.split())
         grants.append(f'GRANT UPDATE ({listed}) ON "{schema}".{table} TO "{role}"')
+    # An admission transaction opens by locking the binding row, so this identity needs
+    # the keyed lock surface too. One declaration, called (not restated) from here.
+    grants.extend(coordination_keyed_lock_grants(schema, role))
     return tuple(grants)
 
 

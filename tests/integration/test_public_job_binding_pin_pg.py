@@ -32,6 +32,7 @@ from speechnexus_backend.speech.infrastructure.public_jobs_postgres import (
     PostgresPublicJobs,
     _insert,
 )
+from speechnexus_portable_sql.transaction import is_savepoint_control
 
 pytestmark = pytest.mark.integration
 KEY = "synthetic-del356-key-0001"
@@ -283,6 +284,24 @@ def test_exhausted_real_pool_does_not_invent_absence(jobs_db: JobSandbox) -> Non
     _counts(jobs_db, 0)
 
 
+class SlowCursor:
+    """The cursor shape of ``SlowSQL``: the keyed lock opens its own cursor."""
+
+    def __init__(self, raw: Any) -> None:
+        self.raw = raw
+
+    def execute(self, query: str, parameters: tuple[object, ...] = ()) -> Any:
+        if not is_savepoint_control(query) and "set_config" not in query:
+            self.raw.execute("SELECT pg_sleep(0.065)")
+        return self.raw.execute(query, parameters)
+
+    def fetchall(self) -> Any:
+        return self.raw.fetchall()
+
+    def close(self) -> None:
+        self.raw.close()
+
+
 class SlowSQL:
     """Delays are real SQL under the adapter's current statement_timeout."""
 
@@ -290,9 +309,12 @@ class SlowSQL:
         self.raw = raw
 
     def execute(self, query: str, parameters: tuple[object, ...] = ()) -> Any:
-        if "set_config" not in query:
+        if not is_savepoint_control(query) and "set_config" not in query:
             self.raw.execute("SELECT pg_sleep(0.065)")
         return self.raw.execute(query, parameters)
+
+    def cursor(self) -> SlowCursor:
+        return SlowCursor(self.raw.cursor())
 
 
 class SlowPool:

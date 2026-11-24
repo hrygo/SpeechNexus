@@ -635,6 +635,50 @@ def test_admission_role_startup_matrix_is_satisfied_without_delete(
         db.query(f'DROP ROLE IF EXISTS "{role}"')
 
 
+@pytest.mark.parametrize(
+    ("privilege", "column"),
+    [
+        ("SELECT", "bucket_no"),
+        ("INSERT", "bucket_no"),
+        ("UPDATE", "version"),
+    ],
+)
+def test_admission_startup_refuses_a_missing_keyed_lock_column(
+    admission_database: AdmissionDatabase, privilege: str, column: str
+) -> None:
+    """准入身份同样在启动时核对键锁行:撤掉三列中的任何一列都必须点名失败。
+
+    准入事务开句就是取这把行锁,所以缺列不是「少一条授权」,而是第一次创建就在锁语句上
+    42501。核对放在启动时,负例逐列证明它真的会红。
+    """
+
+    db = admission_database.runtime.foundation.database
+    role = "admission_only_" + uuid.uuid4().hex[:10]
+    db.query(f"CREATE ROLE \"{role}\" LOGIN PASSWORD 'synthetic_admission_test'")
+    try:
+        for grant in public_job_admission_grants(db.schema, role):
+            db.query(grant)
+        db.query(
+            f'REVOKE {privilege} ({column}) ON "{db.schema}".coordination_keyed_locks FROM "{role}"'
+        )
+        connection = portable_pg_connect(
+            make_conninfo(db.url, user=role, password="synthetic_admission_test"),
+            row_factory=__import__("psycopg.rows", fromlist=["dict_row"]).dict_row,
+        )
+        try:
+            connection.execute(f'SET search_path TO "{db.schema}", pg_catalog')
+            with pytest.raises(
+                ValueError,
+                match=f"missing {privilege} on coordination_keyed_locks.{column}",
+            ):
+                _verify_admission_privileges(connection, db.schema)
+        finally:
+            connection.close()
+    finally:
+        db.query(f'DROP OWNED BY "{role}"')
+        db.query(f'DROP ROLE IF EXISTS "{role}"')
+
+
 def test_concurrent_same_key_reserves_exactly_once(admission_database: AdmissionDatabase) -> None:
     _seed(admission_database)
     db = admission_database.runtime.foundation.database

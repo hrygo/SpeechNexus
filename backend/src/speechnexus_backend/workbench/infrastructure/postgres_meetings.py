@@ -24,6 +24,8 @@ from speechnexus_backend.workbench.infrastructure.postgres_versions import (
     PostgresVersionUnitOfWork,
     _Session,
 )
+from speechnexus_backend.workbench.infrastructure.version_schema import schema_identifier
+from speechnexus_portable_sql.keyed_lock import acquire_async as acquire_keyed_lock_async
 
 
 @dataclass(frozen=True)
@@ -90,6 +92,24 @@ def _digest(value: object) -> str:
     ).hexdigest()
 
 
+def meeting_claim_lock_key(
+    schema: str, workspace: str, operation: str, scope: str, digest: str
+) -> str:
+    """会议受理那把键锁的完整键:命名空间 + 工作区 + 操作 + 范围 + 请求键摘要(规范 JSON).
+
+    文本与迁移前喂给 advisory lock 的 preimage **逐字相同**,只有载体变了:同一个受理键
+    在任何进程里都折到同一行。命名空间段由 ``schema_identifier`` 渲染 —— 与限定表名的是
+    同一次调用,所以「键里的命名空间」与「锁行落在哪个 schema」不可能分叉(advisory lock
+    没有表,只能把 schema 拼进哈希;行锁的表本身已经承载了命名空间,这一段因此只是保留了
+    旧键的形状,不再承担区分实例的职责)。
+
+    为什么单独一个函数:桶号只从这段文本推出,而「哪些东西算进键」必须只有一个定义点;
+    调用点与用例各拼一份,碰撞用例就会证明一个产品路径并不使用的桶号。
+    """
+
+    return json.dumps([schema_identifier(schema).as_string(), workspace, operation, scope, digest])
+
+
 class PostgresMeetings:
     def __init__(self, versions: PostgresVersionUnitOfWork) -> None:
         self._versions = versions
@@ -143,13 +163,15 @@ class PostgresMeetings:
             raise ValueError("invalid meeting request key")
         digest = _digest(["provided", key] if key is not None else ["unkeyed", uuid4().hex])
         intent_digest = _digest(intent)
-        bucket = int.from_bytes(
-            sha256(
-                json.dumps([base._schema.as_string(), workspace, operation, scope, digest]).encode()
-            ).digest()[:8],
-            signed=True,
+        # 同键串行由一行真实的行锁给出(``speechnexus_portable_sql.keyed_lock``),不再用
+        # PostgreSQL 专有的 ``pg_advisory_xact_lock``。桶号只决定「等哪一行」;完整受理身份
+        # 仍是 ``meeting_receipts`` 的主键(workspace, operation, scope, key_digest),所以
+        # 碰撞只增加竞争,不能别名一次重放。
+        await acquire_keyed_lock_async(
+            base._connection,
+            key=meeting_claim_lock_key(base._schema_name, workspace, operation, scope, digest),
+            schema=base._schema_name,
         )
-        await base._execute("SELECT pg_advisory_xact_lock(?)", (bucket,))
         row = await base._one(
             _Receipt,
             """SELECT intent_digest,meeting_id,version,updated_at,ended_at,

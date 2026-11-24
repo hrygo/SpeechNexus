@@ -39,6 +39,7 @@ import psycopg
 import pytest
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
 from sqlalchemy import create_engine
@@ -147,7 +148,10 @@ def sandbox() -> Iterator[Sandbox]:
             config.attributes["connection"] = connection
             command.upgrade(config, "head")
         head = admin.execute("SELECT version_num FROM alembic_version").fetchone()
-        assert head is not None and tuple(head) == ("0067_coordination_keyed_locks",), (
+        # 不写死 head 的字面量:迁移链每加一个修订都要来这里改一遍,那是第二份定义。
+        # 判据是「沙箱停在脚本目录算出来的 head 上」,脚本目录是唯一权威。
+        expected = ScriptDirectory.from_config(_config(schema)).get_current_head()
+        assert head is not None and tuple(head) == (expected,), (
             f"the sandbox is not at the migration head: {head}"
         )
         created = admin.execute(

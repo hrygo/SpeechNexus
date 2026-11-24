@@ -15,8 +15,6 @@
     "advisory-lock::backend/src/speechnexus_backend/speech/infrastructure/qualification_admission_postgres.py": 1,
     "advisory-lock::backend/src/speechnexus_backend/speech/infrastructure/tts_settlement_postgres.py": 1,
     "advisory-lock::backend/src/speechnexus_backend/speech/infrastructure/tts_settlement_sql.py": 1,
-    "advisory-lock::backend/src/speechnexus_backend/speech/infrastructure/voice_publications_postgres.py": 1,
-    "advisory-lock::backend/src/speechnexus_backend/speech/infrastructure/workspaces_postgres.py": 1,
     "advisory-lock::backend/src/speechnexus_backend/workbench/infrastructure/postgres_deletions.py": 1,
     "advisory-lock::backend/src/speechnexus_backend/workbench/infrastructure/postgres_meetings.py": 1,
     "advisory-lock::backend/src/speechnexus_backend/workbench/infrastructure/postgres_minutes_tasks.py": 1,

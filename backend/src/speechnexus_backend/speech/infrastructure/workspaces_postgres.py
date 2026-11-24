@@ -243,13 +243,10 @@ class PostgresWorkspaceWrites:
     def _original(self, cursor: _Cursor, key_digest: str | None) -> dict[str, Any] | None:
         if key_digest is None:
             return None
-        # The lock bucket only orders equal keys; the complete digest is the PK,
-        # so a bucket collision adds contention and can never alias a replay.
-        cursor.rows(
-            "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:workspace:' || current_schema() || ':idempotency:' || ?, 0))",
-            (key_digest,),
-        )
+        # 不在这里取任何锁:同键的裁决者是 ``speech_workspace_commands.key_digest``
+        # 主键。先到的写者插进去,后到者撞唯一约束 —— ``create`` / ``update`` 已经把那次
+        # ``UniqueViolation`` 接到 ``_collision``,它用一笔**新事务**读回原命令与原文,
+        # 摘要不同才报 idempotency_conflict。先查后插在这里只是免掉一次回滚的快路径。
         rows = cursor.rows(
             "SELECT " + _COMMAND_COLUMNS + " FROM speech_workspace_commands WHERE key_digest = ?",
             (key_digest,),

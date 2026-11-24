@@ -2148,3 +2148,33 @@ receipt 走 replay,不会再写围栏;`ON CONFLICT (job_id) DO NOTHING` 与主�
 一是把 `keyed_locks` 建到**该角色可达的命名空间**并在那里唯一的授权定义点上授
 `SELECT, INSERT` 与列级 `UPDATE (version)`;二是确认那处路径里键锁是事务的第一把锁,若它原本
 先锁 Job 行,交换顺序才能避开环。本切片只改 workbench 一处,其余 27 处与其 DDL/授权未动。
+
+**CI 首跑失败的不是授权面,是合成登录的认证面。** 首个 PR 运行在这两条用例上红,报的是
+`Workbench runtime database is unavailable or unsafe`(旧文案不带任何条件,所以无法据此判断
+被拒的是哪一步)。实测结论:
+
+- 授权面本身可移植。用 PostgreSQL **16.15**(与 CI 同一小版本,`postgresql-binaries` 提供)
+  的私有 socket 集群跑同一组用例:5 passed,启动闸门接受 `SELECT, INSERT` + 列级
+  `UPDATE (version)` 这一面。因此本失败**与 PostgreSQL 大版本无关**,`has_column_privilege`
+  在 16 与 18 上都返回同一份逐列结果。
+- 真正的差异是认证方式。CI 的 `SPEECHNEXUS_TEST_DATABASE_URL` 指向 TCP 的
+  `postgres:16.15-alpine` 服务容器(host 认证 scram),而本机集群走 trust;用例里的
+  `CREATE ROLE … LOGIN` 没有口令,于是运行时角色在**第一条连接**就被拒;本地 trust 隐藏了
+  这一点。旁证:同一组用例在 PG 18 + scram 上同样 4 failed,在 PG 16 + trust 上 5 passed。
+- 修法在用例侧:合成登录带上合成口令,连接用 `make_conninfo(..., password=…)`——与本仓
+  `test_startup_authority_561.py` 等既有 workbench 用例同一口径,生产授权与闸门一字未动。
+
+**启动闸门现在点名被拒的检查。** `RuntimeStartupError` 仍以固定句
+`Workbench runtime database is unavailable or unsafe.` 开头(既有断言依赖该前缀),其后追加
+两件事:哪一个检查拒绝(如 `startup check column UPDATE surface refused: missing=['keyed_locks.version']`)
+或哪一步抛了驱动错误(`startup check connect raised OperationalError: … password
+authentication failed for user "…"`),以及驱动给的原始诊断(优先 `diag.message_primary`)。
+驱动文本经 `_database_error_detail` 清洗:DSN、`key=value` 形式的 conninfo 项、libpq 打印的
+服务器地址/端口/socket 路径都替换为占位符;SQLSTATE 不读取——本模块只按目录事实判定,不按
+厂商错误码分支(`check-portable-sql.py` 的 `vendor-error-branch` 保持 0 新增)。
+`test_workbench_runtime_refusal.py` 逐条钉住这四个清洗面与固定前缀。
+
+**注入与反例。** 撤掉列级 `UPDATE (version)` 时,失败消息点名
+`missing=['keyed_locks.version']` 且不含被配置的 schema;把 `_UPDATE_COLUMNS` 里的键锁项删掉,
+「授权面与启动闸门自洽」用例红(闸门拒绝 `unexpected=['keyed_locks.version']`);把列级比较
+短路掉,该反例用例 `DID NOT RAISE` 红。两条注入后均按拷贝恢复并逐字节核对。

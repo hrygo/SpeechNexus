@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from typing import Any
@@ -177,11 +178,49 @@ _RENDER_SETTLE_BATCH = 12
 
 class RuntimeStartupError(RuntimeError):
     def __init__(self, detail: str = "") -> None:
-        # Driver messages can contain connection strings, object names or SQL.
-        # ``detail`` is built only from catalog constants (relation and privilege
-        # names) by the checks below, never from driver text.
+        # The sentence alone is indistinguishable across a wrong grant face, an
+        # authentication refusal and an unreachable server: every refusal now names
+        # the check it refused. ``detail`` is built from catalog constants (relation,
+        # column, privilege and revision names) and, when a driver call raised, from
+        # ``_database_error_detail``, which strips the DSN, conninfo entries and the
+        # textual server target before the message escapes.
         message = "Workbench runtime database is unavailable or unsafe."
         super().__init__(message if not detail else f"{message} {detail}")
+
+
+#: A driver message is the diagnosis, but it can also quote the connection: libpq
+#: prints the server it dialled, and a translated DSN surfaces verbatim. These three
+#: shapes are the only ones that carry an address or a credential; the server's own
+#: words (``password authentication failed``, ``database "x" does not exist``) stay.
+_DSN_IN_MESSAGE = re.compile(r"(?i)\bpostgres(?:ql)?(?:\+\w+)?://\S+")
+_CONNINFO_ENTRY = re.compile(
+    r"(?i)\b(password|passfile|user|host|hostaddr|port|dbname|service|options|sslmode)"
+    r"\s*=\s*(?:'[^']*'|\S+)"
+)
+_SERVER_TARGET = re.compile(
+    r"(?i)connection to server (?:at \"[^\"]*\", port \d+|on socket \"[^\"]*\")"
+)
+_MAX_DATABASE_DETAIL = 200
+
+
+def _database_error_detail(error: BaseException) -> str:
+    """Name the database error without echoing where or as whom we connected.
+
+    The SQLSTATE is deliberately left out: this module branches on catalog facts,
+    never on a vendor code, and the exception class plus the server's own sentence
+    already say what refused (``OperationalError: ...
+    password authentication failed``, ``InsufficientPrivilege: permission denied``).
+    """
+    diagnostic = getattr(error, "diag", None)
+    primary = getattr(diagnostic, "message_primary", None) if diagnostic is not None else None
+    message = " ".join(str(primary or error).split())
+    message = _DSN_IN_MESSAGE.sub("<dsn>", message)
+    message = _SERVER_TARGET.sub("connection to server at <server>", message)
+    message = _CONNINFO_ENTRY.sub(lambda entry: f"{entry.group(1)}=<redacted>", message)
+    if len(message) > _MAX_DATABASE_DETAIL:
+        message = message[:_MAX_DATABASE_DETAIL].rstrip() + "..."
+    name = type(error).__name__
+    return f"{name}: {message}" if message else name
 
 
 async def _refuse_table_privilege(
@@ -344,6 +383,10 @@ async def _refuse_foreign_relation_privileges(
 async def check_database(settings: WorkbenchSettings) -> None:
     """Read-only, bounded preflight; never create roles, grant, migrate or repair."""
     connection: psycopg.AsyncConnection[dict[str, Any]] | None = None
+    # Every refusal names the stage it refused: an authentication refusal at
+    # ``connect`` and a wrong grant face at ``column UPDATE surface`` used to raise
+    # the same bare sentence, which cost a CI-only debugging session each time.
+    stage = "connect"
     try:
         async with asyncio.timeout(5):
             connection = await portable_connect_async(
@@ -361,6 +404,7 @@ async def check_database(settings: WorkbenchSettings) -> None:
             await connection.execute("SET search_path = pg_catalog")
             await connection.execute("SET statement_timeout = 3000")
             await connection.execute("BEGIN READ ONLY")
+            stage = "login identity"
             identity = await (
                 await connection.execute(
                     """
@@ -377,13 +421,22 @@ async def check_database(settings: WorkbenchSettings) -> None:
                     (settings.database_schema,),
                 )
             ).fetchone()
+            if identity is None:
+                raise RuntimeStartupError(
+                    "startup check login identity refused: the login role, the "
+                    "workbench schema and the database did not resolve as one row"
+                )
             if (
-                identity is None
-                or identity["login"] != identity["effective"]
+                identity["login"] != identity["effective"]
                 or identity["unsafe"]
                 or not identity["usable"]
             ):
-                raise RuntimeStartupError
+                raise RuntimeStartupError(
+                    "startup check login identity refused: "
+                    f"login={identity['login']} effective={identity['effective']} "
+                    f"unsafe={identity['unsafe']} usable={identity['usable']}"
+                )
+            stage = "table surface"
             rows = await (
                 await connection.execute(
                     """
@@ -399,13 +452,18 @@ async def check_database(settings: WorkbenchSettings) -> None:
                     (settings.database_schema,),
                 )
             ).fetchall()
-            if {row["name"] for row in rows} != TABLES:
-                raise RuntimeStartupError
+            names = {row["name"] for row in rows}
+            if names != TABLES:
+                raise RuntimeStartupError(
+                    "startup check table surface refused: "
+                    f"missing={sorted(TABLES - names)} unexpected={sorted(names - TABLES)}"
+                )
             # REFERENCES is a whole-table authority the runtime never needs, and
             # table-level INSERT on a read-only table is judged on its own rather
             # than inferred from ``has_any_column_privilege`` (#561). Column
             # grants stay invisible to every table predicate, so each column
             # decision compares columns directly.
+            stage = "table and column privileges"
             await _refuse_table_privilege(connection, settings.database_schema, "REFERENCES")
             await _refuse_table_privilege(connection, settings.database_schema, "TRIGGER")
             read_only = tuple(sorted(_READ_ONLY))
@@ -415,17 +473,25 @@ async def check_database(settings: WorkbenchSettings) -> None:
                     connection, settings.database_schema, privilege, read_only
                 )
             await _refuse_column_privilege(connection, settings.database_schema, "REFERENCES")
+            stage = "write surface"
             for row in rows:
                 name = row["name"]
-                if (
-                    row["kind"] != "r"
-                    or row["owned"]
-                    or row["destructive"]
-                    or not row["readable"]
-                    or (name in _INSERT and not row["insertable"])
-                    or (name in _READ_ONLY and row["any_insert"])
-                ):
-                    raise RuntimeStartupError
+                if row["kind"] != "r":
+                    refusal = f"kind={row['kind']}"
+                elif row["owned"]:
+                    refusal = "the identity is a member of the table owner"
+                elif row["destructive"]:
+                    refusal = "DELETE or TRUNCATE is granted"
+                elif not row["readable"]:
+                    refusal = "SELECT is not granted"
+                elif name in _INSERT and not row["insertable"]:
+                    refusal = "INSERT is not granted"
+                elif name in _READ_ONLY and row["any_insert"]:
+                    refusal = "INSERT is granted on a read-only table"
+                else:
+                    continue
+                raise RuntimeStartupError(f"startup check table {name} refused: {refusal}")
+            stage = "column UPDATE surface"
             updates = await (
                 await connection.execute(
                     """
@@ -438,13 +504,22 @@ async def check_database(settings: WorkbenchSettings) -> None:
                     (settings.database_schema,),
                 )
             ).fetchall()
-            if {(row["name"], row["column"]) for row in updates} != {
+            expected_columns = {
                 (table, column) for table, columns in _UPDATE_COLUMNS.items() for column in columns
-            }:
-                raise RuntimeStartupError
+            }
+            actual_columns = {(row["name"], row["column"]) for row in updates}
+            if actual_columns != expected_columns:
+                missing = sorted(".".join(pair) for pair in expected_columns - actual_columns)
+                unexpected = sorted(".".join(pair) for pair in actual_columns - expected_columns)
+                raise RuntimeStartupError(
+                    "startup check column UPDATE surface refused: "
+                    f"missing={missing} unexpected={unexpected}"
+                )
             # A surface that is exact inside its own schema can still be a shared
             # identity; the foreign check is what makes "do not reuse sn_api" a gate.
+            stage = "foreign relation privileges"
             await _refuse_foreign_relation_privileges(connection, settings.database_schema)
+            stage = "schema revision"
             marker = await (
                 await connection.execute(
                     sql.SQL("SELECT singleton,revision FROM {}.runtime_schema_revision").format(
@@ -453,9 +528,14 @@ async def check_database(settings: WorkbenchSettings) -> None:
                 )
             ).fetchall()
             if marker != [{"singleton": True, "revision": SCHEMA_REVISION}]:
-                raise RuntimeStartupError
-    except psycopg.Error, TimeoutError, ValueError, TypeError, KeyError:
-        raise RuntimeStartupError from None
+                raise RuntimeStartupError(
+                    f"startup check schema revision refused: expected a singleton row at "
+                    f"revision {SCHEMA_REVISION}, found {marker!r}"
+                )
+    except (psycopg.Error, TimeoutError, ValueError, TypeError, KeyError) as error:
+        raise RuntimeStartupError(
+            f"startup check {stage} raised {_database_error_detail(error)}"
+        ) from None
     finally:
         if connection is not None:
             # Disconnect the read-only transaction without an unbounded rollback.

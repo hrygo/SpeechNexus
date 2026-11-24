@@ -54,15 +54,22 @@ _LOCK_WAIT_SQL = (
 )
 
 
+#: 运行时登录的合成口令。`SPEECHNEXUS_TEST_DATABASE_URL` 在 CI 指向 TCP 的
+#: `postgres:16.15-alpine` 服务容器(host 认证 scram),而无口令角色只在本机 trust 集群上
+#: 能连:不设口令时网关在第一条连接就被拒绝,报的是「数据库不可用」,与授权面无关。
+_RUNTIME_PASSWORD = "synthetic_keyed_lock_runtime"
+
+
 @dataclass
 class Store:
     owner_dsn: str
+    runtime_dsn: str
     schema: str
     role: str
 
     def settings(self) -> WorkbenchSettings:
         return WorkbenchSettings(
-            database_url=SecretStr(make_conninfo(self.owner_dsn, user=self.role)),
+            database_url=SecretStr(self.runtime_dsn),
             database_schema=self.schema,
             workspace_id=WORKSPACE,
             deployment_id="deployment-keyed-lock",
@@ -77,7 +84,7 @@ class Store:
         """等待预算高于默认值:默认 `lock_timeout` 会让「排队」变成「超时失败」."""
 
         return PostgresVersionUnitOfWork(
-            make_conninfo(self.owner_dsn, user=self.role),
+            self.runtime_dsn,
             schema=self.schema,
             transaction_timeout=30,
             lock_timeout_ms=15_000,
@@ -140,11 +147,20 @@ async def store() -> AsyncIterator[Store]:
     schema = "sn_keyed_lock_" + uuid4().hex[:12]
     role = "sn_kl_rt_" + uuid4().hex[:12]
     async with await psycopg.AsyncConnection.connect(dsn, autocommit=True) as owner:
-        await owner.execute(sql.SQL("CREATE ROLE {} LOGIN").format(sql.Identifier(role)))
+        await owner.execute(
+            sql.SQL("CREATE ROLE {} LOGIN PASSWORD {}").format(
+                sql.Identifier(role), sql.Literal(_RUNTIME_PASSWORD)
+            )
+        )
         try:
             await owner.execute(bootstrap_sql(schema))
             await owner.execute(runtime_grants_sql(schema, role))
-            yield Store(dsn, schema, role)
+            yield Store(
+                dsn,
+                make_conninfo(dsn, user=role, password=_RUNTIME_PASSWORD),
+                schema,
+                role,
+            )
         finally:
             await owner.execute(
                 sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(schema))
@@ -312,7 +328,11 @@ async def test_the_runtime_role_passes_the_startup_gate_with_the_row_lock_table(
 
 
 async def test_the_startup_gate_refuses_a_missing_row_lock_column_grant(store: Store) -> None:
-    """注入:撤掉列级 `UPDATE (version)`,闸门必须拒绝启动(否则那一列只是装饰)."""
+    """注入:撤掉列级 `UPDATE (version)`,闸门必须拒绝启动(否则那一列只是装饰).
+
+    断言点名到具体那一列:只要闸门放行(或换成一个不核对列级授权的检查),这里就红。
+    同时核对消息只带目录常量,不回显被配置的 schema。
+    """
 
     async with await psycopg.AsyncConnection.connect(store.owner_dsn, autocommit=True) as owner:
         await owner.execute(
@@ -324,5 +344,8 @@ async def test_the_startup_gate_refuses_a_missing_row_lock_column_grant(store: S
             )
         )
 
-    with pytest.raises(RuntimeStartupError):
+    with pytest.raises(RuntimeStartupError) as caught:
         await check_database(store.settings())
+    message = str(caught.value)
+    assert "column UPDATE surface refused: missing=['keyed_locks.version']" in message, message
+    assert store.schema not in message

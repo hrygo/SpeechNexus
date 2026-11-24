@@ -19,6 +19,11 @@ from speechnexus_backend.speech.infrastructure.claim_bucket_schema import (
     CLAIM_BUCKET_TABLE,
     CLAIM_BUCKET_UPDATE_COLUMNS,
 )
+from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
+    COORDINATION_KEYED_LOCK_INSERT_COLUMNS,
+    COORDINATION_KEYED_LOCK_TABLE,
+    COORDINATION_KEYED_LOCK_UPDATE_COLUMNS,
+)
 from speechnexus_backend.speech.infrastructure.deletion_executions_postgres import (
     PostgresDeletionExecutions,
 )
@@ -124,8 +129,13 @@ DELETION_EXECUTION_TABLES = (
     "speech_deletion_ledger",
 )
 # Allowed but not required. A role may hold these grants (the reference
-# deployment does) or none at all (a writer that never serves the route).
-_JOB_OPTIONAL_TABLES = frozenset((*DELETION_PREVIEW_TABLES, *DELETION_EXECUTION_TABLES))
+# deployment does) or none at all (a writer that never serves the route, or a
+# single-role deployment whose login does not carry the dispatch set). The keyed
+# lock row is here for the second reason: it is one table shared by two roles, and
+# whether this login carries its grant depends on which provisioning path built it.
+_JOB_OPTIONAL_TABLES = frozenset(
+    (*DELETION_PREVIEW_TABLES, *DELETION_EXECUTION_TABLES, COORDINATION_KEYED_LOCK_TABLE)
+)
 REQUIRED_SELECT = (
     "speech_workspaces",
     "speech_publications",
@@ -194,6 +204,13 @@ _JOB_DECLARED_TABLES = tuple(
             "coordination_jobs",
             "coordination_outbox",
             CLAIM_BUCKET_TABLE,
+            # The catalog mutex's lock row. It is not a fact table and this writer
+            # never claims a Job through it, but ``job_dispatch_grants`` installs its
+            # grant on the same identity (the reference deployment puts the dispatch
+            # set on the writer login), so the relation must be declared here or the
+            # writer refuses to start on its own provisioning. The name is the
+            # declaration's, not a literal: ``coordination_keyed_lock_schema`` owns it.
+            COORDINATION_KEYED_LOCK_TABLE,
             "admission_operations",
             "speech_job_cancellation_fences",
             "speech_job_cancellation_reconciliations",
@@ -227,6 +244,10 @@ _JOB_UPDATE_SURFACE: dict[str, tuple[str, ...]] = {
     # 因为单角色部署与本仓的 foundation fixture 把两个身份装在同一个 login 上;除此之外
     # 多给一列仍然会在启动时被点名。
     CLAIM_BUCKET_TABLE: CLAIM_BUCKET_UPDATE_COLUMNS,
+    # Same shape: allowed but not required. The row-lock allowance is ``version``
+    # only, and it comes from the lock table's own declaration, so a column added
+    # there reaches this gate without a second edit here.
+    COORDINATION_KEYED_LOCK_TABLE: COORDINATION_KEYED_LOCK_UPDATE_COLUMNS,
     "coordination_jobs": (
         "claim_owner_id",
         "claim_expires_at",
@@ -246,6 +267,16 @@ _JOB_UPDATE_SURFACE: dict[str, tuple[str, ...]] = {
 # 「允许集合」比「必须有的一列」宽一一列,所以它按「允许但不要求完整」校验,其余表仍要求
 # 恰好等于声明面——多给一列还是会在启动时被点名。
 _JOB_REQUIRED_UPDATE = frozenset(REQUIRED_UPDATE_COLUMNS) - {"coordination_jobs"}
+# The INSERT columns this identity may hold per declared relation.
+# ``JOB_WRITER_INSERT_COLUMNS`` is the writer's own declaration and the only place
+# its writable relations are listed; the keyed lock row is added from *its* own
+# declaration because the writer never inserts into it -- the lock's lazy-bucket
+# INSERT is what needs the column. Both sides stay single-sourced: this map only
+# decides which declarations a single login may carry at once.
+_JOB_INSERT_SURFACE: dict[str, tuple[str, ...]] = {
+    **JOB_WRITER_INSERT_COLUMNS,
+    COORDINATION_KEYED_LOCK_TABLE: COORDINATION_KEYED_LOCK_INSERT_COLUMNS,
+}
 # The deletion executor removes exactly the authoritative public Job intent row of
 # the confirmed operation (#540) and one unreferenced voice draft revision. Every
 # other declared relation still refuses DELETE/TRUNCATE, and the assertion below
@@ -722,7 +753,7 @@ def _verify_privileges(connection: SpeechConnection, schema: str) -> None:
     # column set exactly (an added column must not silently widen the surface).
     for table in _JOB_DECLARED_TABLES:
         qualified = f"{schema}.{table}"
-        expected_columns = set(JOB_WRITER_INSERT_COLUMNS.get(table, ()))
+        expected_columns = set(_JOB_INSERT_SURFACE.get(table, ()))
         repair = (
             "revoke the table-level grant, then re-grant INSERT only on the declared "
             "columns; see deploy/README.md upgrade section"

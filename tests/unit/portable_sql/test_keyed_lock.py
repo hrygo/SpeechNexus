@@ -147,6 +147,46 @@ def test_a_schema_that_is_not_a_plain_identifier_is_refused_before_any_statement
     assert cursor.statements == []
 
 
+def test_a_table_name_is_parameterised_without_a_second_statement_template() -> None:
+    """同一命名空间可以给表起自己的名字,语句模板不变。
+
+    协调命名空间用的是 `coordination_keyed_locks`,不是 workbench 的 `keyed_locks`。这里断言
+    的是「同一个模板 + 插值出来的表引用」,而不是第二份语句:两条语句的唯一副本仍在
+    ``STATEMENTS``,`table` 只改表引用。
+    """
+
+    insert, lock = lock_statements("sn_synthetic", table="coordination_keyed_locks")
+
+    assert insert == ("INSERT INTO sn_synthetic.coordination_keyed_locks (bucket_no) VALUES (?)")
+    assert lock == (
+        "SELECT bucket_no FROM sn_synthetic.coordination_keyed_locks WHERE bucket_no = ? FOR UPDATE"
+    )
+    assert lock_statements(table="coordination_keyed_locks") == (
+        "INSERT INTO coordination_keyed_locks (bucket_no) VALUES (?)",
+        "SELECT bucket_no FROM coordination_keyed_locks WHERE bucket_no = ? FOR UPDATE",
+    )
+
+
+@pytest.mark.parametrize("table", ["Keyed_Locks", "keyed-locks", "", "public.keyed_locks"])
+def test_a_table_that_is_not_a_plain_identifier_is_refused_before_any_statement(
+    table: str,
+) -> None:
+    cursor = _Cursor(rows=[(0,)])
+
+    with pytest.raises(ContractError):
+        acquire(_Connection(cursor), key="k", table=table)
+
+    assert cursor.statements == []
+
+
+def test_the_row_disappeared_error_names_the_table_the_caller_asked_for() -> None:
+    cursor = _Cursor(rows=[])
+    connection = _Connection(cursor)
+
+    with pytest.raises(ContractError, match="coordination_keyed_locks"):
+        acquire(connection, key="k", schema="sn_synthetic", table="coordination_keyed_locks")
+
+
 def test_an_autocommit_connection_is_refused_instead_of_silently_not_locking() -> None:
     cursor = _Cursor(rows=[(0,)])
 

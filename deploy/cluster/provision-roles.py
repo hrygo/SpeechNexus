@@ -34,6 +34,7 @@ from speechnexus_backend.speech.infrastructure.gateway_abort_intent_schema impor
     gateway_binding_barrier_grants,
 )
 from speechnexus_backend.speech.infrastructure.gateway_query_grants import (
+    gateway_keyed_lock_grants,
     gateway_query_grants,
     gateway_query_target_grants,
 )
@@ -203,6 +204,11 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     for statement in qualification_reader_grants(schema, "sn_qualification_reader"):
         conn.execute(statement)
     for statement in gateway_query_grants(schema, "sn_gateway_query"):
+        conn.execute(statement)
+    # The catalog mutex's lock row: the backend side holds the same grant from the
+    # Job writer's declaration, and both call the same grant function so neither
+    # side can be provisioned with a narrower lock surface by accident.
+    for statement in gateway_keyed_lock_grants(schema, "sn_gateway"):
         conn.execute(statement)
     for statement in gateway_cancellation_fence_grants(schema, "sn_gateway"):
         conn.execute(statement)

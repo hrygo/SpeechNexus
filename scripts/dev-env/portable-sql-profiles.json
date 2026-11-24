@@ -11,6 +11,7 @@
     "backend/src/speechnexus_backend/speech/infrastructure/binding_publication_evidence_schema.py",
     "backend/src/speechnexus_backend/speech/infrastructure/catalog_revision_schema.py",
     "backend/src/speechnexus_backend/speech/infrastructure/claim_bucket_schema.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/coordination_keyed_lock_schema.py",
     "backend/src/speechnexus_backend/speech/infrastructure/coordination_schema.py",
     "backend/src/speechnexus_backend/speech/infrastructure/deletion_ledger_schema.py",
     "backend/src/speechnexus_backend/speech/infrastructure/deletion_plan_schema.py",

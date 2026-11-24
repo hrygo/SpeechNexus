@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import re
 
+from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
+    coordination_keyed_lock_grants,
+)
 from speechnexus_backend.speech.infrastructure.deletion_plan_schema import (
     DELETION_PLAN_INSERT_COLUMNS,
 )
@@ -209,6 +212,14 @@ def job_dispatch_grants(schema: str, role: str) -> tuple[str, ...]:
         f'GRANT SELECT ON "{schema}".coordination_claim_buckets TO "{role}"',
         f"GRANT UPDATE (claim_owner_id, lease_until, version) "
         f'ON "{schema}".coordination_claim_buckets TO "{role}"',
+        # The catalog mutex's lock row. The backend and the execution gateway take
+        # the *same* key here, so both roles need the same surface: read the bucket
+        # row, lazily create it, and the column-level UPDATE that `FOR UPDATE`
+        # demands. The whole surface -- including the column list -- comes from
+        # ``coordination_keyed_lock_schema.coordination_keyed_lock_grants``; this
+        # module only decides that the backend identity holds it. The gateway's copy
+        # is ``gateway_query_grants.gateway_keyed_lock_grants``, the same function.
+        *coordination_keyed_lock_grants(schema, role),
         *artifact_publisher_grants(schema, role),
         *cancellation_not_submitted_grants(schema, role),
     )

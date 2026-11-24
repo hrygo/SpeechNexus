@@ -89,6 +89,29 @@ def _writer_insert_columns() -> dict[str, tuple[str, ...]]:
     return JOB_WRITER_INSERT_COLUMNS
 
 
+def _coordination_keyed_lock_update() -> tuple[str, tuple[str, ...]]:
+    """协调键锁行的表名与行锁许可列:导入生产声明,不在这里复制列名。
+
+    这张表的名字与列面只有一个定义点
+    (``speech/infrastructure/coordination_keyed_lock_schema.py``,列名又来自
+    ``speechnexus_portable_sql.keyed_lock`` 的清单)。脚本复制一份就会是第二个定义点,而
+    漏一列的表现是 ``FOR UPDATE`` 以 ``42501`` 失败 —— PostgreSQL 只报表名,不点名缺哪列。
+    该模块只依赖 ``speechnexus_portable_sql``(纯标准库),所以这里把它的源码根也放进
+    ``sys.path``,和 ``backend/src`` 同一手法:导入的是本检出的生产模块,不是副本。
+    """
+
+    _prepend_backend_source()
+    portable = str(REPO_ROOT / "packages/portable-sql/src")
+    if portable not in sys.path:
+        sys.path.insert(0, portable)
+    from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
+        COORDINATION_KEYED_LOCK_TABLE,
+        COORDINATION_KEYED_LOCK_UPDATE_COLUMNS,
+    )
+
+    return COORDINATION_KEYED_LOCK_TABLE, COORDINATION_KEYED_LOCK_UPDATE_COLUMNS
+
+
 # 迁移必须已建出的 Job/准入关系;缺失时创建或领取必然失败。这些名字都必须是
 # job_runtime 声明的 Job writer 关系(同源测试断言其子集)。
 REQUIRED_JOB_TABLES: tuple[str, ...] = (
@@ -306,6 +329,9 @@ WRITER_INSERT_COLUMNS: dict[str, tuple[str, ...]] = _writer_insert_columns()
 
 
 # 复制自 job_runtime._JOB_UPDATE_SURFACE:唯一允许的 UPDATE 列面。
+# 协调键锁行那一项不复制:表名与列面直接取自
+# ``coordination_keyed_lock_schema`` 的唯一声明(见 ``_coordination_keyed_lock_update``)。
+_KEYED_LOCK_TABLE, _KEYED_LOCK_UPDATE_COLUMNS = _coordination_keyed_lock_update()
 WRITER_UPDATE_COLUMNS: dict[str, tuple[str, ...]] = {
     "speech_workspaces": ("metadata_revision",),
     "speech_assets": ("asset_state", "upload_phase", "writer_id", "error_code", "version"),
@@ -354,6 +380,8 @@ WRITER_UPDATE_COLUMNS: dict[str, tuple[str, ...]] = {
     ),
     # 桶租约行:``claim_batch`` 用它做 256 路轮转与同桶死租约回收。
     "coordination_claim_buckets": ("claim_owner_id", "lease_until", "version"),
+    # 协调键锁行:``version`` 只是 ``FOR UPDATE`` 的行锁许可列,没有写入者。
+    _KEYED_LOCK_TABLE: _KEYED_LOCK_UPDATE_COLUMNS,
     "speech_job_cancellation_reconciliations": (
         "attempts",
         "next_check_at_us",

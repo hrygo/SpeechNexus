@@ -1,5 +1,8 @@
 """Column-only privileges for the independent gateway execution recovery reader."""
 
+from speechnexus_backend.speech.infrastructure.coordination_keyed_lock_schema import (
+    coordination_keyed_lock_grants,
+)
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 
 CANCELLATION_FENCE_TABLE = "speech_job_cancellation_fences"
@@ -101,3 +104,25 @@ def gateway_query_target_grants(schema: str, role: str) -> tuple[str, ...]:
         f'GRANT SELECT (singleton, installation_id) ON "{schema}".'
         f'"speech_publication_installation" TO "{role}"',
     )
+
+
+def gateway_keyed_lock_grants(schema: str, role: str) -> tuple[str, ...]:
+    """The gateway's half of the shared catalog mutex: the coordination lock row.
+
+    The mutex is only a mutex if *both* sides reach the same row, and the gateway is
+    a separate role in the ``speech`` schema, so the lock table and its grants live
+    where both roles already have a relationship instead of in either side's own
+    namespace. The privilege surface itself is declared once
+    (``coordination_keyed_lock_schema.coordination_keyed_lock_grants``) and the
+    backend role calls the same function: this wrapper only says *which* identity
+    holds it, so adding a column to the lock table cannot leave one side behind and
+    silently split the mutex in two.
+
+    Separate from :func:`gateway_query_grants` on purpose: that reader is verified
+    by an exact role closure (``gateway/infrastructure/reader_authority.py``, which
+    refuses any INSERT/UPDATE anywhere), so granting the lock there would make the
+    reader refuse to start. This function targets the execution gateway identity
+    instead, which is already a writer in this schema.
+    """
+
+    return coordination_keyed_lock_grants(schema, role)

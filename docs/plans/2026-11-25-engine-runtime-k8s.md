@@ -188,6 +188,30 @@ STEP4 FENCE_HELD: True
 （#1253 的判据），或让引擎有稳定 Service——本轮试过 ClusterIP，**宿主无法访问 10.43.x**，
 所以只能留给集群内消费者用，未采用。
 
+### 4.3 S2 / S4 的注入即红（2026-11-26 补测）
+
+S2 与 S4 合并时只带了通过用例，**没有留下"注入即红"的实测记录**。这里补上：在 `kubernetes_runtime.py`
+上逐条注入被禁止的行为，跑对应的单元测试，记录红，再还原记录绿。夹具是 fake 集群，不是真实 API server
+（真实集群的停止路径见 §4.2.3）。
+
+| 切片 | 注入 | 红 | 还原后 |
+| --- | --- | --- | --- |
+| S2 | `prepare` 不等 Pod Ready，直接报 `ready` | 6 failed / 9 passed | 15 passed |
+| S2 | 创建 Pod 被 API 拒绝仍报 `ready` | 1 failed / 22 passed | 23 passed |
+| S4 | `inspect` 把 API 读失败当作 `absent` | 1 failed / 18 passed | 52 passed |
+
+红的用例点名了被保护的行为：
+
+- `test_prepare_waits_for_the_pod_ready_condition_before_reporting_ready`
+- `test_prepare_never_reports_ready_for_an_image_that_is_not_the_approved_one`
+- `test_prepare_reports_loading_and_a_reason_when_the_budget_expires`
+- `test_prepare_quarantines_a_pod_replaced_by_another_identity`
+- `test_prepare_never_reports_ready_when_the_api_refuses_creation`
+- `test_an_api_read_failure_is_never_reported_as_an_absent_instance`
+
+第一条注入值得单独说：它让 6 条一起红，因为"等 Ready"是 prepare 的唯一实质动作——不等就报 ready，
+等于把"能起 Pod"直接当成"实例可用"，而 S5 想证明的恰恰不是这个。
+
 ## 5. 回退
 
 - 驱动开关默认 `docker`，切回即恢复；**不改数据库、不改契约**，所以没有迁移回退问题

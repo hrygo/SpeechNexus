@@ -7,6 +7,8 @@
 
 当前战略规划：[最小同构集群实施规划](2026-11-20-minimal-isomorphic-cluster.md)（MegaCube 算力面 + 本机 k8s 应用面；2026-11-20 三项决定已裁决，按 S0–S8 切片执行）。
 
+引擎运行时的切片与验收记录见[引擎运行时切到 Kubernetes](2026-11-25-engine-runtime-k8s.md)；其后续迭代顺序、判据与待决事项见[下一迭代规划](2026-11-26-engine-runtime-next-iteration.md)。
+
 以下带日期材料保留各自时点，仅在查证相关决定或证据时读取，不承担当前排期或派工。
 
 - [2026-11-04 Delegra 交付工作流设计](../archive/plans/2026-11-04-delegra-delivery-workflow-design.md)：历史平台化交付方案、试跑与阻塞记录；平台队列依赖已退役，现行规则见[交付 SOP](../operations/agent-delivery-sop.md)与[多 Agent 协作](../operations/agent-collaboration.md)。

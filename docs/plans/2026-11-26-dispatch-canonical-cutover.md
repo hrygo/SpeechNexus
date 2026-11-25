@@ -49,7 +49,7 @@ scope: "#1102 / 2026-11-21-portable-sql-delivery.md §8.75 §8.76 §8.77"
 | **D3** | 第二认领口**不迁移，直接收敛**：它没有生产写入者，为死代码再实现一遍 canonical 语义等于制造第二个定义点 | §0 第三条命令 |
 | **D4** | `claim_expires_at` 保持可空。`NULL` 就是「从未认领」的语义，不是缺失；不得为「和草案列形状一致」而给它 `NOT NULL DEFAULT` | 实测 A（§3.1） |
 
-**不做的事**：不新增 manifest 语句（§8.76.2 的四象限已在 `claims.py:438-443` 落地）、不引入新的
+**不做的事**：不新增 manifest 语句（§8.76.2 的四象限已在 `packages/portable-sql/src/speechnexus_portable_sql/claims.py:438-443` 落地）、不引入新的
 portable 类型、不改 `BUCKETS`（256）、不改 `CLAIM_ROUND_START_BUCKET`（固定 0，理由是桶行锁跨整个
 轮询导致交错起点必然死锁，`job_dispatch_postgres.py:74-85`）。
 
@@ -58,21 +58,21 @@ portable 类型、不改 `BUCKETS`（256）、不改 `CLAIM_ROUND_START_BUCKET`�
 ## 1. 今天的派发链路，逐语句
 
 一次 `claim_due()` 是一笔事务，由 `pool.connection()` 的上下文管理器在成功退出时提交
-（`psycopg_pool 3.3.3`：`.venv/lib/python3.14/site-packages/psycopg_pool/pool.py:187-188` 的 `with conn:` 包裹，成功退出即提交；池同时把每条连接的会话时区钉成 UTC，
-`postgres_pool.py:36`）。语句按发生顺序：
+（`psycopg_pool 3.3.3`：池的 `with conn:` 包裹，成功退出即提交；同时把每条连接的会话时区钉成 UTC，
+`backend/src/speechnexus_backend/speech/infrastructure/postgres_pool.py:36`）。语句按发生顺序：
 
 | # | 语句 | 表 / 列 | 出处 |
 | --- | --- | --- | --- |
 | 1 | `SELECT set_config('statement_timeout', ?, true)` | 会话 | `job_dispatch_postgres.py:306-309` |
 | 2 | `SELECT clock_timestamp() AS now` | 会话时钟 → `BIGINT` 微秒 | `clock.py:81-91`，调用点 `job_dispatch_postgres.py:312` |
-| 3 | `SELECT version, claim_owner_id, lease_until FROM coordination_claim_buckets WHERE bucket_no = ? FOR UPDATE` | canonical 桶行 | `claims.py:106-109` ← `claim_batch:719` |
-| 4 | `UPDATE coordination_claim_buckets SET claim_owner_id = ?, lease_until = ?, version = ? WHERE bucket_no = ? AND version = ? AND (claim_owner_id IS NULL OR lease_until <= ?)` | 桶租约 CAS | `claims.py:100-105` ← `:729-736` |
-| 5 | 同一句 `bucket.fence` 再读一次，`require_fence` 复核 owner / 未过期 / 版本 | 桶行不变量断言 | `claims.py:743-748`、`require_fence:417-434` |
-| 6 | `UPDATE coordination_jobs SET job_state = ?, claim_owner_id = ?, claim_version = claim_version + 1 WHERE bucket_no = ? AND job_state = ? AND claim_expires_at <= ?` | 桶内死租约重领 | `claims.py:150-154` ← `:796` |
-| 7 | `SELECT c.job_id, c.claim_version, c.due_at FROM coordination_jobs AS c JOIN speech_jobs AS j ON j.job_id = c.job_id WHERE c.bucket_no = ? AND c.job_state = ? AND c.due_at <= ? AND (c.due_at > ? OR (c.due_at = ? AND c.job_id > ?)) AND j.kind IN (?) AND EXISTS (…admission…) ORDER BY c.due_at, c.job_id` | canonical + 草案 `speech_jobs.kind`（lane）+ 准入锚点 | `claims.py:130-138` ← `:800-809` |
-| 8 | `UPDATE coordination_jobs SET job_state = ?, claim_owner_id = ?, claim_expires_at = ?, claim_version = ? WHERE job_id = ? AND claim_version = ? AND job_state = ?` | Job CAS（每条候选一次） | `claims.py:146-149` ← `:813-819` |
-| 9 | `UPDATE coordination_claim_buckets SET claim_owner_id = ?, lease_until = ?, version = ? WHERE bucket_no = ? AND version = ? AND claim_owner_id = ?` | 归还桶（`finally`） | `claims.py:110-113` ← `:762-769` |
-| 10 | `SELECT j.job_id, j.workspace_id, j.kind, j.state, j.status_version, j.created_at_us, COALESCE(a.request_digest, j.request_digest), a.request_document FROM speech_jobs AS j LEFT JOIN admission_operations AS a … WHERE j.job_id IN (?) ORDER BY j.job_id` | 认领结果的 Job 投影 | `claims.py:139-145` ← `job_dispatch_postgres.py:324-327` |
+| 3 | `SELECT version, claim_owner_id, lease_until FROM coordination_claim_buckets WHERE bucket_no = ? FOR UPDATE` | canonical 桶行 | `packages/portable-sql/src/speechnexus_portable_sql/claims.py:106-109` ← `claim_batch:719` |
+| 4 | `UPDATE coordination_claim_buckets SET claim_owner_id = ?, lease_until = ?, version = ? WHERE bucket_no = ? AND version = ? AND (claim_owner_id IS NULL OR lease_until <= ?)` | 桶租约 CAS | `packages/portable-sql/src/speechnexus_portable_sql/claims.py:100-105` ← `:729-736` |
+| 5 | 同一句 `bucket.fence` 再读一次，`require_fence` 复核 owner / 未过期 / 版本 | 桶行不变量断言 | `packages/portable-sql/src/speechnexus_portable_sql/claims.py:743-748`、`require_fence:417-434` |
+| 6 | `UPDATE coordination_jobs SET job_state = ?, claim_owner_id = ?, claim_version = claim_version + 1 WHERE bucket_no = ? AND job_state = ? AND claim_expires_at <= ?` | 桶内死租约重领 | `packages/portable-sql/src/speechnexus_portable_sql/claims.py:150-154` ← `:796` |
+| 7 | `SELECT c.job_id, c.claim_version, c.due_at FROM coordination_jobs AS c JOIN speech_jobs AS j ON j.job_id = c.job_id WHERE c.bucket_no = ? AND c.job_state = ? AND c.due_at <= ? AND (c.due_at > ? OR (c.due_at = ? AND c.job_id > ?)) AND j.kind IN (?) AND EXISTS (…admission…) ORDER BY c.due_at, c.job_id` | canonical + 草案 `speech_jobs.kind`（lane）+ 准入锚点 | `packages/portable-sql/src/speechnexus_portable_sql/claims.py:130-138` ← `:800-809` |
+| 8 | `UPDATE coordination_jobs SET job_state = ?, claim_owner_id = ?, claim_expires_at = ?, claim_version = ? WHERE job_id = ? AND claim_version = ? AND job_state = ?` | Job CAS（每条候选一次） | `packages/portable-sql/src/speechnexus_portable_sql/claims.py:146-149` ← `:813-819` |
+| 9 | `UPDATE coordination_claim_buckets SET claim_owner_id = ?, lease_until = ?, version = ? WHERE bucket_no = ? AND version = ? AND claim_owner_id = ?` | 归还桶（`finally`） | `packages/portable-sql/src/speechnexus_portable_sql/claims.py:110-113` ← `:762-769` |
+| 10 | `SELECT j.job_id, j.workspace_id, j.kind, j.state, j.status_version, j.created_at_us, COALESCE(a.request_digest, j.request_digest), a.request_document FROM speech_jobs AS j LEFT JOIN admission_operations AS a … WHERE j.job_id IN (?) ORDER BY j.job_id` | 认领结果的 Job 投影 | `packages/portable-sql/src/speechnexus_portable_sql/claims.py:139-145` ← `job_dispatch_postgres.py:324-327` |
 
 第 3–9 步对**整圈 256 个桶**重复，直到 `limit` 满足或扫满。生产档位是
 `lane + admission` 同时为真（`require_admission=True`、`kinds` 非空，
@@ -101,11 +101,11 @@ portable 类型、不改 `BUCKETS`（256）、不改 `CLAIM_ROUND_START_BUCKET`�
 
 | 组 | 语句 id | 作用 | 出处 |
 | --- | --- | --- | --- |
-| 桶（3） | `bucket.acquire` / `bucket.fence` / `bucket.release` | 租约 CAS、`FOR UPDATE` 复核、归还 | `claims.py:100-113` |
-| 候选（4） | `job.candidates` / `.lane` / `.admitted` / `.lane_admitted` | lane 与准入锚点是两个独立开关，四象限各一条 | `claims.py:114-138`、选择点 `438-443` |
-| Job（3） | `job.claimed_view` / `job.claim` / `job.reclaim` | 结果投影、状态+版本 CAS、死租约重领 | `claims.py:139-154` |
-| 事件（4） | `job.event_head` / `job.event_head_update` / `job_event.insert` / `job_event.read` | 事件头 CAS、事件行、续读 | `claims.py:155-168` |
-| outbox（3） | `outbox.insert` / `outbox.undelivered` / `outbox.mark_delivered` | 投递与去重 | `claims.py:169-180` |
+| 桶（3） | `bucket.acquire` / `bucket.fence` / `bucket.release` | 租约 CAS、`FOR UPDATE` 复核、归还 | `packages/portable-sql/src/speechnexus_portable_sql/claims.py:100-113` |
+| 候选（4） | `job.candidates` / `.lane` / `.admitted` / `.lane_admitted` | lane 与准入锚点是两个独立开关，四象限各一条 | `packages/portable-sql/src/speechnexus_portable_sql/claims.py:114-138`、选择点 `438-443` |
+| Job（3） | `job.claimed_view` / `job.claim` / `job.reclaim` | 结果投影、状态+版本 CAS、死租约重领 | `packages/portable-sql/src/speechnexus_portable_sql/claims.py:139-154` |
+| 事件（4） | `job.event_head` / `job.event_head_update` / `job_event.insert` / `job_event.read` | 事件头 CAS、事件行、续读 | `packages/portable-sql/src/speechnexus_portable_sql/claims.py:155-168` |
+| outbox（3） | `outbox.insert` / `outbox.undelivered` / `outbox.mark_delivered` | 投递与去重 | `packages/portable-sql/src/speechnexus_portable_sql/claims.py:169-180` |
 
 派发只用到其中 7 条：`bucket.fence`、`bucket.acquire`、`bucket.release`、`job.reclaim`、
 `job.candidates.lane_admitted`、`job.claim`、`job.claimed_view`。
@@ -122,7 +122,7 @@ portable 类型、不改 `BUCKETS`（256）、不改 `CLAIM_ROUND_START_BUCKET`�
 ### 2.3 `bucket_no` 与 `due_at` 的契约
 
 - **`bucket_no` 是 `job_id` 的纯函数**：`sha256(job_id)` 前 8 字节大端 mod `BUCKETS`（256），
-  `Decimal` 返回（`claims.py:270-277`、`BUCKETS=256` 在 `:66`）。定义点只有这一个；0064/0065 的
+  `Decimal` 返回（`packages/portable-sql/src/speechnexus_portable_sql/claims.py:270-277`、`BUCKETS=256` 在 `:66`）。定义点只有这一个；0064/0065 的
   回填也调它（`0064:67-83`、`0065:122-140`），SQL 里不重写哈希。
 - **轮询起点固定 0**，不用 `start_bucket_for(owner_id, 分钟)`：因为 `claim_batch` 把整圈放在一笔事务
   里，桶行锁持有到提交，两个起点不同的派发者必然在环上相交报 `40P01`
@@ -130,24 +130,24 @@ portable 类型、不改 `BUCKETS`（256）、不改 `CLAIM_ROUND_START_BUCKET`�
   （`grep -rn "start_bucket_for" backend/src execution-gateway/src` 只命中注释）。
 - **`due_at` 是 `TIMESTAMP(6)` 的 naive UTC**，来源冻结为草案 `speech_jobs.created_at_us`
   （`migrations/canonical_source_map.json`；换算见 `0064:59-65`）。候选谓词是
-  `due_at <= ?` 加 keyset `(due_at, job_id)`（`claims.py:74-78`），不是 `LIMIT/OFFSET`。
+  `due_at <= ?` 加 keyset `(due_at, job_id)`（`packages/portable-sql/src/speechnexus_portable_sql/claims.py:74-78`），不是 `LIMIT/OFFSET`。
 
 ### 2.4 `event_seq` / `event_digest`
 
 - 序号来自**权威头**而不是当前投影：`job.event_head` 取 `last_event_seq, claim_version` 并
   `FOR UPDATE`，取 `+1`，然后 `job_event.insert` 与 `job.event_head_update`
-  （`claims.py:967-1013`）。这让「先取时间、后提交」的两笔事务不会换序。
-- 摘要是**唯一算法**：字段集合与顺序固定在 `EVENT_DIGEST_FIELDS`（`claims.py:889-899`），时间折成
+  （`packages/portable-sql/src/speechnexus_portable_sql/claims.py:967-1013`）。这让「先取时间、后提交」的两笔事务不会换序。
+- 摘要是**唯一算法**：字段集合与顺序固定在 `EVENT_DIGEST_FIELDS`（`packages/portable-sql/src/speechnexus_portable_sql/claims.py:889-899`），时间折成
   UTC 微秒定长 `%Y-%m-%dT%H:%M:%S.%fZ`（`_canonical_time:902-906`），JSON 用 `sort_keys` + 紧凑
   分隔符 + `ensure_ascii=False`，前缀 `sha256:`（`:951-964`）。
 - `payload_ref` 可空；历史事件搬迁**只写 NULL**，非空引用直接拒绝而不是丢掉
-  （`claims.py:1053-1060`）。这条口径来自 §8.75.1 的产品决定仍未作出的现状。
+  （`packages/portable-sql/src/speechnexus_portable_sql/claims.py:1053-1060`）。这条口径来自 §8.75.1 的产品决定仍未作出的现状。
 
 ### 2.5 一次认领怎么返回结果
 
 `BatchClaim` 只有三个字段——`job_id`、`claim_version`（CAS 之后的新版本）、`expires_at`
-（本次认领写入的 `claim_expires_at`）（`claims.py:210-221`）。其余列按 `job_id` 集合用
-`claimed_jobs()` 读一次（`claims.py:836-864`），由 `_claim_job()` 组装成 `ClaimedJob`：
+（本次认领写入的 `claim_expires_at`）（`packages/portable-sql/src/speechnexus_portable_sql/claims.py:210-221`）。其余列按 `job_id` 集合用
+`claimed_jobs()` 读一次（`packages/portable-sql/src/speechnexus_portable_sql/claims.py:836-864`），由 `_claim_job()` 组装成 `ClaimedJob`：
 
 - `lease_expires_at_us = to_epoch_us(claim.expires_at)`，**不是**用 `lease_ms` 重算
   （`job_dispatch_postgres.py:195-219`）——否则 `_renew`/`_finish` 的守卫会整体偏移；
@@ -163,26 +163,26 @@ portable 类型、不改 `BUCKETS`（256）、不改 `CLAIM_ROUND_START_BUCKET`�
 
 | # | 语句 / 位置 | 草案列 | canonical 列 | 换算规则 | 状态 |
 | --- | --- | --- | --- | --- | --- |
-| D1 | `bucket.fence`/`acquire`/`release`（`claims.py:100-113`） | 草案无桶表 | `coordination_claim_buckets.*` | 桶号 `bucket_for(job_id)`；256 行由 0066 播种 | 已切 |
-| D2 | `job.reclaim`（`claims.py:150-154`） | 无对应语句；到期写在认领谓词里（`claims_sql.py:63`） | `job_state='pending'` + `claim_version = claim_version + 1` | 重领必须涨版本；不涨则旧 owner 的版本 CAS 仍能成功 | 已切 |
-| D3 | `job.claim`（`claims.py:146-149`） | `claim_expires_at_us BIGINT`；`job_state` 不动 | `claim_expires_at TIMESTAMP(6)`；`job_state='claimed'` | epoch µs → naive UTC；`0` → `NULL`；状态必须由 `pending` 推到 `claimed` | 已切 |
-| D4 | `job.candidates.lane_admitted`（`claims.py:130-138`） | `claim_expires_at_us <= now`（到期即重领） | `job_state = ?` + `due_at <= ?` + keyset | 到期语义移到 D2；候选只回答「哪些 Job 到期可派」 | 已切 |
-| D5 | `job.claimed_view`（`claims.py:139-145`） | `speech_jobs.kind/state/status_version/created_at_us` | 同（草案 Job 投影仍是权威） | 无换算；`request_document` 可空，`None → ""` | 已切 |
+| D1 | `bucket.fence`/`acquire`/`release`（`packages/portable-sql/src/speechnexus_portable_sql/claims.py:100-113`） | 草案无桶表 | `coordination_claim_buckets.*` | 桶号 `bucket_for(job_id)`；256 行由 0066 播种 | 已切 |
+| D2 | `job.reclaim`（`packages/portable-sql/src/speechnexus_portable_sql/claims.py:150-154`） | 无对应语句；到期写在认领谓词里（`claims_sql.py:63`） | `job_state='pending'` + `claim_version = claim_version + 1` | 重领必须涨版本；不涨则旧 owner 的版本 CAS 仍能成功 | 已切 |
+| D3 | `job.claim`（`packages/portable-sql/src/speechnexus_portable_sql/claims.py:146-149`） | `claim_expires_at_us BIGINT`；`job_state` 不动 | `claim_expires_at TIMESTAMP(6)`；`job_state='claimed'` | epoch µs → naive UTC；`0` → `NULL`；状态必须由 `pending` 推到 `claimed` | 已切 |
+| D4 | `job.candidates.lane_admitted`（`packages/portable-sql/src/speechnexus_portable_sql/claims.py:130-138`） | `claim_expires_at_us <= now`（到期即重领） | `job_state = ?` + `due_at <= ?` + keyset | 到期语义移到 D2；候选只回答「哪些 Job 到期可派」 | 已切 |
+| D5 | `job.claimed_view`（`packages/portable-sql/src/speechnexus_portable_sql/claims.py:139-145`） | `speech_jobs.kind/state/status_version/created_at_us` | 同（草案 Job 投影仍是权威） | 无换算；`request_document` 可空，`None → ""` | 已切 |
 | D6 | `claims.read_claim`（`claims_sql.py:27-31`） | `claim_expires_at_us AS expires_at_us` | `claim_expires_at` | 读回微秒需 `to_epoch_us`（naive 按 UTC，`clock.py:60-66`） | 待收敛 |
 | D7 | `claims.claim_in_transaction`（`claims_sql.py:60-65`） | `claim_expires_at_us = ?` 且谓词 `claim_expires_at_us <= ?` | `claim_expires_at = ?`，`job_state='claimed'` | 直换即坏：`NULL <= ?` 求值为 NULL，首次认领永远失败（实测 A） | 待收敛 |
 | D8 | Job 写入（`job_writer_columns.py:24-38`） | 无 `bucket_no`、`due_at` | `bucket_no`、`due_at` | `bucket_for(job_id)`；`due_at` 来源 `speech_jobs.created_at_us` | 已切 |
 | D9 | `_mark_running` 事件追加（`job_dispatch_postgres.py:432-434`） | `speech_job_events(event_seq = MAX+1, state, occurred_at_us BIGINT)` | `job_events(event_seq = head+1, event_digest, payload_ref)` + `coordination_jobs.last_event_seq` | 序号取头；`occurred_at` epoch → naive UTC | 待切 |
 | D10 | `_record_progress` 进度事件（`job_dispatch_postgres.py:540-546`） | 同上 + `kind/progress_unit/progress_completed/progress_total` | `job_events` 无进度列，值只能进摘要 | 读者必须从摘要重建进度，不能读列 | 待切 |
-| D11 | 事件摘要（`claims.py:909-964`） | 草案表无摘要列 | `event_digest VARCHAR(71)` | `sha256:` + 规范 JSON，字段顺序固定 | 待切 |
-| D12 | `outbox.insert`/`mark_delivered`（`claims.py:169-180`） | `coordination_outbox.delivered_at_us BIGINT` | `delivered_at TIMESTAMP(6)` | `0`/`NULL` → `NULL`；epoch → naive UTC；列在 alembic 树不存在（§7-B1） | 待切 |
-| D13 | 事件头 | `MAX(speech_job_events.event_seq)`（`job_dispatch_postgres.py:156-160`） | `coordination_jobs.last_event_seq`（带 `claim_version` CAS，`claims.py:155-161`） | 回填 = MAX（`0065:90-100`）；写 = +1 且在 `FOR UPDATE` 下 | 待切 |
+| D11 | 事件摘要（`packages/portable-sql/src/speechnexus_portable_sql/claims.py:909-964`） | 草案表无摘要列 | `event_digest VARCHAR(71)` | `sha256:` + 规范 JSON，字段顺序固定 | 待切 |
+| D12 | `outbox.insert`/`mark_delivered`（`packages/portable-sql/src/speechnexus_portable_sql/claims.py:169-180`） | `coordination_outbox.delivered_at_us BIGINT` | `delivered_at TIMESTAMP(6)` | `0`/`NULL` → `NULL`；epoch → naive UTC；列在 alembic 树不存在（§7-B1） | 待切 |
+| D13 | 事件头 | `MAX(speech_job_events.event_seq)`（`job_dispatch_postgres.py:156-160`） | `coordination_jobs.last_event_seq`（带 `claim_version` CAS，`packages/portable-sql/src/speechnexus_portable_sql/claims.py:155-161`） | 回填 = MAX（`0065:90-100`）；写 = +1 且在 `FOR UPDATE` 下 | 待切 |
 | D14 | 进度不变量 | DB 触发器 `speech_job_event_progress_guard`（`public_job_progress_schema.py:41-79`） | 无对应触发器 | 四条断言（running、unit 一致、序号接续、严格递增）必须搬到应用层 | 待决 |
 | D15 | `claim_version` 类型 | `BIGINT DEFAULT 0`（`job_schema.py:30`） | `DECIMAL(38,0) NOT NULL`（`0003:24`） | 直传，只经 `Decimal(str(...))`，不经 float | 已切 |
 | D16 | 草案独有列 | `initial_event_id`（`NOT NULL UNIQUE`）、`initial_event_digest`（`job_schema.py:25-26`） | `0003` 无对应列 | 收敛方向未定：canonical 形状没有「初始事件」这个概念 | 未处理 |
 
 ### 3.1 可空性：`0` 与 `NULL` 不是同一个值
 
-草案用 `0` 表示「未领取」，canonical 用 `NULL`（`claims.py:280-300`）。这在**等值**比较下等价，
+草案用 `0` 表示「未领取」，canonical 用 `NULL`（`packages/portable-sql/src/speechnexus_portable_sql/claims.py:280-300`）。这在**等值**比较下等价，
 在**范围**比较下不等价。真库实测（临时库，跑完即删，命令见 §8 探针 A）：
 
 ```text
@@ -207,16 +207,16 @@ canonical 时刻列是 `TIMESTAMP(6)`（无时区）。把 aware 值交给驱动
 AT TIME ZONE 'UTC' (canonical 换算)         -> 2026-11-23 12:00:00
 ```
 
-现有防线有三层，切列时必须全部保留：`utc_from_epoch_us` 返回 naive UTC（`claims.py:285-300`）、
+现有防线有三层，切列时必须全部保留：`utc_from_epoch_us` 返回 naive UTC（`packages/portable-sql/src/speechnexus_portable_sql/claims.py:285-300`）、
 迁移里显式 `AT TIME ZONE 'UTC'`（`0064:50-56`、`0065:74-78`）、生产池把每条连接 `SET TIME ZONE
-'UTC'`（`postgres_pool.py:36`）。第三层是**兜底而非契约**：池外的代码（脚本、第二个驱动、
+'UTC'`（`backend/src/speechnexus_backend/speech/infrastructure/postgres_pool.py:36`）。第三层是**兜底而非契约**：池外的代码（脚本、第二个驱动、
 `test_canonical_job_conversion_pg.py` 刻意用非 UTC 会话）不经过它。
 
 ### 3.3 `claim_version` 是 fence，不是计数器
 
 草案里「过期」本身就是 fence：旧 owner 的 CAS 带 `claim_expires_at_us <= now`，过期必然失败。
 canonical 里旧 owner 的 CAS 带 `claim_version = ?` 与 `job_state='claimed'`——
-**若不涨版本，重领之后旧 owner 用原版本仍可能写成功**（`claims.py:580-588`）。
+**若不涨版本，重领之后旧 owner 用原版本仍可能写成功**（`packages/portable-sql/src/speechnexus_portable_sql/claims.py:580-588`）。
 所以 `job.reclaim` 的 `claim_version + 1` 是语义的一部分，不是顺手；把它当「版本字段总该加一」
 抄进另一条语句、或从重领语句里删掉，都会让两个 owner 同时持有同一个 Job，而且症状要等到下一次
 `_finish` 才出现（`DispatchClaimLostError` 变成成功）。
@@ -234,8 +234,8 @@ canonical 里旧 owner 的 CAS 带 `claim_version = ?` 与 `job_state='claimed'`
 - **摘要**：canonical 多一列 `event_digest`，它覆盖 `kind/progress_*`（`EVENT_DIGEST_FIELDS`），
   而草案把这些当独立列存。D10 的换算因此**不可逆**：从 canonical 行读不出原始进度列，只能靠摘要
   相等判断「是不是同一条事实」。
-- **outbox**：`outbox.insert` 没有 `ON CONFLICT`（`claims.py:169-172`），`event_id` 是
-  `new_identity()` 生成的随机 ULID（`types.py:81-90`，`claims.py:1002`）。所以**同一条事实重试一次
+- **outbox**：`outbox.insert` 没有 `ON CONFLICT`（`packages/portable-sql/src/speechnexus_portable_sql/claims.py:169-172`），`event_id` 是
+  `new_identity()` 生成的随机 ULID（`types.py:81-90`，`packages/portable-sql/src/speechnexus_portable_sql/claims.py:1002`）。所以**同一条事实重试一次
   就会写第二行 outbox**，两行 `event_digest` 相同、`event_id` 不同。去重责任因此落在消费者的摘要
   比对上，不在主键上。这一条在切事件侧之前必须写进判据，否则「至少一次投递」会变成「至少一次重复
   投递且无标记」。
@@ -247,13 +247,13 @@ canonical 里旧 owner 的 CAS 带 `claim_version = ?` 与 `job_state='claimed'`
 ### 4.1 声明与代码位置
 
 固定顺序是 **`coordination_claim_buckets` → `coordination_jobs` → `coordination_outbox`**
-（`claims.py:11-12`，模块 docstring；`job_dispatch_postgres.py:12-18`）。代码里的落点：
+（`packages/portable-sql/src/speechnexus_portable_sql/claims.py:11-12`，模块 docstring；`job_dispatch_postgres.py:12-18`）。代码里的落点：
 
 | 顺序 | 证据 |
 | --- | --- |
-| 桶行先 | `claim_batch` 每个桶先 `read_fence`（`FOR UPDATE`，`claims.py:106-109`）再 `acquire`，最后在 `finally` 里 `release`（`:762-769`）；整笔事务内桶行不可能再变 |
+| 桶行先 | `claim_batch` 每个桶先 `read_fence`（`FOR UPDATE`，`packages/portable-sql/src/speechnexus_portable_sql/claims.py:106-109`）再 `acquire`，最后在 `finally` 里 `release`（`:762-769`）；整笔事务内桶行不可能再变 |
 | 再 Job 行 | 桶持有时才 `reclaim_expired` → `job.claim`（`:796-826`）；state store 的 `_record_progress`/`_finish` 都是先 canonical Job `FOR UPDATE`（`:503-514`、`:606-611`）再 `speech_jobs`（`:517-522`、`:615`） |
-| outbox 最后 | 只有 `append_event` 在同事务尾部 `insert_outbox`（`claims.py:1003-1010`），而它先锁 `job.event_head`（`:985`） |
+| outbox 最后 | 只有 `append_event` 在同事务尾部 `insert_outbox`（`packages/portable-sql/src/speechnexus_portable_sql/claims.py:1003-1010`），而它先锁 `job.event_head`（`:985`） |
 
 `_finish` 的顺序容易被误读：它先取 canonical Job 行锁（`:606`），再改 `speech_jobs`（`:615`），
 再写事件（`:633`），最后**关闭**同一个 canonical 行（`:636`）——第二次 UPDATE 不再取新锁，
@@ -331,7 +331,7 @@ S0 是纯加法 DDL。
 | 回退到 | 仍必须可读 | 不能做的 | 证据 |
 | --- | --- | --- | --- |
 | S2 之后（事件已翻读） | canonical `job_events` 行、`last_event_seq`、草案 `speech_job_events` | 不能走 alembic `downgrade`：`0065` 的 downgrade 把 `last_event_seq` 归零（`0065:185`），而它当初安全的理由是「这一列没有任何读取者」（`0065:53-55`）——S2 之后这个前提不成立 | 回退＝读路径回切 + 保留列；对账仍按 `portable-reconcile.py` 的逐字段口径 |
-| S1 之后（已双写） | 草案 `speech_job_events`（旧读路径的唯一来源）、草案 `claim_expires_at_us` | 不能「重跑搬迁」：`adopt_historical_events` 对已有事件的 Job 直接拒绝（`claims.py:1051-1052`），一次性回填不是修补手段 | 回退后重跑必须**被拒绝**，这正是「没有半成品」的形状 |
+| S1 之后（已双写） | 草案 `speech_job_events`（旧读路径的唯一来源）、草案 `claim_expires_at_us` | 不能「重跑搬迁」：`adopt_historical_events` 对已有事件的 Job 直接拒绝（`packages/portable-sql/src/speechnexus_portable_sql/claims.py:1051-1052`），一次性回填不是修补手段 | 回退后重跑必须**被拒绝**，这正是「没有半成品」的形状 |
 | S4 之前（约束未收紧） | `claim_expires_at`（canonical 权威）、`bucket_no`/`due_at`（可空） | 不能把 canonical 租约擦成 NULL：`0065` 的回填是 fill-if-null（`0065:75-78`），就是为了不擦在飞租约 | `0065:102-118` 的四条对账语句在每次 upgrade 时由 `0065:160-174` 调用 |
 
 **「没有丢事实」的判据（按强度递增）：**

@@ -35,6 +35,10 @@ from tests.support.migrations import (
 
 pytestmark = pytest.mark.integration
 
+#: 0063 的修订名。它不再是 head(0069/0070 在其上),而 0070 的 downgrade 是单向步,
+#: 所以这条守卫只能在拥有它的修订上观察,再从这里向 head 前进。
+_BLOCKED_REVISION = "0063_deletion_targets_blocked"
+
 
 def _definition(query: Connection[dict[str, Any]], index: str) -> str | None:
     row = query.execute(
@@ -96,12 +100,17 @@ def test_0062_indexes_the_held_leases_and_drops_the_superseded_ledger_index() ->
         assert _definition(query, LEDGER_DEBT_INDEX) is None
 
 
-def test_0063_refuses_its_own_downgrade_from_the_current_head() -> None:
-    """The newest revision also refuses: the ledger's blocked reason is evidence."""
+def test_0063_refuses_its_own_downgrade_from_the_revision_it_ships() -> None:
+    """0063 also refuses: the ledger's blocked reason is evidence.
+
+    The revision is no longer the head -- 0069/0070 sit above it, and 0070's downgrade
+    is a one-way step that would fire first from head -- so the guard is observed at the
+    revision that owns it, and the chain then advances to head from there.
+    """
     with _isolated_schema(_url()) as (config, query):
-        command.upgrade(config, "head")
-        head = _revision(query)
-        assert head == HEAD
+        command.upgrade(config, _BLOCKED_REVISION)
+        assert _revision(query) == _BLOCKED_REVISION
+        definition = _definition(query, LEASE_DEBT_INDEX)
 
         with pytest.raises(RuntimeError) as refused:
             command.downgrade(config, LEASE_DEBT_INDEX_REVISION)
@@ -109,7 +118,13 @@ def test_0063_refuses_its_own_downgrade_from_the_current_head() -> None:
         assert "0063" in message
         assert "blocked" in message
 
-        assert _revision(query) == head
+        assert _revision(query) == _BLOCKED_REVISION
+        assert _definition(query, LEASE_DEBT_INDEX) == definition
+
+        # The refused downgrade left a schema the later revisions still replay over.
+        command.upgrade(config, "head")
+        assert _revision(query) == HEAD
+        assert _definition(query, LEASE_DEBT_INDEX) == definition
 
 
 def test_0061_still_refuses_its_own_downgrade_from_the_head_0062_inherited() -> None:

@@ -14,7 +14,6 @@ from speechnexus_contracts import parse
 from tests.integration.test_public_job_progress_migration_pg import _isolated_schema, _url
 from tests.integration.test_public_jobs_http import DIGEST, PREFIX, JobSandbox, _app, _body
 from tests.integration.test_public_jobs_http import jobs_db as jobs_db
-from tests.support.migrations import step_below_asr_settlement
 
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
 from speechnexus_backend.speech.infrastructure.public_jobs_postgres import PostgresPublicJobs
@@ -317,7 +316,7 @@ def test_0042_drops_only_the_superseded_job_index() -> None:
             "speech_jobs_workspace_created_id",
         }
 
-        command.upgrade(config, "head")
+        command.upgrade(config, "0042_drop_superseded_job_index")
         remaining = _created_indexes(query)
         # 0042 removes only the superseded index; the keyset index keeps its shape.
         assert set(remaining) == {"speech_jobs_workspace_created_id"}
@@ -326,7 +325,8 @@ def test_0042_drops_only_the_superseded_job_index() -> None:
         )
         assert query.execute("SELECT * FROM speech_jobs").fetchall() == before
 
-        step_below_asr_settlement(query)
+        # The round trip belongs to 0041↔0042. Walking back from head would be refused by
+        # 0070's one-way step before 0042's own downgrade could run.
         command.downgrade(config, "0041_voice_drafts")
         restored = _created_indexes(query)
         assert set(restored) == {
@@ -336,6 +336,11 @@ def test_0042_drops_only_the_superseded_job_index() -> None:
         assert "(workspace_id, created_at_us DESC)" in restored["speech_jobs_workspace_created"]
         assert query.execute("SELECT * FROM speech_jobs").fetchall() == before
 
+        command.upgrade(config, "0042_drop_superseded_job_index")
+        assert set(_created_indexes(query)) == {"speech_jobs_workspace_created_id"}
+        assert query.execute("SELECT * FROM speech_jobs").fetchall() == before
+
+        # Every later revision replays over the same access path.
         command.upgrade(config, "head")
         assert set(_created_indexes(query)) == {"speech_jobs_workspace_created_id"}
         assert query.execute("SELECT * FROM speech_jobs").fetchall() == before

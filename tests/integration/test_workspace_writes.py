@@ -111,7 +111,7 @@ def update(
     )
 
 
-def upgrade(url: str, schema: str, revision: str) -> None:
+def upgrade(url: str, schema: str, revision: str, *, rewind: bool = False) -> None:
     engine = create_engine(
         url.replace("postgresql://", "postgresql+psycopg://", 1),
         poolclass=NullPool,
@@ -122,7 +122,7 @@ def upgrade(url: str, schema: str, revision: str) -> None:
     try:
         with engine.connect() as connection:
             config.attributes["connection"] = connection
-            if revision == "head":
+            if not rewind:
                 command.upgrade(config, revision)
             else:
                 connection.execute(text(f'DROP TABLE IF EXISTS "{schema}".speech_asr_settlement'))
@@ -390,12 +390,14 @@ def test_writer_runtime_accepts_only_the_declared_column_surface(database: Datab
 
 
 def test_migration_rolls_back_and_replays_the_ledger(database: Database) -> None:
-    upgrade(database.url, database.schema, "0048_voice_evidence_scan_index")
+    upgrade(database.url, database.schema, "0048_voice_evidence_scan_index", rewind=True)
     tables = database.query(
         "SELECT table_name FROM information_schema.tables WHERE table_schema = %s",
         (database.schema,),
     )
     assert "speech_workspace_commands" not in {row["table_name"] for row in tables}
-    upgrade(database.url, database.schema, "head")
+    # Replay only to 0049, the revision that owns the ledger: reaching head from here
+    # would re-run 0064, whose backfill reads the epoch column 0070 retired (42703).
+    upgrade(database.url, database.schema, "0049_workspace_commands")
     assert database.count("speech_workspace_commands") == 0
     assert database.count("speech_workspaces", "workspace_id = 'workspace-default'") == 1

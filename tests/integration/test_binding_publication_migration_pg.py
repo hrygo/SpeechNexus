@@ -8,13 +8,11 @@ import psycopg
 import pytest
 from alembic import command
 from tests.integration.test_public_job_progress_migration_pg import _isolated_schema, _url
-from tests.support.migrations import (
-    PRE_ASR_SETTLEMENT_REVISION,
-    step_below_asr_settlement,
-)
 
 pytestmark = pytest.mark.integration
 
+REVISION = "0051_binding_publication_events"
+_PREDECESSOR = "0050_profile_retirements"
 CONSTRAINT = "speech_publication_lifecycle_events_action_check"
 EVENT = "speech_publication_lifecycle_events"
 DIGEST = "sha256:" + "a" * 64
@@ -53,29 +51,33 @@ def _publish_event(query: psycopg.Connection[dict[str, Any]], action: str) -> No
 
 def test_0051_widens_the_legacy_check_and_refuses_to_erase_publication_events() -> None:
     with _isolated_schema(_url()) as (config, query):
-        # Fresh schemas already carry the widened CHECK through LIFECYCLE_DDL;
-        # the 0051 downgrade restores the legacy shape so the upgrade below
-        # exercises exactly the statement a pre-existing database needs.
-        command.upgrade(config, "head")
+        # The round trip belongs to 0051↔0050, the revision that rewrites the journal's
+        # CHECK. Starting from head is refused by 0070's one-way step before 0051's own
+        # downgrade could run; a schema built at 0051 exercises exactly the ALTER a
+        # pre-existing database needs.
+        command.upgrade(config, REVISION)
         assert "model_binding.publish" in _definition(query)
         _seed_publication(query)
-        step_below_asr_settlement(query)
-        command.downgrade(config, "0050_profile_retirements")
+
+        # 0051's downgrade restores the legacy shape a pre-existing database had.
+        command.downgrade(config, _PREDECESSOR)
         assert "model_binding.publish" not in _definition(query)
         with pytest.raises(psycopg.errors.CheckViolation):
             _publish_event(query, "model_binding.publish")
 
-        command.upgrade(config, "head")
+        command.upgrade(config, REVISION)
         assert "model_binding.publish" in _definition(query)
         _publish_event(query, "model_binding.publish")
 
-        step_below_asr_settlement(query)
+        # 0051's own refusal: a recorded publication is evidence, and the legacy CHECK
+        # cannot hold its action.
         with pytest.raises(RuntimeError, match="require preservation"):
-            command.downgrade(config, "0050_profile_retirements")
+            command.downgrade(config, _PREDECESSOR)
         assert query.execute("SELECT version_num FROM alembic_version").fetchone() == {
-            "version_num": PRE_ASR_SETTLEMENT_REVISION
+            "version_num": REVISION
         }
+        assert "model_binding.publish" in _definition(query)
 
         query.execute(f"DELETE FROM {EVENT}")
-        command.downgrade(config, "0050_profile_retirements")
+        command.downgrade(config, _PREDECESSOR)
         assert "model_binding.publish" not in _definition(query)

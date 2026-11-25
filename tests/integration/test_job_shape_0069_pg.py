@@ -267,3 +267,87 @@ def test_rerunning_0064_after_the_epoch_column_is_gone_is_no_longer_a_rollback()
         admin.execute(f'DROP SCHEMA "{schema}" CASCADE')
         admin.close()
         engine.dispose()
+
+
+def test_the_head_shape_refuses_a_row_without_a_bucket() -> None:
+    """``bucket_no`` 的 ``NOT NULL`` 是有判据的:省略它的写入以 ``23502`` 失败。
+
+    这条同时是「不能退回 ``DEFAULT``」的判据:一旦这一列带上默认值,下面的 INSERT 会被
+    静默补成 0 号桶,而不是被拒绝 —— 约束就只剩声明,不再约束任何写入。
+    """
+
+    url = os.environ.get(VARIABLE) or pytest.fail(
+        f"Configure an isolated PostgreSQL DSN in {VARIABLE}; skip is not migration evidence"
+    )
+    schema = "sn_0069_" + uuid.uuid4().hex[:12]
+    job_id = "job-0069-required-bucket"
+    admin = portable_pg_connect(url, autocommit=True)
+    engine = _engine(url)
+    columns = (
+        "job_id, operation_id, attempt_id, initial_event_id, initial_event_digest, request_digest"
+    )
+    identity = (job_id, f"op-{job_id}", f"attempt-{job_id}", f"{job_id}-queued", DIGEST, DIGEST)
+    try:
+        admin.execute(f'CREATE SCHEMA "{schema}"')
+        admin.execute(f'SET search_path TO "{schema}", pg_catalog')
+        config = _config(schema)
+        with engine.connect() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "head")
+
+        with pytest.raises(psycopg.errors.NotNullViolation) as refused:
+            admin.execute(
+                f"INSERT INTO coordination_jobs ({columns}) VALUES (%s, %s, %s, %s, %s, %s)",
+                identity,
+            )
+        assert refused.value.sqlstate == "23502"
+        assert "bucket_no" in str(refused.value)
+
+        # 补充同一个定义点算出的桶值之后,同一行被接受。
+        admin.execute(
+            f"INSERT INTO coordination_jobs ({columns}, bucket_no) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (*identity, int(bucket_for(job_id))),
+        )
+        assert int(_row(admin, job_id)[0]) == int(bucket_for(job_id))
+    finally:
+        admin.execute(f'DROP SCHEMA "{schema}" CASCADE')
+        admin.close()
+        engine.dispose()
+
+
+def test_downgrade_from_head_refuses_at_the_one_way_epoch_step() -> None:
+    """计划 §6:``0070`` 没有回退段,所以从 head 往下的第一条 downgrade 就被拒绝。
+
+    拒绝发生在 ``0070`` 自己的 ``downgrade``;版本号和形状都不动 —— 退役的列没有回来,
+    ``0069`` 的 ``NOT NULL`` 也还在。
+    """
+
+    url = os.environ.get(VARIABLE) or pytest.fail(
+        f"Configure an isolated PostgreSQL DSN in {VARIABLE}; skip is not migration evidence"
+    )
+    schema = "sn_0069_" + uuid.uuid4().hex[:12]
+    admin = portable_pg_connect(url, autocommit=True)
+    engine = _engine(url)
+    try:
+        admin.execute(f'CREATE SCHEMA "{schema}"')
+        admin.execute(f'SET search_path TO "{schema}", pg_catalog')
+        config = _config(schema)
+        with engine.connect() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "head")
+
+        # 任何比 0070 更低的 target 都必须先穿过它;0068 是最短的那一步。
+        with engine.connect() as connection:
+            config.attributes["connection"] = connection
+            with pytest.raises(RuntimeError, match="one-way step"):
+                command.downgrade(config, PRE_TIGHTEN)
+
+        version = admin.execute(f'SELECT version_num FROM "{schema}".alembic_version').fetchone()
+        assert version == (HEAD,)
+        assert _nullable(admin, schema, "claim_expires_at_us") is None
+        assert _nullable(admin, schema, "bucket_no") == "NO"
+    finally:
+        admin.execute(f'DROP SCHEMA "{schema}" CASCADE')
+        admin.close()
+        engine.dispose()

@@ -27,7 +27,7 @@ from tests.integration.test_production_jobs import database as database
 from tests.support.binding_database import BindingCursor, MySQLBindingDrafts
 from tests.support.binding_examples import binding_request
 from tests.support.job_database import MySQLJobTransactions
-from tests.support.migration_rows import project_onto
+from tests.support.migration_rows import RETIRED_COLUMNS, project_onto
 from tests.support.migrations import HEAD
 from tests.support.portable_pg import connect_kwargs as portable_connect_kwargs
 
@@ -663,7 +663,13 @@ def test_failed_0010_upgrade_rolls_back_new_ddl_and_preserves_old_rows_and_acl(
     sandbox.upgrade()
     sandbox.upgrade()
     assert sandbox.version() == HEAD
-    assert (
-        project_onto(sandbox.admin.execute("SELECT * FROM coordination_jobs").fetchall(), before)
-        == before
+    # 0070 退役了 ``claim_expires_at_us``:它是这次升级**按设计**唯一消失的列,其余既有列
+    # 必须逐字不变,退役列的语义由 canonical ``claim_expires_at`` 承接。缺失的列只有在
+    # ``RETIRED_COLUMNS`` 里登记过才允许被剔除,否则 ``project_onto`` 直接报错。
+    retired = RETIRED_COLUMNS["coordination_jobs"]
+    rows = sandbox.admin.execute("SELECT * FROM coordination_jobs").fetchall()
+    assert set(before[0]) - set(rows[0]) == set(retired)
+    assert "claim_expires_at" in rows[0]
+    assert project_onto(rows, before, retired=retired) == project_onto(
+        before, before, retired=retired
     )

@@ -13,6 +13,9 @@ from tests.support.migrations import step_below_asr_settlement
 
 pytestmark = pytest.mark.integration
 
+#: 拥有 ``voice_preview`` 这个 kind 的修订;回环只在这条链上做(见下面的用例)。
+_REVISION = "0044_voice_preview_jobs"
+
 
 def _url() -> str:
     url = os.environ.get("SPEECHNEXUS_TEST_DATABASE_URL")
@@ -41,16 +44,21 @@ def test_0044_admits_voice_preview_and_round_trips() -> None:
             _insert_preview(query)
         assert "speech_jobs_kind_check" in str(refused.value)
 
-        command.upgrade(config, "head")
+        command.upgrade(config, _REVISION)
         assert "voice_preview" in _kind_check(query)
         _insert_preview(query)
 
-        # Downgrade once clears the kind; a second upgrade restores it. No
-        # preview row exists at this point, so the narrow CHECK is accepted.
+        # The round trip belongs to 0044↔0043, the revision that widens the CHECK.
+        # Downgrading from head would stop at 0070's one-way step before 0044's own
+        # downgrade could run. No preview row exists at this point, so the narrow CHECK
+        # is accepted.
         query.execute("DELETE FROM speech_jobs WHERE job_id='job-preview-1'")
-        step_below_asr_settlement(query)
         command.downgrade(config, "0043_voice_draft_revisions")
         assert "voice_preview" not in _kind_check(query)
+        command.upgrade(config, _REVISION)
+        assert "voice_preview" in _kind_check(query)
+
+        # Every later revision replays over the widened CHECK.
         command.upgrade(config, "head")
         assert "voice_preview" in _kind_check(query)
 

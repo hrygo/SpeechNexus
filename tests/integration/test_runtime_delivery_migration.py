@@ -8,12 +8,18 @@ from tests.integration.test_coordination_foundation import DIGEST, UpgradeSandbo
 from tests.integration.test_coordination_foundation import upgrade_sandbox as upgrade_sandbox
 from tests.integration.test_production_jobs import JobDatabase
 from tests.integration.test_production_jobs import database as database
+from tests.support.migration_rows import RETIRED_COLUMNS
 from tests.support.migrations import HEAD
 
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.parametrize("database", ["postgresql"], indirect=True),
 ]
+
+_COLUMNS = (
+    "SELECT column_name FROM information_schema.columns "
+    "WHERE table_schema = %s AND table_name = %s ORDER BY ordinal_position"
+)
 
 
 def test_upgrade_failure_is_atomic_then_legacy_runtime_adoption_is_conservative(
@@ -48,22 +54,19 @@ def test_upgrade_failure_is_atomic_then_legacy_runtime_adoption_is_conservative(
     before_columns = {
         name: [
             str(row["column_name"])
-            for row in sandbox.admin.execute(
-                "SELECT column_name FROM information_schema.columns "
-                "WHERE table_schema = %s AND table_name = %s ORDER BY ordinal_position",
-                (sandbox.schema, name),
-            ).fetchall()
+            for row in sandbox.admin.execute(_COLUMNS, (sandbox.schema, name)).fetchall()
         ]
         for name in watched
     }
 
-    def snapshot(name: str) -> list[dict[str, object]]:
-        projection = ",".join(before_columns[name])
+    def snapshot(name: str, columns: list[str] | None = None) -> list[dict[str, object]]:
+        projection = ",".join(before_columns[name] if columns is None else columns)
         rows: list[dict[str, object]] = sandbox.admin.execute(
             f"SELECT {projection} FROM {name} ORDER BY 1"
         ).fetchall()
         return rows
 
+    retired = {name: RETIRED_COLUMNS.get(name, frozenset()) for name in watched}
     before = {name: snapshot(name) for name in watched}
     role = sandbox.schema + "_old_reader"
     sandbox.admin.execute(f'CREATE ROLE "{role}"')
@@ -106,7 +109,29 @@ def test_upgrade_failure_is_atomic_then_legacy_runtime_adoption_is_conservative(
         sandbox.upgrade()
         assert sandbox.version() == HEAD
         assert sandbox.admin.execute("SELECT * FROM runtime_intent_deliveries").fetchall() == rows
-        assert {name: snapshot(name) for name in before} == before
+        # 0070 退役了 ``coordination_jobs.claim_expires_at_us``:它是本次升级**按设计**唯一
+        # 消失的列,所以「既有行不改写」这条判据只在升级后仍存在的列上比较。退役列登记在
+        # ``RETIRED_COLUMNS`` 这一处,别的列少了会直接报错,而不是悄悄少比一列。
+        surviving = {
+            name: [column for column in before_columns[name] if column not in retired[name]]
+            for name in watched
+        }
+        job_columns = {
+            row["column_name"]
+            for row in sandbox.admin.execute(
+                _COLUMNS, (sandbox.schema, "coordination_jobs")
+            ).fetchall()
+        }
+        assert (
+            set(before_columns["coordination_jobs"]) - job_columns == retired["coordination_jobs"]
+        )
+        assert "claim_expires_at" in job_columns
+        after = {name: snapshot(name, surviving[name]) for name in watched}
+        expected = {
+            name: [{column: row[column] for column in surviving[name]} for row in before[name]]
+            for name in watched
+        }
+        assert after == expected
         assert sandbox.admin.execute(acl).fetchone() == old_acl
         assert sandbox.admin.execute(cols).fetchall() == old_cols
         assert sandbox.admin.execute(

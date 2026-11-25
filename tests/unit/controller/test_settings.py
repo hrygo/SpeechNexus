@@ -163,6 +163,11 @@ def test_runtime_driver_loads_each_declared_selector(
     required_settings: dict[str, Any], monkeypatch: pytest.MonkeyPatch, runtime: str
 ) -> None:
     monkeypatch.setenv("SPEECHNEXUS_CONTROLLER_RUNTIME", runtime)
+    if runtime == "k8s":
+        # The cluster driver is identified by the namespace and ServiceAccount its
+        # Role is bound to; loading the selector alone is not a valid deployment.
+        monkeypatch.setenv("SPEECHNEXUS_CONTROLLER_K8S_NAMESPACE", "speechnexus")
+        monkeypatch.setenv("SPEECHNEXUS_CONTROLLER_K8S_SERVICE_ACCOUNT_NAME", "node-controller")
 
     assert Settings(**required_settings).runtime == runtime
 
@@ -175,3 +180,58 @@ def test_runtime_driver_rejects_an_unknown_selector(
 
     with pytest.raises(ValidationError):
         Settings(**required_settings)
+
+
+def test_selecting_kubernetes_requires_its_identity(
+    required_settings: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Role is bound to one namespace and one ServiceAccount, so both are required."""
+    monkeypatch.setenv("SPEECHNEXUS_CONTROLLER_RUNTIME", "k8s")
+
+    with pytest.raises(ValidationError) as caught:
+        Settings(**required_settings)
+    assert "SPEECHNEXUS_CONTROLLER_K8S_NAMESPACE" in str(caught.value)
+    assert "SPEECHNEXUS_CONTROLLER_K8S_SERVICE_ACCOUNT_NAME" in str(caught.value)
+
+    monkeypatch.setenv("SPEECHNEXUS_CONTROLLER_K8S_NAMESPACE", "speechnexus")
+    with pytest.raises(ValidationError, match="SERVICE_ACCOUNT_NAME"):
+        Settings(**required_settings)
+
+    monkeypatch.setenv("SPEECHNEXUS_CONTROLLER_K8S_SERVICE_ACCOUNT_NAME", "node-controller")
+    assert Settings(**required_settings).k8s_service_account_name == "node-controller"
+
+
+@pytest.mark.parametrize("namespace", ["SpeechNexus", "speech nexus", "speechnexus_1", ""])
+def test_kubernetes_identity_must_be_a_dns_label(
+    required_settings: dict[str, Any], monkeypatch: pytest.MonkeyPatch, namespace: str
+) -> None:
+    monkeypatch.setenv("SPEECHNEXUS_CONTROLLER_RUNTIME", "k8s")
+    monkeypatch.setenv("SPEECHNEXUS_CONTROLLER_K8S_NAMESPACE", namespace)
+    monkeypatch.setenv("SPEECHNEXUS_CONTROLLER_K8S_SERVICE_ACCOUNT_NAME", "node-controller")
+
+    with pytest.raises(ValidationError):
+        Settings(**required_settings)
+
+
+def test_kubernetes_identity_is_refused_when_the_docker_driver_is_selected(
+    required_settings: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A configured cluster target that the selected driver never reads is inert."""
+    monkeypatch.setenv("SPEECHNEXUS_CONTROLLER_K8S_NAMESPACE", "speechnexus")
+    monkeypatch.setenv("SPEECHNEXUS_CONTROLLER_K8S_SERVICE_ACCOUNT_NAME", "node-controller")
+
+    with pytest.raises(ValidationError) as caught:
+        Settings(**required_settings)
+    assert "K8S_NAMESPACE" in str(caught.value)
+    assert "K8S_SERVICE_ACCOUNT_NAME" in str(caught.value)
+
+
+def test_kubernetes_timings_are_bounded(required_settings: dict[str, Any]) -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            runtime="k8s",
+            k8s_namespace="speechnexus",
+            k8s_service_account_name="node-controller",
+            k8s_pod_ready_timeout_seconds=0,
+            **required_settings,
+        )

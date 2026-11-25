@@ -54,7 +54,10 @@ from speechnexus_node_controller.infrastructure.docker_api import (
     DockerEngineApi,
     DockerUnavailableError,
 )
-from speechnexus_node_controller.infrastructure.engine_credentials import EngineCredentials
+from speechnexus_node_controller.infrastructure.engine_credentials import (
+    EngineCredentials,
+    engine_environment,
+)
 from speechnexus_node_controller.infrastructure.native_evidence import (
     controller_artifact_digest,
     template_digest,
@@ -840,13 +843,15 @@ class DockerNodeRuntime:
     def _engine_environment(
         self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
     ) -> tuple[str, ...]:
-        if template.engine_auth is EngineAuthKind.NONE:
-            return ()
-        if request.target_node_id != self._node_id or self._engine_credentials is None:
-            raise UnapprovedRuntimeTemplateError(
-                "native engine authentication is not configured for this node"
+        return tuple(
+            f"{name}={value}"
+            for name, value in engine_environment(
+                request,
+                template,
+                node_id=self._node_id,
+                credentials=self._engine_credentials,
             )
-        return ("VLLM_API_KEY=" + self._engine_credentials.for_instance(request),)
+        )
 
     def _engine_auth_headers(
         self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate

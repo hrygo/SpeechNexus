@@ -15,7 +15,12 @@ from dataclasses import dataclass, field
 from speechnexus_node_controller.domain.intents import (
     POOL_IDS,
     RuntimeInstanceIntentRequest,
+    UnapprovedRuntimeTemplateError,
     require_identifier,
+)
+from speechnexus_node_controller.domain.templates import (
+    ApprovedRuntimeTemplate,
+    EngineAuthKind,
 )
 
 _KEY = re.compile(r"[0-9a-f]{64}")
@@ -69,3 +74,26 @@ class EngineCredentials:
         ]
         payload = json.dumps(scope, ensure_ascii=True, separators=(",", ":")).encode("ascii")
         return hmac.new(bytes.fromhex(self.root_key), payload, hashlib.sha256).hexdigest()
+
+
+def engine_environment(
+    request: RuntimeInstanceIntentRequest,
+    template: ApprovedRuntimeTemplate,
+    *,
+    node_id: str,
+    credentials: EngineCredentials | None,
+) -> tuple[tuple[str, str], ...]:
+    """The one rule for handing the per-generation native credential to an engine.
+
+    Every runtime driver uses this function, so a template's declared
+    authentication means the same thing on the daemon and on the cluster. A node
+    that cannot supply the credential refuses the template instead of starting an
+    engine that expects authentication but never receives a key.
+    """
+    if template.engine_auth is EngineAuthKind.NONE:
+        return ()
+    if request.target_node_id != node_id or credentials is None:
+        raise UnapprovedRuntimeTemplateError(
+            "native engine authentication is not configured for this node"
+        )
+    return (("VLLM_API_KEY", credentials.for_instance(request)),)

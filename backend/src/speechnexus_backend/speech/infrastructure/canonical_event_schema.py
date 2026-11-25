@@ -3,10 +3,9 @@
 **这张表为什么现在才出现在 alembic 树里。** canonical 形状从
 ``migrations/0003_portable_claim_buckets.sql`` 起就声明了 ``job_events`` 与
 ``coordination_outbox.delivered_at``,但生产迁移树到 ``0067`` 为止**没有**这张表,而 outbox 上
-只有草案的 ``delivered_at_us BIGINT``。事件读路径仍在草案 ``speech_job_events`` 上,所以缺口一直
-没有以 42P01 显形;一旦按计划把事件写者/读者切到 canonical 对象,第一步就会打在不存在的关系上。
-本模块只补**对象**,不补写者,也不补读者:这一刀是 S0 的纯加法,把「表不存在」与「切换事件
-路径」拆成两次可分别验证的改动(计划 §5 S0)。
+只有草案的 ``delivered_at_us BIGINT``。S0 之前事件读路径仍在草案 ``speech_job_events`` 上,所以
+缺口一直没有以 42P01 显形;一旦按计划把事件写者/读者切到 canonical 对象,第一步就会打在不存在
+的关系上。本模块补**对象**(S0)、追加**写面**(S1/S1b),S2 起同时是**读面**的唯一声明点。
 
 **列清单只有一个定义点。** ``JOB_EVENT_COLUMN_DEFINITIONS`` 是 ``job_events`` 在本仓唯一一处
 逐列声明:建表文本与授权面都从它派生,所以给表加一列时只需要改这一处。
@@ -23,7 +22,11 @@
 
 **授权面按事实拆,不按表拆。** 未来这条路径只需要三件事,每件事只有一个定义点:
 
-* ``SELECT (event_seq, event_digest, payload_ref)``:``job_event.read`` 的投影;
+* ``SELECT (event_seq, event_digest, payload_ref, job_id)``:``job_event.read`` 的**读面**,
+  即投影加谓词列。投影与谓词分开声明,是因为投影必须逐字等于语句的 ``SELECT`` 列表(那条
+  判据由 ``tests/ci/test_canonical_event_statement_parity.py`` 钉住),而 ``job_id`` 只出现在
+  ``WHERE`` 里。列级 ``SELECT`` 少授 ``job_id`` 时整条续读以 ``42501`` 失败 —— S1b 实测到的
+  那个缺口(S2 补上,见下);
 * ``INSERT (job_id, event_seq, event_digest, payload_ref)``:``job_event.insert`` 的列;
 * outbox 上的 ``INSERT (delivered_at)`` 与 ``UPDATE (delivered_at)``:``outbox.insert`` 与
   ``outbox.mark_delivered`` 只碰这一列。
@@ -74,24 +77,51 @@ JOB_EVENT_PRIMARY_KEY: tuple[str, ...] = ("job_id", "event_seq")
 #: 元组顺序是 (本表列, 被引用表);两侧列名同叫 ``job_id``。
 JOB_EVENT_FOREIGN_KEY = ("job_id", "coordination_jobs")
 
-#: 事件续读的列:``job_event.read`` 的投影逐字如此(``job_id`` 只出现在 ``WHERE``,不需要授权)。
+#: 事件续读的列:``job_event.read`` 的投影逐字如此(``job_id`` 只出现在 ``WHERE``,不在投影里)。
 JOB_EVENT_SELECT_COLUMNS: tuple[str, ...] = ("event_seq", "event_digest", "payload_ref")
+
+#: 续读语句在**投影之外**引用的列:``job_event.read`` 的 ``WHERE job_id = ? AND event_seq > ?``
+#: 中不属于投影的那些(``event_seq`` 已在投影里,所以这里只剩 ``job_id``)。
+#:
+#: 为什么投影不够:PostgreSQL 的列级 ``SELECT`` 只授投影列时,``WHERE`` 里的列同样要求可读,
+#: 否则整条语句以 ``42501 permission denied for table job_events`` 失败 —— 而报错不点名缺哪列。
+#: S1b 实测过这个形状(2026-11-25,非属主身份):授予面是
+#: ``SELECT (event_seq, event_digest, payload_ref)``,语句一跑就 42501。S2 是第一次真正执行
+#: 那条语句的阶段,所以补授 ``job_id`` 与读翻转必须同一提交,否则新读路径一上线就红。
+#:
+#: 这一份与投影分开声明,而不是把 ``job_id`` 塞进 ``JOB_EVENT_SELECT_COLUMNS``:投影要逐字
+#: 等于语句的 ``SELECT`` 列表(``tests/ci/test_canonical_event_statement_parity.py`` 逐字解析),
+#: 塞进去会让那条判据变成假的。谓词列本身也由同一份判据对着语句文本核对,所以这里仍然只有
+#: 一个定义点。
+JOB_EVENT_READ_FILTER_COLUMNS: tuple[str, ...] = ("job_id",)
+
+#: ``job_event.read`` 需要的完整读面:投影 + 谓词列。派发身份能跑那条语句,就是这份读面完整
+#: 的定义;``JOB_EVENT_PRIVILEGES`` 从这里派生,不再手写第三份列清单。
+JOB_EVENT_READ_COLUMNS: tuple[str, ...] = (
+    *JOB_EVENT_SELECT_COLUMNS,
+    *JOB_EVENT_READ_FILTER_COLUMNS,
+)
 
 #: 事件追加的列:``job_event.insert`` 逐字如此。
 JOB_EVENT_INSERT_COLUMNS: tuple[str, ...] = JOB_EVENT_COLUMNS
 
 #: 事件表的权限面。事件是只追加的事实,所以这里**没有** ``UPDATE`` 与 ``DELETE``。
 JOB_EVENT_PRIVILEGES: dict[str, tuple[str, ...]] = {
-    "SELECT": JOB_EVENT_SELECT_COLUMNS,
+    "SELECT": JOB_EVENT_READ_COLUMNS,
     "INSERT": JOB_EVENT_INSERT_COLUMNS,
 }
 
 # ``INSERT`` 就是整行(``job_event.insert`` 写四个声明列),所以它按构造覆盖声明面,不可能缺列;
-# 会漂的只有读者投影 —— 列改名而投影没跟上时,第一条续读以 ``42703`` 失败。这条断言把那个
-# 漂移挪到导入期,而不是等到事件读路径上线之后。
-assert set(JOB_EVENT_SELECT_COLUMNS) <= set(JOB_EVENT_COLUMNS), (
-    "the reader projects a column the declaration does not have; renaming a column here "
-    "without updating the projection fails the first event read with an undefined column"
+# 会漂的只有读面 —— 投影列改名而语句没跟上时,第一条续读以 ``42703`` 失败;谓词列没授时,
+# 第一条续读以 ``42501`` 失败。这条断言把两种漂移都挪到导入期。
+assert set(JOB_EVENT_READ_COLUMNS) <= set(JOB_EVENT_COLUMNS), (
+    "the reader grants a column the declaration does not have; renaming a column here "
+    "without updating the projection or the predicate fails the first event read"
+)
+
+assert set(JOB_EVENT_PRIVILEGES["SELECT"]) == set(JOB_EVENT_READ_COLUMNS), (
+    "the SELECT grant must be exactly the read surface: a projection-only grant fails the "
+    "first resume with 42501 because job_event.read filters on job_id"
 )
 
 assert set(JOB_EVENT_PRIVILEGES) == {"SELECT", "INSERT"}, (
@@ -135,7 +165,12 @@ def _checked(schema: str, role: str) -> tuple[str, str]:
 def job_event_grants(schema: str, role: str) -> tuple[str, ...]:
     """``job_events`` 自己的运行授权面:事件追加与续读,只有这两件事。
 
-    S1 的事件写者只需要这一份:``INSERT`` 四列(整行就是声明本身),``SELECT`` 三个投影列。
+    S1 的事件写者只需要 ``INSERT`` 四列(整行就是声明本身)。续读(S2 起)要的是
+    ``JOB_EVENT_READ_COLUMNS``:投影三列**加** ``job_id``。少了 ``job_id`` 这条读面是不完整的
+    —— 列级 ``SELECT`` 只授投影时,``job_event.read`` 的 ``WHERE job_id = ?`` 会让整条语句以
+    ``42501`` 失败,而报错不点名缺哪列。``job_id`` 属于读面而不是投影,所以它单独声明、
+    由同一份判据对着语句文本核对。
+
     列级授权(不是表级)是刻意的:表级 ``SELECT`` 会随新列悄悄变宽,而读者能读哪几列是这条路径
     的公开面。事件表上**没有** ``UPDATE``/``DELETE`` —— 事件是只追加的事实。
 
@@ -179,6 +214,8 @@ __all__ = [
     "JOB_EVENT_INSERT_COLUMNS",
     "JOB_EVENT_PRIMARY_KEY",
     "JOB_EVENT_PRIVILEGES",
+    "JOB_EVENT_READ_COLUMNS",
+    "JOB_EVENT_READ_FILTER_COLUMNS",
     "JOB_EVENT_SELECT_COLUMNS",
     "JOB_EVENT_TABLE",
     "OUTBOX_DELIVERED_AT_COLUMN",

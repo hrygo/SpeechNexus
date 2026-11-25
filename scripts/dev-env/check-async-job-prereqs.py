@@ -237,6 +237,13 @@ DISPATCH_WRITE_PROBES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         "INSERT",
         ("job_id", "event_seq", "event_digest", "payload_ref"),
     ),
+    # S2 的读翻转:续读按 ``job_id`` 过滤,所以列级 SELECT 必须覆盖投影列与谓词列。
+    # 少了这一项,漏放授权的部署会在第一条 SSE 读上以 42501 失败,而不是在启动时。
+    (
+        "job_events",
+        "SELECT",
+        ("event_seq", "event_digest", "payload_ref", "job_id"),
+    ),
     (
         "speech_job_cancellation_not_submitted",
         "INSERT",

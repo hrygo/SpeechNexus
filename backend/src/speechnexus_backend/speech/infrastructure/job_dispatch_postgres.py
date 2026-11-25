@@ -25,8 +25,10 @@ canonical ever will — the creation row at ``event_seq`` 0, whose digest lives 
 ``coordination_jobs.initial_event_digest`` and on the outbox row instead — so the two
 sequences are not the same sequence, and ``event_digest`` covers ``event_seq``: a digest
 computed over a draft number would describe a different fact and could never be
-reconciled with the canonical row. Reads stay on the draft table until S2; the canonical
-row is a shadow that the reconciliation checks compare row by row.
+reconciled with the canonical row. Since S2 the durable event stream reads canonical: the
+canonical row decides which facts exist, and the draft row for the same ``(job_id, event_seq)``
+only supplies the projection columns canonical does not store. The draft is still written
+because that projection has no canonical source; ``canonical_event_read`` is the read side.
 
 **A Job with no ``coordination_jobs`` row is refused, not skipped.** ``job_events.job_id``
 references that row, so a started fact belonging to no coordination identity has no legal
@@ -229,9 +231,10 @@ def _append_canonical_event(
 ) -> None:
     """同事务追加一条 canonical ``job_events`` 事实(S1 事件双写的写侧)。
 
-    这是**第二条表示**,不是第二个权威:读路径仍在草案 ``speech_job_events`` 上,草案序号仍由
-    ``_next_event_seq`` 的 ``MAX+1`` 决定。两条表示在同一笔事务里写,所以不存在「一侧写了另一侧
-    没写」的中间态;canonical 侧的失败(例如缺列、越权)会把整个迁移一起回滚。
+    这是**第二条表示**,不是第二个权威:草案序号仍由 ``_next_event_seq`` 的 ``MAX+1`` 决定,
+    两条表示在同一笔事务里写,所以不存在「一侧写了另一侧没写」的中间态;canonical 侧的失败
+    (例如缺列、越权)会把整个迁移一起回滚。S2 之后 canonical 是**读**的权威(事实集、顺序与
+    摘要),草案退为投影来源 —— 它仍然要写,因为 ``state``/``kind``/``progress_*`` 只有它有。
 
     语句与列清单都不在这里重写:读取复用 ``claims.STATEMENTS["job.event_head"]``(同一条
     ``SELECT ... FOR UPDATE``,``append_event`` 用的也是它),写入复用
@@ -274,8 +277,10 @@ def _append_canonical_event(
 #:
 #: * S1 期间(本修订之前)写入的 Job:``_mark_running`` 当时只写草案事件,canonical 侧那条
 #:   started 永远补不上 —— ``adopt_historical_events`` 对已有事件的 Job 直接拒绝,一次性
-#:   回填不是修补手段。它们**按设计**有缺口,所以在读路径切到 canonical(S2)之前必须能被
-#:   点名,否则「历史 Job 缺 started」会被当成一次写入失败,或者更糟:被 SSE 续读当成常态。
+#:   回填不是修补手段。它们**按设计**有缺口,所以必须能被点名,否则「历史 Job 缺 started」
+#:   会被当成一次写入失败,或者更糟:被 SSE 续读当成常态。S2 之后这条读路径已经切到
+#:   canonical,缺口 Job 的流会少掉 started 那一帧(而不是退回去读草案),所以部署读翻转之前
+#:   必须先把这批 Job 处理掉 —— 这份清单就是那个前置检查。
 #: * 以及任何「有草案 started、canonical 一条事件都没有」的 Job(手工数据、半迁移库)。
 #:
 #: ``reason`` 区分两种成因:``no-coordination-row`` 是根本没有父行(``_mark_running`` 拒绝
@@ -310,11 +315,10 @@ def started_event_gaps(connection: SpeechConnection) -> tuple[str, ...]:
     ``no-canonical-event`` 的处置不同)。
 
     **这是运维读,不是运行期读**:调用方给的是切换演练用的 owner DSN,与
-    ``scripts/dev-env/portable-reconcile.py`` 的 ``--dsn`` 同一口径。派发身份**跑不了**它 ——
-    ``job_event_grants`` 只授了 ``SELECT (event_seq, event_digest, payload_ref)``,而这条查询
-    要在 ``job_events.job_id`` 上过滤,列级授权里没有 ``job_id``。这个缺口属于 S2(S1 起就
-    存在:``job_event.read`` 也按 ``job_id`` 过滤,所以读翻转之前必须先补授这一列),
-    本切片不靠它修,只把它记在报告里。
+    ``scripts/dev-env/portable-reconcile.py`` 的 ``--dsn`` 同一口径。派发身份从 S2 起**也能**
+    跑它 —— ``job_event_grants`` 的列级 ``SELECT`` 已经补上 ``job_id``(读翻转与这条授权在
+    同一提交里落地,否则 ``job_event.read`` 一上线就以 ``42501`` 失败)。它仍然定位成运维读,
+    理由是用途不是权限:运行期不该为了「有没有缺口」多扫一遍事件表。
     """
 
     rows = connection.execute(STARTED_EVENT_GAPS).fetchall()

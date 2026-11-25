@@ -59,6 +59,10 @@ from speechnexus_backend.speech.domain.publications import (
 )
 from speechnexus_backend.speech.infrastructure.admission_sql import admit_in_transaction
 from speechnexus_backend.speech.infrastructure.binding_disable_barrier import lock_binding
+from speechnexus_backend.speech.infrastructure.canonical_event_read import (
+    CanonicalJobEvent,
+    read_job_events,
+)
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence import (
     lock_cancellation_fence,
     write_cancellation_fence,
@@ -88,6 +92,15 @@ _LATEST_PROGRESS = (
     "(SELECT e.progress_{column} FROM speech_job_events AS e "
     "WHERE e.job_id = j.job_id AND e.kind = 'progress' "
     "ORDER BY e.event_seq DESC LIMIT 1) AS latest_progress_{column}"
+)
+#: 草案事件的投影页。canonical ``job_events`` 只有 ``(event_seq, event_digest, payload_ref)``,
+#: 摘要覆盖 ``state``/``occurred_at``/``kind``/``progress_*`` 但**不可逆**(计划 §3.4),所以
+#: 这几个列只能来自草案行。canonical 决定的是「哪几条事件存在、顺序如何、身份是什么」;
+#: 本语句只负责把它们投影成线路形状。``job_id`` 由调用方校验后绑定,不在这里拼进 SQL。
+_DRAFT_EVENT_PAGE = (
+    "SELECT event_seq, state, occurred_at_us, kind, progress_unit, "
+    "progress_completed, progress_total FROM speech_job_events "
+    "WHERE job_id = ? AND event_seq > ? ORDER BY event_seq ASC"
 )
 _JOB_COLUMNS = (
     "j.job_id, j.workspace_id, j.kind, j.model_id, j.request_digest, j.state, "
@@ -407,27 +420,49 @@ class PostgresPublicJobs:
             raise PublicJobUnavailableError from None
 
     def events(self, job_id: str, *, after_seq: int, limit: int) -> tuple[JobEventFact, ...]:
-        """Read one ordered page of persisted events strictly after a sequence."""
-        rows = self._read(
-            "SELECT event_seq, state, occurred_at_us, kind, progress_unit, "
-            "progress_completed, progress_total FROM speech_job_events "
-            "WHERE job_id = ? AND event_seq > ? ORDER BY event_seq ASC",
-            (identifier(job_id), after_seq),
-            page_size=limit,
-        )
+        """Read one ordered page of persisted events strictly after a sequence.
+
+        **canonical 决定事实集。** ``job_events`` 回答「这个 Job 有哪些事件、顺序如何、身份
+        (摘要)是什么」;``speech_job_events`` 里同一 ``(job_id, event_seq)`` 的行只提供
+        canonical 没有的投影列(``state``/``occurred_at_us``/``kind``/``progress_*``)。所以
+        草案多出来的行不再被发出,canonical 缺投影则视为存储损坏。
+
+        两个例外仍然读草案,理由都是 canonical 按设计不存那条事实:
+
+        * ``event_seq`` 0 的创建事实。它的摘要落在 ``coordination_jobs.initial_event_digest``
+          与 outbox 行上,``job_events`` 永远没有它 —— 这也是线路 ``id`` 1 的唯一来源;
+        * 一条 canonical 事件都没有的 Job。那是 S1b 之前 ``_mark_running`` 只写草案留下的
+          形状,``started_event_gaps`` 会点名它;修好之前草案仍是唯一来源,读路径不该把它变成
+          空流。
+
+        两段读在同一笔只读快照里:canonical 与草案由写者在同一笔事务里提交,分开读会让一页
+        跨两个快照。页大小仍然不进 SQL(方言没有 ``LIMIT``),多取一行是因为草案比 canonical
+        多一条创建事实。
+        """
+
+        identity = identifier(job_id)
+        deadline = time.monotonic() + self._timeout
         try:
-            return tuple(
-                JobEventFact(
-                    event_seq=int(row["event_seq"]),
-                    state=row["state"],
-                    occurred_at_us=int(row["occurred_at_us"]),
-                    kind=row["kind"],
-                    progress=_progress(row),
+            with self._transaction(deadline) as connection:
+                connection.read_only_snapshot()
+                canonical = read_job_events(connection, job_id=identity, after_seq=after_seq)
+                rows = connection.execute(_DRAFT_EVENT_PAGE, (identity, after_seq)).fetchmany(
+                    limit + 1
                 )
-                for row in rows
-            )
-        except ValueError, TypeError, KeyError:
-            raise PublicJobUnavailableError from None
+                if time.monotonic() >= deadline:
+                    raise PublicJobUnavailableError
+                facts = _project_events(canonical, rows, after_seq=after_seq, limit=limit)
+        except (
+            psycopg.Error,
+            PoolClosed,
+            PoolTimeout,
+            TooManyRequests,
+            ValueError,
+            TypeError,
+            KeyError,
+        ) as error:
+            raise PublicJobUnavailableError(_unavailable_detail(error)) from None
+        return facts
 
     def artifact(self, workspace_id: str, artifact_id: str) -> JobArtifactFact | None:
         """Read one committed Artifact row; absence is explicit."""
@@ -1546,6 +1581,52 @@ def _progress(row: dict[str, Any]) -> JobProgressFact | None:
         completed=int(row["progress_completed"]),
         total=None if row["progress_total"] is None else int(row["progress_total"]),
     )
+
+
+def _event_fact(row: dict[str, Any]) -> JobEventFact:
+    """One draft projection row as the declared event fact."""
+
+    return JobEventFact(
+        event_seq=int(row["event_seq"]),
+        state=row["state"],
+        occurred_at_us=int(row["occurred_at_us"]),
+        kind=row["kind"],
+        progress=_progress(row),
+    )
+
+
+def _project_events(
+    canonical: tuple[CanonicalJobEvent, ...],
+    rows: list[dict[str, Any]],
+    *,
+    after_seq: int,
+    limit: int,
+) -> tuple[JobEventFact, ...]:
+    """Combine the canonical fact set with the draft projection rows of one page.
+
+    Membership and order come from ``canonical``; ``rows`` only supplies the columns
+    canonical does not store. The two shapes that stay draft-sourced are named in
+    ``PostgresPublicJobs.events``: the creation fact at ``event_seq`` 0 and a Job
+    with no canonical event at all.
+    """
+
+    if not canonical:
+        # 没有 canonical 事件的 Job(S1b 之前的形状):草案仍是唯一来源。发出全部草案行
+        # 而不是空流 —— 否则一次数据缺口会以「这个 Job 从没发生过任何事」的样子出现。
+        return tuple(_event_fact(row) for row in rows[:limit])
+    projection = {int(row["event_seq"]): row for row in rows}
+    facts: list[JobEventFact] = []
+    # 创建事实:canonical 按设计没有 ``event_seq`` 0,而线路 ``id`` 1 只能由它产生。
+    creation = projection.get(0) if after_seq < 0 else None
+    if creation is not None:
+        facts.append(_event_fact(creation))
+    for event in canonical[:limit]:
+        row = projection.get(event.event_seq)
+        if row is None:
+            # canonical 说这条事实存在,草案却没有它的投影:不是「少一帧」,是两处不一致。
+            raise PublicJobUnavailableError
+        facts.append(_event_fact(row))
+    return tuple(facts)
 
 
 def _artifact(row: dict[str, Any]) -> JobArtifactFact | None:

@@ -364,7 +364,7 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 | `binding_publication_grants` | `publication_lifecycle_schema.py` | 未变（同文件，DDL 的 `::` 改为 `CAST`） |
 | `settlement_worker_grants` | `settlement_worker_verifier.py` | **变**：末尾追加 `coordination_keyed_lock_grants` 的四条（`USAGE`、`SELECT (bucket_no)`、`INSERT (bucket_no)`、`UPDATE (version)`），见第 8 条 |
 | `job_dispatch_grants` | `job_schema.py` | **变**：末尾追加 `coordination_keyed_lock_grants` 的四条（`USAGE`、`SELECT (bucket_no)`、`INSERT (bucket_no)`、`UPDATE (version)`），见第 6 条；S1 起再追加 `job_event_grants` 与 `coordination_jobs` 的 `UPDATE (last_event_seq)`，见第 9 条 |
-| `job_event_grants` | `canonical_event_schema.py` | **新增**：`job_events` 的 `USAGE`、按列 `SELECT (event_seq, event_digest, payload_ref)` 与 `INSERT (job_id, event_seq, event_digest, payload_ref)`；S1 起由 `job_dispatch_grants` 调用，见第 9 条 |
+| `job_event_grants` | `canonical_event_schema.py` | **新增**：`job_events` 的 `USAGE`、按列 `SELECT (event_seq, event_digest, payload_ref, job_id)` 与 `INSERT (job_id, event_seq, event_digest, payload_ref)`；S1 起由 `job_dispatch_grants` 调用，见第 9 条。S2 给 `SELECT` 补上谓词列 `job_id`，读面从 `JOB_EVENT_PRIVILEGES` 派生，见第 10 条 |
 | `coordination_keyed_lock_grants` | `coordination_keyed_lock_schema.py` | **新增**，见第 6 条 |
 | `gateway_keyed_lock_grants` | `gateway_query_grants.py` | **新增**，见第 6 条 |
 | `gateway_query_grants` | `gateway_query_grants.py` | 未变（同文件被改，函数体没动；只读读者的授权面由 `reader_authority.py` 逐列核对，本次没有扩它） |
@@ -828,10 +828,11 @@ SCRIPT
 S1 起进度迁移与终态迁移、S1b 起 started 迁移（`_mark_running`）在同一笔事务里额外追写一行
 canonical `job_events`，并把 `coordination_jobs.last_event_seq` 推进到新序号。需要的权限全部由
 `job_dispatch_grants` 声明（第 6 条那个重放脚本的入参没变，直接重跑即可）：`job_event_grants`
-给的 `USAGE`、`SELECT (event_seq, event_digest, payload_ref)`、
+给的 `USAGE`、`SELECT (event_seq, event_digest, payload_ref, job_id)`、
 `INSERT (job_id, event_seq, event_digest, payload_ref)`，以及 `coordination_jobs` 的
 `UPDATE (last_event_seq)` —— 只有这一列，`claim_version` 不在此列，事件双写不会推进租约栅栏。
 S1b 不新增授权面，也不新增列，所以这一节对 S1b 部署是「无操作」：同样的重放脚本、同样的入参。
+**S2 之后必须重放一次**：读面从投影三列扩到四列（多了谓词列 `job_id`），见第 10 条。
 
 漏重放不会挡住进程启动，只在**领取之后第一次 started / 进度 / 终态迁移**处炸：
 `psycopg.errors.InsufficientPrivilege: permission denied for table job_events`（SQLSTATE
@@ -858,12 +859,12 @@ owner DSN 跑它（与 `portable-reconcile.py --dsn` 同口径）。它们不是
 回退：重放旧版 `job_dispatch_grants`（不含这两组授权）即可，已写下的 canonical 影子行留着 ——
 没有读者，S2 之前不需要清理。
 
-**已知缺口（S2 之前必须补）**：`job_event_grants` 的列级 `SELECT` 只有
+**S1b 实测到的读缺口，S2 已闭合**：`job_event_grants` 的列级 `SELECT` 原本只有
 `(event_seq, event_digest, payload_ref)`，而 `claims.STATEMENTS["job_event.read"]` 在
 `job_events.job_id` 上过滤。实测（2026-11-25，本机 PostgreSQL 18.6，非属主身份）：以派发身份
 原样执行那条读语句得到 `psycopg.errors.InsufficientPrivilege: permission denied for table
-job_events`（`42501`）。S2 是第一次真正使用那条语句的阶段，所以把 `job_id` 补进授予面与读翻转
-必须在同一提交里，否则新读路径一上线就以 `42501` 失败。
+job_events`（`42501`）。S2 是第一次真正使用那条语句的阶段，所以补授 `job_id` 与读翻转在同一
+提交里落地，见第 10 条。
 
 核实：**实跑**（2026-11-25，本机 PostgreSQL 18.6，非属主身份，`SPEECHNEXUS_TEST_DATABASE_URL`）：
 `tests/integration/test_canonical_event_double_write_pg.py` 以真实授权身份跑
@@ -872,6 +873,56 @@ job_events`（`42501`）。S2 是第一次真正使用那条语句的阶段，�
 并在 `job_events` 被改名后确认公开 Job、草案事件与事件头都不前进。**未实测**：真实部署上漏
 重放的告警先后（启动门禁 vs 首次写入 42501）；真实生产库里是否真的存在只有公开行的 Job
 （这一轮只证明它进不了派发队列，没有查过任何生产库）。
+
+### 10. S2：durable 事件流改读 canonical，并补授 `job_id`
+
+`GET /v1/nexus/jobs/{job_id}/events` 的**事实集、顺序与摘要**改由 canonical `job_events` 决定
+（`claims.STATEMENTS["job_event.read"]`，没有新 SQL）。草案 `speech_job_events` 只保留两件
+canonical 按设计不存的东西：
+
+- 投影列 `state`/`occurred_at_us`/`kind`/`progress_*`。`event_digest` 覆盖它们但摘要**不可逆**
+  （计划 §3.4），所以从 canonical 行读不出这些值；
+- 创建事实 `event_seq` 0。它的摘要落在 `coordination_jobs.initial_event_digest` 与 outbox 行上，
+  `job_events` 永远没有这一行 —— 线路 `id` 1 只由它产生。
+
+**canonical 决定成员，这一点是可证伪的**：删掉一条 canonical 行之后，流里对应的那一帧消失
+（`test_canonical_event_read_pg.py::test_canonical_decides_which_facts_the_stream_emits`）；
+反过来，canonical 有、草案没有投影是存储不一致，读路径以 `503 job_unavailable` 拒绝，不静默
+少一帧。一条 canonical 事件都没有的 Job（S1b 之前的形状）整页仍读草案 —— 修好之前草案是唯一
+来源，读路径不该把它变成空流。这批 Job 由 `started_event_gaps()` 点名，**部署读翻转之前必须
+先处理**：S2 之后它们的流会少掉 started 那一帧，而不是退回去读草案。
+
+`Last-Event-ID` 的口径没变：线路 `id` 仍是 `event_seq + 1`，最小合法值是 1，`0` 与 `-1` 在
+HTTP 边界就是 `400 invalid_job_request`；没有游标等价于从最早事实读起。存了 `id` 1 的客户端
+续读从 2 开始，既不重复也不丢帧（创建事实仍由草案提供）。
+
+**授权面**：`SELECT` 从投影三列扩到 `(event_seq, event_digest, payload_ref, job_id)`。`job_id`
+只出现在 `WHERE`，但列级授权不覆盖谓词列时 PostgreSQL 会拒绝整条语句 —— 所以读翻转与补授在
+同一提交。唯一定义点是 `canonical_event_schema.JOB_EVENT_PRIVILEGES`：投影
+（`JOB_EVENT_SELECT_COLUMNS`）与谓词列（`JOB_EVENT_READ_FILTER_COLUMNS`）分开声明，`SELECT`
+授予面从两者派生，谓词列由 `tests/ci/test_canonical_event_statement_parity.py` 对着语句文本
+逐项核对，注入即红。
+
+核实：**实跑**（2026-11-25，本机 PostgreSQL 18.6，`SPEECHNEXUS_TEST_DATABASE_URL`，
+`tests/integration/test_canonical_event_read_pg.py`，非属主身份）：
+
+- 完整生命周期（started → 两条进度 → 终态）之后，流式读者给出 `id` 1..5
+  （`job.queued`/`job.started`/`job.progress`×2/`job.failed`），canonical 侧的
+  `(event_seq, digest)` 与按草案行字段重算的摘要逐条相等，序号 `1..4` 无缺口；
+- 删掉 canonical `event_seq = 2` 后流变成 `1,2,4,5`，写回后恢复；
+- 读语句以非属主身份成功执行，`information_schema.columns` 显示可读列恰好是声明的读面
+  （不是表级 `SELECT`），`pg_has_role(current_user, relowner, 'MEMBER')` 为假；
+- `payload_ref` 全为 `NULL`，线路帧里没有这个字段。
+
+**注入实测**：(a) 把列级 `SELECT` 退回投影三列 → 同一条读语句以
+`psycopg.errors.InsufficientPrivilege: permission denied for table job_events`（SQLSTATE
+`42501`）失败，流式读者也一起红；(b) 把 canonical 事件的 `occurred_at` 写成会话本地时间
+（`datetime.fromtimestamp(...)`，去掉 UTC 折叠）→ 摘要对账用例红
+（`(1, 'sha256:6126...') != (1, 'sha256:b749...')`）。
+
+**未实测**：真实部署上重放授权的告警先后（启动门禁 vs 首次读 42501）—— `deploy/job-startup-gate.py`
+只核对 `job_events` 的 `INSERT` 与 `last_event_seq` 的 `UPDATE`，没有核对这条 `SELECT` 的谓词列，
+所以漏重放会以首次读的 42501 显形；这一轮没有加门禁探针。
 
 ## 边界澄清（行为未变）
 

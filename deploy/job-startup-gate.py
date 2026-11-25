@@ -82,6 +82,7 @@ from speechnexus_backend.speech.domain.lane_selection import resident_tts_varian
 from speechnexus_backend.speech.infrastructure.artifact_schema import ARTIFACT_INSERT_COLUMNS
 from speechnexus_backend.speech.infrastructure.canonical_event_schema import (
     JOB_EVENT_INSERT_COLUMNS,
+    JOB_EVENT_READ_COLUMNS,
     JOB_EVENT_TABLE,
 )
 from speechnexus_backend.speech.infrastructure.coordination_grants import SPEECH_UPDATES
@@ -160,6 +161,9 @@ DISPATCH_WRITE_SURFACE: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     # S1 的影子写:同一笔事务里追加 canonical 事件行。列清单取自
     # ``canonical_event_schema`` 的唯一声明,不在这里复制。
     (JOB_EVENT_TABLE, "INSERT", JOB_EVENT_INSERT_COLUMNS),
+    # S2 的读翻转:流式续读按 ``job_id`` 过滤,所以读面的列级授权与写面同等必需。
+    # 少了这一项,一次漏放授权的部署会在**第一条 SSE 读**上以 42501 失败,而不是在启动时。
+    (JOB_EVENT_TABLE, "SELECT", JOB_EVENT_READ_COLUMNS),
     (
         "speech_job_cancellation_not_submitted",
         "INSERT",

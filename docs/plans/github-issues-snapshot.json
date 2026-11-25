@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-21T11:37:01Z",
+  "fetched_at": "2026-11-26T01:10:45+08:00",
   "issues": [
     {
       "number": 336,
@@ -1274,16 +1274,6 @@
       "parent_issue_url": null
     },
     {
-      "number": 1079,
-      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1079",
-      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "参考部署有合格音色时 api 起不来：结算 worker 只接受 loopback 明文，而 compose 给的是 http://gateway:8010",
-      "state": "open",
-      "state_reason": null,
-      "labels": [],
-      "parent_issue_url": null
-    },
-    {
       "number": 1084,
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/1084",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
@@ -1383,8 +1373,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/1094",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "冻结首发 PostgreSQL 可移植数据契约、受限数据库方言与 ODBC 边界",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [
         {
           "name": "type:work-package"
@@ -1400,8 +1390,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/1095",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "实现 claim bucket、bucket fencing 与 Job SSE event_seq",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [
         {
           "name": "type:work-package"
@@ -1417,8 +1407,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/1096",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "实现 PostgreSQL 首发持久 budget grant、锁后时间探针与幂等回收",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [
         {
           "name": "type:work-package"
@@ -1434,8 +1424,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/1097",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "实现实时本地 credit、崩溃恢复证据、精确 usage 与实时 SLO 资格",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [
         {
           "name": "type:work-package"
@@ -1451,8 +1441,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/1100",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "将现有 PostgreSQL 专用数据访问收敛到 canonical 数据契约",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [
         {
           "name": "type:work-package"
@@ -1496,6 +1486,190 @@
         }
       ],
       "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/342"
+    },
+    {
+      "number": 1176,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1176",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "生产派发链路改接 canonical 表与 claims 原语（消掉 48 条基线与草案表双写）",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": null
+    },
+    {
+      "number": 1213,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1213",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "键锁两族取锁顺序相反,同桶碰撞下可能死锁",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": null
+    },
+    {
+      "number": 1217,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1217",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "精确表集合用例用 12 个手写集合,应改为从 schema 模块派生",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": null
+    },
+    {
+      "number": 1224,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1224",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "把 runtime 投递切到 canonical delivered_at,然后退役 outbox.delivered_at_us",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": null
+    },
+    {
+      "number": 1225,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1225",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "定 due_at 回填策略后收紧 NOT NULL(0001 时代无时间来源的行)",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": null
+    },
+    {
+      "number": 1229,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1229",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "算力面 compose 依赖既不入库也不生成的私有文件，装配无法从仓库重建",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": null
+    },
+    {
+      "number": 1230,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1230",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "schema 升级后没有刷权限的路径：provision-roles.py 只能首装，Job 角色还在第二个脚本",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": null
+    },
+    {
+      "number": 1231,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1231",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "workbench 迁移在 HEAD 上必然失败：用 ? 占位符配裸 psycopg 连接",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": null
+    },
+    {
+      "number": 1234,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1234",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "常驻 dispatch 认领要 115s，admission deadline 只有 120s：结构上永远擦边，且自阻塞",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/338"
+    },
+    {
+      "number": 1235,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1235",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "取消未提交执行的 Job 会永久泄漏预留容量，之后所有 create 429",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/338"
+    },
+    {
+      "number": 1238,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1238",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "应用面清单硬编码镜像 sha，每次升级要手工改 12 处且必漏",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": null
+    },
+    {
+      "number": 1241,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1241",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "驱动观察到的 quarantine 原因不落库、不进接口：「为什么没起来」到不了运维",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/338"
+    },
+    {
+      "number": 1244,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1244",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "同一镜像在 docker 与 containerd 下 digest 不同：批准的 image_digest 不是运行时可移植的身份",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/338"
+    },
+    {
+      "number": 1245,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1245",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "engine_state_mismatch 把三种内部拒绝折叠成「重新注册」：应用面当前建不出任何 Job，且重新注册无效",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/338"
+    },
+    {
+      "number": 1246,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1246",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "就绪判定有两份实现：CLI 说 valid、HTTP 说 invalid，而建 Job 走 HTTP（当前所有 create 503）",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/338"
+    },
+    {
+      "number": 1248,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1248",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "派发前过期的 Job 永久泄漏准入租约：held_* 计数器不降反把平台锁成 engine_state_mismatch",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/338"
+    },
+    {
+      "number": 1250,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1250",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "派发器部署在算力面跨隧道 claim：一轮 115 s 撞上 120 s 准入截止，且长事务把其他 claim 串行化",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/338"
+    },
+    {
+      "number": 1253,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1253",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "引擎切成 Pod 后就绪续租不可达：约 23 h 后回执耗尽，准入会静默转成 invalid",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/338"
     }
   ]
 }

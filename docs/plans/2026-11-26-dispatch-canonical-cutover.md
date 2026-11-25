@@ -367,7 +367,7 @@ canonical 自己带上这些列(需要一次真正的 DDL 决策,不在本计划
 
 | 回退到 | 仍必须可读 | 不能做的 | 证据 |
 | --- | --- | --- | --- |
-| S2 之后（事件已翻读） | canonical `job_events` 行、`last_event_seq`、草案 `speech_job_events` | 不能走 alembic `downgrade`：`0065` 的 downgrade 把 `last_event_seq` 归零（`0065:185`），而它当初安全的理由是「这一列没有任何读取者」（`0065:53-55`）——S2 之后这个前提不成立 | 回退＝读路径回切 + 保留列；对账仍按 `portable-reconcile.py` 的逐字段口径 |
+| S2 之后（事件已翻读） | canonical `job_events` 行、`last_event_seq`、草案 `speech_job_events` | 不能走 alembic `downgrade`。**两道墙，顺序是实测的**：从 head 回退先撞 `0070`（单向步骤直接 `raise`）；停在 `0069` 及更早的库可以降到 `0065`，那时 `last_event_seq` 被归零（`0065:185`），而它当初安全的理由是「这一列没有任何读取者」（`0065:53-55`）——S2 之后这个前提不成立。只记住第一道墙会让人以为「删掉 0070 的检查就能退」 | 回退＝读路径回切 + 保留列；对账仍按 `portable-reconcile.py` 的逐字段口径。四条路径全部由 `tests/integration/test_rollback_rehearsal_pg.py` 在真库上演练，含一次 `pg_dump`/`pg_restore` 备份恢复 |
 | S5 之后（epoch 列已删） | canonical 侧全部事实；`coordination_outbox.delivered_at_us` 因为**没有**被删,投递 ACK 仍按它判定 | 没有 alembic `downgrade`：`0070.downgrade` 直接 `raise`，删列不可逆 | 只有备份恢复；`0064`/`0065` 的重跑以 42703 失败（实测），所以「重跑迁移」不是回退路径 |
 | S1 之后（已双写） | 草案 `speech_job_events`（旧读路径的唯一来源）、草案 `claim_expires_at_us` | 不能「重跑搬迁」：`adopt_historical_events` 对已有事件的 Job 直接拒绝（`packages/portable-sql/src/speechnexus_portable_sql/claims.py:1051-1052`），一次性回填不是修补手段 | 回退后重跑必须**被拒绝**，这正是「没有半成品」的形状 |
 | S4 之前（约束未收紧） | `claim_expires_at`（canonical 权威）、`bucket_no`/`due_at`（可空） | 不能把 canonical 租约擦成 NULL：`0065` 的回填是 fill-if-null（`0065:75-78`），就是为了不擦在飞租约 | `0065:102-118` 的四条对账语句在每次 upgrade 时由 `0065:160-174` 调用 |

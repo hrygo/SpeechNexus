@@ -80,6 +80,10 @@ from speechnexus_backend.job_dispatch_runtime import (
 from speechnexus_backend.speech.domain.job_dispatch import DISPATCHABLE_JOB_KIND_UNION
 from speechnexus_backend.speech.domain.lane_selection import resident_tts_variant_findings
 from speechnexus_backend.speech.infrastructure.artifact_schema import ARTIFACT_INSERT_COLUMNS
+from speechnexus_backend.speech.infrastructure.canonical_event_schema import (
+    JOB_EVENT_INSERT_COLUMNS,
+    JOB_EVENT_TABLE,
+)
 from speechnexus_backend.speech.infrastructure.coordination_grants import SPEECH_UPDATES
 from speechnexus_portable_sql.markers import qmark_to_pyformat
 
@@ -129,7 +133,15 @@ DISPATCH_WRITE_SURFACE: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "coordination_jobs",
         "UPDATE",
-        ("claim_owner_id", "claim_expires_at", "claim_version", "job_state"),
+        (
+            "claim_owner_id",
+            "claim_expires_at",
+            "claim_version",
+            "job_state",
+            # 事件双写(S1):canonical 事件头的推进列,与 ``claims`` 的
+            # ``job.event_head_update`` 同一列。
+            "last_event_seq",
+        ),
     ),
     (
         "speech_job_events",
@@ -145,6 +157,9 @@ DISPATCH_WRITE_SURFACE: tuple[tuple[str, str, tuple[str, ...]], ...] = (
             "progress_total",
         ),
     ),
+    # S1 的影子写:同一笔事务里追加 canonical 事件行。列清单取自
+    # ``canonical_event_schema`` 的唯一声明,不在这里复制。
+    (JOB_EVENT_TABLE, "INSERT", JOB_EVENT_INSERT_COLUMNS),
     (
         "speech_job_cancellation_not_submitted",
         "INSERT",

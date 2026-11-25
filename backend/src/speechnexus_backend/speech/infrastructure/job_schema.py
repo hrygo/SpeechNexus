@@ -180,14 +180,18 @@ def job_dispatch_grants(schema: str, role: str) -> tuple[str, ...]:
     """Privileges the dispatcher adds on top of the base Job writer.
 
     Kept separate because ``admission_operations`` only exists from migration
-    ``0007_admission_commands`` and ``speech_job_intents`` only from
-    ``0046_public_job_intents``, while ``job_runtime_grants`` is also applied to
+    ``0007_admission_commands``, ``speech_job_intents`` only from
+    ``0046_public_job_intents``, and canonical ``job_events`` only from
+    ``0068_canonical_event_tables``, while ``job_runtime_grants`` is also applied to
     historical revisions (the upgrade sandbox starts at ``0001_jobs``).
     Provisioning applies this set after a full upgrade.
     """
 
     from speechnexus_backend.speech.infrastructure.artifact_schema import (
         artifact_publisher_grants,
+    )
+    from speechnexus_backend.speech.infrastructure.canonical_event_schema import (
+        job_event_grants,
     )
     from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
         cancellation_not_submitted_grants,
@@ -212,6 +216,13 @@ def job_dispatch_grants(schema: str, role: str) -> tuple[str, ...]:
         f'GRANT SELECT ON "{schema}".coordination_claim_buckets TO "{role}"',
         f"GRANT UPDATE (claim_owner_id, lease_until, version) "
         f'ON "{schema}".coordination_claim_buckets TO "{role}"',
+        # 事件双写(S1,计划 §5):进度与终态迁移在同一笔事务里额外追加 canonical
+        # ``job_events`` 行并推进事件头。这两件事各只有一个定义点 —— 事件表的列级
+        # ``SELECT``/``INSERT`` 来自 ``canonical_event_schema.job_event_grants``(本模块只决定
+        # 派发身份持有它),事件头那一列就是 ``claims.STATEMENTS["job.event_head_update"]``
+        # 写的列;``job_runtime`` 的逐列比对拒绝本函数没声明的授权面。
+        *job_event_grants(schema, role),
+        f'GRANT UPDATE (last_event_seq) ON "{schema}".coordination_jobs TO "{role}"',
         # The catalog mutex's lock row. The backend and the execution gateway take
         # the *same* key here, so both roles need the same surface: read the bucket
         # row, lazily create it, and the column-level UPDATE that `FOR UPDATE`

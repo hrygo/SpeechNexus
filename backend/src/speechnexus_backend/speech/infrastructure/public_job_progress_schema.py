@@ -9,6 +9,12 @@ configuration. A terminal Job cannot receive one, and a repeated or decreasing
 value is rejected by the guard rather than stored as a second fact.
 """
 
+#: 事件 ``kind`` 的取值域,0039 的 ``DEFAULT`` 与 ``CHECK`` 都从这两个常量渲染。
+#: canonical 事件摘要覆盖 ``kind``(``claims.EVENT_DIGEST_FIELDS``),而它没有自己的列 ——
+#: 摘要只能按草案行存下来的那个值算,所以写摘要的一侧也从这里取字面量,不另写一份。
+LIFECYCLE_KIND = "lifecycle"
+PROGRESS_KIND = "progress"
+
 EVENTS = "speech_job_events"
 JOBS = "speech_jobs"
 SUBMISSIONS = "speech_job_submissions"
@@ -17,19 +23,19 @@ PROGRESS_GUARD = "speech_job_events_progress_guard"
 
 PUBLIC_JOB_PROGRESS_DDL = (
     f"""ALTER TABLE {EVENTS}
-        ADD COLUMN kind VARCHAR(16) COLLATE "C" NOT NULL DEFAULT 'lifecycle'""",
+        ADD COLUMN kind VARCHAR(16) COLLATE "C" NOT NULL DEFAULT '{LIFECYCLE_KIND}'""",
     f'ALTER TABLE {EVENTS} ADD COLUMN progress_unit VARCHAR(16) COLLATE "C"',
     f"ALTER TABLE {EVENTS} ADD COLUMN progress_completed BIGINT",
     f"ALTER TABLE {EVENTS} ADD COLUMN progress_total BIGINT",
     f"""ALTER TABLE {EVENTS} ADD CONSTRAINT speech_job_events_kind_check
-        CHECK (kind IN ('lifecycle', 'progress'))""",
+        CHECK (kind IN ('{LIFECYCLE_KIND}', '{PROGRESS_KIND}'))""",
     f"""ALTER TABLE {EVENTS} ADD CONSTRAINT speech_job_events_progress_shape_check
         CHECK (
-            (kind = 'lifecycle'
+            (kind = '{LIFECYCLE_KIND}'
              AND progress_unit IS NULL
              AND progress_completed IS NULL
              AND progress_total IS NULL)
-            OR (kind = 'progress'
+            OR (kind = '{PROGRESS_KIND}'
                 AND state = 'running'
                 AND progress_unit IN ('audio_ms', 'text_codepoints', 'items')
                 AND progress_completed IS NOT NULL

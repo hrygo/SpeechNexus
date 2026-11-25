@@ -30,14 +30,12 @@ scope: "#1102 / 2026-11-21-portable-sql-delivery.md §8.75 §8.76 §8.77"
   # 8:``claim_expires_at``; the draft ``claim_expires_at_us`` epoch column is no longer written
   ```
 
-- 仍在 epoch 列上的只剩**第二认领口** `claims_sql.py`（2 条语句，3 行引用），而它**没有生产装配**：
-  `ClaimService` / `ClaimTransactionBoundary` 只被 `tests/unit/test_production_claims.py` 与
-  `tests/integration/test_production_claims.py` 引用，`backend/src` 内无路由、无装配点：
-
-  ```bash
-  grep -rn "ClaimService\|ClaimTransactionBoundary" --include=*.py . | grep -v "\.venv"
-  # 只有 application/claims.py、interfaces/claim_transactions.py 两个定义文件 + 两个测试文件
-  ```
+- 仍在 epoch 列上的只剩**第二认领口**（`claims_sql.py` 的 2 条语句），而它**没有生产装配**：
+  它的唯一导入者是同口的 `claims_postgres.py`，而 `claims_postgres.py` 在全仓没有任何导入者；
+  五个模块（`domain/claims.py`、`application/claims.py`、`interfaces/claim_transactions.py`、
+  `infrastructure/claims_sql.py`、`infrastructure/claims_postgres.py`）只被两个测试文件与
+  一个测试支撑模块引用。S3 已按这条证据整口删除，删除前的入口可达性证明见
+  [§7 前置 E](#7-未验证)与 [§8 复现命令](#8-复现命令)。
 
 **所以 #1102 剩下的不是「把 `_claim()` 换过去」，而是三件事**：事件侧切 canonical、收敛第二认领口、
 退役草案列。决策如下。
@@ -164,12 +162,12 @@ portable 类型、不改 `BUCKETS`（256）、不改 `CLAIM_ROUND_START_BUCKET`�
 | # | 语句 / 位置 | 草案列 | canonical 列 | 换算规则 | 状态 |
 | --- | --- | --- | --- | --- | --- |
 | D1 | `bucket.fence`/`acquire`/`release`（`packages/portable-sql/src/speechnexus_portable_sql/claims.py:100-113`） | 草案无桶表 | `coordination_claim_buckets.*` | 桶号 `bucket_for(job_id)`；256 行由 0066 播种 | 已切 |
-| D2 | `job.reclaim`（`packages/portable-sql/src/speechnexus_portable_sql/claims.py:150-154`） | 无对应语句；到期写在认领谓词里（`claims_sql.py:63`） | `job_state='pending'` + `claim_version = claim_version + 1` | 重领必须涨版本；不涨则旧 owner 的版本 CAS 仍能成功 | 已切 |
+| D2 | `job.reclaim`（`packages/portable-sql/src/speechnexus_portable_sql/claims.py:150-154`） | 无对应语句；草案唯一把「到期」写在认领谓词里的是已被 S3 删除的第二认领口 | `job_state='pending'` + `claim_version = claim_version + 1` | 重领必须涨版本；不涨则旧 owner 的版本 CAS 仍能成功 | 已切 |
 | D3 | `job.claim`（`packages/portable-sql/src/speechnexus_portable_sql/claims.py:146-149`） | `claim_expires_at_us BIGINT`；`job_state` 不动 | `claim_expires_at TIMESTAMP(6)`；`job_state='claimed'` | epoch µs → naive UTC；`0` → `NULL`；状态必须由 `pending` 推到 `claimed` | 已切 |
 | D4 | `job.candidates.lane_admitted`（`packages/portable-sql/src/speechnexus_portable_sql/claims.py:130-138`） | `claim_expires_at_us <= now`（到期即重领） | `job_state = ?` + `due_at <= ?` + keyset | 到期语义移到 D2；候选只回答「哪些 Job 到期可派」 | 已切 |
 | D5 | `job.claimed_view`（`packages/portable-sql/src/speechnexus_portable_sql/claims.py:139-145`） | `speech_jobs.kind/state/status_version/created_at_us` | 同（草案 Job 投影仍是权威） | 无换算；`request_document` 可空，`None → ""` | 已切 |
-| D6 | `claims.read_claim`（`claims_sql.py:27-31`） | `claim_expires_at_us AS expires_at_us` | `claim_expires_at` | 读回微秒需 `to_epoch_us`（naive 按 UTC，`clock.py:60-66`） | 待收敛 |
-| D7 | `claims.claim_in_transaction`（`claims_sql.py:60-65`） | `claim_expires_at_us = ?` 且谓词 `claim_expires_at_us <= ?` | `claim_expires_at = ?`，`job_state='claimed'` | 直换即坏：`NULL <= ?` 求值为 NULL，首次认领永远失败（实测 A） | 待收敛 |
+| D6 | 第二认领口的读回（S3 已删） | `claim_expires_at_us AS expires_at_us` | `claim_expires_at` | 读回微秒需 `to_epoch_us`（naive 按 UTC，`clock.py:60-66`） | 已删 |
+| D7 | 第二认领口的认领裁决（S3 已删） | `claim_expires_at_us = ?` 且谓词 `claim_expires_at_us <= ?` | `claim_expires_at = ?`，`job_state='claimed'` | 直换即坏：`NULL <= ?` 求值为 NULL，首次认领永远失败（实测 A） | 已删 |
 | D8 | Job 写入（`job_writer_columns.py:24-38`） | 无 `bucket_no`、`due_at` | `bucket_no`、`due_at` | `bucket_for(job_id)`；`due_at` 来源 `speech_jobs.created_at_us` | 已切 |
 | D9 | `_mark_running` 事件追加（`job_dispatch_postgres.py:432-434`） | `speech_job_events(event_seq = MAX+1, state, occurred_at_us BIGINT)` | `job_events(event_seq = head+1, event_digest, payload_ref)` + `coordination_jobs.last_event_seq` | 序号取头；`occurred_at` epoch → naive UTC | 待切 |
 | D10 | `_record_progress` 进度事件（`job_dispatch_postgres.py:540-546`） | 同上 + `kind/progress_unit/progress_completed/progress_total` | `job_events` 无进度列，值只能进摘要 | 读者必须从摘要重建进度，不能读列 | 待切 |
@@ -186,12 +184,17 @@ portable 类型、不改 `BUCKETS`（256）、不改 `CLAIM_ROUND_START_BUCKET`�
 在**范围**比较下不等价。真库实测（临时库，跑完即删，命令见 §8 探针 A）：
 
 ```text
-draft  claim_expires_at_us = 0  <= now_us  -> 1
-canon  claim_expires_at IS NULL <= now     -> 0
-canon  谓词求值为 NULL(不是 false)        -> True
+draft  claim_expires_at_us <= now_us  -> 1 row(s)
+canon  claim_expires_at    <= now_ts  -> 0 row(s)
+等值形  draft `= 0` -> 1 | canon `IS NULL` -> 1
+范围形  `NULL <= now` IS NULL -> True | 值 -> None
+直换后的 UPDATE rowcount -> 0
 ```
 
-后果分两面：把 `claims_sql.claim_in_transaction` 的谓词按字面换列，**首次认领永远失败**
+（S3 交付时按两种真实列形状——`job_schema.py` 的 `BIGINT NOT NULL DEFAULT 0` 与
+`0003_portable_claim_buckets.sql` 的 `TIMESTAMP(6)`——在隔离 PG 上复测过同一组读数。）
+
+后果分两面：把草案认领谓词按字面换列（第二认领口已随 S3 删除，但同一个字面换法仍能落在 `job.claim`/`job.reclaim` 上），**首次认领永远失败**
 （三值逻辑里 `NULL <= ?` 是 unknown，`rowcount=0`），而且失败形态是「认领不到」而不是异常——最安静
 的那种坏。反过来，如果把 `NULL` 当成 `0` 用 `coalesce` 兜成纪元，`claim_expires_at` 就会带上一个
 假事实（「1970 年到期」），后续 `job.reclaim` 会把它当死租约重领，版本连涨。
@@ -310,9 +313,9 @@ S0 是纯加法 DDL。
 | **S1** 事件双写 | 加法（写两份表示，读旧的） | `_mark_running`/`_record_progress`/`_finish` 在同一事务里额外 `append_event` 并推 `last_event_seq`；读路径不动。事件序号仍以草案 `MAX+1` 为准，canonical 侧做影子 | 删掉 canonical 事件 INSERT → 双写对账（逐 Job 条数 + digest 逐条相等，`portable-reconcile.py:_event_gaps` 同口径）必须红；仍绿说明对账读的是同一侧 |
 | **S1b** started 纳入双写 | 加法（补齐 S1 漏掉的那条迁移） | `_mark_running` 在同一事务里追加 started 的 canonical 行并推 `last_event_seq`；先取 canonical 事件头锁再改公开行，保持 §4.1 的锁序。`claim_version` 不推进。没有 `coordination_jobs` 行的 Job 由 `_append_canonical_event` 的父行检查**拒绝**（类型化错误、整笔回滚），不跳过 | 删掉 started 的 canonical 追加 → 「完整生命周期 canonical 序号 1..N 无缺口」必须红（实测：`canonical has 2 event(s) [1, 2], the draft side covers 3 [1, 2, 3]`）；把追加挪到独立事务 → started 的原子性用例必须红（实测：`{'state': 'running', 'status_version': 2} != {'state': 'pending', 'status_version': 1}`）；去掉父行检查 → 没有父行的 Job 必须撞外键（实测 `ForeignKeyViolation` 23503 `job_events_job_id_fkey`） |
 | **S2** 事件读翻转 | 翻读 | durable 事件流（`GET /v1/nexus/jobs/{job_id}/events`）的事实集、顺序与摘要改读 canonical `job_events`（`claims.STATEMENTS["job_event.read"]`）；草案行退为**投影来源**（`state`/`occurred_at_us`/`kind`/`progress_*`），创建事实（`event_seq` 0）仍读草案。同一提交补授 `SELECT (job_id)`，否则首读 42501。`last_event_seq` 成为唯一事件头（§5.1） | 把 canonical 事件的 `occurred_at` 写成会话本地时间（去掉 `utc_from_epoch_us`/`AT TIME ZONE 'UTC'`）→ 摘要与顺序断言必须红（§3.2 实测 B 是这条注入的固定靶；实测：摘要不相等，见 §5.1）；把 `job_id` 从列级 `SELECT` 去掉 → 非属主身份首读必须 42501 |
-| **S3** 收敛第二认领口 | 删（收敛，不迁移） | `claims_sql.claim_in_transaction` 与 `read_claim` 改为调 `claim_batch`/`claimed_jobs`，或整体删除并让 `ClaimTransactionBoundary` 拒绝服务。二者只能选一个 | 保留 `claim_expires_at_us <= ?` 谓词但把列换成 `claim_expires_at` → 「首认领」用例必须红（§3.1 实测 A）；若仍绿，说明用例种子里 `claim_expires_at` 非空，没有覆盖未认领态 |
+| **S3** 收敛第二认领口 | 删（已完成：整口删除，不迁移） | 五个模块与三个测试文件已删；writer 授权面（`create_in_transaction` 重放）留在 `writer.create_replay` 面，认领列 UPDATE 声明从该面移除；`_DeadlineCursor` 普查表由 5 条降为 4 条 | 在 surviving 路径上把 `NULL` 当成「未过期」（`job.claim` 加 `claim_expires_at IS NOT NULL`）→ claim 家族 14 条 + `test_job_dispatch_pg.py` 2 条集成用例变红（实测，症状是「认领到 0 个 Job」而不是异常）；portable-sql 单测 0 条命中，语义只由真库 oracle 覆盖（§3.1 实测 A 仍是这条注入的固定靶） |
 | **S4** 收紧约束与授权面 | 紧 | 只收紧写入者能保证的列：`bucket_no`/`due_at` 的 `NOT NULL`（0065 有意留给写入切换，`0065:26-36` 第 3 条）；同一提交从 `coordination_grants.SPEECH_UPDATES["coordination_jobs"]` 与 `job_runtime._JOB_UPDATE_SURFACE` 里删掉 `claim_expires_at_us` | 让写入者不再提供 `bucket_no` → 必须 23502；把 `claim_expires_at_us` 从授予面删掉但启动闸门仍要求它 → `RuntimeStartupError` 必须红（`job_runtime.py:283`、`:740`） |
-| **S5** 退役草案列 | 删（单向） | 删 `coordination_jobs.claim_expires_at_us` 与 `coordination_outbox.delivered_at_us`；删 `claims_sql` 两条语句；删 `job_schema.JOB_DDL` 里的 epoch 列与 `provision-job-roles.WRITER_BASELINE_UPDATE`、`check-async-job-prereqs`、`coordination-grants.py` 的第二份清单 | 删列但保留一处列清单 → 启动闸门必须报未声明列；删列后 0064/0065 的重跑必须报 42703（这证明「重跑迁移」不再是合法回退路径，见 §6） |
+| **S5** 退役草案列 | 删（单向） | 删 `coordination_jobs.claim_expires_at_us` 与 `coordination_outbox.delivered_at_us`（两条 `claims_sql` 语句已随 S3 删除）；删 `job_schema.JOB_DDL` 里的 epoch 列与 `provision-job-roles.WRITER_BASELINE_UPDATE`、`check-async-job-prereqs`、`coordination-grants.py` 的第二份清单 | 删列但保留一处列清单 → 启动闸门必须报未声明列；删列后 0064/0065 的重跑必须报 42703（这证明「重跑迁移」不再是合法回退路径，见 §6） |
 | **S6** 回退演练 | 验证 | 按 §6 的顺序在临时 schema 上跑一遍：S5 之后只能走备份恢复，S4 之前可以走「读回切」 | 在 S2 之后执行 0065 的 `downgrade`（`UPDATE … SET last_event_seq = 0`，`0065:185`）→ 事件头必须归零；若事件读已经翻转，这条 downgrade 就是毁事实，演练必须红 |
 
 ### 5.1 S2 的读面:canonical 决定事实集,草案只供投影
@@ -415,9 +418,12 @@ canonical 自己带上这些列(需要一次真正的 DDL 决策,不在本计划
 断言（§8.77 前置 2 明确说「不能假定」）。验证：一次 `SELECT COUNT(*) FROM speech_jobs j JOIN
 speech_job_submissions s USING (job_id) WHERE j.created_at_us <> s.submitted_at_us`。
 
-**E. `ClaimService` 确实没有生产装配。** 依据是 `grep` 只命中定义与测试。若某些部署脚本或外部
-调用方通过它认领，S3 就是行为变更而不是清理。验证：在部署侧 `grep -rn ClaimTransactionBoundary`
-与入口清单，并查 `tests/integration/test_production_claims.py` 的调用方式是否被运维脚本复用。
+**E. 第二认领口确实没有生产装配（S3 已按此证据整口删除）。** 判据不是 `grep` 一条：33 个入口
+（`[project.scripts]`、uvicorn 工厂串、`__main__`、`python -m`）出发的 AST 导入图把
+`claims_postgres`/`claims_sql` 判为不可达，动态导入点（`importlib.import_module`、
+`__import__`、`importlib.metadata`）无一指向它，部署、脚本与 `pyproject` 也没有字符串式装配。
+反证：把一行 `from … claims_sql import claim_in_transaction` 注入可达入口后，同一脚本立刻把它
+判为可达。
 
 **F. 三条测试 oracle 未在本轮执行。** `test_dispatch_canonical_claim_pg.py`、`test_claim_batch_pg.py`、
 `test_portable_switchover_rehearsal_pg.py` 的通过状态我没有观测，本文不据此宣称任何「已验证」。
@@ -446,11 +452,9 @@ PY
 # 派发侧 epoch 列引用 = 1 行(且只在 docstring 里) / 可执行引用 = 0
 grep -n "claim_expires_at_us" backend/src/speechnexus_backend/speech/infrastructure/job_dispatch_postgres.py
 
-# 第二认领口仍在线上的语句 = 2(3 行)
-grep -n "claim_expires_at_us" backend/src/speechnexus_backend/speech/infrastructure/claims_sql.py
-
-# 第二认领口无生产装配
-grep -rn "ClaimService\|ClaimTransactionBoundary" --include=*.py . | grep -v "\.venv"
+# 第二认领口已整口删除(S3):以下四条都应为空
+ls backend/src/speechnexus_backend/speech/infrastructure/claims_sql.py 2>&1
+grep -rn "claims_sql\|claims_postgres\|ClaimTransactionBoundary\|ClaimService" --include=*.py backend/src execution-gateway/src node-controller/src
 
 # canonical 事件对象在 alembic 树里缺失(输出为空)
 grep -rn "job_events\|delivered_at" backend/src/speechnexus_backend/speech/infrastructure/migrations/versions/*.py \

@@ -827,17 +827,20 @@ could only discover _after_ claiming a lease and names each missing one:
   they cover the columns this build reads, not views, tables, indexes or other
   columns a migration adds;
 - the worker's own `SELECT` probes pass;
-- every column the dispatcher writes after claiming is granted, across the 11
-  relations it writes: the Job transition (`speech_jobs`, `coordination_jobs`,
+- every column the dispatcher writes after claiming, and every column it reads
+  to serve the durable event stream, is granted across the 12 relations it
+  touches: the Job transition (`speech_jobs`, `coordination_jobs`,
   `speech_job_events`, `speech_job_cancellation_not_submitted`), the canonical
   event shadow every progress or terminal transition appends (`job_events`
-  INSERT, cutover stage S1) and the committed result Artifact
+  INSERT, cutover stage S1) and the event read that serves `Last-Event-ID`
+  resume (`job_events` SELECT, stage S2 — column-level, covering both the
+  projection and the `job_id` predicate) and the committed result Artifact
   (`speech_artifacts` INSERT), plus the capacity release of a terminal Job
   (`admission_leases`, `admission_attempts`, `workspace_quotas`, `host_nodes`,
-  `engine_instances` UPDATE) — 72 columns in total. A role missing
+  `engine_instances` UPDATE) — 76 columns in total. A role missing
   `job_dispatch_grants`, `artifact_publisher_grants` or
   `coordination_runtime_grants` stops at container start instead of failing after
-  the first claim or the first result publication;
+  the first claim, the first event read or the first result publication;
 - every requested lane is one this bootstrap assembles:
   `SPEECHNEXUS_JOB_DISPATCH_KINDS` must stay inside `asr` plus one resident TTS
   variant (`tts`, `voice_design` or `voice_clone`), and any other kind - or a

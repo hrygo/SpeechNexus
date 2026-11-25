@@ -309,11 +309,43 @@ S0 是纯加法 DDL。
 | **S0** 事件侧加法 | 加法 | 新修订建 canonical `job_events`、给 `coordination_outbox` 加 `delivered_at`、按列授 `SELECT/INSERT` 与 `UPDATE (delivered_at)`。无写者、无读者 | 把 `delivered_at` 从 DDL 删掉 → `outbox.mark_delivered` 必须报 42703；若测试仍绿，说明没有语句覆盖它 |
 | **S1** 事件双写 | 加法（写两份表示，读旧的） | `_mark_running`/`_record_progress`/`_finish` 在同一事务里额外 `append_event` 并推 `last_event_seq`；读路径不动。事件序号仍以草案 `MAX+1` 为准，canonical 侧做影子 | 删掉 canonical 事件 INSERT → 双写对账（逐 Job 条数 + digest 逐条相等，`portable-reconcile.py:_event_gaps` 同口径）必须红；仍绿说明对账读的是同一侧 |
 | **S1b** started 纳入双写 | 加法（补齐 S1 漏掉的那条迁移） | `_mark_running` 在同一事务里追加 started 的 canonical 行并推 `last_event_seq`；先取 canonical 事件头锁再改公开行，保持 §4.1 的锁序。`claim_version` 不推进。没有 `coordination_jobs` 行的 Job 由 `_append_canonical_event` 的父行检查**拒绝**（类型化错误、整笔回滚），不跳过 | 删掉 started 的 canonical 追加 → 「完整生命周期 canonical 序号 1..N 无缺口」必须红（实测：`canonical has 2 event(s) [1, 2], the draft side covers 3 [1, 2, 3]`）；把追加挪到独立事务 → started 的原子性用例必须红（实测：`{'state': 'running', 'status_version': 2} != {'state': 'pending', 'status_version': 1}`）；去掉父行检查 → 没有父行的 Job 必须撞外键（实测 `ForeignKeyViolation` 23503 `job_events_job_id_fkey`） |
-| **S2** 事件读翻转 | 翻读 | SSE 与列表改读 canonical `job_events`；草案事件表退为影子，只写不读。`last_event_seq` 成为唯一事件头 | 把 canonical 事件的 `occurred_at` 写成会话本地时间（去掉 `utc_from_epoch_us`/`AT TIME ZONE 'UTC'`）→ 摘要与顺序断言必须红（§3.2 实测 B 是这条注入的固定靶） |
+| **S2** 事件读翻转 | 翻读 | durable 事件流（`GET /v1/nexus/jobs/{job_id}/events`）的事实集、顺序与摘要改读 canonical `job_events`（`claims.STATEMENTS["job_event.read"]`）；草案行退为**投影来源**（`state`/`occurred_at_us`/`kind`/`progress_*`），创建事实（`event_seq` 0）仍读草案。同一提交补授 `SELECT (job_id)`，否则首读 42501。`last_event_seq` 成为唯一事件头（§5.1） | 把 canonical 事件的 `occurred_at` 写成会话本地时间（去掉 `utc_from_epoch_us`/`AT TIME ZONE 'UTC'`）→ 摘要与顺序断言必须红（§3.2 实测 B 是这条注入的固定靶；实测：摘要不相等，见 §5.1）；把 `job_id` 从列级 `SELECT` 去掉 → 非属主身份首读必须 42501 |
 | **S3** 收敛第二认领口 | 删（收敛，不迁移） | `claims_sql.claim_in_transaction` 与 `read_claim` 改为调 `claim_batch`/`claimed_jobs`，或整体删除并让 `ClaimTransactionBoundary` 拒绝服务。二者只能选一个 | 保留 `claim_expires_at_us <= ?` 谓词但把列换成 `claim_expires_at` → 「首认领」用例必须红（§3.1 实测 A）；若仍绿，说明用例种子里 `claim_expires_at` 非空，没有覆盖未认领态 |
 | **S4** 收紧约束与授权面 | 紧 | 只收紧写入者能保证的列：`bucket_no`/`due_at` 的 `NOT NULL`（0065 有意留给写入切换，`0065:26-36` 第 3 条）；同一提交从 `coordination_grants.SPEECH_UPDATES["coordination_jobs"]` 与 `job_runtime._JOB_UPDATE_SURFACE` 里删掉 `claim_expires_at_us` | 让写入者不再提供 `bucket_no` → 必须 23502；把 `claim_expires_at_us` 从授予面删掉但启动闸门仍要求它 → `RuntimeStartupError` 必须红（`job_runtime.py:283`、`:740`） |
 | **S5** 退役草案列 | 删（单向） | 删 `coordination_jobs.claim_expires_at_us` 与 `coordination_outbox.delivered_at_us`；删 `claims_sql` 两条语句；删 `job_schema.JOB_DDL` 里的 epoch 列与 `provision-job-roles.WRITER_BASELINE_UPDATE`、`check-async-job-prereqs`、`coordination-grants.py` 的第二份清单 | 删列但保留一处列清单 → 启动闸门必须报未声明列；删列后 0064/0065 的重跑必须报 42703（这证明「重跑迁移」不再是合法回退路径，见 §6） |
 | **S6** 回退演练 | 验证 | 按 §6 的顺序在临时 schema 上跑一遍：S5 之后只能走备份恢复，S4 之前可以走「读回切」 | 在 S2 之后执行 0065 的 `downgrade`（`UPDATE … SET last_event_seq = 0`，`0065:185`）→ 事件头必须归零；若事件读已经翻转，这条 downgrade 就是毁事实，演练必须红 |
+
+### 5.1 S2 的读面:canonical 决定事实集,草案只供投影
+
+计划原文把 S2 写成「草案事件表退为影子,只写不读」。**这句话在列层面做不到**,落地时按下面
+的口径收窄,理由是 §3.4 已经写下的那一条:canonical 只有
+`(event_seq, event_digest, payload_ref)`,而 `event_digest` 覆盖 `state`/`occurred_at`/`kind`/
+`progress_*` 且**不可逆** —— 从 canonical 行读不出原始进度列。所以:
+
+| 读什么 | 来源 | 为什么 |
+| --- | --- | --- |
+| 哪些事件存在、顺序、身份(摘要) | canonical `job_events` | 这是这次翻转的对象;`event_digest` 也是消费者去重的唯一键(§3.4) |
+| `state`/`occurred_at_us`/`kind`/`progress_*` | 草案同一 `(job_id, event_seq)` 行 | canonical 不存这些列,摘要不可逆 |
+| 创建事实 `event_seq` 0 | 草案 | canonical 按设计永远没有它:摘要在 `coordination_jobs.initial_event_digest` 与 outbox 行上 |
+| 一条 canonical 事件都没有的 Job | 草案(整页) | S1b 之前的形状,`started_event_gaps` 点名;修好前草案是唯一来源,读路径不该把它变成空流 |
+
+三条由此确定的判据:
+
+- **canonical 有、草案没有** → 存储不一致,读路径以 `PublicJobUnavailableError` 拒绝,不静默少一帧。
+- **草案有、canonical 没有** → 不属于 canonical 事实集,不发出(这就是「canonical 决定成员」)。
+- **线路 `id`** 仍是 `event_seq + 1`,翻转没有移动这个编码;`Last-Event-ID: 0`/`-1` 在 HTTP 边界
+  就是 400(线路序号从 1 起),没有游标等价于从最早事实读起,覆盖全部帧。
+
+读面比投影多一列:`job_event.read` 的 `WHERE job_id = ?` 要求 `job_id` 可读,列级 `SELECT` 只授
+投影时整条语句以 `42501 permission denied for table job_events` 失败(S1b 实测)。所以补授
+`job_id` 与读翻转**必须同一提交**,否则新读路径一上线就红。授权面的唯一定义点是
+`canonical_event_schema.JOB_EVENT_PRIVILEGES`:投影(`JOB_EVENT_SELECT_COLUMNS`)与谓词列
+(`JOB_EVENT_READ_FILTER_COLUMNS`)分开声明,`SELECT` 授予面从两者派生,谓词列由
+`tests/ci/test_canonical_event_statement_parity.py` 对着语句文本逐项核对。
+
+**S2 之后仍不能删草案事件表。** 投影列没有 canonical 来源,创建事实也没有;S5 只能退役
+`coordination_jobs.claim_expires_at_us` 与 `coordination_outbox.delivered_at_us`,事件表的退役要等
+canonical 自己带上这些列(需要一次真正的 DDL 决策,不在本计划里)。
 
 三条与顺序有关的硬事实：
 

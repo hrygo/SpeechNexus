@@ -44,6 +44,9 @@ from speechnexus_backend.speech.infrastructure.canonical_event_schema import (
     COORDINATION_OUTBOX_TABLE,
     JOB_EVENT_COLUMNS,
     JOB_EVENT_DDL,
+    JOB_EVENT_READ_COLUMNS,
+    JOB_EVENT_READ_FILTER_COLUMNS,
+    JOB_EVENT_SELECT_COLUMNS,
     JOB_EVENT_TABLE,
     OUTBOX_DELIVERED_AT_COLUMN,
     canonical_event_grants,
@@ -323,11 +326,24 @@ def test_0068_grants_only_the_declared_event_surface(sandbox: Sandbox) -> None:
         for statement in canonical_event_grants(sandbox.schema, role):
             sandbox.admin.execute(statement)
 
-        # 读者只有三个投影列:``job_id`` 出现在 ``WHERE`` 里,不需要 SELECT 授权。
-        assert held("SELECT", EVENT_TABLE, "event_seq")
-        assert held("SELECT", EVENT_TABLE, "event_digest")
-        assert held("SELECT", EVENT_TABLE, "payload_ref")
-        assert not held("SELECT", EVENT_TABLE, "job_id")
+        # 读面 = 投影 + 谓词列。S2 补上 ``job_id``:``job_event.read`` 在它上面过滤,列级
+        # ``SELECT`` 不含它时整条续读以 ``42501`` 失败(S1b 实测,见
+        # ``test_canonical_event_read_pg.py``)。判据是「可读列恰好等于声明面」,不是
+        # 「声明的那几列恰好可读」—— 后者在声明自己漏一列时仍然通过。
+        assert set(JOB_EVENT_READ_COLUMNS) == set(JOB_EVENT_SELECT_COLUMNS) | set(
+            JOB_EVENT_READ_FILTER_COLUMNS
+        )
+        readable = {
+            row[0]
+            for row in sandbox.admin.execute(
+                "SELECT column_name, has_column_privilege(%s, %s, column_name, 'SELECT') "
+                "AS held FROM information_schema.columns "
+                "WHERE table_schema = %s AND table_name = %s",
+                (role, f"{sandbox.schema}.{EVENT_TABLE}", sandbox.schema, EVENT_TABLE),
+            ).fetchall()
+            if row[1]
+        }
+        assert readable == set(JOB_EVENT_READ_COLUMNS)
         # 写者要写整行:INSERT 覆盖每一个声明列。
         for column in JOB_EVENT_COLUMNS:
             assert held("INSERT", EVENT_TABLE, column), column

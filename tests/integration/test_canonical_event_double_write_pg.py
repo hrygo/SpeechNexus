@@ -199,9 +199,9 @@ def _reconcile(db: JobSandbox, job_id: str) -> list[dict[str, Any]]:
 def _gaps(db: JobSandbox) -> tuple[str, ...]:
     """对账查询跑在**运维身份**(owner)上,与 ``portable-reconcile.py --dsn`` 同口径。
 
-    派发身份跑不了它:``job_event_grants`` 的列级 ``SELECT`` 不含 ``job_id``,而这条查询要在
-    ``job_events.job_id`` 上过滤 —— 那个缺口属于 S2 的读翻转(见 ``started_event_gaps`` 的
-    说明),本文件不在运行身份上假装它能跑。
+    派发身份从 S2 起也能跑它(``job_event_grants`` 补授了 ``job_id``,见
+    ``test_canonical_event_read_pg.py`` 的 42501 回归),但它是运维读、不是运行期读,所以
+    本文件仍用 owner DSN 跑,与 ``portable-reconcile.py`` 同一条口径。
     """
 
     return started_event_gaps(db.admin)

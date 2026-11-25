@@ -40,11 +40,33 @@ from speechnexus_node_controller.interfaces.http.runtime_control import (
 from speechnexus_node_controller.interfaces.http.security import ComponentCredential
 from speechnexus_node_controller.settings import Settings
 
+# The planned Kubernetes adapter is S2 of this plan; the selector exists so a
+# deployment can name the target driver, but constructing it must fail loudly
+# until the adapter lands instead of quietly starting Docker containers.
+KUBERNETES_RUNTIME = "k8s"
+KUBERNETES_RUNTIME_PLAN = "docs/plans/2026-11-25-engine-runtime-k8s.md"
+
+
+def _require_implemented_runtime(runtime: str) -> None:
+    """Refuse a driver this build cannot construct, before opening daemon or store.
+
+    Called first so selecting ``k8s`` fails at startup rather than after the
+    approved templates, the SQLite intent store, or the daemon client exist. A
+    silent fallback to Docker would report success while placing instances in
+    the wrong runtime.
+    """
+    if runtime == KUBERNETES_RUNTIME:
+        raise NotImplementedError(
+            "the Kubernetes runtime driver is not implemented yet; see "
+            f"{KUBERNETES_RUNTIME_PLAN} S2"
+        )
+
 
 def _build_dependencies(
     settings: Settings,
 ) -> tuple[NodeRuntimeControlService, ReadinessService, SqliteIntentStore, DockerApi]:
     """Wire the approved templates, durable intent facts, and the local daemon."""
+    _require_implemented_runtime(settings.runtime)
     approved = load_approved_templates(settings.approved_templates_file)
     templates = ApprovedTemplateRegistry(approved)
     credentials = (

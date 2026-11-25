@@ -152,3 +152,26 @@ def test_omitted_environment_retains_development_behavior(
 
     assert settings.environment == "development"
     assert settings.node_id == "node-local-1"
+
+
+def test_runtime_driver_defaults_to_docker(required_settings: dict[str, Any]) -> None:
+    assert Settings(**required_settings).runtime == "docker"
+
+
+@pytest.mark.parametrize("runtime", ["docker", "k8s"])
+def test_runtime_driver_loads_each_declared_selector(
+    required_settings: dict[str, Any], monkeypatch: pytest.MonkeyPatch, runtime: str
+) -> None:
+    monkeypatch.setenv("SPEECHNEXUS_CONTROLLER_RUNTIME", runtime)
+
+    assert Settings(**required_settings).runtime == runtime
+
+
+@pytest.mark.parametrize("runtime", ["podman", "K8S", "kubernetes", " docker", ""])
+def test_runtime_driver_rejects_an_unknown_selector(
+    required_settings: dict[str, Any], monkeypatch: pytest.MonkeyPatch, runtime: str
+) -> None:
+    monkeypatch.setenv("SPEECHNEXUS_CONTROLLER_RUNTIME", runtime)
+
+    with pytest.raises(ValidationError):
+        Settings(**required_settings)

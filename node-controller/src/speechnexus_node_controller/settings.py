@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     engine_auth_root_key: SecretStr | None = None
     approved_templates_file: Path
     intent_store_path: Path
+    # Which node runtime adapter the composition root constructs. ``docker`` is
+    # the only implemented driver; ``k8s`` is the reserved selector for the
+    # planned Kubernetes adapter and refuses at startup until that adapter
+    # exists, so a deployment cannot silently keep starting Docker containers.
+    runtime: Literal["docker", "k8s"] = "docker"
     docker_socket_path: Path = Path("/var/run/docker.sock")
     docker_request_timeout_seconds: float = Field(default=10.0, gt=0, le=120)
     stop_timeout_seconds: float = Field(default=20.0, gt=0, le=300)

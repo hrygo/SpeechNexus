@@ -249,6 +249,11 @@ def test_prepare_carries_the_approved_argv_binds_and_transport_probe(
 
     body = cluster.created[0]
     container = body["spec"]["containers"][0]
+    # A read-only bind names its volume; it must never rename the Pod.  The Pod
+    # name is the instance identity the driver later looks itself up by, so a
+    # bind that rebinds it makes every instance collide on one name.
+    assert body["metadata"]["name"] == POD_NAME
+    assert body["spec"]["volumes"][0]["name"] == "approved-bind-0"
     # The template argv replaces the image CMD, never its ENTRYPOINT: Docker
     # passes it as ``Cmd`` and k8s spells that ``args``.  ``command`` must stay
     # absent so the image entrypoint still runs -- the deployed ASR template
@@ -397,14 +402,6 @@ def test_prepare_supplies_the_per_generation_native_credential(
     assert evidence is not None
     assert evidence.native_auth_kind == "vllm_api_key_v1"
     assert evidence.image_digest == IMAGE_DIGEST
-
-
-def test_inspection_refuses_until_its_slice_lands(tmp_path: Path) -> None:
-    cluster = _FakeCluster()
-    runtime, _clock = _runtime(tmp_path, cluster)
-
-    with pytest.raises(NotImplementedError, match="S4"):
-        runtime.inspect(build_request(), build_template())
 
 
 _WARMUP_BODY = b"synthetic-warmup-body"

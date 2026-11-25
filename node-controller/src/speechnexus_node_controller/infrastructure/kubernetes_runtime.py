@@ -38,6 +38,15 @@ Pod is gone from the API, and the exit code is only ever the one the API
 reported for the terminated engine container. A Pod that disappeared before any
 terminated state was observed leaves no exit fact, so no release evidence is
 written and the caller must treat the stop as unproven rather than as done.
+
+Inspection is read-only, and it distinguishes three things ``inspect`` must not
+confuse. "The API refused or did not answer" raises, so the intent stays open and
+retryable instead of recording a vanished instance. "The API says this Pod does
+not exist" is ``absent`` with no stop evidence, because nothing was removed.
+"The Pod exists but is not serving" is reported as it is, with the event *reason*
+that explains it — never the event message, which carries node names and image
+references — and never promoted to ready because the Pod's Ready condition is
+only the transport layer.
 """
 
 from __future__ import annotations
@@ -82,8 +91,6 @@ from speechnexus_node_controller.infrastructure.native_evidence import (
     template_digest,
 )
 
-RUNTIME_PLAN: Final = "docs/plans/2026-11-25-engine-runtime-k8s.md"
-
 MANAGED_BY_LABEL: Final = "speechnexus.io/managed-by"
 MANAGED_BY_VALUE: Final = "speechnexus-node-controller"
 NODE_ID_LABEL: Final = "speechnexus.io/node-id"
@@ -102,6 +109,31 @@ CONFIG_DIGEST_ANNOTATION: Final = "speechnexus.io/config-digest"
 FENCING_TOKEN_ANNOTATION: Final = "speechnexus.io/fencing-token"
 
 ENGINE_CONTAINER_NAME: Final = "engine"
+
+# Kubernetes event reasons that classify why a Pod has not started. Only these
+# fixed phrases (and the token itself, which is one of these keys) may reach an
+# observation: an event *message* carries node names, image references and text
+# written by other cluster components, so it is never read at all.
+EVENT_FAILURE_REASONS: Final[dict[str, str]] = {
+    "FailedScheduling": "the scheduler could not place the pod on a node",
+    "FailedMount": "an approved read-only bind could not be mounted",
+    "FailedAttachVolume": "an approved read-only bind could not be attached",
+    "ErrImagePull": "the pinned image could not be pulled",
+    "ImagePullBackOff": "the pinned image could not be pulled",
+    "ErrImageNeverPull": "the pinned image is missing from the node",
+    "InvalidImageName": "the pinned image reference was rejected",
+    "CreateContainerConfigError": "the container configuration was rejected",
+    "CreateContainerError": "the container could not be created",
+    "RunContainerError": "the container could not be started",
+    "FailedCreatePodSandBox": "the pod sandbox could not be created",
+    "BackOff": "the container was backed off while starting",
+    "Failed": "the kubelet reported a container failure",
+    "OOMKilling": "the container exceeded its memory limit",
+    "OOMKilled": "the container exceeded its memory limit",
+}
+
+_MAX_STUCK_REASONS: Final = 2
+
 _MAX_LABEL_VALUE: Final = 63
 _MAX_POD_NAME: Final = 63
 
@@ -402,7 +434,211 @@ class KubernetesNodeRuntime:
         *,
         resumed: bool = False,
     ) -> InstanceObservation | None:
-        raise NotImplementedError(f"the Kubernetes inspection path is S4 of {RUNTIME_PLAN}")
+        """Read one generation's Pod and its events without acting on anything.
+
+        A failed read is **not** an absent instance. An API server that refuses
+        or cannot be reached raises ``RuntimeControllerUnavailableError``, exactly
+        as ``prepare`` and ``stop`` do, so the caller keeps the intent unresolved
+        and retries; only the API answering that this Pod does not exist is
+        reported as ``absent``. That observation carries no stop evidence: a
+        missing Pod is not a release fact and nothing here removed it.
+
+        A Pod that is not serving is reported as it is, with the event reason
+        that explains it when the cluster recorded one. The Pod's Ready condition
+        is transport health only: for a template that declares controller-side
+        warmup the instance stays ``warming_up``, exactly as it does after
+        ``prepare``.
+
+        ``resumed`` matches the port's signature. This driver reads no warmup
+        progress, so a re-observed intent simply has no in-memory deadline here
+        and therefore no deadline reason to report; nothing is re-anchored, so
+        observation can never grant a second budget.
+        """
+        unsupported = self._unsupported_template(request, template)
+        if unsupported is not None:
+            return unsupported
+        try:
+            return self._inspect(request, template)
+        except (KubernetesUnavailableError, KubernetesApiError) as error:
+            # An unanswered or refusing API server is neither an absent instance
+            # nor a stopped one: the observation stays open and retryable.
+            raise RuntimeControllerUnavailableError(
+                f"the node runtime did not complete inspect: {type(error).__name__}"
+            ) from error
+
+    def _inspect(
+        self,
+        request: RuntimeInstanceIntentRequest,
+        template: ApprovedRuntimeTemplate,
+    ) -> InstanceObservation:
+        pod = self._api.get_pod(self._pod_name(request))
+        if pod is None:
+            return self._absent_observation(request, template)
+        mismatch = self._observed_identity_mismatch(pod, request, template)
+        if mismatch is not None:
+            return self._observation(
+                request,
+                template,
+                ObservedInstanceState.QUARANTINED,
+                quarantine_reason=mismatch,
+            )
+        state, error_code = self._observed_state(request, template, pod)
+        return self._observation(
+            request,
+            template,
+            state,
+            error_code=error_code,
+            quarantine_reason=(
+                self._stuck_reason(pod) if _is_event_explained(state, pod) else None
+            ),
+        )
+
+    def _observed_identity_mismatch(
+        self,
+        pod: PodState,
+        request: RuntimeInstanceIntentRequest,
+        template: ApprovedRuntimeTemplate,
+    ) -> str | None:
+        """Why the Pod holding this name is not this generation's, or ``None``.
+
+        The name is a discovery key, not an identity. The annotations carry the
+        exact intent identity, and a UID this process recorded when it created
+        the Pod is the only proof that the Pod is still that creation: a rebuilt
+        Pod of the same name has a different UID even if it copied the labels.
+        """
+        created_uid = self._pod_uids.get((request.instance_id, request.instance_generation))
+        if created_uid is not None and pod.uid != created_uid:
+            return (
+                "the engine pod name now belongs to another identity than the one "
+                "this controller created"
+            )
+        if (
+            pod.labels.get(MANAGED_BY_LABEL) != MANAGED_BY_VALUE
+            or pod.labels.get(NODE_ID_LABEL) != _label_value(self._node_id)
+            or pod.labels.get(GENERATION_LABEL) != str(request.instance_generation)
+        ):
+            return "the pod at this name belongs to another runtime identity"
+        if (
+            pod.annotations.get(INSTANCE_ID_ANNOTATION) != request.instance_id
+            or pod.annotations.get(TEMPLATE_ID_ANNOTATION) != template.template_id
+            or pod.annotations.get(CONFIG_DIGEST_ANNOTATION) != request.config_digest
+        ):
+            return "the pod at this name carries another instance identity or configuration digest"
+        return None
+
+    def _observed_state(
+        self,
+        request: RuntimeInstanceIntentRequest,
+        template: ApprovedRuntimeTemplate,
+        pod: PodState,
+    ) -> tuple[ObservedInstanceState, RuntimeIntentErrorCode | None]:
+        """Map the Pod's own facts onto the controller's observation vocabulary.
+
+        Nothing is inferred beyond what the API reports. A Pod whose phase this
+        driver does not interpret is an instance that exists and has not reached
+        a runnable state, not a failure; a Pod being removed is stopping even if
+        its last condition still said Ready.
+        """
+        if pod.deleting:
+            return ObservedInstanceState.STOPPING, None
+        if pod.exit_code is not None:
+            if pod.exit_code == 0:
+                return ObservedInstanceState.STOPPED, None
+            return ObservedInstanceState.FAILED, RuntimeIntentErrorCode.INSTANCE_PREPARE_FAILED
+        if pod.phase == "Succeeded":
+            return ObservedInstanceState.STOPPED, None
+        if pod.phase == "Failed":
+            return ObservedInstanceState.FAILED, RuntimeIntentErrorCode.INSTANCE_PREPARE_FAILED
+        if pod.phase == "Running":
+            if not pod.ready:
+                return ObservedInstanceState.LOADING, self._deadline_reason(request)
+            if template.readiness.kind is ReadinessKind.HTTP_WARMUP_OK:
+                # §3.3: the Pod probe is the transport half only. The controller
+                # still owns the warmup decision, and this driver never performs
+                # that warmup, so a ready Pod is warming_up and never ready.
+                return ObservedInstanceState.WARMING_UP, self._deadline_reason(request)
+            return ObservedInstanceState.READY, None
+        if pod.phase == "Pending":
+            # Created but not yet running: scheduling, image pull and container
+            # creation all report Pending. That is the same intermediate state
+            # ``prepare`` reports as ``loading`` for this Pod, so inspecting it
+            # must not name it differently.
+            return ObservedInstanceState.LOADING, self._deadline_reason(request)
+        # A Pod that exists while the API reports no interpretable phase: the
+        # instance exists, and what it is doing is simply not stated yet.
+        return ObservedInstanceState.PREPARING, self._deadline_reason(request)
+
+    def _deadline_reason(
+        self, request: RuntimeInstanceIntentRequest
+    ) -> RuntimeIntentErrorCode | None:
+        """Name an exhausted prepare budget without changing the observation.
+
+        Only an anchor this process already holds can be measured. An intent the
+        controller merely re-observed after a restart has none, and observing it
+        must not create one: the reason would otherwise be invented by the very
+        read that reports it.
+        """
+        deadline = self._deadlines.get((request.instance_id, request.instance_generation))
+        if deadline is not None and self._monotonic() >= deadline:
+            return RuntimeIntentErrorCode.WARMUP_DEADLINE_EXCEEDED
+        return None
+
+    def _stuck_reason(self, pod: PodState) -> str | None:
+        """Say why a Pod that never started or already ended failed, from its events.
+
+        Only the event *reason* token is read and only through a fixed
+        vocabulary: an event message carries node names, image references and
+        free text written by other cluster components, and none of that may reach
+        an observation. An event the vocabulary does not classify contributes a
+        bounded statement instead of its token.
+
+        Callers only ask for a running Pod's events when that Pod has not started
+        or has ended (see ``_is_event_explained``). Events are history: a warning
+        raised before a Pod started says nothing about why it is not ready now,
+        and repeating it would attribute an old failure to the current state.
+
+        A failed event read is not a failed observation: the Pod's own facts
+        stand on their own, so losing the explanation never turns into reporting
+        something else about the instance.
+        """
+        try:
+            events = self._api.list_pod_events(pod.name, uid=pod.uid)
+        except KubernetesApiError, KubernetesUnavailableError:
+            return None
+        reasons: list[str] = []
+        saw_unclassified = False
+        for event in events:
+            if event.event_type != "Warning":
+                continue
+            phrase = EVENT_FAILURE_REASONS.get(event.reason)
+            if phrase is None:
+                saw_unclassified = True
+                continue
+            entry = f"{phrase} ({event.reason})"
+            if entry not in reasons:
+                reasons.append(entry)
+        if reasons:
+            return "the engine pod is not serving: " + "; ".join(reasons[:_MAX_STUCK_REASONS])
+        if saw_unclassified:
+            return (
+                "the engine pod is not serving: a cluster event reported a failure "
+                "this controller does not classify"
+            )
+        return None
+
+    @staticmethod
+    def _absent_observation(
+        request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
+    ) -> InstanceObservation:
+        """The generation has no Pod; nothing was removed, so nothing is proven."""
+        return InstanceObservation(
+            instance_id=request.instance_id,
+            instance_generation=request.instance_generation,
+            approved_template_id=template.template_id,
+            config_digest=request.config_digest,
+            observed_instance_state=ObservedInstanceState.ABSENT,
+            stop_evidence=None,
+        )
 
     def _unsupported_template(
         self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
@@ -599,9 +835,13 @@ class KubernetesNodeRuntime:
         volumes: list[dict[str, Any]] = []
         mounts: list[dict[str, Any]] = []
         for index, bind in enumerate(template.read_only_binds):
-            name = f"approved-bind-{index}"
-            volumes.append({"name": name, "hostPath": {"path": bind.source, "type": "Directory"}})
-            mounts.append({"name": name, "mountPath": bind.target, "readOnly": True})
+            # Names the volume, never the Pod: ``name`` is the Pod's own name and
+            # rebinding it here renamed every Pod after its last read-only bind.
+            volume_name = f"approved-bind-{index}"
+            volumes.append(
+                {"name": volume_name, "hostPath": {"path": bind.source, "type": "Directory"}}
+            )
+            mounts.append({"name": volume_name, "mountPath": bind.target, "readOnly": True})
         if mounts:
             container["volumeMounts"] = mounts
         probe = _transport_probe(template)
@@ -726,6 +966,17 @@ class KubernetesNodeRuntime:
                 f"instance {request.instance_id} generation {request.instance_generation} "
                 "already exists with another template or configuration digest"
             )
+
+
+def _is_event_explained(state: ObservedInstanceState, pod: PodState) -> bool:
+    """Whether an event can explain this observation at all.
+
+    Only a Pod that never started (its phase is still Pending) or that already
+    ended can be explained by an event. A running Pod's warnings are history.
+    """
+    if state is ObservedInstanceState.FAILED:
+        return True
+    return state is ObservedInstanceState.LOADING and pod.phase == "Pending"
 
 
 def _pinned_image(template: ApprovedRuntimeTemplate) -> str:

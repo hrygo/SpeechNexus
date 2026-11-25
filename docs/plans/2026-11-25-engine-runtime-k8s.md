@@ -172,10 +172,21 @@ STEP4 FENCE_HELD: True
 | 派发 | 应用面 `job-dispatch` Deployment（已实测 `claimed:1 succeeded:1`）；算力面 dispatch 容器已停 | 见 `deploy/cluster/README.md`「作业派发」 |
 | 控制器 | 仍是算力面的 compose 服务；k8s 工作负载清单已就绪但**未应用**（镜像未进 containerd） | 无需回退，未改变 |
 
-两个已知的时间炸弹：
+两个地址问题（2026-11-26 已处置）：
 
-- **就绪回执约 23 h 后耗尽**（#1253）：续租作业读的 `http://bridge.speechnexus.svc:18190/health` 转的是宿主 docker 引擎端口，引擎换成 Pod 后不可达。回执一过期，准入静默转 `invalid`。
-- **Pod IP 是易变值**：网关端点文件里手写 `10.42.0.103`，Pod 一重建即失效。这是演练的临时做法，正解是由控制器上报的实例事实驱动。
+- **就绪续租不可达**（#1253）：续租读 `http://bridge.speechnexus.svc:18190/health`，桥转的是宿主端口，而宿主 `18190` 原本由 `engine-shim` 转发到 **docker 引擎容器地址**；引擎换成 Pod 后该目标消失，续租失败。回执只剩 ≈23 h，耗尽后准入会静默转 `invalid`。
+
+  处置：把 `ENGINE_ADDRESS` 指向引擎 Pod（`10.42.0.103:18190`）并重建 shim，链路恢复为
+  `桥 → 宿主 18190 → shim → 引擎 Pod`。复测：续租作业 `Complete`，回执 `renewed: true`、
+  `expires_at_us` 推后满 24 h、`health_probe.status: 200`。
+
+- **Pod IP 曾写进两个地方**：网关端点文件与 shim 目标各写了一份。现在只留 shim 的
+  `ENGINE_ADDRESS` 一处，网关端点回到 `127.0.0.1:18190`（宿主端口）。复测：整条链路跑通，
+  产物仍是 `sha256:da4d6eb2…`。Pod 重建后的重指步骤写进 `deploy/cluster/README.md`「引擎地址链」。
+
+**仍未解决的根因**：`ENGINE_ADDRESS` 依旧是手写常量。正解是由控制器上报的实例事实驱动
+（#1253 的判据），或让引擎有稳定 Service——本轮试过 ClusterIP，**宿主无法访问 10.43.x**，
+所以只能留给集群内消费者用，未采用。
 
 ## 5. 回退
 

@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 import pytest
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
+from speechnexus_backend.asr_settlement_worker import AsrSettlementWorkerSettings, worker_settings
+from speechnexus_backend.job_cancellation_runtime import JobCancellationSettings
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.domain.gateway_origin import (
     ALLOW_PLAINTEXT_ORIGIN_KEY,
     plaintext_origin_opt_in,
     require_safe_gateway_origin,
 )
+from speechnexus_backend.speech_runtime import build_speech
+from speechnexus_backend.transcription_runtime import build_transcription
 from speechnexus_backend.tts_settlement_worker import TtsSettlementWorkerSettings
 from tests.unit.backend.test_job_dispatch_worker import _settings as dispatch_settings
 
@@ -81,6 +86,9 @@ def test_plain_http_outside_loopback_names_the_opt_in_key() -> None:
         (API_GATEWAY_ORIGIN, "http://gateway:8011"),
         (API_GATEWAY_ORIGIN, "http://gateway"),
         ("http://gateway:8010", "http://Gateway:8010"),
+        # A prefix match would accept this origin for the shorter allowance: the
+        # judgement is equality, not ``origin.startswith(allowance)``.
+        ("http://gateway:8010", "http://gateway:801"),
         ("http://gateway:80", "http://gateway"),
         ("http://example.com:8010", "http://example.org:8010"),
     ],
@@ -159,3 +167,86 @@ def test_api_without_the_opt_in_cannot_construct_either_consumer() -> None:
 def test_api_rejects_a_malformed_opt_in_even_without_a_consumer() -> None:
     with pytest.raises(ValidationError, match=ALLOW_PLAINTEXT_ORIGIN_KEY):
         api_settings(API_GATEWAY_ORIGIN, opt_in=API_GATEWAY_ORIGIN + "/")
+
+
+def runtime_settings(origin: str, *, opt_in: str | None = None, recipe: str = "") -> Settings:
+    """The API's own settings with every asynchronous and synchronous input set."""
+    values: dict[str, Any] = {
+        "database_url": "postgresql://synthetic@127.0.0.1/test",
+        "object_storage_endpoint": "http://127.0.0.1:9000",
+        "object_storage_healthcheck_url": "http://127.0.0.1:9000/minio/health/live",
+        "object_storage_bucket": "synthetic",
+        "object_storage_access_key": "synthetic-access",
+        "object_storage_secret_key": "synthetic-secret",
+        "speech_settlement_database_url": "postgresql://worker@127.0.0.1/test",
+        "transcription_recipe_file": recipe or "/nonexistent/transcription-recipe.json",
+        "transcription_input_bucket": "synthetic",
+        "speech_recipe_file": recipe or "/nonexistent/speech-recipe.json",
+        "speech_default_language": "en",
+        "execution_gateway_base_url": origin,
+        "execution_gateway_component_credential": TTS_TOKEN,
+        "execution_gateway_allow_plaintext_origin": opt_in or "",
+    }
+    return Settings.model_validate(values)
+
+
+def asr_settlement_settings(
+    origin: str, *, opt_in: str | None = None
+) -> AsrSettlementWorkerSettings:
+    return AsrSettlementWorkerSettings(
+        database_url="postgresql://synthetic@127.0.0.1/test",
+        schema="speech",
+        gateway_id="gateway-test",
+        host_node_id="host-test",
+        gateway_url=origin,
+        gateway_credential=SecretStr(TTS_TOKEN),
+        allow_plaintext_origin=opt_in or "",
+    )
+
+
+def cancellation_settings(origin: str, *, opt_in: str | None = None) -> JobCancellationSettings:
+    return JobCancellationSettings.model_validate(
+        {
+            "SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_ENABLED": "true",
+            "SPEECHNEXUS_DATABASE_URL": "postgresql://synthetic@127.0.0.1/test",
+            "SPEECHNEXUS_DATABASE_SCHEMA": "speech",
+            "SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL": origin,
+            "SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL": TTS_TOKEN,
+            ALLOW_PLAINTEXT_ORIGIN_KEY: opt_in or "",
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "construct",
+    [asr_settlement_settings, cancellation_settings],
+)
+def test_newly_covered_consumers_construct_only_with_the_exact_opt_in(
+    construct: Callable[..., Any],
+) -> None:
+    """The two paths #1084 named are gated by the same rule as the original four."""
+    with pytest.raises(ValueError, match=ALLOW_PLAINTEXT_ORIGIN_KEY):
+        construct(API_GATEWAY_ORIGIN)
+    resolved = construct(API_GATEWAY_ORIGIN, opt_in=API_GATEWAY_ORIGIN)
+    assert resolved.allow_plaintext_origin == API_GATEWAY_ORIGIN
+    with pytest.raises(ValueError, match=ALLOW_PLAINTEXT_ORIGIN_KEY):
+        construct(API_GATEWAY_ORIGIN, opt_in="http://gateway:8011")
+
+
+def test_asr_worker_settings_decides_the_origin_before_the_recipe_is_read() -> None:
+    with pytest.raises(ValueError, match=ALLOW_PLAINTEXT_ORIGIN_KEY):
+        worker_settings(runtime_settings(API_GATEWAY_ORIGIN))
+    with pytest.raises(FileNotFoundError):
+        worker_settings(runtime_settings(API_GATEWAY_ORIGIN, opt_in=API_GATEWAY_ORIGIN))
+
+
+def test_transcription_runtime_decides_the_origin_before_the_recipe_is_read() -> None:
+    with pytest.raises(ValueError, match=ALLOW_PLAINTEXT_ORIGIN_KEY):
+        build_transcription(runtime_settings(API_GATEWAY_ORIGIN))
+    with pytest.raises(FileNotFoundError):
+        build_transcription(runtime_settings(API_GATEWAY_ORIGIN, opt_in=API_GATEWAY_ORIGIN))
+
+
+def test_speech_runtime_decides_the_origin_before_the_database_is_touched() -> None:
+    with pytest.raises(ValueError, match=ALLOW_PLAINTEXT_ORIGIN_KEY):
+        build_speech(runtime_settings(API_GATEWAY_ORIGIN))

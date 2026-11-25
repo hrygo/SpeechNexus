@@ -25,6 +25,7 @@ from speechnexus_backend.speech.application.transcription import (
     Transcription,
     TranscriptionLimits,
 )
+from speechnexus_backend.speech.domain.gateway_origin import require_safe_gateway_origin
 from speechnexus_backend.speech.infrastructure.asr_settlement_debt import (
     read_asr_settlement_debt,
 )
@@ -108,6 +109,14 @@ def build_transcription(settings: Settings) -> Transcription | None:
     assert settings.transcription_input_bucket is not None
     assert settings.object_storage_access_key is not None
     assert settings.object_storage_secret_key is not None
+    # This route presents the component credential, so the origin rule is decided
+    # before the private recipe is read or a pool is opened: a deployment that
+    # cannot carry the credential fails at startup, not on the first request.
+    require_safe_gateway_origin(
+        str(settings.execution_gateway_base_url),
+        allow_plaintext_origin=settings.execution_gateway_allow_plaintext_origin,
+        label="Synchronous transcription gateway",
+    )
     recipe = load_transcription_recipe(settings.transcription_recipe_file)
     pool = speech_pool(
         settings.database_url.get_secret_value(),

@@ -113,15 +113,17 @@ Windows 等平台保持未验证，支持范围扩展以单元的安装、启动
 - **服务配置**：各进程使用明确身份、服务端点、最小凭据、Host / Origin 与连接池配置。
   内部跨主机连接使用 TLS；业务内容、代理、浏览器资源与观测均遵守部署网络边界。
   `localhost` 仅表示该进程所在主机，不能作为远端服务的隐式发现或回退。
-- **网关组件凭据的明文边界**：Job 派发、TTS 结算、binding 停用与 TTS 恢复四个入口对网关
-  origin 共用一条规则：HTTPS 放行，明文 HTTP 只在 loopback 放行。非 loopback 的明文部署必须在
-  `SPEECHNEXUS_EXECUTION_GATEWAY_ALLOW_PLAINTEXT_ORIGIN` 中逐字写出该 origin（形如
-  `http://gateway:8010`），没有默认值、不从网关地址推导，也不按私有网段或服务名自动放行。
+- **网关组件凭据的明文边界**：所有出示 `SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL`
+  的入口对网关 origin 共用一条规则：HTTPS 放行，明文 HTTP 只在 loopback 放行。非 loopback 的
+  明文部署必须在 `SPEECHNEXUS_EXECUTION_GATEWAY_ALLOW_PLAINTEXT_ORIGIN` 中逐字写出该 origin
+  （形如 `http://gateway:8010`），没有默认值、不从网关地址推导，也不按私有网段或服务名自动放行。
   这是「接受凭据在该网络上明文可见」的显式决定：单机 Compose 网桥可以接受，跨主机或共享
-  网段应改用 TLS。规则的唯一实现是 `speech/domain/gateway_origin.py`，各入口只做配置校验。
-  该规则**当前覆盖上述四个入口**；同步 ASR 结算链路（`transcription_runtime.py` 构造
-  `AsrSettlementRuntime`）与取消对账（`job_cancellation_runtime.py`）同样出示该凭据，
-  **尚未接入这条校验**，见 [#1084](https://github.com/hrygo/SpeechNexus/issues/1084)。
+  网段应改用 TLS。规则的唯一实现是 `speech/domain/gateway_origin.py`，各入口只做配置校验；
+  校验在配置解析或构造期执行，不按请求执行，因此错误配置在使用凭据之前就停止启动。
+  覆盖的入口是：API 进程的同步转写、同步语音合成、ASR 结算运行时与 TTS 结算运行时，
+  Job 派发 worker、独立 TTS 结算 worker、binding 停用 worker、TTS 恢复命令，以及取消对账
+  worker（`job_cancellation_runtime.py`）。`tests/ci/test_gateway_origin_coverage.py` 从源码
+  推导「读取凭据环境键的模块」，要求每个都调用该规则，因此新增入口不会静默绕过。
 
 对象发布、删除账本、提交未知、取消与预算释放继续由既有契约和所有者负责。
 本规划不新增状态、错误码、公开路由或用户身份体系。

@@ -20,6 +20,7 @@ from speechnexus_backend.speech.application.asr_settlement import (
     AsrSettlementWorker,
 )
 from speechnexus_backend.speech.application.leases import LeaseService
+from speechnexus_backend.speech.domain.gateway_origin import require_safe_gateway_origin
 from speechnexus_backend.speech.infrastructure.asr_settlement_postgres import (
     PostgresAsrSettlementStore,
 )
@@ -57,8 +58,25 @@ class AsrSettlementWorkerSettings:
     storage_timeout_seconds: float = 3
     gateway_url: str = ""
     gateway_credential: SecretStr | None = None
+    allow_plaintext_origin: str = ""
     gateway_timeout_seconds: float = 10
     gateway_retries: int = 2
+
+    def __post_init__(self) -> None:
+        """Refuse an unusable gateway origin before any credential can be presented.
+
+        This is the construct-time gate the other credential-presenting entry
+        points apply in their settings validator. An unset origin carries nothing
+        to validate (and ``run_once``/``run`` refuse to build a client without
+        one); once an origin is configured it goes through the one shared rule.
+        """
+        if not self.gateway_url:
+            return
+        require_safe_gateway_origin(
+            self.gateway_url,
+            allow_plaintext_origin=self.allow_plaintext_origin,
+            label="ASR settlement gateway",
+        )
 
 
 def worker_settings(settings: Settings) -> AsrSettlementWorkerSettings:
@@ -67,15 +85,23 @@ def worker_settings(settings: Settings) -> AsrSettlementWorkerSettings:
         raise ValueError("ASR settlement requires SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL")
     if settings.transcription_recipe_file is None:
         raise ValueError("ASR settlement requires SPEECHNEXUS_TRANSCRIPTION_RECIPE_FILE")
-    recipe: TranscriptionRecipe = load_transcription_recipe(settings.transcription_recipe_file)
-    binding = recipe.approved.stages[0].runtime_plan.binding
+    # The gateway origin is a pure settings judgement, so it is decided before the
+    # private recipe is read: a deployment that cannot present the credential must
+    # fail before it touches a file or a database.
     if settings.execution_gateway_base_url is None:
         raise ValueError("ASR settlement requires SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL")
     if settings.execution_gateway_component_credential is None:
         raise ValueError(
             "ASR settlement requires SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL"
         )
-    credential = settings.execution_gateway_component_credential
+    gateway_url = str(settings.execution_gateway_base_url)
+    require_safe_gateway_origin(
+        gateway_url,
+        allow_plaintext_origin=settings.execution_gateway_allow_plaintext_origin,
+        label="ASR settlement gateway",
+    )
+    recipe: TranscriptionRecipe = load_transcription_recipe(settings.transcription_recipe_file)
+    binding = recipe.approved.stages[0].runtime_plan.binding
     return AsrSettlementWorkerSettings(
         database_url=settings.speech_settlement_database_url.get_secret_value(),
         admission_database_url=settings.database_url.get_secret_value(),
@@ -85,8 +111,9 @@ def worker_settings(settings: Settings) -> AsrSettlementWorkerSettings:
         poll_seconds=settings.asr_settlement_poll_seconds,
         batch_size=settings.asr_settlement_batch_size,
         storage_timeout_seconds=settings.asr_settlement_storage_timeout_seconds,
-        gateway_url=str(settings.execution_gateway_base_url),
-        gateway_credential=credential,
+        gateway_url=gateway_url,
+        gateway_credential=settings.execution_gateway_component_credential,
+        allow_plaintext_origin=settings.execution_gateway_allow_plaintext_origin,
         gateway_timeout_seconds=settings.execution_gateway_timeout_seconds,
         gateway_retries=settings.execution_gateway_max_retries,
     )

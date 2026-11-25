@@ -20,19 +20,26 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
-from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-import httpx
 import pytest
 from tests.fake.controller import (
     GIB,
     IMAGE_DIGEST,
     SAMPLE_IMAGE_REFERENCE,
     SAMPLE_INSTANCE_ID,
+    InMemoryStopCheckpoints,
     build_request,
     build_template,
+)
+from tests.fake.kubernetes_cluster import (
+    NAMESPACE,
+    POD_UID,
+    FakeClock,
+    FakeKubernetesCluster,
+    api_for,
+    pod_from_manifest,
 )
 
 from speechnexus_node_controller.domain.intents import (
@@ -49,10 +56,6 @@ from speechnexus_node_controller.domain.templates import (
     WarmupRequest,
 )
 from speechnexus_node_controller.infrastructure.engine_credentials import EngineCredentials
-from speechnexus_node_controller.infrastructure.kubernetes_api import (
-    KubernetesApi,
-    KubernetesApiSettings,
-)
 from speechnexus_node_controller.infrastructure.kubernetes_runtime import (
     CONFIG_DIGEST_ANNOTATION,
     GENERATION_LABEL,
@@ -63,127 +66,13 @@ from speechnexus_node_controller.infrastructure.kubernetes_runtime import (
     KubernetesRuntimeSettings,
 )
 
-NAMESPACE = "speechnexus"
-SERVICE_ACCOUNT = "speechnexus-node-controller"
-API_URL = "https://kubernetes.test"
 NODE_ID = "node-local-1"
 POD_NAME = f"engine-{SAMPLE_INSTANCE_ID}-1"
-POD_UID = "pod-uid-1"
 
 
-class _Clock:
-    """A monotonic clock the tests advance instead of sleeping."""
-
-    def __init__(self) -> None:
-        self.now = 1000.0
-        self.sleeps: list[float] = []
-
-    def monotonic(self) -> float:
-        return self.now
-
-    def sleep(self, seconds: float) -> None:
-        self.sleeps.append(seconds)
-        self.now += seconds
-
-
-class _FakeCluster:
-    """A scripted Kubernetes API server for the pod endpoints only."""
-
-    def __init__(self) -> None:
-        self.pods: dict[str, dict[str, Any]] = {}
-        self.created: list[dict[str, Any]] = []
-        self.requests: list[httpx.Request] = []
-        self.gets = 0
-        self.create_status = 201
-        # None means "never Ready": the readiness condition never appears.
-        self.ready_after_gets: int | None = 1
-        self.terminal_phase: str | None = None
-        self.terminal_exit_code: int | None = None
-        self.replacement_uid: str | None = None
-
-    def handler(self, request: httpx.Request) -> httpx.Response:
-        self.requests.append(request)
-        path = request.url.path
-        if request.method == "GET" and path == "/version":
-            return httpx.Response(200, json={"gitVersion": "v1.35.5"})
-        if request.method == "POST" and path == f"/api/v1/namespaces/{NAMESPACE}/pods":
-            body = json.loads(request.content)
-            self.created.append(body)
-            if self.create_status >= 400:
-                return httpx.Response(self.create_status, json={"message": "pod create rejected"})
-            pod = _pod_from(body)
-            self.pods[body["metadata"]["name"]] = pod
-            return httpx.Response(201, json=pod)
-        if request.method == "GET" and path.startswith(f"/api/v1/namespaces/{NAMESPACE}/pods/"):
-            return self._get_pod(path.rsplit("/", 1)[-1])
-        return httpx.Response(500, json={"message": f"unexpected {request.method} {path}"})
-
-    def _get_pod(self, name: str) -> httpx.Response:
-        self.gets += 1
-        pod = self.pods.get(name)
-        if pod is None:
-            return httpx.Response(404, json={"message": "not found"})
-        self._advance(pod)
-        return httpx.Response(200, json=pod)
-
-    def _advance(self, pod: dict[str, Any]) -> None:
-        status = pod["status"]
-        if self.replacement_uid is not None:
-            pod["metadata"]["uid"] = self.replacement_uid
-        if self.terminal_phase is not None:
-            status["phase"] = self.terminal_phase
-            status["conditions"] = []
-        if self.terminal_exit_code is not None:
-            status["containerStatuses"] = [
-                {"name": "engine", "state": {"terminated": {"exitCode": self.terminal_exit_code}}}
-            ]
-        if (
-            self.terminal_phase is None
-            and self.ready_after_gets is not None
-            and self.gets >= self.ready_after_gets
-        ):
-            status["phase"] = "Running"
-            status["conditions"] = [{"type": "Ready", "status": "True"}]
-            status["podIP"] = "10.0.0.7"
-
-
-def _pod_from(body: Mapping[str, Any]) -> dict[str, Any]:
-    metadata = body["metadata"]
-    return {
-        "apiVersion": "v1",
-        "kind": "Pod",
-        "metadata": {
-            "name": metadata["name"],
-            "namespace": metadata["namespace"],
-            "uid": POD_UID,
-            "labels": dict(metadata.get("labels", {})),
-            "annotations": dict(metadata.get("annotations", {})),
-        },
-        "spec": body["spec"],
-        "status": {"phase": "Pending", "conditions": []},
-    }
-
-
-def _token() -> str:
-    payload = json.dumps(
-        {"sub": f"system:serviceaccount:{NAMESPACE}:{SERVICE_ACCOUNT}"}, separators=(",", ":")
-    ).encode()
-    segment = __import__("base64").urlsafe_b64encode(payload).decode().rstrip("=")
-    return f"header.{segment}.signature"
-
-
-def _api(tmp_path: Path, cluster: _FakeCluster) -> KubernetesApi:
-    token_path = tmp_path / "token"
-    token_path.write_text(_token(), encoding="ascii")
-    return KubernetesApi(
-        settings=KubernetesApiSettings(
-            namespace=NAMESPACE,
-            service_account_name=SERVICE_ACCOUNT,
-            api_server_url=API_URL,
-            token_path=token_path,
-        ),
-        transport=httpx.MockTransport(cluster.handler),
-    )
+_Clock = FakeClock
+_FakeCluster = FakeKubernetesCluster
+_pod_from = pod_from_manifest
 
 
 def _runtime(
@@ -192,13 +81,15 @@ def _runtime(
     *,
     credentials: EngineCredentials | None = None,
     clock: _Clock | None = None,
+    checkpoints: InMemoryStopCheckpoints | None = None,
     **settings: Any,
 ) -> tuple[KubernetesNodeRuntime, _Clock]:
     resolved = _Clock() if clock is None else clock
-    api = _api(tmp_path, cluster)
+    api = api_for(tmp_path, cluster)
     runtime = KubernetesNodeRuntime(
         api=api,
         node_id=NODE_ID,
+        stop_checkpoints=checkpoints or InMemoryStopCheckpoints(),
         engine_credentials=credentials,
         settings=KubernetesRuntimeSettings(namespace=NAMESPACE, **settings),
         sleep=resolved.sleep,
@@ -508,18 +399,12 @@ def test_prepare_supplies_the_per_generation_native_credential(
     assert evidence.image_digest == IMAGE_DIGEST
 
 
-def test_stop_and_inspection_refuse_until_their_slices_land(tmp_path: Path) -> None:
+def test_inspection_refuses_until_its_slice_lands(tmp_path: Path) -> None:
     cluster = _FakeCluster()
     runtime, _clock = _runtime(tmp_path, cluster)
-    request = build_request()
-    template = build_template()
 
-    with pytest.raises(NotImplementedError, match="S3"):
-        runtime.stop(request, template)
     with pytest.raises(NotImplementedError, match="S4"):
-        runtime.inspect(request, template)
-    with pytest.raises(NotImplementedError, match="S3"):
-        runtime.recover_stop(request, template)
+        runtime.inspect(build_request(), build_template())
 
 
 _WARMUP_BODY = b"synthetic-warmup-body"

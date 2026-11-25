@@ -72,6 +72,14 @@ class KubernetesPodApi(Protocol):
 
     def create_pod(self, manifest: Mapping[str, Any]) -> PodState: ...
 
+    def delete_pod(
+        self,
+        name: str,
+        *,
+        uid: str | None = None,
+        grace_period_seconds: float | None = None,
+    ) -> bool: ...
+
 
 @dataclass(frozen=True, slots=True)
 class KubernetesApiSettings:
@@ -142,6 +150,41 @@ class KubernetesApi:
             "POST", f"/api/v1/namespaces/{self._namespace}/pods", body=dict(manifest)
         )
         return _pod_state(payload)
+
+    def delete_pod(
+        self,
+        name: str,
+        *,
+        uid: str | None = None,
+        grace_period_seconds: float | None = None,
+    ) -> bool:
+        """Request one deletion; ``False`` means the API server had no such Pod.
+
+        When ``uid`` is given it is sent as the deletion precondition, so the API
+        server itself refuses to delete a Pod whose identity changed after the
+        controller read it. That check is privileged: a client-side comparison
+        alone cannot close the window between the read and the delete.
+        """
+        body: dict[str, Any] = {
+            "apiVersion": "v1",
+            "kind": "DeleteOptions",
+            # The controller never waits for a cascaded dependent: an engine Pod
+            # owns no child object that has to outlive it.
+            "propagationPolicy": "Background",
+        }
+        if uid is not None:
+            body["preconditions"] = {"uid": uid}
+        if grace_period_seconds is not None:
+            body["gracePeriodSeconds"] = max(0, int(grace_period_seconds))
+        try:
+            # A delete answers with the Pod or with a Status object, and a missing
+            # Pod answers 404; only the request being accepted is reported here.
+            self._send("DELETE", self._pod_path(name), body=body)
+        except KubernetesApiError as error:
+            if error.status_code == 404:
+                return False
+            raise
+        return True
 
     def _pod_path(self, name: str) -> str:
         return f"/api/v1/namespaces/{self._namespace}/pods/{name}"

@@ -16,6 +16,28 @@ Two things this driver deliberately does *not* do:
 * It never quietly drops ``network_name``. Docker's dedicated instance network
   has no Kubernetes equivalent, so a template that asks for one is refused with
   an explicit unsupported observation rather than silently widening isolation.
+
+Stop fencing is anchored on the **Pod UID**, and the anchor is durable:
+
+* The UID of the Pod a stop may act on is pinned in the same
+  ``StopCheckpointStore`` the container driver uses, in the same
+  target-then-exit-then-release order. ``StopCheckpoint.container_id`` holds it;
+  a 36-character UUID is well inside the 128-character bound the checkpoint
+  already enforces, so no public contract changes.
+* A Pod recreated under the same name receives a new UID. A pinned stop whose
+  UID no longer matches therefore refuses with a quarantine observation and
+  never issues a delete, so an old generation's stop intent cannot kill the new
+  instance that took its name.
+* The pin is read back from the checkpoint, never from this process's memory, so
+  a restarted controller can still decide. An in-memory map could not: after a
+  restart it is empty, and a stop that fell back to the Pod name would delete
+  whatever currently holds that name.
+
+A deletion request is not a stop. The observation is only ``stopped`` after the
+Pod is gone from the API, and the exit code is only ever the one the API
+reported for the terminated engine container. A Pod that disappeared before any
+terminated state was observed leaves no exit fact, so no release evidence is
+written and the caller must treat the stop as unproven rather than as done.
 """
 
 from __future__ import annotations
@@ -24,7 +46,7 @@ import hashlib
 import re
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any, Final
 
@@ -38,6 +60,8 @@ from speechnexus_node_controller.domain.intents import (
     RuntimeInstanceIntentRequest,
     RuntimeIntentErrorCode,
 )
+from speechnexus_node_controller.domain.ports import StopCheckpointStore
+from speechnexus_node_controller.domain.stop_checkpoint import StopCheckpoint
 from speechnexus_node_controller.domain.templates import (
     ApprovedRuntimeTemplate,
     EngineAuthKind,
@@ -94,6 +118,13 @@ class KubernetesRuntimeSettings:
     # its own budget from ``readiness.warmup.timeout_seconds``.
     pod_ready_timeout_seconds: float = 180.0
     poll_interval_seconds: float = 1.0
+    # Deletion grace the API server hands the kubelet (the same "stop timeout"
+    # the container driver passes to its daemon), and the wall-clock budget for
+    # the Pod actually leaving the API afterwards (the container driver's
+    # "exit wait"). A Pod still visible when that budget expires is reported as
+    # stopping, never as stopped.
+    stop_grace_seconds: float = 20.0
+    exit_wait_seconds: float = 30.0
     name_prefix: str = "engine"
     nvidia_runtime_class_name: str = "nvidia"
     # Deployment-supplied VRAM budget, passed to the engine's own flag. The
@@ -109,6 +140,7 @@ class KubernetesNodeRuntime:
         *,
         api: KubernetesPodApi,
         node_id: str,
+        stop_checkpoints: StopCheckpointStore,
         settings: KubernetesRuntimeSettings,
         engine_credentials: EngineCredentials | None = None,
         sleep: Callable[[float], None] = time.sleep,
@@ -117,6 +149,7 @@ class KubernetesNodeRuntime:
     ) -> None:
         self._api = api
         self._node_id = node_id
+        self._stop_checkpoints = stop_checkpoints
         self._settings = settings
         self._engine_credentials = engine_credentials
         self._sleep = sleep
@@ -125,9 +158,10 @@ class KubernetesNodeRuntime:
         # One prepare action's single deadline, anchored before any API call and
         # kept across retries so a repeated prepare cannot restart the budget.
         self._deadlines: dict[tuple[str, int], float] = {}
-        # Fencing anchors recorded as soon as the API returns a Pod identity: the
-        # UID a stop has to match, so a same-named replacement is never stopped as
-        # if it were the generation this controller created.
+        # What this process observed when it created or adopted a Pod. It is a
+        # record, not the fencing authority: the UID a stop must match is read
+        # back from the durable checkpoint, because this map is empty after a
+        # restart and a generation may never have been prepared by this process.
         self._pod_uids: dict[tuple[str, int], str] = {}
 
     def prepare(
@@ -172,7 +206,194 @@ class KubernetesNodeRuntime:
     def stop(
         self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
     ) -> InstanceObservation:
-        raise NotImplementedError(f"the Kubernetes stop path is S3 of {RUNTIME_PLAN}")
+        """Pin this generation's Pod UID durably, then delete and confirm absence."""
+        if request.action is not RuntimeActionKind.STOP or request.target_node_id != self._node_id:
+            raise IntentConflictError("the original stop does not belong to this node")
+        try:
+            return self._stop(request, template)
+        except (KubernetesUnavailableError, KubernetesApiError) as error:
+            # An unanswered or refusing API server is neither a stopped nor a live
+            # instance: the intent stays unresolved and retryable.
+            raise RuntimeControllerUnavailableError(
+                f"the node runtime did not complete stop: {type(error).__name__}"
+            ) from error
+
+    def recover_stop(
+        self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
+    ) -> InstanceObservation | None:
+        """Resume the persisted original stop; the checkpoint, not memory, fences it."""
+        return self.stop(request, template)
+
+    def _stop(
+        self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
+    ) -> InstanceObservation:
+        checkpoint = self._stop_checkpoints.get_stop_checkpoint(request)
+        if checkpoint is None:
+            pod = self._api.get_pod(self._pod_name(request))
+            if pod is None:
+                # Nothing recorded and nothing observed: this node cannot report
+                # that it removed anything, so no release evidence is written.
+                return self._observation(request, template, ObservedInstanceState.ABSENT)
+            self._require_stop_identity(pod, request, template)
+            # Pin before acting, exactly as the container driver does: the UID is
+            # the fence every later decision of this stop is measured against.
+            checkpoint = self._stop_checkpoints.save_stop_checkpoint(
+                StopCheckpoint(request=request, container_id=pod.uid)
+            )
+        return self._resume_stop(checkpoint, template)
+
+    def _resume_stop(
+        self, checkpoint: StopCheckpoint, template: ApprovedRuntimeTemplate
+    ) -> InstanceObservation:
+        request = checkpoint.request
+        name = self._pod_name(request)
+        pod = self._api.get_pod(name)
+        if pod is not None and pod.uid != checkpoint.container_id:
+            # A Pod of this name now belongs to another UID. That is a rebuilt
+            # instance, not this generation's Pod, so the pinned stop may not
+            # delete it: the old generation's intent must never kill the new one.
+            return self._stop_conflict(request, template)
+        if pod is None:
+            if checkpoint.exited_at is None:
+                # Gone with no recorded exit fact, and not removed by this call:
+                # do not turn "already absent" into "this stop succeeded".
+                return self._observation(request, template, ObservedInstanceState.ABSENT)
+            return self._released_observation(checkpoint, template, observed=False)
+        self._require_stop_identity(pod, request, template)
+        if checkpoint.released_at is not None:
+            # A released stop whose Pod is visible again: the release claim and
+            # the API disagree, so report the conflict instead of re-deleting.
+            return self._stop_conflict(request, template)
+        if (
+            checkpoint.exit_code is not None
+            and pod.exit_code is not None
+            and pod.exit_code != checkpoint.exit_code
+        ):
+            # A container's terminated exit code never changes, so a different one
+            # means this Pod is no longer the runtime the checkpoint recorded.
+            return self._stop_conflict(request, template)
+        checkpoint = self._record_observed_exit(checkpoint, pod)
+        conflict = self._request_deletion(checkpoint, template)
+        if conflict is not None:
+            return conflict
+        deadline = self._monotonic() + self._settings.exit_wait_seconds
+        while True:
+            current = self._api.get_pod(name)
+            if current is None:
+                break
+            if current.uid != checkpoint.container_id:
+                # The name changed identity while terminating; nothing else may be
+                # deleted with this stop's authority.
+                return self._stop_conflict(request, template)
+            checkpoint = self._record_observed_exit(checkpoint, current)
+            remaining = deadline - self._monotonic()
+            if remaining <= 0:
+                # The delete was requested and the Pod is still in the API: that
+                # is a stopping instance, never a stopped one.
+                return self._observation(
+                    request,
+                    template,
+                    ObservedInstanceState.STOPPING,
+                    error_code=RuntimeIntentErrorCode.INSTANCE_DRAIN_INCOMPLETE,
+                )
+            self._sleep(min(self._settings.poll_interval_seconds, remaining))
+        if checkpoint.exited_at is None:
+            # The Pod left the API, but no terminated state was ever observed, so
+            # the exit fact is unknown. Claiming one would fabricate the proof.
+            return self._observation(request, template, ObservedInstanceState.ABSENT)
+        return self._released_observation(checkpoint, template, observed=True)
+
+    def _request_deletion(
+        self, checkpoint: StopCheckpoint, template: ApprovedRuntimeTemplate
+    ) -> InstanceObservation | None:
+        """Delete the pinned Pod; ``None`` means the request was accepted or moot."""
+        try:
+            self._api.delete_pod(
+                self._pod_name(checkpoint.request),
+                # Sent as the API server's own precondition so the fence holds even
+                # if the Pod is replaced between the read above and this request.
+                uid=checkpoint.container_id,
+                grace_period_seconds=self._settings.stop_grace_seconds,
+            )
+        except KubernetesApiError as error:
+            if error.status_code == 409:
+                return self._stop_conflict(checkpoint.request, template)
+            raise
+        return None
+
+    def _record_observed_exit(self, checkpoint: StopCheckpoint, pod: PodState) -> StopCheckpoint:
+        """Commit the API's terminated exit code once, before any release fact."""
+        if checkpoint.exited_at is not None or pod.exit_code is None:
+            return checkpoint
+        return self._stop_checkpoints.save_stop_checkpoint(
+            replace(checkpoint, exit_code=pod.exit_code, exited_at=self._wall_clock())
+        )
+
+    def _released_observation(
+        self,
+        checkpoint: StopCheckpoint,
+        template: ApprovedRuntimeTemplate,
+        *,
+        observed: bool,
+    ) -> InstanceObservation:
+        """Write the release fact only once the Pod is gone from the API."""
+        request = checkpoint.request
+        if self._api.get_pod(self._pod_name(request)) is not None:
+            return self._stop_conflict(request, template)
+        if checkpoint.released_at is None:
+            checkpoint = self._stop_checkpoints.save_stop_checkpoint(
+                replace(checkpoint, released_at=self._wall_clock())
+            )
+        self._deadlines.pop((request.instance_id, request.instance_generation), None)
+        return InstanceObservation(
+            instance_id=request.instance_id,
+            instance_generation=request.instance_generation,
+            approved_template_id=template.template_id,
+            config_digest=request.config_digest,
+            # ``stopped`` when this call watched the Pod leave, ``absent`` when it
+            # was already gone; both carry the same release evidence.
+            observed_instance_state=(
+                ObservedInstanceState.STOPPED if observed else ObservedInstanceState.ABSENT
+            ),
+            observed_peak_memory=None,
+            stop_evidence=checkpoint.evidence(),
+            # The exit code itself is the durable fact (it travels in the stop
+            # evidence); this reason only keeps a non-zero exit visible on the
+            # observation instead of letting it read as a clean exit.
+            error_code=(
+                RuntimeIntentErrorCode.ENGINE_EXIT_CODE_NONZERO
+                if checkpoint.exit_code not in (None, 0)
+                else None
+            ),
+        )
+
+    @staticmethod
+    def _stop_conflict(
+        request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
+    ) -> InstanceObservation:
+        return InstanceObservation(
+            instance_id=request.instance_id,
+            instance_generation=request.instance_generation,
+            approved_template_id=template.template_id,
+            config_digest=request.config_digest,
+            observed_instance_state=ObservedInstanceState.QUARANTINED,
+            quarantine_reason="the pinned stop target no longer matches its recorded facts",
+        )
+
+    def _require_stop_identity(
+        self,
+        pod: PodState,
+        request: RuntimeInstanceIntentRequest,
+        template: ApprovedRuntimeTemplate,
+    ) -> None:
+        """A Pod of this name is only the stop target when its identity is ours."""
+        self._require_same_identity(pod, request, template)
+        if (
+            pod.labels.get(MANAGED_BY_LABEL) != MANAGED_BY_VALUE
+            or pod.labels.get(NODE_ID_LABEL) != _label_value(self._node_id)
+            or pod.labels.get(GENERATION_LABEL) != str(request.instance_generation)
+        ):
+            raise IntentConflictError("the stop target belongs to another runtime identity")
 
     def inspect(
         self,
@@ -182,11 +403,6 @@ class KubernetesNodeRuntime:
         resumed: bool = False,
     ) -> InstanceObservation | None:
         raise NotImplementedError(f"the Kubernetes inspection path is S4 of {RUNTIME_PLAN}")
-
-    def recover_stop(
-        self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
-    ) -> InstanceObservation | None:
-        raise NotImplementedError(f"the Kubernetes stop recovery path is S3 of {RUNTIME_PLAN}")
 
     def _unsupported_template(
         self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate

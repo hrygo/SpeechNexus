@@ -9,6 +9,7 @@
     "backend/src/speechnexus_backend/speech/infrastructure/binding_disable_targets_schema.py",
     "backend/src/speechnexus_backend/speech/infrastructure/binding_draft_schema.py",
     "backend/src/speechnexus_backend/speech/infrastructure/binding_publication_evidence_schema.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/canonical_event_schema.py",
     "backend/src/speechnexus_backend/speech/infrastructure/catalog_revision_schema.py",
     "backend/src/speechnexus_backend/speech/infrastructure/claim_bucket_schema.py",
     "backend/src/speechnexus_backend/speech/infrastructure/coordination_keyed_lock_schema.py",

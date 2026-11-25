@@ -249,6 +249,11 @@ def test_prepare_carries_the_approved_argv_binds_and_transport_probe(
 
     body = cluster.created[0]
     container = body["spec"]["containers"][0]
+    # A read-only bind names its volume; it must never rename the Pod.  The Pod
+    # name is the instance identity the driver later looks itself up by, so a
+    # bind that rebinds it makes every instance collide on one name.
+    assert body["metadata"]["name"] == POD_NAME
+    assert body["spec"]["volumes"][0]["name"] == "approved-bind-0"
     # The template argv replaces the image CMD, never its ENTRYPOINT: Docker
     # passes it as ``Cmd`` and k8s spells that ``args``.  ``command`` must stay
     # absent so the image entrypoint still runs -- the deployed ASR template

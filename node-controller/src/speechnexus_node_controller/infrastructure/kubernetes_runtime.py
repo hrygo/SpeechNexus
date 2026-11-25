@@ -835,9 +835,13 @@ class KubernetesNodeRuntime:
         volumes: list[dict[str, Any]] = []
         mounts: list[dict[str, Any]] = []
         for index, bind in enumerate(template.read_only_binds):
-            name = f"approved-bind-{index}"
-            volumes.append({"name": name, "hostPath": {"path": bind.source, "type": "Directory"}})
-            mounts.append({"name": name, "mountPath": bind.target, "readOnly": True})
+            # Names the volume, never the Pod: ``name`` is the Pod's own name and
+            # rebinding it here renamed every Pod after its last read-only bind.
+            volume_name = f"approved-bind-{index}"
+            volumes.append(
+                {"name": volume_name, "hostPath": {"path": bind.source, "type": "Directory"}}
+            )
+            mounts.append({"name": volume_name, "mountPath": bind.target, "readOnly": True})
         if mounts:
             container["volumeMounts"] = mounts
         probe = _transport_probe(template)

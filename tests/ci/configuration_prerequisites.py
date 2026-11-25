@@ -117,6 +117,11 @@ INSPECTION_TOKEN = "SPEECHNEXUS_ASSET_INSPECTION_TOKEN"
 GATEWAY_QUERY = "SPEECHNEXUS_GATEWAY_CONTROL_QUERY_DATABASE_URL"
 GATEWAY_TOKEN = "SPEECHNEXUS_GATEWAY_COMPONENT_TOKEN"
 CONTROLLER_ROOT_KEY = "SPEECHNEXUS_CONTROLLER_ENGINE_AUTH_ROOT_KEY"
+CONTROLLER_KUBERNETES_IDENTITY = (
+    "SPEECHNEXUS_CONTROLLER_K8S_NAMESPACE",
+    "SPEECHNEXUS_CONTROLLER_K8S_SERVICE_ACCOUNT_NAME",
+)
+CONTROLLER_SETTINGS_PAIRS = "tests/unit/controller/test_settings.py"
 
 # Identity DSNs each runtime constructs only under ``SPEECHNEXUS_PROCESS_ROLE=api``.
 API_ROLE_IDENTITIES = (
@@ -517,6 +522,15 @@ ROWS: tuple[Row, ...] = (
         ),
         probes=probe((CONTROLLER_APP, ("_build_dependencies",))),
         message_keys=(CONTROLLER_ROOT_KEY,),
+    ),
+    Row(
+        keys=CONTROLLER_KUBERNETES_IDENTITY,
+        prerequisite="SPEECHNEXUS_CONTROLLER_RUNTIME=k8s（Docker 驱动下两项必须留空）",
+        behaviour=NAMED,
+        disposition="无需：既有拒绝（驱动选择期点名两个键）",
+        evidence=(f"{CONTROLLER_SETTINGS_PAIRS}::test_selecting_kubernetes_requires_its_identity"),
+        probes=probe((CONTROLLER, ("Settings.validate_kubernetes_driver_identity",))),
+        message_keys=CONTROLLER_KUBERNETES_IDENTITY,
     ),
     Row(
         keys=(

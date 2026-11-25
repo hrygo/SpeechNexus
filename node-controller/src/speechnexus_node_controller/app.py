@@ -2,28 +2,44 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from starlette.concurrency import run_in_threadpool
 
 from speechnexus_node_controller import __version__
-from speechnexus_node_controller.application.readiness import ReadinessService
+from speechnexus_node_controller.application.readiness import (
+    ReadinessProbe,
+    ReadinessService,
+)
 from speechnexus_node_controller.application.runtime_control import (
     NodeRuntimeControlService,
 )
-from speechnexus_node_controller.domain.templates import ApprovedTemplateRegistry, EngineAuthKind
+from speechnexus_node_controller.domain.ports import NodeRuntimePort
+from speechnexus_node_controller.domain.templates import (
+    ApprovedTemplateRegistry,
+    EngineAuthKind,
+)
 from speechnexus_node_controller.infrastructure.docker_api import DockerApi
 from speechnexus_node_controller.infrastructure.docker_runtime import (
     DockerNodeRuntime,
     DockerRuntimeSettings,
 )
 from speechnexus_node_controller.infrastructure.engine_credentials import EngineCredentials
+from speechnexus_node_controller.infrastructure.kubernetes_api import (
+    KubernetesApi,
+    KubernetesApiSettings,
+)
+from speechnexus_node_controller.infrastructure.kubernetes_runtime import (
+    KubernetesNodeRuntime,
+    KubernetesRuntimeSettings,
+)
 from speechnexus_node_controller.infrastructure.local_observer import LocalObservationLoop
 from speechnexus_node_controller.infrastructure.readiness import (
     DockerDaemonReadinessProbe,
     IntentStoreReadinessProbe,
+    KubernetesApiReadinessProbe,
 )
 from speechnexus_node_controller.infrastructure.sqlite_intent_store import (
     SqliteIntentStore,
@@ -38,35 +54,19 @@ from speechnexus_node_controller.interfaces.http.runtime_control import (
     create_runtime_control_router,
 )
 from speechnexus_node_controller.interfaces.http.security import ComponentCredential
-from speechnexus_node_controller.settings import Settings
+from speechnexus_node_controller.settings import KUBERNETES_RUNTIME, Settings
 
-# The planned Kubernetes adapter is S2 of this plan; the selector exists so a
-# deployment can name the target driver, but constructing it must fail loudly
-# until the adapter lands instead of quietly starting Docker containers.
-KUBERNETES_RUNTIME = "k8s"
-KUBERNETES_RUNTIME_PLAN = "docs/plans/2026-11-25-engine-runtime-k8s.md"
-
-
-def _require_implemented_runtime(runtime: str) -> None:
-    """Refuse a driver this build cannot construct, before opening daemon or store.
-
-    Called first so selecting ``k8s`` fails at startup rather than after the
-    approved templates, the SQLite intent store, or the daemon client exist. A
-    silent fallback to Docker would report success while placing instances in
-    the wrong runtime.
-    """
-    if runtime == KUBERNETES_RUNTIME:
-        raise NotImplementedError(
-            "the Kubernetes runtime driver is not implemented yet; see "
-            f"{KUBERNETES_RUNTIME_PLAN} S2"
-        )
+# The driver is chosen once, here. Neither branch falls back to the other: a
+# deployment that names ``k8s`` and cannot reach the cluster must refuse, not
+# start Docker containers while reporting a cluster-backed node.
+RuntimeApi = DockerApi | KubernetesApi
+RuntimeFactory = Callable[[SqliteIntentStore], NodeRuntimePort]
 
 
 def _build_dependencies(
     settings: Settings,
-) -> tuple[NodeRuntimeControlService, ReadinessService, SqliteIntentStore, DockerApi]:
-    """Wire the approved templates, durable intent facts, and the local daemon."""
-    _require_implemented_runtime(settings.runtime)
+) -> tuple[NodeRuntimeControlService, ReadinessService, SqliteIntentStore, RuntimeApi]:
+    """Wire the approved templates, durable intent facts, and the selected driver."""
     approved = load_approved_templates(settings.approved_templates_file)
     templates = ApprovedTemplateRegistry(approved)
     credentials = (
@@ -90,10 +90,7 @@ def _build_dependencies(
             "template declares engine authentication; declare an authenticated engine "
             "template or unset the key"
         )
-    api = DockerApi(
-        socket_path=str(settings.docker_socket_path),
-        timeout_seconds=settings.docker_request_timeout_seconds,
-    )
+    api, probes, build_runtime = _runtime_driver(settings, credentials)
     try:
         store = SqliteIntentStore(settings.intent_store_path)
     except BaseException:
@@ -104,8 +101,65 @@ def _build_dependencies(
         templates=templates,
         store=store,
         stop_checkpoints=store,
-        runtime=DockerNodeRuntime(
-            api=api,
+        runtime=build_runtime(store),
+    )
+    readiness = ReadinessService(
+        [*probes, IntentStoreReadinessProbe(store)],
+        timeout_seconds=settings.readiness_timeout_seconds,
+    )
+    return service, readiness, store, api
+
+
+def _runtime_driver(
+    settings: Settings,
+    credentials: EngineCredentials | None,
+) -> tuple[RuntimeApi, tuple[ReadinessProbe, ...], RuntimeFactory]:
+    """Construct the selected driver's client, its readiness probes and its adapter.
+
+    The client is built before the intent store so an unusable deployment (a
+    missing ServiceAccount mount, an absent daemon socket) fails before any
+    durable state is opened.
+    """
+    if settings.runtime == KUBERNETES_RUNTIME:
+        # The settings validator requires both values for this driver; asserting
+        # keeps the narrowing in one place instead of re-validating here.
+        namespace = settings.k8s_namespace
+        service_account_name = settings.k8s_service_account_name
+        assert namespace is not None
+        assert service_account_name is not None
+        api = KubernetesApi(
+            settings=KubernetesApiSettings(
+                namespace=namespace,
+                service_account_name=service_account_name,
+                request_timeout_seconds=settings.k8s_request_timeout_seconds,
+            )
+        )
+
+        def build_kubernetes(store: SqliteIntentStore) -> NodeRuntimePort:
+            # Stop checkpoints arrive with the stop slice; the adapter takes the
+            # same durable store then.
+            return KubernetesNodeRuntime(
+                api=api,
+                node_id=settings.node_id,
+                engine_credentials=credentials,
+                settings=KubernetesRuntimeSettings(
+                    namespace=namespace,
+                    pod_ready_timeout_seconds=settings.k8s_pod_ready_timeout_seconds,
+                    poll_interval_seconds=settings.k8s_pod_poll_interval_seconds,
+                    gpu_memory_utilization=settings.engine_gpu_memory_utilization,
+                ),
+            )
+
+        return api, (KubernetesApiReadinessProbe(api),), build_kubernetes
+
+    docker_api = DockerApi(
+        socket_path=str(settings.docker_socket_path),
+        timeout_seconds=settings.docker_request_timeout_seconds,
+    )
+
+    def build_docker(store: SqliteIntentStore) -> NodeRuntimePort:
+        return DockerNodeRuntime(
+            api=docker_api,
             node_id=settings.node_id,
             stop_checkpoints=store,
             engine_credentials=credentials,
@@ -120,13 +174,9 @@ def _build_dependencies(
                     else None
                 ),
             ),
-        ),
-    )
-    readiness = ReadinessService(
-        [DockerDaemonReadinessProbe(api), IntentStoreReadinessProbe(store)],
-        timeout_seconds=settings.readiness_timeout_seconds,
-    )
-    return service, readiness, store, api
+        )
+
+    return docker_api, (DockerDaemonReadinessProbe(docker_api),), build_docker
 
 
 def create_app(
@@ -138,7 +188,7 @@ def create_app(
     """Create the controller app, with explicit dependencies for tests."""
     resolved_settings = settings or Settings()
     owned_store: SqliteIntentStore | None = None
-    owned_api: DockerApi | None = None
+    owned_api: RuntimeApi | None = None
     if service is None and readiness is None:
         service, readiness, owned_store, owned_api = _build_dependencies(resolved_settings)
     elif service is None or readiness is None:

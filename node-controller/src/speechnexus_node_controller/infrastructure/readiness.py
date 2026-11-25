@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from speechnexus_node_controller.infrastructure.docker_api import DockerEngineApi
+from speechnexus_node_controller.infrastructure.kubernetes_api import KubernetesPodApi
 from speechnexus_node_controller.infrastructure.sqlite_intent_store import SqliteIntentStore
 
 
@@ -17,6 +18,20 @@ class DockerDaemonReadinessProbe:
     @property
     def name(self) -> str:
         return "container_daemon"
+
+    async def check(self) -> None:
+        await asyncio.to_thread(self._api.ping)
+
+
+class KubernetesApiReadinessProbe:
+    """Verify that the cluster API answers with this controller's credential."""
+
+    def __init__(self, api: KubernetesPodApi) -> None:
+        self._api = api
+
+    @property
+    def name(self) -> str:
+        return "kubernetes_api"
 
     async def check(self) -> None:
         await asyncio.to_thread(self._api.ping)

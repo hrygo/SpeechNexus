@@ -358,8 +358,12 @@ def test_prepare_carries_the_approved_argv_binds_and_transport_probe(
 
     body = cluster.created[0]
     container = body["spec"]["containers"][0]
-    assert container["command"] == ["/usr/bin/engine"]
-    assert container["args"] == ["--model", "/models/asr", "--port", "9000"]
+    # The template argv replaces the image CMD, never its ENTRYPOINT: Docker
+    # passes it as ``Cmd`` and k8s spells that ``args``.  ``command`` must stay
+    # absent so the image entrypoint still runs -- the deployed ASR template
+    # starts at ``--model`` precisely because ``vllm serve`` is its entrypoint.
+    assert "command" not in container
+    assert container["args"] == ["/usr/bin/engine", "--model", "/models/asr", "--port", "9000"]
     assert container["readinessProbe"]["httpGet"] == {"path": "/health", "port": 9000}
     volume = body["spec"]["volumes"][0]
     assert volume["hostPath"] == {"path": "/models/asr", "type": "Directory"}

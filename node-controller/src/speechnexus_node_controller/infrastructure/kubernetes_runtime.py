@@ -372,12 +372,14 @@ class KubernetesNodeRuntime:
             container["env"] = [{"name": name, "value": value} for name, value in environment]
         command = self._engine_command(template)
         if command is not None:
-            # The approved template stores argv: the first element is the program
-            # and the rest are its arguments, exactly as a container runtime splits
-            # an exec form.
-            container["command"] = [command[0]]
-            if len(command) > 1:
-                container["args"] = list(command[1:])
+            # The approved template's argv replaces the image CMD, not its
+            # ENTRYPOINT: ``docker_runtime`` passes it as the Docker API ``Cmd``
+            # field and keeps the image entrypoint.  Kubernetes ``command`` is
+            # the entrypoint, so the same argv belongs in ``args`` and
+            # ``command`` must stay unset.  The deployed ASR template relies on
+            # this: its argv starts with ``--model`` because the image entrypoint
+            # is ``vllm serve``.
+            container["args"] = list(command)
         volumes: list[dict[str, Any]] = []
         mounts: list[dict[str, Any]] = []
         for index, bind in enumerate(template.read_only_binds):

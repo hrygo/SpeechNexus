@@ -135,10 +135,30 @@ S5 之前连续多轮无法进行，原因是应用面自身，**compose 路径�
 
 结论：**派发器必须与应用面数据库同域部署**，算力面只跑引擎与网关。这一点写入下一轮的实施项，不由本切片顺带改动。
 
-#### 4.2.3 仍未验证
+#### 4.2.3 S3 的 `stop` / `recover_stop` 在真实集群上驱动（2026-11-25）
 
-- 控制器作为**常驻集群内服务**：镜像 `speechnexus-node-controller` 只在 docker，k3s containerd 无法拉取 `local/` 镜像，导入需要 root（或一个内网 registry）。当前 `prepare` 是在一次性 Pod 里用仓库源码驱动验证的。
-- `stop` / `recover_stop` 的 k8s 路径**未在真实集群上驱动过**：手工启动的引擎容器 `managed-by=speechnexus-operator-manual`，控制器不接管，也没有释放路径。
+在 `controller-probe`（in-cluster ServiceAccount `speechnexus-node-controller`）里用仓库源码驱动真实 API server：
+
+```
+STEP1 created engine-instance-stop-probe-1 phase Running uid 19d2b02d-…
+STEP2 stop -> stopped | error engine_exit_code_nonzero
+STEP2 pod after stop: None
+STEP3 rebuilt engine-instance-stop-probe-1 uid 6646a16c-… | new uid: True
+STEP4 recover_stop -> quarantined
+STEP4 FENCE_HELD: True
+```
+
+四点值得记：
+
+- `stop` 确实让 Pod 从 API 里**消失**（不是只报状态）
+- `engine_exit_code_nonzero` 是如实的：探针 Pod 跑的是 `sleep infinity`，被删除时非零退出，驱动拒绝把它报成干净退出
+- **UID fencing 在真实集群上成立**：同名重建得到新 UID 之后，重放同一次 stop 报 `quarantined`，新 Pod **原样活着**，旧代次的意图没有误杀它
+- 引擎 Pod `engine-instance-asr-1-2` 未受影响，`/health` 仍 `200`
+
+#### 4.2.4 仍未验证
+
+- 控制器作为**常驻集群内服务**：镜像 `speechnexus-node-controller` 只在 docker，k3s containerd 无法拉取 `local/` 镜像，导入需要 root（或一个内网 registry）。`prepare` 与 `stop` 都是在一次性 Pod 里用仓库源码驱动验证的，不是由常驻控制器发出的。
+- 由**控制器管辖**的引擎实例的 `stop`：手工启动的引擎容器 `managed-by=speechnexus-operator-manual`，控制器不接管，也没有释放路径。上节的 stop 针对的是探针自建的 Pod。
 - 本次 k8s 路径的就绪回执仍是按 docker 引擎签署的（回执窗口 24 h 内有效），执行时端点已指向 Pod。回执证明的是实例身份，不是「哪个进程在服务」。
 
 ## 5. 回退

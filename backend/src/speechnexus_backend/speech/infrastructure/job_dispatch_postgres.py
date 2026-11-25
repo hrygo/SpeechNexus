@@ -17,15 +17,29 @@ projects. Cancellation acceptance takes that same Job row first and closes its
 accepted can no longer win the claim CAS. No ``SKIP LOCKED`` and no vendor error branch
 are involved.
 
-``_record_progress`` and ``_finish`` also append the canonical ``job_events`` row for the
-same fact in the same transaction (cutover stage S1, plan §5). The canonical sequence is
-``coordination_jobs.last_event_seq + 1``, *not* the draft ``MAX(speech_job_events) + 1``:
-``_mark_running`` writes only the draft event (it takes no ``coordination_jobs`` row lock,
-so a legacy Job without a canonical parent would fail the foreign key), so the two
-sequences genuinely differ, and ``event_digest`` covers ``event_seq`` — a digest computed
-over the draft sequence would describe a different fact and could never be reconciled
-with the canonical row. Reads stay on the draft table until S2; the canonical row is a
-shadow that the reconciliation checks compare row by row.
+``_mark_running`` (S1b), ``_record_progress`` and ``_finish`` (S1) also append the
+canonical ``job_events`` row for the same fact in the same transaction (cutover stages
+S1/S1b, plan §5). The canonical sequence is ``coordination_jobs.last_event_seq + 1``,
+*not* the draft ``MAX(speech_job_events) + 1``: the draft table carries one more fact than
+canonical ever will — the creation row at ``event_seq`` 0, whose digest lives on
+``coordination_jobs.initial_event_digest`` and on the outbox row instead — so the two
+sequences are not the same sequence, and ``event_digest`` covers ``event_seq``: a digest
+computed over a draft number would describe a different fact and could never be
+reconciled with the canonical row. Reads stay on the draft table until S2; the canonical
+row is a shadow that the reconciliation checks compare row by row.
+
+**A Job with no ``coordination_jobs`` row is refused, not skipped.** ``job_events.job_id``
+references that row, so a started fact belonging to no coordination identity has no legal
+canonical owner. ``_append_canonical_event`` is the single place that decides this: it
+fails the transition rather than leaving a draft-only started fact — the one kind of gap
+that reconciliation cannot close afterwards, which is why S1 refused in the other two
+transitions as well. Because the refusal happens inside the same transaction, whatever
+``_mark_running`` had already written is rolled back, so a refused Job keeps the exact
+state it had before the call. The refusal cannot break a Job that used to dispatch: every
+claim candidate statement starts ``FROM coordination_jobs``, so a Job without that row is
+never handed to this state store. The gap that does exist is historical (starts written by
+S1, before S1b), and ``started_event_gaps`` names every one of them so the read switch
+cannot mistake them for a failed write.
 """
 
 from __future__ import annotations
@@ -190,9 +204,10 @@ def _append_lifecycle_event(
     )
 
 
-#: 推进 canonical 事件头。**序号由头决定,不由草案的 ``MAX+1`` 决定**:S1 是影子写,
-#: ``_mark_running`` 仍只写草案事件(它没有 canonical 父行的行锁,见该方法的说明),所以
-#: 草案序号必然领先 canonical 序号;``event_digest`` 又覆盖 ``event_seq``,两条事实要用同一个
+#: 推进 canonical 事件头。**序号由头决定,不由草案的 ``MAX+1`` 决定**:草案表多一条
+#: canonical 侧永远没有的创建事实(``event_seq`` 0,摘要在
+#: ``coordination_jobs.initial_event_digest`` 与 outbox 行上),所以「草案第几条」与
+#: 「canonical 第几条」不是同一个数;``event_digest`` 又覆盖 ``event_seq``,两条表示要用同一个
 #: 序号算摘要才可能被对账,那个序号只能是 ``coordination_jobs.last_event_seq + 1``。
 #:
 #: 只写 ``last_event_seq``,**不碰 ``claim_version``**:``claim_version`` 是 fence,``append_event``
@@ -229,12 +244,14 @@ def _append_canonical_event(
 
     head = connection.execute(STATEMENTS["job.event_head"], (job_id,)).fetchone()
     if head is None:
-        # 这两条迁移的入口都已经 ``SELECT ... FROM coordination_jobs ... FOR UPDATE`` 并据
-        # ``rowcount`` 判过归属,所以缺父行意味着 Job 身份不完整(例如历史 Job 只有
-        # ``speech_jobs`` 行)。静默跳过会留下「草案有、canonical 永远没有」的缺口,那正是
-        # 对账之后无法补的形状,所以这里直接失败。
+        # 进度与终态迁移的入口已经 ``SELECT ... FROM coordination_jobs ... FOR UPDATE`` 并据
+        # ``rowcount`` 判过归属,而 started 只按公开行的 ``rowcount`` 判 —— 三种迁移里只有它
+        # 可能在缺父行的 Job 上被调用(例如历史 Job 只有 ``speech_jobs`` 行)。静默跳过会留下
+        # 「草案有、canonical 永远没有」的缺口,那正是对账之后无法补的形状,所以这里直接失败。
+        # 消息里点名 Job:拒绝要能直接进工单,只给一个类型化错误的话,运维还得自己反推是哪个。
         raise DispatchProtocolError(
-            "Canonical event head is absent; the Job has no coordination_jobs row to own its event"
+            f"Job {job_id!r} has no coordination_jobs row; "
+            "its event has no canonical owner and no job_events row may reference it"
         )
     event_seq = int(head["last_event_seq"]) + 1
     digest = event_digest(
@@ -249,6 +266,63 @@ def _append_canonical_event(
     )
     connection.execute(STATEMENTS["job_event.insert"], (job_id, event_seq, digest, None))
     connection.execute(_EVENT_HEAD_ADVANCE, (event_seq, job_id))
+
+
+#: 「草案有 started 事实、canonical 侧一条事件都没有」的对账口径,**只在这里定义一次**。
+#:
+#: S1b 之后新写入的 started 事实两侧都有,这个查询回答的是其余那些:
+#:
+#: * S1 期间(本修订之前)写入的 Job:``_mark_running`` 当时只写草案事件,canonical 侧那条
+#:   started 永远补不上 —— ``adopt_historical_events`` 对已有事件的 Job 直接拒绝,一次性
+#:   回填不是修补手段。它们**按设计**有缺口,所以在读路径切到 canonical(S2)之前必须能被
+#:   点名,否则「历史 Job 缺 started」会被当成一次写入失败,或者更糟:被 SSE 续读当成常态。
+#: * 以及任何「有草案 started、canonical 一条事件都没有」的 Job(手工数据、半迁移库)。
+#:
+#: ``reason`` 区分两种成因:``no-coordination-row`` 是根本没有父行(``_mark_running`` 拒绝
+#: 写入的那一类),``no-canonical-event`` 有父行但 canonical 侧为空。**有** canonical 事件
+#: 但缺 started 的 Job 不在这里 —— 那需要逐事件比摘要,口径在
+#: ``scripts/dev-env/portable-reconcile.py`` 的逐字段对账里,这里不复制第二份。
+#: 行数上界(``STARTED_EVENT_GAPS_LIMIT``):对账的用途是点名到 Job,不是出报表;按 ``job_id``
+#: 排序取前缀,所以两次跑的结果前缀一致,便于对比。
+STARTED_EVENT_GAPS_LIMIT = 50
+
+#: 投影与连接两段纯文本。语句分成两段是因为 ``kind`` 判定要拼进 ``LIFECYCLE_KIND`` ——
+#: 那个常量是 ``kind`` 取值域的唯一来源(0039 的 ``DEFAULT`` 也从它渲染),这里不写第二份字面量。
+_STARTED_EVENT_PROJECTION = (
+    "SELECT e.job_id, e.event_seq, "
+    "CASE WHEN c.job_id IS NULL THEN 'no-coordination-row' "
+    "ELSE 'no-canonical-event' END AS reason "
+    "FROM speech_job_events AS e "
+    "LEFT JOIN coordination_jobs AS c ON c.job_id = e.job_id "
+)
+STARTED_EVENT_GAPS = (
+    _STARTED_EVENT_PROJECTION + f"WHERE e.kind = '{LIFECYCLE_KIND}' AND e.state = 'running' "
+    "AND NOT EXISTS (SELECT 1 FROM job_events AS j WHERE j.job_id = e.job_id) "
+    "ORDER BY e.job_id, e.event_seq"
+)
+
+
+def started_event_gaps(connection: SpeechConnection) -> tuple[str, ...]:
+    """列出示草案有 started、canonical 侧没有对应事件的 Job(口径见 ``STARTED_EVENT_GAPS``)。
+
+    返回人能直接贴进工单的行,不是计数:「有 N 个 Job 缺 started」在切换读路径时既不能复核
+    也不能豁免,而一行一个 Job 的缺口可以逐条归因(``no-coordination-row`` 与
+    ``no-canonical-event`` 的处置不同)。
+
+    **这是运维读,不是运行期读**:调用方给的是切换演练用的 owner DSN,与
+    ``scripts/dev-env/portable-reconcile.py`` 的 ``--dsn`` 同一口径。派发身份**跑不了**它 ——
+    ``job_event_grants`` 只授了 ``SELECT (event_seq, event_digest, payload_ref)``,而这条查询
+    要在 ``job_events.job_id`` 上过滤,列级授权里没有 ``job_id``。这个缺口属于 S2(S1 起就
+    存在:``job_event.read`` 也按 ``job_id`` 过滤,所以读翻转之前必须先补授这一列),
+    本切片不靠它修,只把它记在报告里。
+    """
+
+    rows = connection.execute(STARTED_EVENT_GAPS).fetchall()
+    return tuple(
+        f"{row['job_id']}: draft started event at seq {row['event_seq']} "
+        f"({row['reason']}) has no canonical job_events row"
+        for row in rows[:STARTED_EVENT_GAPS_LIMIT]
+    )
 
 
 def _job(row: dict[str, Any]) -> DispatchJob:
@@ -480,14 +554,22 @@ class PostgresDispatchStateStore:
         return _job(rows[0])
 
     def _mark_running(self, job: DispatchJob) -> DispatchJob:
-        """Append the started event at the next stored sequence.
+        """Append the started event at the next stored sequence and shadow it in canonical.
 
-        The row lock taken by the ``speech_jobs`` UPDATE serialises this append with
-        every other event writer for the Job, so the sequence is derived from the
-        stored events instead of being assumed equal to ``status_version``. That
-        equality only held because a pending Job carried exactly one event; deriving
-        ``MAX(event_seq) + 1`` keeps the started fact insertable once a pending Job
-        records more than one.
+        The ``speech_jobs`` UPDATE decides whether this call appends at all (two workers
+        holding stale copies of a pending Job must not both append), and the draft
+        sequence is derived from the stored events instead of being assumed equal to
+        ``status_version``. That equality only held because a pending Job carried exactly
+        one event; deriving ``MAX(event_seq) + 1`` keeps the started fact insertable once
+        a pending Job records more than one.
+
+        The canonical head is locked *before* the public row, so this method keeps the
+        module's lock order (coordination Job row, then the public row it projects) even
+        though it is the only transition that mutates the public row first. The parent
+        check itself is not repeated here: ``_append_canonical_event`` owns it, and a Job
+        with no ``coordination_jobs`` row makes it fail the whole transaction, so neither
+        representation moves. ``claim_version`` is not advanced — it is the lease fence,
+        and bumping it would expire the claim the caller still holds.
         """
         changed = False
         try:
@@ -500,6 +582,10 @@ class PostgresDispatchStateStore:
                     (str(max(1, int(self._timeout * 1000))),),
                 )
                 now = now_us(connection)
+                # 事件头先锁:锁序是 coordination_jobs -> speech_jobs(模块 docstring)。这一读
+                # 不判父行 —— 那个判定只有一处,在 ``_append_canonical_event`` 里 —— 它只保证
+                # started 这一条迁移也按同一顺序取锁,不会成为状态机里唯一的反向边。
+                connection.execute(STATEMENTS["job.event_head"], (job.job_id,)).fetchone()
                 updated = connection.execute(
                     "UPDATE speech_jobs SET state = 'running', "
                     "status_version = status_version + 1, updated_at_us = ? "
@@ -509,6 +595,16 @@ class PostgresDispatchStateStore:
                 if updated.rowcount == 1:
                     _append_lifecycle_event(
                         connection, job_id=job.job_id, state="running", occurred_at_us=now
+                    )
+                    # 同一笔事务里的 canonical 影子行(S1b,计划 §5)。started 的草案行由
+                    # ``_append_lifecycle_event`` 写入,``kind`` 取 0039 的默认值 ``lifecycle``;
+                    # 摘要覆盖 ``kind``,所以这里必须用同一个字面量,否则两侧摘要永远对不上。
+                    _append_canonical_event(
+                        connection,
+                        job_id=job.job_id,
+                        state="running",
+                        occurred_at_us=now,
+                        kind=LIFECYCLE_KIND,
                     )
                     changed = True
         except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:

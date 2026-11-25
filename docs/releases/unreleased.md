@@ -825,28 +825,53 @@ SCRIPT
 
 ### 9. 重放 `job_dispatch_grants`：事件双写要写 canonical `job_events` 与事件头
 
-S1 起，进度迁移与终态迁移在同一笔事务里额外追写一行 canonical `job_events`，并把
-`coordination_jobs.last_event_seq` 推进到新序号。需要的权限全部由 `job_dispatch_grants`
-声明（第 6 条那个重放脚本的入参没变，直接重跑即可）：`job_event_grants` 给的
-`USAGE`、`SELECT (event_seq, event_digest, payload_ref)`、
+S1 起进度迁移与终态迁移、S1b 起 started 迁移（`_mark_running`）在同一笔事务里额外追写一行
+canonical `job_events`，并把 `coordination_jobs.last_event_seq` 推进到新序号。需要的权限全部由
+`job_dispatch_grants` 声明（第 6 条那个重放脚本的入参没变，直接重跑即可）：`job_event_grants`
+给的 `USAGE`、`SELECT (event_seq, event_digest, payload_ref)`、
 `INSERT (job_id, event_seq, event_digest, payload_ref)`，以及 `coordination_jobs` 的
 `UPDATE (last_event_seq)` —— 只有这一列，`claim_version` 不在此列，事件双写不会推进租约栅栏。
+S1b 不新增授权面，也不新增列，所以这一节对 S1b 部署是「无操作」：同样的重放脚本、同样的入参。
 
-漏重放不会挡住进程启动，只在**领取之后第一次进度或终态迁移**处炸：
+漏重放不会挡住进程启动，只在**领取之后第一次 started / 进度 / 终态迁移**处炸：
 `psycopg.errors.InsufficientPrivilege: permission denied for table job_events`（SQLSTATE
 `42501`），写者把它归成 `DispatchUnavailableError`，Job 状态与草案事件一起回滚，租约到期后
 重新可领取。两种情况要分开看：`deploy/job-startup-gate.py` 在启动时核对 `job_events` 的
 `INSERT` 与 `last_event_seq` 的 `UPDATE`，门禁变红就是这条漏了；门禁没跑过的部署才会走到
 首次写入的 `42501`。
 
+**历史 Job 的 started 只有草案一侧，这个缺口按设计不补。** S1b 之前启动的 Job，其 started
+事实是当时只写草案留下的；`adopt_historical_events` 对已有事件的 Job 直接拒绝，一次性回填
+不是修补手段。所以在读路径切到 canonical（S2）之前，这批 Job 必须能按名点出来：
+`job_dispatch_postgres.started_event_gaps()` 用一句只读查询列出「草案有 started、canonical
+侧一条事件都没有」的 Job，带 `no-coordination-row` / `no-canonical-event` 两种成因，运维用
+owner DSN 跑它（与 `portable-reconcile.py --dsn` 同口径）。它们不是写入失败：S1b 之后新写
+的 started 在同一笔事务里两侧都有，缺一侧会让整笔迁移回滚。
+
+**没有 `coordination_jobs` 行的 Job 被拒绝，而不是跳过。** `job_events.job_id` 的外键指向
+`coordination_jobs`，没有父行就没有合法的影子行；跳过会留下「草案有 started、canonical 永远
+没有」这种补不回来的缺口。拒绝是类型化的 `DispatchProtocolError`（消息点名 Job），整笔事务
+回滚，公开 Job 仍是 `pending`、草案也不多出 started 行。它不会打断以前能派发的 Job：所有候选
+语句都从 `coordination_jobs` 出发，这种 Job 根本进不了派发队列（`test_canonical_event_double_write_pg.py`
+里有一组对照：同一轮里正常 Job 被领取，没有父行的那个不在候选集里）。
+
 回退：重放旧版 `job_dispatch_grants`（不含这两组授权）即可，已写下的 canonical 影子行留着 ——
 没有读者，S2 之前不需要清理。
 
+**已知缺口（S2 之前必须补）**：`job_event_grants` 的列级 `SELECT` 只有
+`(event_seq, event_digest, payload_ref)`，而 `claims.STATEMENTS["job_event.read"]` 在
+`job_events.job_id` 上过滤。实测（2026-11-25，本机 PostgreSQL 18.6，非属主身份）：以派发身份
+原样执行那条读语句得到 `psycopg.errors.InsufficientPrivilege: permission denied for table
+job_events`（`42501`）。S2 是第一次真正使用那条语句的阶段，所以把 `job_id` 补进授予面与读翻转
+必须在同一提交里，否则新读路径一上线就以 `42501` 失败。
+
 核实：**实跑**（2026-11-25，本机 PostgreSQL 18.6，非属主身份，`SPEECHNEXUS_TEST_DATABASE_URL`）：
 `tests/integration/test_canonical_event_double_write_pg.py` 以真实授权身份跑
-`mark_running` → `record_progress` → `finish`，断言 canonical 序号从 1 起连续、摘要按草案行
-字段用 canonical 序号重算后相等、`payload_ref` 为 `NULL`，并在 `job_events` 被改名后确认草案
-事件与事件头都不前进。**未实测**：真实部署上漏重放的告警先后（启动门禁 vs 首次写入 42501）。
+`mark_running` → `record_progress` → `finish`，断言 canonical 序号从 1 起**密**、无缺口
+（started 在内），摘要按草案行字段用 canonical 序号重算后逐行相等、`payload_ref` 为 `NULL`，
+并在 `job_events` 被改名后确认公开 Job、草案事件与事件头都不前进。**未实测**：真实部署上漏
+重放的告警先后（启动门禁 vs 首次写入 42501）；真实生产库里是否真的存在只有公开行的 Job
+（这一轮只证明它进不了派发队列，没有查过任何生产库）。
 
 ## 边界澄清（行为未变）
 
@@ -891,6 +916,12 @@ S1 起，进度迁移与终态迁移在同一笔事务里额外追写一行 cano
   `job_events`，`payload_ref` 恒为 `NULL`，canonical 序号取 `coordination_jobs.last_event_seq + 1`
   （不是草案的 `MAX(event_seq) + 1`）；事件摘要按 canonical 序号计算，因此能与草案行对上。
   **读路径、公开响应、SSE 序号都不变**，canonical 行目前没有读取者。
+- started 事件纳入双写（S1b）：`mark_running` 在同一笔事务里也追写 canonical `job_events`，
+  `kind` 取草案 started 行的默认值 `lifecycle`（摘要覆盖 `kind`，两侧必须同一个字面量）。
+  于是一次完整生命周期的 canonical 序号是**从 1 起连续无缺口**的 —— 之前缺的正是 started，
+  读翻转之后 SSE 续读会从进度直接跳到终态。`claim_version` 不推进（它是租约栅栏）。
+  没有 `coordination_jobs` 行的 Job 在这里被类型化拒绝、整笔回滚，而不是「只写草案」：
+  那种 Job 也进不了派发队列，所以拒绝不会打断任何以前能派发的 Job。**对外行为不变**。
 - 对外行为不变、只是收敛了实现：Job kind 的词汇表与泳道归属改为 domain 单一表
   （[#1043](https://github.com/hrygo/SpeechNexus/pull/1043)、
   [#1048](https://github.com/hrygo/SpeechNexus/pull/1048)），取消对账的重试上界收敛到
@@ -913,6 +944,7 @@ S1 起，进度迁移与终态迁移在同一笔事务里额外追写一行 cano
 | admission-watch | `tests/integration/test_admission_watch_pg.py`、`tests/integration/test_admission_watch_process_pg.py`、`tests/unit/backend/test_admission_watch.py` |
 | 第 2 条的升级重放 | `tests/integration/test_upgrade_path_pg.py`（真库上构造 v0.1.0 的四列 ACL，重放本节命令原文，并断言未重跑前仍然是坏的） |
 | `0068` 的两件加法 | `tests/integration/test_canonical_event_tables_0068_pg.py`：真库上逐列核对 `job_events`（类型、NULL 性、主键、外键）与 `coordination_outbox.delivered_at` 的 `timestamp(6)`，把 `alembic_version` 戳回 `0067` 再 `upgrade head` 与直接重跑 DDL 两遍都不报错且已有事件行不丢，`downgrade` 只删本修订的两样东西，`canonical_event_grants` 按列核对到「事件表没有 UPDATE/DELETE」 |
+| 事件双写 S1/S1b | `tests/integration/test_canonical_event_double_write_pg.py`：真库、真实授权身份跑 `mark_running` → `record_progress` → `finish`，断言 canonical 序号从 1 起密、逐行摘要重算相等、`payload_ref` 为 `NULL`；`job_events` 改名后 started / 进度 / 终态三条路径都不留半成品；没有 `coordination_jobs` 行的 Job 被拒绝且同一轮的对照 Job 仍被领取；`started_event_gaps` 按名点出历史缺口 |
 | 本页不会腐烂 | `scripts/dev-env/check-unreleased-notes.py` 与 `tests/ci/test_unreleased_notes_gate.py` |
 
 未覆盖，逐条点名：

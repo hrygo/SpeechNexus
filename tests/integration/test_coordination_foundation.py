@@ -444,6 +444,9 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
     # holds table-level rights, so it sits outside the shared grant surface.
     # 键锁表在两个引擎上都由同一份装配建出来(它是跨方言互斥的实现),所以这里不按方言分支。
     keyed_lock_tables = {COORDINATION_KEYED_LOCK_TABLE}
+    # The canonical event table and the outbox delivery stamp (0068). Additive: no writer
+    # or reader yet, and neither coordination owner holds rights on it.
+    canonical_event_tables = {"job_events"} if db.dialect == "postgresql" else set()
     # The accepted workspace command ledger (0049). It is a private
     # workspace-writer table, outside the shared coordination surface.
     workspace_command_tables = (
@@ -505,6 +508,7 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
         - qualification_provenance_tables
         - deletion_plan_tables
         - keyed_lock_tables
+        - canonical_event_tables
         == (set(SPEECH_UPDATES) | set(GATEWAY_UPDATES))
     )
     if db.dialect == "postgresql":

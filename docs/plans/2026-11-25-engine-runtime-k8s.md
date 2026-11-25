@@ -85,13 +85,21 @@ Docker 侧靠容器 exit code + 检查点。k8s 侧：
 
 | 切片 | 内容 | 判据（注入必红） |
 | --- | --- | --- |
-| S1 | 抽出驱动选择：`SPEECHNEXUS_CONTROLLER_RUNTIME=docker\|k8s`，默认 `docker`；k8s 分支先只抛"未实现" | 把选择项写成默认 `k8s` → 现有控制器测试全红；写回 `docker` → 绿 |
+| S1 | 抽出驱动选择：`SPEECHNEXUS_CONTROLLER_RUNTIME=docker\|k8s`，默认 `docker`；k8s 分支先只抛"未实现" | 把选择项写成默认 `k8s` → 走组合根的测试红；写回 `docker` → 绿 |
 | S2 | `prepare`：创建 Pod、等 Ready 或预热超时、产出 `InstanceObservation` | 注入"不等 Ready 直接返回 ready" → 红；注入"Pod 创建失败仍返回 ready" → 红 |
 | S3 | `stop` + `recover_stop`：UID fencing + 确认 Pod 真的消失 | 注入"不发删除就报 stopped" → 红；注入"忽略 UID 校验" → 同名重建后误杀，红 |
 | S4 | `inspect`：读 Pod 相位 + 事件 → `ObservedInstanceState` | 注入"读不到就当 ABSENT" → 红 |
 | S5 | 端到端：一个 Job 走 k8s 引擎跑完，与 compose 路径对照同一份证据 | 两条路径的实例事实字段逐项一致；不一致处必须能解释 |
 
 S5 是验收点，不是加功能。
+
+### 4.1 S1 实测（`74113822`，2026-11-25）
+
+判据「默认改成 `k8s` → 现有控制器测试全红」**是错的**：实际 `5 failed / 381 passed`。控制器套件里 381 条测试注入 `ScriptedNodeRuntime` 或直接 patch `_build_dependencies`，从不读默认配置，因此默认值改动只击中真正走组合根的 5 条。夹具没有为了让数字变大而改动。
+
+更值得记的是**注入 B**：让 `k8s` 分支悄悄 `return` 退回 Docker，**排除新补的测试后现有 382 条全绿**。也就是说，一个「选了 k8s 但实际还在用 Docker」的驱动会让整套双机演练结论失效，而它在切片前完全不可见。切片据此补了会红的测试。
+
+同一切片留下的边界：测试夹具注入 service+readiness 的路径**绕过开关**。它是测试专用 seam，生产入口 `main → create_app → _build_dependencies` 不经过；要把守卫上提到 `create_app` 会改变现有注入语义，**留给 S2 定**。
 
 ## 5. 回退
 

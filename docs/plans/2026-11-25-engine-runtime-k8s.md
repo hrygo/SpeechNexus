@@ -105,6 +105,27 @@ S5 是验收点，不是加功能。
 
 同一切片留下的边界：测试夹具注入 service+readiness 的路径**绕过开关**。它是测试专用 seam，生产入口 `main → create_app → _build_dependencies` 不经过；要把守卫上提到 `create_app` 会改变现有注入语义，**留给 S2 定**。
 
+### 4.2 S5 验收记录（未完成）
+
+算力面一侧已经成立，验收卡在应用面，**不是 k8s 驱动的问题**。
+
+已验证（2026-11-25）：
+
+- 引擎在 k3s 上服务：Pod `engine-instance-asr-1-2` `1/1 Running`，`http://10.42.0.103:18190/health → 200`、`/v1/models → qwen3-asr-1.7b`
+- 驱动在集群内跑通 `prepare → ready`：`controller-probe` 用 ServiceAccount `speechnexus-node-controller` 加载 in-cluster token，经真实 API server 建 Pod、等 Ready、报 `STEP prepare -> ready`
+- 镜像不变量取「批准的原样引用 + 核对运行中容器 `imageID`」；喂 docker 来源的 digest 时驱动报 `quarantined` 并点名两个摘要
+- 网关能直接打到引擎 Pod（容器内 `urllib … /health → 200`）；端点切到 `10.42.0.103:18190` 后容器内配置生效，可切回
+- 应用面接受 k8s 引擎的运维取证：`speechnexus-register-engine --renew-readiness --engine-url <Pod>` 成功；`--generation 2` 被正确拒绝（`previous_generation_active`），因为手工容器没有释放路径
+
+未完成（阻塞）：
+
+- `POST /v1/nexus/jobs` 一律 `503 engine_state_mismatch`，**compose 路径同样如此**，因此没有可对照的基准
+- 两个只读出口对同一实例给出相反结论（CLI `valid` / HTTP `invalid`），见 #1246
+- 对外码把三种内部拒绝折叠成一句「重新注册」，实测重注册两次无效，见 #1245
+- 已排除：就绪回执过期、回执签错引擎、intent 解不开、observation 不合法、就绪回执不合法——三份文档在**部署中的 api Pod 内**用其自带代码校验全部通过
+
+结论：S5 的「一个 Job 走 k8s 引擎跑完」与「两条路径逐项对照」均**未达成**，不得记为通过。
+
 ## 5. 回退
 
 - 驱动开关默认 `docker`，切回即恢复；**不改数据库、不改契约**，所以没有迁移回退问题

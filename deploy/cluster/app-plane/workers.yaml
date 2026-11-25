@@ -40,7 +40,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: artifact-retention
-          image: speechnexus-python:203d412b
+          image: speechnexus-python:913d0e0a
           imagePullPolicy: IfNotPresent
           command: ["speechnexus-artifact-retention"]
           envFrom:
@@ -94,7 +94,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: admission-watch
-          image: speechnexus-python:203d412b
+          image: speechnexus-python:913d0e0a
           imagePullPolicy: IfNotPresent
           command: ["speechnexus-admission-watch"]
           envFrom:
@@ -145,7 +145,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: engine-readiness
-          image: speechnexus-python:203d412b
+          image: speechnexus-python:913d0e0a
           imagePullPolicy: IfNotPresent
           command: ["speechnexus-engine-readiness", "--warn-within-seconds", "21600"]
           envFrom:
@@ -186,7 +186,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: engine-readiness-renew
-          image: speechnexus-python:203d412b
+          image: speechnexus-python:913d0e0a
           imagePullPolicy: IfNotPresent
           command:
             - speechnexus-register-engine
@@ -222,7 +222,7 @@ spec:
       # ..data, then root ownership).
       initContainers:
         - name: stage-recipes
-          image: speechnexus-python:203d412b
+          image: speechnexus-python:913d0e0a
           imagePullPolicy: IfNotPresent
           command:
             - /bin/sh

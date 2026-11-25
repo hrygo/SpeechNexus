@@ -18,7 +18,7 @@ spec:
         runAsNonRoot: true
       containers:
         - name: minio-init
-          image: speechnexus-python:203d412b
+          image: speechnexus-python:913d0e0a
           command: ["python", "/opt/speechnexus/init-object-storage.py"]
           env:
             - name: MINIO_ENDPOINT

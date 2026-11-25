@@ -22,7 +22,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: workbench-migrate
-          image: speechnexus-python:203d412b
+          image: speechnexus-python:913d0e0a
           imagePullPolicy: IfNotPresent
           command: ["speechnexus-workbench-migrate"]
           envFrom:
@@ -67,7 +67,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: workbench-api
-          image: speechnexus-python:203d412b
+          image: speechnexus-python:913d0e0a
           imagePullPolicy: IfNotPresent
           # The reference service runs this gate as its entrypoint; there is no
           # console script for the workbench API.

@@ -1,14 +1,21 @@
-"""A scripted Kubernetes API server for the pod endpoints; no cluster is involved.
+"""A scripted Kubernetes API server for the pod and event endpoints; no cluster.
 
 Every cluster adapter test drives the real ``KubernetesApi`` over
 ``httpx.MockTransport`` with this double as the server, so the assertions cover
 the JSON the driver would really submit and the requests it would really make.
 
 The double answers only the operations the controller is allowed to perform
-(read one Pod, create one Pod, delete one Pod) and it enforces the same deletion
-precondition the API server enforces: a delete whose ``preconditions.uid`` names
-another Pod identity is refused with ``409`` and removes nothing. That is what
-makes "a rebuilt Pod is never deleted by the old generation's stop" testable.
+(read one Pod, list one Pod's events, create one Pod, delete one Pod) and it
+enforces the same deletion precondition the API server enforces: a delete whose
+``preconditions.uid`` names another Pod identity is refused with ``409`` and
+removes nothing. That is what makes "a rebuilt Pod is never deleted by the old
+generation's stop" testable.
+
+The event endpoint applies the ``fieldSelector`` it is sent, exactly as the API
+server does: only events for that Pod name and that Pod UID come back. An event
+recorded for an earlier Pod of the same name therefore stays invisible to a
+request that names the current UID, which is what makes "the previous
+generation's failure does not explain this one" testable.
 """
 
 from __future__ import annotations
@@ -32,6 +39,7 @@ API_URL = "https://kubernetes.test"
 POD_UID = "pod-uid-1"
 REPLACEMENT_POD_UID = "pod-uid-2"
 _PODS = f"/api/v1/namespaces/{NAMESPACE}/pods"
+_EVENTS = f"/api/v1/namespaces/{NAMESPACE}/events"
 
 
 class FakeKubernetesCluster:
@@ -43,9 +51,16 @@ class FakeKubernetesCluster:
         # Each entry is the DELETE the driver sent: the name and the request body.
         self.deletes: list[dict[str, Any]] = []
         self.requests: list[httpx.Request] = []
+        # Every Event document the API server holds, across all Pods.
+        self.events: list[dict[str, Any]] = []
         self.gets = 0
+        self.event_lists = 0
         self.create_status = 201
         self.delete_status = 200
+        # A refused read answers with this status instead of the Pod, i.e. the
+        # API server is reachable but this read fails.
+        self.pod_read_status = 200
+        self.event_status = 200
         # None means "never Ready": the readiness condition never appears.
         self.ready_after_gets: int | None = 1
         self.terminal_phase: str | None = None
@@ -71,6 +86,8 @@ class FakeKubernetesCluster:
             return httpx.Response(200, json={"gitVersion": "v1.35.5"})
         if request.method == "POST" and path == _PODS:
             return self._create_pod(request)
+        if request.method == "GET" and path == _EVENTS:
+            return self._list_events(request)
         if path.startswith(_PODS + "/"):
             name = path.rsplit("/", 1)[-1]
             if request.method == "GET":
@@ -78,6 +95,46 @@ class FakeKubernetesCluster:
             if request.method == "DELETE":
                 return self._delete_pod(name, request)
         return httpx.Response(500, json={"message": f"unexpected {request.method} {path}"})
+
+    def record_event(
+        self,
+        name: str,
+        *,
+        reason: str,
+        event_type: str = "Warning",
+        uid: str = POD_UID,
+        message: str = "",
+    ) -> None:
+        """Add one Event document the API server will serve for that Pod.
+
+        ``message`` is free text other cluster components write; tests use it to
+        prove that none of it reaches an observation.
+        """
+        self.events.append(
+            {
+                "apiVersion": "v1",
+                "kind": "Event",
+                "metadata": {"name": f"{name}.{len(self.events)}", "namespace": NAMESPACE},
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "kind": "Pod",
+                    "namespace": NAMESPACE,
+                    "name": name,
+                    "uid": uid,
+                },
+                "reason": reason,
+                "type": event_type,
+                "message": message,
+            }
+        )
+
+    def _list_events(self, request: httpx.Request) -> httpx.Response:
+        self.event_lists += 1
+        if self.event_status >= 400:
+            return httpx.Response(self.event_status, json={"message": "event list rejected"})
+        selectors = _field_selector(request.url.params.get("fieldSelector"))
+        items = [event for event in self.events if _matches(event, selectors)]
+        return httpx.Response(200, json={"apiVersion": "v1", "kind": "EventList", "items": items})
 
     def _create_pod(self, request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
@@ -90,6 +147,8 @@ class FakeKubernetesCluster:
 
     def _get_pod(self, name: str) -> httpx.Response:
         self.gets += 1
+        if self.pod_read_status >= 400:
+            return httpx.Response(self.pod_read_status, json={"message": "pod read rejected"})
         pod = self.pods.get(name)
         if pod is None:
             return httpx.Response(404, json={"message": "not found", "reason": "NotFound"})
@@ -188,6 +247,45 @@ def mark_terminated(pod: dict[str, Any], exit_code: int) -> None:
     pod["status"]["containerStatuses"] = [
         {"name": "engine", "state": {"terminated": {"exitCode": exit_code}}}
     ]
+
+
+def mark_running(pod: dict[str, Any], *, ready: bool) -> None:
+    """Script one Pod as running, with or without its Ready condition."""
+    pod["status"]["phase"] = "Running"
+    pod["status"]["conditions"] = [{"type": "Ready", "status": "True" if ready else "False"}]
+    if ready:
+        pod["status"]["podIP"] = "10.0.0.7"
+
+
+def mark_deleting(pod: dict[str, Any], at: str = "2026-11-25T00:00:00Z") -> None:
+    """Script one Pod as deleted but still served, as the API server reports it."""
+    pod["metadata"]["deletionTimestamp"] = at
+    pod["metadata"]["deletionGracePeriodSeconds"] = 20
+
+
+def _field_selector(raw: str | None) -> dict[str, str]:
+    """The ``fieldSelector`` query as a mapping."""
+    if not raw:
+        return {}
+    selectors: dict[str, str] = {}
+    for term in raw.split(","):
+        key, _, value = term.partition("=")
+        if key and value:
+            selectors[key] = value
+    return selectors
+
+
+def _matches(event: Mapping[str, Any], selectors: Mapping[str, str]) -> bool:
+    """Whether one Event document satisfies every selector the client sent."""
+    involved = event.get("involvedObject")
+    fields = involved if isinstance(involved, Mapping) else {}
+    for key, expected in selectors.items():
+        path = key.split(".")
+        if len(path) != 2 or path[0] != "involvedObject":
+            return False
+        if str(fields.get(path[1], "")) != expected:
+            return False
+    return True
 
 
 def service_account_token(subject: str | None = None) -> str:

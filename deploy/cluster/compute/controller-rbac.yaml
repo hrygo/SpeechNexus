@@ -20,6 +20,11 @@
 # `delete` is what the stop path uses: the request carries the Pod UID as an
 # API-level precondition, so a Pod rebuilt under the same name is refused by the
 # API server rather than deleted by the previous generation's stop.
+#
+# `events` is read-only and is what the inspect path uses: when a Pod stays
+# Pending or never becomes Ready, the recorded event reason is the only thing
+# that says why (an unpullable image, an unsatisfiable schedule, a rejected
+# container configuration). No event is ever written or deleted.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -40,6 +45,9 @@ rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

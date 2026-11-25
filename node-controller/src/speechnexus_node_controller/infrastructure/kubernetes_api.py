@@ -61,6 +61,25 @@ class PodState:
     pod_ip: str | None
     image: str | None
     exit_code: int | None = None
+    # A deleted Pod answers reads for as long as its grace period lasts. It can
+    # still carry a stale Ready condition in that window, so the flag is part of
+    # the observation: a Pod being removed is never "ready".
+    deleting: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class PodEvent:
+    """One event recorded for a Pod, reduced to the fields that classify it.
+
+    The message is deliberately not carried. An event message holds node names,
+    image references and free text written by other cluster components, and this
+    class is what the driver is allowed to reason from; keeping the text out of
+    the process is what keeps it out of an observation.
+    """
+
+    reason: str
+    event_type: str
+    involved_uid: str
 
 
 class KubernetesPodApi(Protocol):
@@ -69,6 +88,8 @@ class KubernetesPodApi(Protocol):
     def ping(self) -> None: ...
 
     def get_pod(self, name: str) -> PodState | None: ...
+
+    def list_pod_events(self, name: str, *, uid: str | None = None) -> tuple[PodEvent, ...]: ...
 
     def create_pod(self, manifest: Mapping[str, Any]) -> PodState: ...
 
@@ -145,6 +166,24 @@ class KubernetesApi:
             return None
         return _pod_state(payload)
 
+    def list_pod_events(self, name: str, *, uid: str | None = None) -> tuple[PodEvent, ...]:
+        """The events the API attributes to one Pod, never another Pod's.
+
+        The selector asks the server for one Pod's events; the client filters on
+        ``involvedObject.uid`` as well, because a name is not an identity: an
+        event recorded for an earlier Pod that held the same name would otherwise
+        explain this generation's state with another generation's failure.
+        """
+        selectors = ["involvedObject.kind=Pod", f"involvedObject.name={name}"]
+        if uid is not None:
+            selectors.append(f"involvedObject.uid={uid}")
+        payload = self._send_optional_json(
+            "GET",
+            f"/api/v1/namespaces/{self._namespace}/events",
+            params={"fieldSelector": ",".join(selectors)},
+        )
+        return _pod_events(payload, uid=uid)
+
     def create_pod(self, manifest: Mapping[str, Any]) -> PodState:
         payload = self._send_json(
             "POST", f"/api/v1/namespaces/{self._namespace}/pods", body=dict(manifest)
@@ -195,10 +234,11 @@ class KubernetesApi:
         path: str,
         *,
         body: Mapping[str, Any] | None = None,
+        params: Mapping[str, str] | None = None,
     ) -> httpx.Response:
         """Send one request and raise for any error status."""
         try:
-            response = self._client.request(method, path, json=body)
+            response = self._client.request(method, path, json=body, params=params)
         except httpx.HTTPError as error:
             raise KubernetesUnavailableError(
                 f"kubernetes api request failed: {type(error).__name__}"
@@ -213,17 +253,24 @@ class KubernetesApi:
         path: str,
         *,
         body: Mapping[str, Any] | None = None,
+        params: Mapping[str, str] | None = None,
     ) -> Any:
-        response = self._send(method, path, body=body)
+        response = self._send(method, path, body=body, params=params)
         payload = _decode_json(response)
         if payload is None:
             raise KubernetesApiError(response.status_code, "response carried no object")
         return payload
 
-    def _send_optional_json(self, method: str, path: str) -> Any:
+    def _send_optional_json(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: Mapping[str, str] | None = None,
+    ) -> Any:
         """Send one read-only request, mapping a missing resource to ``None``."""
         try:
-            return self._send_json(method, path)
+            return self._send_json(method, path, params=params)
         except KubernetesApiError as error:
             if error.status_code == 404:
                 return None
@@ -280,7 +327,38 @@ def _pod_state(payload: Any) -> PodState:
         ),
         image=_container_image(spec),
         exit_code=_exit_code(status),
+        deleting=bool(metadata.get("deletionTimestamp")),
     )
+
+
+def _pod_events(payload: Any, *, uid: str | None) -> tuple[PodEvent, ...]:
+    """Project one event list, dropping every event that is not this Pod's."""
+    if not isinstance(payload, dict):
+        return ()
+    items = payload.get("items")
+    if not isinstance(items, list):
+        return ()
+    events = [event for item in items if (event := _pod_event(item)) is not None]
+    if uid is None:
+        return tuple(events)
+    return tuple(event for event in events if event.involved_uid == uid)
+
+
+def _pod_event(item: Any) -> PodEvent | None:
+    """One event's classifying fields; an unattributable event is dropped."""
+    if not isinstance(item, dict):
+        return None
+    reason = item.get("reason")
+    event_type = item.get("type")
+    involved = item.get("involvedObject")
+    if not isinstance(reason, str) or not reason or not isinstance(event_type, str):
+        return None
+    # Without the involved object's UID the event cannot be attributed to one
+    # Pod generation, and an unattributed failure reason is worse than none.
+    involved_uid = involved.get("uid") if isinstance(involved, dict) else None
+    if not isinstance(involved_uid, str) or not involved_uid:
+        return None
+    return PodEvent(reason=reason, event_type=event_type, involved_uid=involved_uid)
 
 
 def _string_map(value: Any) -> dict[str, str]:

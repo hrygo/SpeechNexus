@@ -399,14 +399,6 @@ def test_prepare_supplies_the_per_generation_native_credential(
     assert evidence.image_digest == IMAGE_DIGEST
 
 
-def test_inspection_refuses_until_its_slice_lands(tmp_path: Path) -> None:
-    cluster = _FakeCluster()
-    runtime, _clock = _runtime(tmp_path, cluster)
-
-    with pytest.raises(NotImplementedError, match="S4"):
-        runtime.inspect(build_request(), build_template())
-
-
 _WARMUP_BODY = b"synthetic-warmup-body"
 
 

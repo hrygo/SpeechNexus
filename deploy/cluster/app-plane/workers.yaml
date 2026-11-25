@@ -121,137 +121,160 @@ spec:
             medium: Memory
             sizeLimit: 16Mi
 ---
-# One-shot readiness report, then the renewal that keeps the instance's readiness
-# lease alive. Both read the same registration identity as `engine-register`; the
-# renewal needs the private recipe because it re-derives the approved capacity.
+# The readiness lease is the only thing keeping the instance admissible, and it
+# lasts 24 h: a one-shot report and renewal is a receipt that silently runs out.
+# Both run on a schedule instead, and the report exits non-zero while a receipt
+# is still expiring -- that failed Job is the alarm, because nothing else in the
+# product surfaces a lapsed receipt before admission stops (#1253).
 apiVersion: batch/v1
-kind: Job
+kind: CronJob
 metadata:
   name: engine-readiness
   namespace: speechnexus
 spec:
-  backoffLimit: 1
-  ttlSecondsAfterFinished: 3600
-  template:
+  # Hourly: the warning window is wider than the period, so an unmet renewal
+  # shows up as failed Jobs well before the 24 h receipt is gone.
+  schedule: "17 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
     spec:
-      restartPolicy: Never
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 10001
-        runAsGroup: 10001
-        # The staged Secret is root-owned 0440; only the fsGroup can read it.
-        fsGroup: 10001
-        seccompProfile:
-          type: RuntimeDefault
-      containers:
-        - name: engine-readiness
-          image: speechnexus-python:913d0e0a
-          imagePullPolicy: IfNotPresent
-          command: ["speechnexus-engine-readiness", "--warn-within-seconds", "21600"]
-          envFrom:
-            - secretRef:
-                name: readiness-env
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 3600
+      template:
+        spec:
+          restartPolicy: Never
           securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: ["ALL"]
-          volumeMounts:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            # The staged Secret is root-owned 0440; only the fsGroup can read it.
+            fsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: engine-readiness
+              image: speechnexus-python:913d0e0a
+              imagePullPolicy: IfNotPresent
+              command:
+                - speechnexus-engine-readiness
+                - --warn-within-seconds
+                # Six hours: three hourly periods of headroom before the alarm.
+                - "21600"
+                - --fail-on-expiring
+              envFrom:
+                - secretRef:
+                    name: readiness-env
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
             - name: tmp
-              mountPath: /tmp
-      volumes:
-        - name: tmp
-          emptyDir:
-            medium: Memory
-            sizeLimit: 16Mi
+              emptyDir:
+                medium: Memory
+                sizeLimit: 16Mi
 ---
 apiVersion: batch/v1
-kind: Job
+kind: CronJob
 metadata:
   name: engine-readiness-renew
   namespace: speechnexus
 spec:
-  backoffLimit: 2
-  ttlSecondsAfterFinished: 3600
-  template:
+  # Every six hours against a 24 h receipt: three chances to renew before the
+  # hourly report's six-hour warning window closes.
+  schedule: "7 */6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
     spec:
-      restartPolicy: Never
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 10001
-        runAsGroup: 10001
-        # The staged Secret is root-owned 0440; only the fsGroup can read it.
-        fsGroup: 10001
-        seccompProfile:
-          type: RuntimeDefault
-      containers:
-        - name: engine-readiness-renew
-          image: speechnexus-python:913d0e0a
-          imagePullPolicy: IfNotPresent
-          command:
-            - speechnexus-register-engine
-            - --generation
-            - "1"
-            - --node
-            - node-megacube-1
-            - --gateway
-            - gateway-megacube-1
-            - --instance
-            - instance-asr-1
-            - --workspace
-            - workspace-default
-            - --max-attempts
-            - "8"
-            - --renew-readiness
-          envFrom:
-            - secretRef:
-                name: readiness-env
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 3600
+      template:
+        spec:
+          restartPolicy: Never
           securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: ["ALL"]
-          volumeMounts:
-            - name: private-recipes
-              mountPath: /run/speechnexus-private
-              readOnly: true
-            - name: tmp
-              mountPath: /tmp
-      # Same staging as the API: the recipe loader opens with O_NOFOLLOW and demands
-      # an owner-only file, which a Secret volume cannot provide (symlink into
-      # ..data, then root ownership).
-      initContainers:
-        - name: stage-recipes
-          image: speechnexus-python:913d0e0a
-          imagePullPolicy: IfNotPresent
-          command:
-            - /bin/sh
-            - -c
-            - install -m 0400 /src/transcription-recipe.json /run/speechnexus-private/
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: ["ALL"]
-          volumeMounts:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            # The staged Secret is root-owned 0440; only the fsGroup can read it.
+            fsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: engine-readiness-renew
+              image: speechnexus-python:913d0e0a
+              imagePullPolicy: IfNotPresent
+              command:
+                - speechnexus-register-engine
+                - --generation
+                - "1"
+                - --node
+                - node-megacube-1
+                - --gateway
+                - gateway-megacube-1
+                - --instance
+                - instance-asr-1
+                - --workspace
+                - workspace-default
+                - --max-attempts
+                - "8"
+                - --renew-readiness
+              envFrom:
+                - secretRef:
+                    name: readiness-env
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: private-recipes
+                  mountPath: /run/speechnexus-private
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          # Same staging as the API: the recipe loader opens with O_NOFOLLOW and demands
+          # an owner-only file, which a Secret volume cannot provide (symlink into
+          # ..data, then root ownership).
+          initContainers:
+            - name: stage-recipes
+              image: speechnexus-python:913d0e0a
+              imagePullPolicy: IfNotPresent
+              command:
+                - /bin/sh
+                - -c
+                - install -m 0400 /src/transcription-recipe.json /run/speechnexus-private/
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: private
+                  mountPath: /src
+                  readOnly: true
+                - name: private-recipes
+                  mountPath: /run/speechnexus-private
+          volumes:
             - name: private
-              mountPath: /src
-              readOnly: true
+              secret:
+                secretName: private-config
+                defaultMode: 0440
             - name: private-recipes
-              mountPath: /run/speechnexus-private
-      volumes:
-        - name: private
-          secret:
-            secretName: private-config
-            defaultMode: 0440
-        - name: private-recipes
-          emptyDir:
-            medium: Memory
-            sizeLimit: 4Mi
-        - name: tmp
-          emptyDir:
-            medium: Memory
-            sizeLimit: 16Mi
+              emptyDir:
+                medium: Memory
+                sizeLimit: 4Mi
+            - name: tmp
+              emptyDir:
+                medium: Memory
+                sizeLimit: 16Mi
 ---
 # The job dispatcher lives next to the database it claims from, not on the
 # compute plane. Claiming across the bridge serialises every round on the

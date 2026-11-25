@@ -69,6 +69,32 @@ kubectl delete namespace speechnexus
 
 应用面全部对象都在该 namespace 内，删除即恢复；MegaCube 侧不受影响。
 
+## 就绪回执的续期与报警
+
+就绪回执是实例可准入的唯一依据，有效期 24 h。回执过期后 `GET /v1/nexus/jobs/admission-readiness`
+转 `invalid`，所有建 Job 的请求开始 503，而**报出来的原因不会指向回执**。所以两件事都上了调度：
+
+| CronJob | 频率 | 作用 |
+| --- | --- | --- |
+| `engine-readiness-renew` | 每 6 h | 重新探测引擎健康并续租 24 h |
+| `engine-readiness` | 每小时 | 报告回执状态；带 `--fail-on-expiring --warn-within-seconds 21600` |
+
+报警信号就是**失败的那个 Job**：回执进入 6 h 窗口而续租没成功时，小时报的 Job 变 `Failed`，
+日志结尾是 `error: readiness_expiring`，条目里带 `remediation`。故意让它可以红，实测过两次：
+
+```bash
+# 把警戒窗口放大到超过剩余时间 → 立刻转 expiring 并失败
+speechnexus-engine-readiness --warn-within-seconds 100000 --fail-on-expiring
+# → error: readiness_expiring: 1 instance(s) inside the 100000 s warning window
+
+# 把健康地址指到一个不可达端口 → 续租失败并失败退出
+SPEECHNEXUS_ENGINE_HEALTH_URL=http://127.0.0.1:18190/health speechnexus-register-engine ... --renew-readiness
+# → error: engine_unreachable: health endpoint is unreachable from this operator host
+```
+
+两个频率的关系是刻意的：续租周期 6 h、报警窗口 6 h、报警周期 1 h——续租有一次失败，
+小时报还有三次机会把它变红，而不是等到回执耗尽才发现。
+
 ## 引擎地址链
 
 引擎是 Pod，但有两个消费者只认宿主本地端口：算力面的执行网关（host 网络）与应用面的就绪续租

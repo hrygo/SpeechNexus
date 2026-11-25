@@ -271,8 +271,11 @@ async def test_the_dispatch_identity_may_run_the_read_statement(jobs_db: JobSand
         # 真实身份不是属主:属主会绕过列级授权,那样这条判据什么都不检查。
         assert identity["role"] == jobs_db.role
         owner = connection.execute(
+            # 按当前 schema 限定:集成 shard 会在同一库里并存多个 schema,只按 relname
+            # 取会返回多行,并在 CI 上以 CardinalityViolation 失败(本机单 schema 时看不见)。
             "SELECT pg_catalog.pg_has_role(current_user, "
-            "(SELECT relowner FROM pg_catalog.pg_class WHERE relname = 'job_events'), "
+            "(SELECT relowner FROM pg_catalog.pg_class "
+            "WHERE relname = 'job_events' AND relnamespace = current_schema()::regnamespace), "
             "'MEMBER') AS owner"
         ).fetchone()
         assert owner is not None and owner["owner"] is False

@@ -69,6 +69,32 @@ kubectl delete namespace speechnexus
 
 应用面全部对象都在该 namespace 内，删除即恢复；MegaCube 侧不受影响。
 
+## 引擎地址链
+
+引擎是 Pod，但有两个消费者只认宿主本地端口：算力面的执行网关（host 网络）与应用面的就绪续租
+（只能经桥到宿主）。中间由 `engine-shim` 补这一跳：
+
+```
+网关(host) 127.0.0.1:18190
+   └─ engine-shim（host 网络，转发到 ENGINE_ADDRESS）
+        └─ 引擎 Pod <podIP>:18190
+桥 :18190 ──SSH──> 宿主 127.0.0.1:18190（同上一条链路）
+   └─ 就绪续租 http://bridge.speechnexus.svc:18190/health
+```
+
+`ENGINE_ADDRESS` 是这条链上**唯一**记录引擎地址的地方，写在
+`.runtime/cluster-compute.env`（`<podIP>:18190`）。Pod 重建换 IP 后按顺序做两步即可：
+
+```bash
+kubectl -n speechnexus get pod -l speechnexus.io/instance-id=instance-asr-1 -o jsonpath='{.items[0].status.podIP}'
+# 写回 .runtime/cluster-compute.env 的 ENGINE_ADDRESS=<podIP>:18190，然后
+docker compose -p speechnexus-cluster-compute --env-file .runtime/cluster-compute.env \
+  -f deploy/cluster/compute/compose.yaml up -d --force-recreate --no-deps engine-shim
+```
+
+只改这一处：网关端点文件与就绪续租读的都是 18190 这个宿主端口，不跟随 Pod IP。
+反过来，把 Pod IP 直接写进 `gateway-file-asr-endpoint.json` 是错的——那样每次重建都要改两处。
+
 ## 作业派发
 
 派发器在应用面：`deploy/cluster/app-plane/workers.yaml` 的 `job-dispatch` Deployment，

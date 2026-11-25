@@ -25,6 +25,7 @@ _REVISIONS = "speech_voice_revisions"
 _INTENTS = "speech_voice_publication_intents"
 _VIEW = "speech_published_voice_revisions"
 _DRAFT_VIEW = "speech_voice_draft_publications"
+_DRAFT_VIEW_REVISION = "0053_voice_draft_publication"
 
 
 def _one(
@@ -165,6 +166,28 @@ def test_published_draft_projection_view_upgrades_and_drops_cleanly() -> None:
     with _isolated_schema(_url()) as (config, query):
         command.upgrade(config, "0052_quarantine_releases")
         assert _one(query, f"SELECT to_regclass('{_DRAFT_VIEW}') AS t")["t"] is None
+        # The round trip belongs to 0053↔0052, the revision that owns this view.
+        # Walking back from head is refused by 0070's one-way step long before 0053's
+        # own downgrade could run, so the projection is exercised where it is legal and
+        # the schema then advances to head once.
+        command.upgrade(config, _DRAFT_VIEW_REVISION)
+        # A draft that was never published has no row; one publication yields one.
+        assert _one(query, f"SELECT count(*) AS n FROM {_DRAFT_VIEW}")["n"] == 0
+        _seed_custom_publication(query)
+        assert _one(query, f"SELECT * FROM {_DRAFT_VIEW}") == {
+            "draft_id": "draft-evidence",
+            "revision": "1",
+            "voice_id": "voice-custom",
+            "voice_revision": "1",
+            "validation_job_id": "job-evidence-validation",
+        }
+        command.downgrade(config, "0052_quarantine_releases")
+        assert _one(query, f"SELECT to_regclass('{_DRAFT_VIEW}') AS t")["t"] is None
+        assert _one(query, f"SELECT count(*) AS n FROM {_REVISIONS}")["n"] == 1
+        command.upgrade(config, _DRAFT_VIEW_REVISION)
+        assert _one(query, f"SELECT count(*) AS n FROM {_DRAFT_VIEW}")["n"] == 1
+
+        # 0054 and everything above must replay over the same projection.
         command.upgrade(config, "head")
         command.upgrade(config, "head")
         options = _one(
@@ -189,19 +212,4 @@ def test_published_draft_projection_view_upgrades_and_drops_cleanly() -> None:
             "voice_revision",
             "validation_job_id",
         ]
-        # A draft that was never published has no row; one publication yields one.
-        assert _one(query, f"SELECT count(*) AS n FROM {_DRAFT_VIEW}")["n"] == 0
-        _seed_custom_publication(query)
-        assert _one(query, f"SELECT * FROM {_DRAFT_VIEW}") == {
-            "draft_id": "draft-evidence",
-            "revision": "1",
-            "voice_id": "voice-custom",
-            "voice_revision": "1",
-            "validation_job_id": "job-evidence-validation",
-        }
-        step_below_asr_settlement(query)
-        command.downgrade(config, "0052_quarantine_releases")
-        assert _one(query, f"SELECT to_regclass('{_DRAFT_VIEW}') AS t")["t"] is None
-        assert _one(query, f"SELECT count(*) AS n FROM {_REVISIONS}")["n"] == 1
-        command.upgrade(config, "head")
         assert _one(query, f"SELECT count(*) AS n FROM {_DRAFT_VIEW}")["n"] == 1

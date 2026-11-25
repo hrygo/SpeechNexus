@@ -390,7 +390,10 @@ def test_0066_migration_re_entry_repairs_only_missing_buckets(sandbox: Sandbox) 
 
 
 def test_0066_migration_downgrade_only_drops_the_table(sandbox: Sandbox) -> None:
-    _upgrade(sandbox)
+    # 从 0066 自己开始,而不是从 head:``0070`` 是单向退役,任何「从 head 往下走」的
+    # 回退都会先撞上它(downgrade 直接 raise)。本用例的判据是 0066 自己的 downgrade,
+    # 而 0066 之下没有那条单向步,所以回环在 0066↔0065 之间做,再向前走到 head。
+    _upgrade(sandbox, REVISION)
     job_id = "job-0066-downgrade"
     _insert_due_job(sandbox, job_id)
 

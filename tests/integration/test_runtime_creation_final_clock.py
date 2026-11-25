@@ -16,6 +16,7 @@ from tests.integration.test_production_runtime_intents import runtime_database a
 
 from speechnexus_backend.speech.domain.runtime_intents import RuntimeDeadline
 from speechnexus_backend.speech.infrastructure.runtime_codec import prepare_request
+from speechnexus_portable_sql.claims import bucket_for
 
 pytestmark = pytest.mark.integration
 
@@ -71,9 +72,15 @@ def test_rolled_back_global_identity_race_cannot_bypass_expiry(
             else:
                 cursor.execute(
                     "INSERT INTO coordination_jobs (job_id, operation_id, attempt_id, "
-                    "initial_event_id, initial_event_digest, request_digest) "
-                    "VALUES ('job-rival', 'operation-rival', 'attempt-rival', %s, %s, %s)",
-                    (event_id, CONFIG, CONFIG),
+                    "initial_event_id, initial_event_digest, request_digest, bucket_no) "
+                    "VALUES ('job-rival', 'operation-rival', 'attempt-rival', %s, %s, %s, %s)",
+                    (
+                        event_id,
+                        CONFIG,
+                        CONFIG,
+                        # 0069 的 ``NOT NULL``:与生产 writer 同一份推导,不写字面量。
+                        int(bucket_for("job-rival")),
+                    ),
                 )
                 cursor.execute(
                     "INSERT INTO coordination_outbox (event_id, job_id, event_digest) "

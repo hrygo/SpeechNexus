@@ -23,6 +23,7 @@ from jsonschema.exceptions import ValidationError
 from psycopg.rows import dict_row
 from pymysql.cursors import DictCursor
 
+from speechnexus_portable_sql.claims import bucket_for, utc_from_epoch_us
 from speechnexus_portable_sql.pymysql_driver import PortableConnection as PortableMysqlConnection
 from speechnexus_portable_sql.pymysql_driver import connect as portable_mysql_connect
 from tests.support.contracts import validator
@@ -545,11 +546,13 @@ class Transaction:
             ):
                 raise RejectedError("idempotency_conflict")
             return "replayed"
+        # 0069 之后 ``bucket_no`` / ``due_at`` 不可空,所以这条原型按生产写入者的两个
+        # 定义点给出它们:``bucket_for(job_id)`` 与「认领时刻」的 naive UTC 表示。
         self.execute(
             """INSERT INTO coordination_jobs
                    (job_id, operation_id, attempt_id, initial_event_id,
-                    initial_event_digest, request_digest)
-               VALUES (%s, %s, %s, %s, %s, %s)""",
+                    initial_event_digest, request_digest, bucket_no, due_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 job["job_id"],
                 identity["operation_id"],
@@ -557,6 +560,8 @@ class Transaction:
                 job["event_id"],
                 job["event_digest"],
                 request["request_digest"],
+                int(bucket_for(job["job_id"])),
+                utc_from_epoch_us(self.now(), field="due_at"),
             ),
         )
         self.execute(
@@ -573,17 +578,22 @@ class Transaction:
             (request["job_id"],),
         )
         now = self.now()
+        # canonical 租约列(0064):``claim_expires_at IS NULL`` 是「从未认领」,不是 1970。
+        # 草案 epoch 列在 0070 退役,这条原型跟着唯一权威走。
         changed = self.execute(
             """UPDATE coordination_jobs SET claim_owner_id = %s,
-               claim_expires_at_us = %s, claim_version = claim_version + 1
+               claim_expires_at = %s, claim_version = claim_version + 1
                WHERE job_id = %s AND claim_version = %s
-               AND claim_expires_at_us <= %s AND job_state = 'pending'""",
+               AND (claim_expires_at IS NULL OR claim_expires_at <= %s)
+               AND job_state = 'pending'""",
             (
                 request["worker_id"],
-                counter(now + request["ttl_ms"] * 1000),
+                utc_from_epoch_us(
+                    counter(now + request["ttl_ms"] * 1000), field="claim_expires_at"
+                ),
                 request["job_id"],
                 request["expected_claim_version"],
-                now,
+                utc_from_epoch_us(now, field="now"),
             ),
         )
         if changed != 1:

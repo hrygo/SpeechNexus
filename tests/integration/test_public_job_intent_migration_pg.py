@@ -35,6 +35,8 @@ ROOT = Path(__file__).resolve().parents[2]
 VARIABLE = "SPEECHNEXUS_TEST_DATABASE_URL"
 BASE = "0045_pronunciation_set_summary"
 HEAD = head_revision()
+#: 拥有 ``speech_job_intents`` 的修订:回环只到这一层,见回填用例的尾注。
+_INTENTS_REVISION = "0046_public_job_intents"
 _INTENT: dict[str, Any] = {
     "input": {"text": "historical intent"},
     "kind": "tts",
@@ -211,7 +213,10 @@ def test_backfill_only_accepts_matching_legacy_rows_and_reads_back(
         )
         == []
     )
-    command.upgrade(intent_db.config, HEAD)
+    # Re-upgrade only to 0046, the revision that owns the table: replaying 0064 from
+    # here is refused (0070 retired the epoch column it backfills from), and this test
+    # never needed anything above 0046 to observe the refill.
+    command.upgrade(intent_db.config, _INTENTS_REVISION)
     assert intent_db.count("speech_job_intents") == 1
 
 

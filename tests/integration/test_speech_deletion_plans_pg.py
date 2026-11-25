@@ -485,7 +485,7 @@ def _provision_writer(
         *(deletion_plan_grants(sandbox.schema, role) if include_deletion else ()),
         f'GRANT SELECT ON "{sandbox.schema}".admission_operations, '
         f'"{sandbox.schema}".coordination_jobs TO "{role}"',
-        f"GRANT UPDATE (claim_owner_id, claim_expires_at_us, claim_version, job_state) "
+        f"GRANT UPDATE (claim_owner_id, claim_expires_at, claim_version, job_state) "
         f'ON "{sandbox.schema}".coordination_jobs TO "{role}"',
         f"GRANT SELECT ON speech_workspaces, speech_publications, "
         f"speech_publication_heads, speech_catalog_state, speech_publication_retirements, "

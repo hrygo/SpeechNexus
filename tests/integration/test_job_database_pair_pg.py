@@ -108,7 +108,7 @@ def _writer_grants(schema: str, role: str) -> tuple[str, ...]:
         *deletion_plan_grants(schema, role),
         f'GRANT SELECT ON "{schema}".admission_operations, "{schema}".coordination_jobs '
         f'TO "{role}"',
-        f"GRANT UPDATE (claim_owner_id, claim_expires_at_us, claim_version, job_state) "
+        f"GRANT UPDATE (claim_owner_id, claim_expires_at, claim_version, job_state) "
         f'ON "{schema}".coordination_jobs TO "{role}"',
         f"GRANT SELECT ON speech_workspaces, speech_publications, "
         f"speech_publication_heads, speech_catalog_state, speech_publication_retirements, "

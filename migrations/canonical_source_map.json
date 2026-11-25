@@ -34,9 +34,9 @@
           "source": "claim_version"
         },
         "claim_expires_at": {
-          "kind": "convert",
+          "kind": "derive",
           "source": "claim_expires_at_us",
-          "rule": "epoch microseconds -> UTC TIMESTAMP(6); 0 表示「未领取」,换算后必须是 NULL 而不是 1970"
+          "rule": "草案 epoch 列已由 0070 退役,head 上这一列由认领路径直接写入(claim_renew/finish);epoch -> UTC TIMESTAMP(6) 且 0 -> NULL 的换算只保留在外部草案库的搬迁路径(portable_sql.claims.canonical_job_from_draft)与 0064 的回填里"
         },
         "bucket_no": {
           "kind": "derive",

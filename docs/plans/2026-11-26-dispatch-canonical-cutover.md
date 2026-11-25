@@ -315,7 +315,8 @@ S0 是纯加法 DDL。
 | **S2** 事件读翻转 | 翻读 | durable 事件流（`GET /v1/nexus/jobs/{job_id}/events`）的事实集、顺序与摘要改读 canonical `job_events`（`claims.STATEMENTS["job_event.read"]`）；草案行退为**投影来源**（`state`/`occurred_at_us`/`kind`/`progress_*`），创建事实（`event_seq` 0）仍读草案。同一提交补授 `SELECT (job_id)`，否则首读 42501。`last_event_seq` 成为唯一事件头（§5.1） | 把 canonical 事件的 `occurred_at` 写成会话本地时间（去掉 `utc_from_epoch_us`/`AT TIME ZONE 'UTC'`）→ 摘要与顺序断言必须红（§3.2 实测 B 是这条注入的固定靶；实测：摘要不相等，见 §5.1）；把 `job_id` 从列级 `SELECT` 去掉 → 非属主身份首读必须 42501 |
 | **S3** 收敛第二认领口 | 删（已完成：整口删除，不迁移） | 五个模块与三个测试文件已删；writer 授权面（`create_in_transaction` 重放）留在 `writer.create_replay` 面，认领列 UPDATE 声明从该面移除；`_DeadlineCursor` 普查表由 5 条降为 4 条 | 在 surviving 路径上把 `NULL` 当成「未过期」（`job.claim` 加 `claim_expires_at IS NOT NULL`）→ claim 家族 14 条 + `test_job_dispatch_pg.py` 2 条集成用例变红（实测，症状是「认领到 0 个 Job」而不是异常）；portable-sql 单测 0 条命中，语义只由真库 oracle 覆盖（§3.1 实测 A 仍是这条注入的固定靶） |
 | **S4** 收紧约束与授权面 | 紧 | 只收紧写入者能保证的列：`bucket_no`/`due_at` 的 `NOT NULL`（0065 有意留给写入切换，`0065:26-36` 第 3 条）；同一提交从 `coordination_grants.SPEECH_UPDATES["coordination_jobs"]` 与 `job_runtime._JOB_UPDATE_SURFACE` 里删掉 `claim_expires_at_us` | 让写入者不再提供 `bucket_no` → 必须 23502；把 `claim_expires_at_us` 从授予面删掉但启动闸门仍要求它 → `RuntimeStartupError` 必须红（`job_runtime.py:283`、`:740`） |
-| **S5** 退役草案列 | 删（单向） | 删 `coordination_jobs.claim_expires_at_us` 与 `coordination_outbox.delivered_at_us`（两条 `claims_sql` 语句已随 S3 删除）；删 `job_schema.JOB_DDL` 里的 epoch 列与 `provision-job-roles.WRITER_BASELINE_UPDATE`、`check-async-job-prereqs`、`coordination-grants.py` 的第二份清单 | 删列但保留一处列清单 → 启动闸门必须报未声明列；删列后 0064/0065 的重跑必须报 42703（这证明「重跑迁移」不再是合法回退路径，见 §6） |
+| **S5** 退役草案 epoch 列 | 删(单向,只删一列) | 只删 `coordination_jobs.claim_expires_at_us`:它的两条读语句已随 S3 消失,写入与判定都改走 canonical `claim_expires_at`。**`coordination_outbox.delivered_at_us` 不删**——它仍是 `runtime_delivery_sql` 的 ACK 与「未投递」判定所读写的列,消费方是独立入口 `speechnexus-runtime-delivery-worker`,而 canonical 的 `delivered_at` 是 `TIMESTAMP(6)` 与它的 `BIGINT` epoch 语义不同。退役前必须先把 runtime 投递切到 canonical,那是独立切片 | 删列但保留一处列清单 → 巡检以 42703 报缺列;删列后重跑 `0064` → 42703(这证明「重跑迁移」不再是合法回退路径,见 §6) |
+| **S4** 收紧约束 | 紧 | `coordination_jobs.bucket_no` 加 `NOT NULL`(迁移史推出 head 上 0 行 NULL),同提交从 `coordination_grants.SPEECH_UPDATES` 与 `job_runtime._JOB_UPDATE_SURFACE` 删掉 `claim_expires_at_us`。**`due_at` 保持可空**:`0001_jobs` 建表时 `speech_jobs` 尚不存在,那批行没有任何时间来源,给它编一个时刻等于记录没人观测过的事实;且 `due_at` 是认领谓词 `due_at <= now` 的一侧,把未知创建时刻改成「立刻到期」会改变它能否被派发 | 写入者不再提供 `bucket_no` → 23502;授权面与闸门声明面不一致 → `RuntimeStartupError`;有无来源行的 `due_at` 强行 `NOT NULL` → 迁移必须失败并点名行数 |
 | **S6** 回退演练 | 验证 | 按 §6 的顺序在临时 schema 上跑一遍：S5 之后只能走备份恢复，S4 之前可以走「读回切」 | 在 S2 之后执行 0065 的 `downgrade`（`UPDATE … SET last_event_seq = 0`，`0065:185`）→ 事件头必须归零；若事件读已经翻转，这条 downgrade 就是毁事实，演练必须红 |
 
 ### 5.1 S2 的读面:canonical 决定事实集,草案只供投影
@@ -362,11 +363,12 @@ canonical 自己带上这些列(需要一次真正的 DDL 决策,不在本计划
 
 ## 6. 回退
 
-回退点不是一个，而是三个；越过 S5 之后没有回退点。
+回退点不是一个，而是四个；越过 S5 之后没有 `downgrade` 回退点，只有备份恢复。
 
 | 回退到 | 仍必须可读 | 不能做的 | 证据 |
 | --- | --- | --- | --- |
 | S2 之后（事件已翻读） | canonical `job_events` 行、`last_event_seq`、草案 `speech_job_events` | 不能走 alembic `downgrade`：`0065` 的 downgrade 把 `last_event_seq` 归零（`0065:185`），而它当初安全的理由是「这一列没有任何读取者」（`0065:53-55`）——S2 之后这个前提不成立 | 回退＝读路径回切 + 保留列；对账仍按 `portable-reconcile.py` 的逐字段口径 |
+| S5 之后（epoch 列已删） | canonical 侧全部事实；`coordination_outbox.delivered_at_us` 因为**没有**被删,投递 ACK 仍按它判定 | 没有 alembic `downgrade`：`0070.downgrade` 直接 `raise`，删列不可逆 | 只有备份恢复；`0064`/`0065` 的重跑以 42703 失败（实测），所以「重跑迁移」不是回退路径 |
 | S1 之后（已双写） | 草案 `speech_job_events`（旧读路径的唯一来源）、草案 `claim_expires_at_us` | 不能「重跑搬迁」：`adopt_historical_events` 对已有事件的 Job 直接拒绝（`packages/portable-sql/src/speechnexus_portable_sql/claims.py:1051-1052`），一次性回填不是修补手段 | 回退后重跑必须**被拒绝**，这正是「没有半成品」的形状 |
 | S4 之前（约束未收紧） | `claim_expires_at`（canonical 权威）、`bucket_no`/`due_at`（可空） | 不能把 canonical 租约擦成 NULL：`0065` 的回填是 fill-if-null（`0065:75-78`），就是为了不擦在飞租约 | `0065:102-118` 的四条对账语句在每次 upgrade 时由 `0065:160-174` 调用 |
 

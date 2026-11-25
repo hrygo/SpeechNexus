@@ -23,7 +23,7 @@ Coverage (one case per shape the issue requires):
    passes every check and the worker `exec` is the last side effect, after the
    `job dispatch startup gate: OK` line.
 2. `test_a_missing_claim_column_update_names_the_column_and_the_grant_groups` -
-   `REVOKE UPDATE (claim_owner_id, claim_expires_at_us, claim_version, job_state)`
+   `REVOKE UPDATE (claim_owner_id, claim_expires_at, claim_version, job_state)`
    on `coordination_jobs` makes the gate exit non-zero and print one line per
    missing column that names the column and the grant groups to install, instead
    of a generic "permission denied".

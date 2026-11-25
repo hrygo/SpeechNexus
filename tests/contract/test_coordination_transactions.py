@@ -163,12 +163,22 @@ def _ddl_columns() -> dict[str, set[str]]:
     column = re.compile(
         r"\s+([a-z][a-z0-9_]*) (?:VARCHAR|BIGINT|TEXT|INT|SMALLINT|DECIMAL|TIMESTAMP)\b"
     )
-    return {
+    columns = {
         table: {match.group(1) for line in body.splitlines() if (match := column.match(line))}
         for table, body in re.findall(
             r"CREATE TABLE (?:IF NOT EXISTS )?(\w+) \((.*?)\n\s*\);?", ddl, re.DOTALL
         )
     }
+    # canonical 列是 ``ALTER TABLE … ADD COLUMN`` 加的(0064/0069 之外还有由声明派生的
+    # ``CANONICAL_JOB_DDL``),只解析 CREATE 会把它们漏掉,于是「授权面 ⊆ 实际列」变成
+    # 「授权面 ⊆ 建表时那批列」——一条列名换到 ALTER 侧就会误报,反之漏报。
+    added = re.compile(
+        r"ALTER TABLE (?:IF EXISTS )?(\w+) ADD COLUMN (?:IF NOT EXISTS )?"
+        r"([a-z][a-z0-9_]*) (?:VARCHAR|BIGINT|TEXT|INT|SMALLINT|DECIMAL|TIMESTAMP)\b"
+    )
+    for table, name in added.findall(ddl):
+        columns.setdefault(table, set()).add(name)
+    return columns
 
 
 def test_runtime_grants_match_the_ddl_and_protect_configuration() -> None:

@@ -244,7 +244,9 @@ def test_0068_adds_delivered_at_and_keeps_the_draft_column(sandbox: Sandbox) -> 
 def test_0068_re_entry_repairs_nothing_and_keeps_existing_events(sandbox: Sandbox) -> None:
     """幂等:重入同一修订不报错,且已有事件行不被重建掉。"""
 
-    _upgrade(sandbox)
+    # 从 0068 自己开始:0070 是单向退役,从 head 往下走会在那里被拒绝,而本用例的判据
+    # 是 0068 的重入幂等性。0068 之下没有那条单向步,再向 head 前进是合法重放。
+    _upgrade(sandbox, REVISION)
     job_id = "job-0068-reentry"
     _insert_job(sandbox, job_id)
     sandbox.admin.execute(
@@ -259,7 +261,7 @@ def test_0068_re_entry_repairs_nothing_and_keeps_existing_events(sandbox: Sandbo
 
     # 1) 把版本戳回 0067 再 ``upgrade head``:0068 在「对象已经在」的 schema 上重跑。
     sandbox.admin.execute("UPDATE alembic_version SET version_num = %s", (PREVIOUS,))
-    _upgrade(sandbox)
+    _upgrade(sandbox, REVISION)
     assert _version(sandbox) == REVISION
 
     # 2) 直接把本模块的 DDL 再执行一遍。去掉 ``IF NOT EXISTS``,这一句就以
@@ -283,7 +285,8 @@ def test_0068_re_entry_repairs_nothing_and_keeps_existing_events(sandbox: Sandbo
 
 
 def test_0068_downgrade_only_removes_what_it_added(sandbox: Sandbox) -> None:
-    _upgrade(sandbox)
+    # 同上:回环在 0068↔0067 之间做,0067 之下没有单向步。
+    _upgrade(sandbox, REVISION)
     job_id = "job-0068-downgrade"
     _insert_job(sandbox, job_id)
     sandbox.admin.execute(

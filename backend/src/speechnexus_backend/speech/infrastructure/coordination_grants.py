@@ -58,11 +58,10 @@ SPEECH_UPDATES = {
         "quarantine_observed_at_us quarantine_reason_code version"
     ),
     # 派发改用 canonical 租约列:认领/续租/终止都写 `claim_expires_at`(0064 的
-    # TIMESTAMP(6)),`job_state` 由 `pending` 推成 `claimed`。草案 epoch 列仍在列里,
-    # 因为草案列退役前仍是协调行的可写面(写入者的领取重放路径仍用它)。
-    "coordination_jobs": (
-        "claim_owner_id claim_expires_at claim_expires_at_us claim_version job_state"
-    ),
+    # TIMESTAMP(6)),`job_state` 由 `pending` 推成 `claimed`。草案 epoch 列
+    # `claim_expires_at_us` 已在 0070 退役,它不再出现在这条声明面上——授予一个不存在的列
+    # 只会让 `GRANT` 以 42703 失败。
+    "coordination_jobs": "claim_owner_id claim_expires_at claim_version job_state",
     "coordination_outbox": "delivered_at_us",
     "runtime_intent_deliveries": "",
     CLAIM_BUCKET_TABLE: " ".join(CLAIM_BUCKET_UPDATE_COLUMNS),

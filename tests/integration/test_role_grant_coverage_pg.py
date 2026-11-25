@@ -134,6 +134,7 @@ from speechnexus_backend.speech.infrastructure.readiness import (
     CancellationDebtProbe,
     StopEvidenceDebtProbe,
 )
+from speechnexus_portable_sql.claims import bucket_for
 
 pytestmark = [
     pytest.mark.integration,
@@ -423,9 +424,16 @@ def _seed(db: JobDatabase) -> None:
     )
     db.admin.execute(
         "INSERT INTO coordination_jobs (job_id, operation_id, attempt_id, initial_event_id, "
-        "initial_event_digest, request_digest) VALUES (%s, %s, 'attempt-coordination', %s, "
-        "%s, %s)",
-        (COORDINATION_JOB, COORDINATION_JOB, COORDINATION_EVENT, DIGEST, DIGEST),
+        "initial_event_digest, request_digest, bucket_no) VALUES (%s, %s, 'attempt-coordination', "
+        "%s, %s, %s, %s)",
+        (
+            COORDINATION_JOB,
+            COORDINATION_JOB,
+            COORDINATION_EVENT,
+            DIGEST,
+            DIGEST,
+            int(bucket_for(COORDINATION_JOB)),
+        ),
     )
     db.admin.execute(
         "INSERT INTO coordination_outbox (event_id, job_id, event_digest) VALUES (%s, %s, %s)",

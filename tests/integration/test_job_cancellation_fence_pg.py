@@ -71,6 +71,7 @@ from speechnexus_gateway.domain.submission import (
 )
 from speechnexus_gateway.infrastructure.postgres_pool import gateway_pool
 from speechnexus_gateway.infrastructure.submit_postgres import PostgresSubmissionLedger
+from speechnexus_portable_sql.claims import bucket_for
 
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
@@ -113,12 +114,24 @@ class FenceSandbox:
         )
 
     def seed_coordination(self, job_id: str) -> None:
-        """The canonical Job row whose lock orders the fence against submit."""
+        """The canonical Job row whose lock orders the fence against submit.
+
+        ``bucket_no`` is ``NOT NULL`` since 0069; the value comes from the same
+        derivation the production writer uses, not from a literal.
+        """
         self.query(
             "INSERT INTO coordination_jobs (job_id, operation_id, attempt_id, "
-            "initial_event_id, initial_event_digest, request_digest) "
-            "VALUES (%s, %s, %s, %s, %s, %s)",
-            (job_id, job_id, job_id + "-attempt", job_id + "-event", DIGEST, DIGEST),
+            "initial_event_id, initial_event_digest, request_digest, bucket_no) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (
+                job_id,
+                job_id,
+                job_id + "-attempt",
+                job_id + "-event",
+                DIGEST,
+                DIGEST,
+                int(bucket_for(job_id)),
+            ),
         )
 
     def seed_lease(self, job_id: str, attempt_id: str, lease_id: str) -> None:

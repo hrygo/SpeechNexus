@@ -117,8 +117,8 @@ class ClaimSandbox:
 
     def canonical(self, job_id: str) -> dict[str, Any]:
         rows = self.query(
-            "SELECT claim_owner_id, claim_version, job_state, claim_expires_at, "
-            "claim_expires_at_us FROM coordination_jobs WHERE job_id = %s",
+            "SELECT claim_owner_id, claim_version, job_state, claim_expires_at "
+            "FROM coordination_jobs WHERE job_id = %s",
             (job_id,),
         )
         assert len(rows) == 1, rows
@@ -431,8 +431,6 @@ def test_two_dispatchers_claim_each_ready_job_exactly_once(sandbox: ClaimSandbox
         assert row["claim_version"] == 1, row
         assert row["claim_owner_id"] in ("dispatcher-alpha", "dispatcher-beta"), row
         assert row["claim_expires_at"] is not None, row
-        # The draft epoch column is not the lease any more.
-        assert row["claim_expires_at_us"] == 0, row
         owners.add(row["claim_owner_id"])
     assert owners == {"dispatcher-alpha", "dispatcher-beta"}
 
@@ -555,7 +553,6 @@ def test_the_production_lane_claims_only_complete_admitted_anchors(
             "claim_version": 0,
             "job_state": "pending",
             "claim_expires_at": None,
-            "claim_expires_at_us": 0,
         }, job_id
 
     # The production lane claims exactly the Job whose anchor is complete.

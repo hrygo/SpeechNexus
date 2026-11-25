@@ -81,7 +81,7 @@ WRITER_BASELINE_SELECT = (
     "admission_operations",
     "coordination_jobs",
 )
-WRITER_BASELINE_UPDATE = ("claim_owner_id", "claim_expires_at_us", "claim_version", "job_state")
+WRITER_BASELINE_UPDATE = ("claim_owner_id", "claim_expires_at", "claim_version", "job_state")
 
 
 def identity(key: str) -> tuple[str, str]:

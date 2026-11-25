@@ -22,7 +22,6 @@ from tests.support.migrations import (
     DELETION_LEDGER_REVISION,
     LEFT_CANCELLING_INDEX,
     LEFT_CANCELLING_INDEX_REVISION,
-    step_below_ledger_debt_index,
 )
 
 pytestmark = pytest.mark.integration
@@ -47,7 +46,9 @@ def test_0060_indexes_the_fence_acceptance_age_and_refuses_its_own_downgrade() -
         command.upgrade(config, DELETION_LEDGER_REVISION)
         assert _definition(query) is None
 
-        command.upgrade(config, "head")
+        # Build at 0060, the revision that owns the index. A head schema cannot be walked
+        # back to 0059 at all any more: 0070's downgrade is one-way, so it fires first.
+        command.upgrade(config, LEFT_CANCELLING_INDEX_REVISION)
         definition = _definition(query)
         assert definition is not None
         # The read's predicate is ``accepted_at_us >= now - window`` and its order
@@ -55,11 +56,6 @@ def test_0060_indexes_the_fence_acceptance_age_and_refuses_its_own_downgrade() -
         # must stay total -- the "unsettled" fact lives in another table.
         assert "USING btree (accepted_at_us, job_id)" in definition
         assert "WHERE" not in definition
-
-        # 0061 and 0062 sit above 0060 and refuse first; walk back past both (the
-        # helper removes 0062's index, removes 0061's, and stamps 0060) so this test
-        # observes 0060's own guard.
-        step_below_ledger_debt_index(query)
 
         # 0060's own refusal, not 0059's: the index is a runtime safety property.
         with pytest.raises(RuntimeError) as refused:
@@ -69,10 +65,10 @@ def test_0060_indexes_the_fence_acceptance_age_and_refuses_its_own_downgrade() -
         assert LEFT_CANCELLING_INDEX in message
         assert "left-cancelling" in message
 
-        # The refused downgrade leaves the head and the access path it ships intact.
+        # The refused downgrade leaves the revision and the access path it ships intact.
         assert _revision(query) == LEFT_CANCELLING_INDEX_REVISION
         assert _definition(query) == definition
 
-        # And a later upgrade is still a no-op rather than a duplicate CREATE INDEX.
+        # And a later upgrade gets to head without a duplicate CREATE INDEX.
         command.upgrade(config, "head")
         assert _definition(query) == definition

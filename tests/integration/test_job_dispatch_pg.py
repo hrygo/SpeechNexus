@@ -140,10 +140,9 @@ def dispatch_db() -> Iterator[DispatchSandbox]:
             *public_job_grants(schema, role),
             *public_job_submission_grants(schema, role),
             f'GRANT SELECT ON "{schema}".admission_operations TO "{role}"',
-            # The dispatch role writes the canonical lease (``claim_expires_at``); the
-            # draft epoch column stays granted until the draft columns are retired.
+            # The dispatch role writes the canonical lease (``claim_expires_at``).
             *claim_bucket_grants(schema, role),
-            f"GRANT UPDATE (claim_owner_id, claim_expires_at, claim_expires_at_us, "
+            f"GRANT UPDATE (claim_owner_id, claim_expires_at, "
             f"claim_version, job_state) "
             f'ON "{schema}".coordination_jobs TO "{role}"',
             f"GRANT SELECT ON speech_workspaces, speech_publications, "
@@ -339,7 +338,7 @@ async def test_concurrent_claim_executes_one_submission_and_closes_once(
     assert ledger[0]["claim_version"] == 1 and ledger[0]["job_state"] == "succeeded"
 
     rows = dispatch_db.query(
-        "SELECT j.state, j.status_version, j.result_json, c.claim_expires_at_us, "
+        "SELECT j.state, j.status_version, j.result_json, "
         "(SELECT count(*) FROM speech_job_events e WHERE e.job_id = j.job_id) AS events "
         "FROM speech_jobs AS j JOIN coordination_jobs AS c ON c.job_id = j.job_id "
         "WHERE j.job_id = %s",
@@ -350,7 +349,6 @@ async def test_concurrent_claim_executes_one_submission_and_closes_once(
             "state": "succeeded",
             "status_version": 3,
             "result_json": rows[0]["result_json"],
-            "claim_expires_at_us": 0,
             "events": 3,
         }
     ]
@@ -417,7 +415,7 @@ async def test_cross_lease_takeover_renews_only_the_new_owner(
 
     rows = dispatch_db.query(
         "SELECT j.state, j.status_version, j.result_json, c.claim_version, "
-        "c.job_state, c.claim_expires_at_us, "
+        "c.job_state, "
         "(SELECT count(*) FROM speech_job_events e WHERE e.job_id = j.job_id) AS events "
         "FROM speech_jobs AS j JOIN coordination_jobs AS c ON c.job_id = j.job_id "
         "WHERE j.job_id = %s",
@@ -430,7 +428,6 @@ async def test_cross_lease_takeover_renews_only_the_new_owner(
             "result_json": result_json,
             "claim_version": 3,
             "job_state": "succeeded",
-            "claim_expires_at_us": 0,
             "events": 3,
         }
     ]

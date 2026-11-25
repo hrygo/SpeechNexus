@@ -1,0 +1,120 @@
+# The compute-plane node controller as a resident k3s workload.
+#
+# Rendered from the versioned variable sets rather than checked in with literal
+# values, exactly as `compose.yaml` is: `${CONTROLLER_IMAGE}` comes from
+# `deploy/cluster/versions.env`, the component token from the Secret the runbook
+# creates out of `.runtime/cluster/compute.env`. See `deploy/cluster/README.md`.
+#
+# This replaces the `controller` service in `compose.yaml`. Unlike that service
+# it mounts no container-daemon socket: with `RUNTIME=k8s` the driver creates
+# engine Pods through the API server, and a socket here would be a second,
+# unused path to the same host.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: controller-state
+  namespace: speechnexus
+spec:
+  accessModes: ["ReadWriteOnce"]
+  # The intent store is a SQLite file: exactly one controller may write it, so
+  # the Deployment below is pinned to one replica and a Recreate rollout.
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: node-controller
+  namespace: speechnexus
+  labels:
+    app: speechnexus-node-controller
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: speechnexus-node-controller
+  template:
+    metadata:
+      labels:
+        app: speechnexus-node-controller
+    spec:
+      serviceAccountName: speechnexus-node-controller
+      # The Pod must never be rescheduled onto another node while the RWO claim
+      # is attached, and this cluster is a single node anyway.
+      containers:
+        - name: controller
+          image: ${CONTROLLER_IMAGE}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8022
+          env:
+            - name: SPEECHNEXUS_CONTROLLER_ENVIRONMENT
+              value: production
+            - name: SPEECHNEXUS_CONTROLLER_NODE_ID
+              value: node-megacube-1
+            # Bound to every interface: the compose service could use loopback
+            # because it shared the host network; a Pod cannot.
+            - name: SPEECHNEXUS_CONTROLLER_HOST
+              value: 0.0.0.0
+            - name: SPEECHNEXUS_CONTROLLER_PORT
+              value: "8022"
+            - name: SPEECHNEXUS_CONTROLLER_COMPONENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: controller-component-token
+                  key: token
+            - name: SPEECHNEXUS_CONTROLLER_APPROVED_TEMPLATES_FILE
+              value: /etc/speechnexus/approved-templates.json
+            - name: SPEECHNEXUS_CONTROLLER_INTENT_STORE_PATH
+              value: /var/lib/speechnexus/controller/intents.sqlite3
+            # The whole point of the port: the driver under test is the Pod one.
+            - name: SPEECHNEXUS_CONTROLLER_RUNTIME
+              value: k8s
+            - name: SPEECHNEXUS_CONTROLLER_K8S_NAMESPACE
+              value: speechnexus
+            - name: SPEECHNEXUS_CONTROLLER_K8S_SERVICE_ACCOUNT_NAME
+              value: speechnexus-node-controller
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: approved-templates
+              mountPath: /etc/speechnexus
+              readOnly: true
+            - name: controller-state
+              mountPath: /var/lib/speechnexus/controller
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: approved-templates
+          configMap:
+            name: controller-approved-templates
+        - name: controller-state
+          persistentVolumeClaim:
+            claimName: controller-state
+        - name: tmp
+          emptyDir: {}

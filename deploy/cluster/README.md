@@ -69,6 +69,46 @@ kubectl delete namespace speechnexus
 
 应用面全部对象都在该 namespace 内，删除即恢复；MegaCube 侧不受影响。
 
+## 算力面控制器
+
+`deploy/cluster/compute/controller-deployment.yaml` 把控制器作为常驻 k3s 工作负载运行，
+取代 `compose.yaml` 里的 `controller` 服务。两者是同一组变量，区别只有三处，都是刻意的：
+
+- `SPEECHNEXUS_CONTROLLER_RUNTIME=k8s`：驱动改为经 API server 建引擎 Pod
+- `SPEECHNEXUS_CONTROLLER_HOST=0.0.0.0`：compose 用 host 网络可以绑环回，Pod 不行
+- 不挂容器守护进程 socket：选了 k8s 驱动之后，那条路径没有任何调用方
+
+清单里只有 `${CONTROLLER_IMAGE}`，与 `compose.yaml` 同一约定，插值来自 `versions.env`。
+`component token`、`approved-templates.json` 都由下面两步从既有来源生成，不写进清单：
+
+```bash
+# 镜像必须先进入 k3s 的 containerd。二选一，都要求节点权限或一个内网 registry。
+docker save speechnexus-node-controller:<sha> | sudo k3s ctr images import -
+#   或者：docker push <registry>/speechnexus-node-controller:<sha>，再把清单里的
+#   image 换成该地址
+
+# 两个输入取自既有来源，不在清单里复制
+kubectl -n speechnexus create configmap controller-approved-templates \
+  --from-file=approved-templates.json=deploy/cluster/compute/approved-templates.json \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n speechnexus create secret generic controller-component-token \
+  --from-literal=token="$(grep '^COMPONENT_TOKEN=' .runtime/cluster/compute.env | cut -d= -f2-)" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+CONTROLLER_IMAGE=$(grep '^CONTROLLER_IMAGE=' deploy/cluster/versions.env | cut -d= -f2) \
+  envsubst < deploy/cluster/compute/controller-deployment.yaml | kubectl apply -f -
+```
+
+投产前先停掉 compose 的控制器，否则同一个 `node_id` 上有两个写入者抢同一份意图：
+
+```bash
+docker compose -p speechnexus-cluster-compute --env-file .runtime/cluster-compute.env \
+  -f deploy/cluster/compute/compose.yaml stop controller
+```
+
+回退就是反过来：起 compose 控制器、删掉这个 Deployment。意图存储是 SQLite 单文件，
+两侧不共享，切换时在途意图的归属只认最后写入的那一侧。
+
 ## 已知单点
 
 桥接 Pod 是两台主机之间唯一通道；Mac 休眠或 Docker Desktop 重启会同时停掉 k8s 与隧道。

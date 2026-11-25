@@ -144,8 +144,14 @@ deploy/job-dispatch --replicas=0`。
 取代 `compose.yaml` 里的 `controller` 服务。两者是同一组变量，区别只有三处，都是刻意的：
 
 - `SPEECHNEXUS_CONTROLLER_RUNTIME=k8s`：驱动改为经 API server 建引擎 Pod
-- `SPEECHNEXUS_CONTROLLER_HOST=0.0.0.0`：compose 用 host 网络可以绑环回，Pod 不行
+- `hostNetwork: true` + `SPEECHNEXUS_CONTROLLER_HOST=127.0.0.1`：网关与桥都是以宿主
+  `127.0.0.1:8022` 找控制器的，Pod 共享宿主网络命名空间才能保住这两条路径，同时仍只绑环回。
+  代价是探针必须打到 `127.0.0.1`（打 Pod IP 永远连不上，会重启健康的控制器）
 - 不挂容器守护进程 socket：选了 k8s 驱动之后，那条路径没有任何调用方
+
+**切换顺序**：先停 compose 的 `controller` 服务，再 apply 本清单——两者都绑 8022，先起后停会
+`address already in use` 并进入 `CrashLoopBackOff`。回退反过来：`kubectl -n speechnexus scale
+deploy/node-controller --replicas=0`，再 `docker compose ... start controller`。
 
 清单里只有 `${CONTROLLER_IMAGE}`，与 `compose.yaml` 同一约定，插值来自 `versions.env`。
 `component token`、`approved-templates.json` 都由下面两步从既有来源生成，不写进清单：

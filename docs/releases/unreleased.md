@@ -90,11 +90,11 @@ canonical 列，`0065` 把 `last_event_seq` 归零（并防御性清掉 `bucket_
 `job_events` 表），两列此刻都没有写者，所以回退不丢事实；`delivered_at_us` 的值与
 `coordination_jobs` 的行都不动。
 
-`0068` **没有对应的运维动作**：它只建对象，事件写者与读者仍在草案表上，所以新构建不需要重放
-任何授权就能启动。这一步把「对象不存在」与「事件路径切换」拆开，代价是刻意让 `job_events` 在
-切换之前是空表 —— 现在往它写任何东西都没有读者。`canonical_event_grants` 因此也还没有调用点
-（见「本次变动的授权函数」）：它是 S1（事件双写）要用的声明，提前落下是为了让写者身份只需
-调用它，而不必在授权函数里另抄一份列清单。
+`0068` 自己只建对象，但 S1（事件双写）给了 `job_events` 第一个写者，于是多了一条运维动作：
+部署新构建之前重放 `job_dispatch_grants`（见第 9 条）。读路径仍留在草案
+`speech_job_events`，S2 才切，所以这段时间 `job_events` 有写入者、没有读取者。回退只需重放
+回旧授权，影子行可以留着 —— 没有读者。`job_event_grants` 是 S1 要用的声明，
+`job_dispatch_grants` 调用它，不另抄一份列清单。
 
 核实：**实跑 + 读代码**。2026-11-20 在临时 PostgreSQL 18.6 上以
 `SPEECHNEXUS_MIGRATION_DATABASE_URL` 跑 `speechnexus-job-migrate --schema speech`，
@@ -363,12 +363,13 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 | `binding_lifecycle_grants` | `publication_lifecycle_schema.py` | 未变（同文件，DDL 的 `::` 改为 `CAST`） |
 | `binding_publication_grants` | `publication_lifecycle_schema.py` | 未变（同文件，DDL 的 `::` 改为 `CAST`） |
 | `settlement_worker_grants` | `settlement_worker_verifier.py` | **变**：末尾追加 `coordination_keyed_lock_grants` 的四条（`USAGE`、`SELECT (bucket_no)`、`INSERT (bucket_no)`、`UPDATE (version)`），见第 8 条 |
-| `job_dispatch_grants` | `job_schema.py` | **变**：末尾追加 `coordination_keyed_lock_grants` 的四条（`USAGE`、`SELECT (bucket_no)`、`INSERT (bucket_no)`、`UPDATE (version)`），见第 6 条 |
+| `job_dispatch_grants` | `job_schema.py` | **变**：末尾追加 `coordination_keyed_lock_grants` 的四条（`USAGE`、`SELECT (bucket_no)`、`INSERT (bucket_no)`、`UPDATE (version)`），见第 6 条；S1 起再追加 `job_event_grants` 与 `coordination_jobs` 的 `UPDATE (last_event_seq)`，见第 9 条 |
+| `job_event_grants` | `canonical_event_schema.py` | **新增**：`job_events` 的 `USAGE`、按列 `SELECT (event_seq, event_digest, payload_ref)` 与 `INSERT (job_id, event_seq, event_digest, payload_ref)`；S1 起由 `job_dispatch_grants` 调用，见第 9 条 |
 | `coordination_keyed_lock_grants` | `coordination_keyed_lock_schema.py` | **新增**，见第 6 条 |
 | `gateway_keyed_lock_grants` | `gateway_query_grants.py` | **新增**，见第 6 条 |
 | `gateway_query_grants` | `gateway_query_grants.py` | 未变（同文件被改，函数体没动；只读读者的授权面由 `reader_authority.py` 逐列核对，本次没有扩它） |
 | `gateway_query_target_grants` | `gateway_query_grants.py` | 未变 |
-| `canonical_event_grants` | `canonical_event_schema.py` | **新增**：`job_events` 上按列 `SELECT (event_seq, event_digest, payload_ref)` 与 `INSERT (job_id, event_seq, event_digest, payload_ref)`，`coordination_outbox` 上只授 `delivered_at` 的 `INSERT`/`UPDATE`；没有 `UPDATE`/`DELETE` 事件行。**无调用点、无身份需要重放**，S1 事件双写时由写者身份调用 |
+| `canonical_event_grants` | `canonical_event_schema.py` | **变**：拆成 `job_event_grants`（事件表那两条）加 `coordination_outbox` 的 `INSERT (delivered_at)`／`UPDATE (delivered_at)`；自身仍无事件行的 `UPDATE`/`DELETE`。S1 只用到 `job_event_grants`，outbox 那两条还没有调用点 |
 
 ### 5. 重跑 `coordination_runtime_grants`：网关改为锁 canonical Job 行读围栏
 
@@ -822,6 +823,31 @@ SCRIPT
   `lock_tts_cancel` 且不再出现 `pg_advisory_xact_lock`；注入第二份键前缀或放回 advisory lock
   都会红。
 
+### 9. 重放 `job_dispatch_grants`：事件双写要写 canonical `job_events` 与事件头
+
+S1 起，进度迁移与终态迁移在同一笔事务里额外追写一行 canonical `job_events`，并把
+`coordination_jobs.last_event_seq` 推进到新序号。需要的权限全部由 `job_dispatch_grants`
+声明（第 6 条那个重放脚本的入参没变，直接重跑即可）：`job_event_grants` 给的
+`USAGE`、`SELECT (event_seq, event_digest, payload_ref)`、
+`INSERT (job_id, event_seq, event_digest, payload_ref)`，以及 `coordination_jobs` 的
+`UPDATE (last_event_seq)` —— 只有这一列，`claim_version` 不在此列，事件双写不会推进租约栅栏。
+
+漏重放不会挡住进程启动，只在**领取之后第一次进度或终态迁移**处炸：
+`psycopg.errors.InsufficientPrivilege: permission denied for table job_events`（SQLSTATE
+`42501`），写者把它归成 `DispatchUnavailableError`，Job 状态与草案事件一起回滚，租约到期后
+重新可领取。两种情况要分开看：`deploy/job-startup-gate.py` 在启动时核对 `job_events` 的
+`INSERT` 与 `last_event_seq` 的 `UPDATE`，门禁变红就是这条漏了；门禁没跑过的部署才会走到
+首次写入的 `42501`。
+
+回退：重放旧版 `job_dispatch_grants`（不含这两组授权）即可，已写下的 canonical 影子行留着 ——
+没有读者，S2 之前不需要清理。
+
+核实：**实跑**（2026-11-25，本机 PostgreSQL 18.6，非属主身份，`SPEECHNEXUS_TEST_DATABASE_URL`）：
+`tests/integration/test_canonical_event_double_write_pg.py` 以真实授权身份跑
+`mark_running` → `record_progress` → `finish`，断言 canonical 序号从 1 起连续、摘要按草案行
+字段用 canonical 序号重算后相等、`payload_ref` 为 `NULL`，并在 `job_events` 被改名后确认草案
+事件与事件头都不前进。**未实测**：真实部署上漏重放的告警先后（启动门禁 vs 首次写入 42501）。
+
 ## 边界澄清（行为未变）
 
 - 单次合成的**入口声明**上限是 4096 字符（`MAX_SPEECH_TEXT_CHARS`）：同步入口超界 `400 invalid_request`（带 `param: input`），异步 Job 对 **>4096** 的请求体答 `422 unsupported_parameter`（**异步只保证 `error.code`，`param` 为 `null`**）；不切分、不截断，更长的正文由调用方分片。
@@ -861,6 +887,10 @@ SCRIPT
   只说「不够」；注册成功时若同一宿主机放不下第二个同形状实例，stderr 提前一条 warning，
   stdout 逐字不变（[#991](https://github.com/hrygo/SpeechNexus/pull/991)、
   [#996](https://github.com/hrygo/SpeechNexus/pull/996)）。
+- 事件双写（S1）：`record_progress` 与 `finish` 在同一笔事务里额外写一行 canonical
+  `job_events`，`payload_ref` 恒为 `NULL`，canonical 序号取 `coordination_jobs.last_event_seq + 1`
+  （不是草案的 `MAX(event_seq) + 1`）；事件摘要按 canonical 序号计算，因此能与草案行对上。
+  **读路径、公开响应、SSE 序号都不变**，canonical 行目前没有读取者。
 - 对外行为不变、只是收敛了实现：Job kind 的词汇表与泳道归属改为 domain 单一表
   （[#1043](https://github.com/hrygo/SpeechNexus/pull/1043)、
   [#1048](https://github.com/hrygo/SpeechNexus/pull/1048)），取消对账的重试上界收敛到

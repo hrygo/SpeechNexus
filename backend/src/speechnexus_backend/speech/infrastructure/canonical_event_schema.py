@@ -33,10 +33,12 @@
 之内(列改名而投影没跟上时立刻失败),权限面必须恰好是 ``SELECT``/``INSERT``(给事件表加
 ``UPDATE`` 得先改那句断言,不会悄悄出现在授权里)。
 
-**本模块此刻没有被任何运行角色使用。** ``canonical_event_grants`` 是供给期声明,还没有调用点:
-S1 把事件写者接过来时,由写者身份的授权函数调用它(与 ``coordination_keyed_lock_grants`` 同一形
-状),启动闸门届时再核对它。现在把它接进 ``job_runtime_grants`` 会让每个身份多出一批「已授权、
-无语句」的列,而 ``job_runtime`` 的逐列比对拒绝未声明的授权面 —— 那不是加法。
+**授权面按阶段拆成两个函数,不是一个带开关的函数。** 事件表自己的那一份
+(``job_event_grants``)在 S1 有了调用点:派发身份在 ``job_dispatch_grants`` 里拿到它的列级
+``SELECT``/``INSERT``,事件双写才有权限落库。outbox 的 ``delivered_at`` 仍没有写者,所以它留在
+``canonical_event_grants`` 里,等 S2 的投递路径接过来 —— 现在把两半一起发给每个身份,等于给每个
+登录一批「已授权、无语句」的列,而 ``job_runtime`` 的逐列比对拒绝未声明的授权面,那不是加法。
+`job_event_grants` 与 `canonical_event_grants` 共用同一份 ``JOB_EVENT_PRIVILEGES``,列清单不复制。
 """
 
 from __future__ import annotations
@@ -102,6 +104,15 @@ assert set(JOB_EVENT_PRIVILEGES) == {"SELECT", "INSERT"}, (
 #: ``IF NOT EXISTS`` 与迁移树其余部分一致:若干集成用例把 ``alembic_version`` 回退再
 #: ``upgrade head``,那时对象可能已经在;``ADD COLUMN IF NOT EXISTS`` 让「重入同一修订」不报错,
 #: 而 ``delivered_at_us`` 原样保留,回退到 ``0067`` 时删掉的也只是本修订加的这一列。
+#:
+#: **InnoDB 验证 schema 没有这张表,这不是遗漏。** 那份 schema 由 ``JOB_DDL`` /
+#: ``CANONICAL_JOB_DDL`` / ``CLAIM_BUCKET_DDL`` / ``COORDINATION_KEYED_LOCK_DDL`` 建出来,而
+#: 事件双写的两条迁移只存在于 ``PostgresDispatchStateStore``:``DispatchStateStore`` 目前只有
+#: 这一个实现,``_record_progress`` / ``_finish`` 在 InnoDB 上没有写入者,建表就等于造一个没有
+#: 语句的镜像。等到派发状态机真的在 InnoDB 上跑,这张表**必须由 ``JOB_EVENT_DDL[0]`` 派生**
+#: (逐字转换 PG 专属语法,如 ``VARCHAR``/``DECIMAL``/外键写法),不允许再抄一份列清单:
+#: ``job_dispatch_grants`` 与运行期写入读的是本模块,两份清单漂一列只在首次真实写入时以
+#: ``42501`` 显形,而两个引擎都不点名缺哪列。
 JOB_EVENT_DDL: tuple[str, ...] = (
     f"CREATE TABLE IF NOT EXISTS {JOB_EVENT_TABLE} (\n    "
     + ",\n    ".join(f"{name} {definition}" for name, definition in JOB_EVENT_COLUMN_DEFINITIONS)
@@ -113,36 +124,50 @@ JOB_EVENT_DDL: tuple[str, ...] = (
 )
 
 
-def canonical_event_grants(schema: str, role: str) -> tuple[str, ...]:
-    """canonical 事件侧的运行授权面:事件追加/续读,以及 outbox 的那一列。
+def _checked(schema: str, role: str) -> tuple[str, str]:
+    """标识符校验的唯一实现在 ``job_schema``:延迟导入,免得两个模块互相导入时成环。"""
 
-    一个函数,两侧(写者与投递者)都调它,谁都不重写列清单。列级授权(不是表级)是刻意的:
-    ``GRANT SELECT (event_seq, event_digest, payload_ref)`` 让读者读不到它不需要的列 ——
-    表级 ``SELECT`` 会随新列悄悄变宽,而读者能读哪几列是这条路径的公开面。写者写的是整行,
-    所以它的 ``INSERT`` 清单就是声明本身;能漂的只有读者投影,那句导入期断言守住它。
-
-    事件表上**没有** ``UPDATE``/``DELETE``,outbox 上只授 ``delivered_at``:``delivered_at_us``
-    仍是草案列,它的授权面归 ``job_runtime_grants``,本函数不重复声明别人的列。
-    """
-
-    # 校验器的唯一实现在 `job_schema`:这里延迟导入,免得 `job_schema` 反过来导入本模块时成环。
     from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 
-    schema, role = checked_sql_name(schema), checked_sql_name(role)
+    return checked_sql_name(schema), checked_sql_name(role)
+
+
+def job_event_grants(schema: str, role: str) -> tuple[str, ...]:
+    """``job_events`` 自己的运行授权面:事件追加与续读,只有这两件事。
+
+    S1 的事件写者只需要这一份:``INSERT`` 四列(整行就是声明本身),``SELECT`` 三个投影列。
+    列级授权(不是表级)是刻意的:表级 ``SELECT`` 会随新列悄悄变宽,而读者能读哪几列是这条路径
+    的公开面。事件表上**没有** ``UPDATE``/``DELETE`` —— 事件是只追加的事实。
+
+    这里不碰 outbox:``delivered_at`` 到 S2 才有写者,它的授权面在
+    ``canonical_event_grants``,两个函数共用同一份 ``JOB_EVENT_PRIVILEGES``。
+    """
+
+    schema, role = _checked(schema, role)
     statements = [f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"']
     for privilege, columns in JOB_EVENT_PRIVILEGES.items():
         statements.append(
             f'GRANT {privilege} ({", ".join(columns)}) ON "{schema}".{JOB_EVENT_TABLE} TO "{role}"'
         )
-    statements.extend(
-        (
-            f"GRANT INSERT ({OUTBOX_DELIVERED_AT_COLUMN}) "
-            f'ON "{schema}".{COORDINATION_OUTBOX_TABLE} TO "{role}"',
-            f"GRANT UPDATE ({OUTBOX_DELIVERED_AT_COLUMN}) "
-            f'ON "{schema}".{COORDINATION_OUTBOX_TABLE} TO "{role}"',
-        )
-    )
     return tuple(statements)
+
+
+def canonical_event_grants(schema: str, role: str) -> tuple[str, ...]:
+    """canonical 事件侧的完整授权面:``job_event_grants`` 加 outbox 的那一列。
+
+    事件追加/续读那一半来自 ``job_event_grants``,不在这里重写列清单。outbox 上只授
+    ``delivered_at``:``delivered_at_us`` 仍是草案列,它的授权面归 ``job_runtime_grants``,
+    本函数不重复声明别人的列。
+    """
+
+    schema, role = _checked(schema, role)
+    return (
+        *job_event_grants(schema, role),
+        f"GRANT INSERT ({OUTBOX_DELIVERED_AT_COLUMN}) "
+        f'ON "{schema}".{COORDINATION_OUTBOX_TABLE} TO "{role}"',
+        f"GRANT UPDATE ({OUTBOX_DELIVERED_AT_COLUMN}) "
+        f'ON "{schema}".{COORDINATION_OUTBOX_TABLE} TO "{role}"',
+    )
 
 
 __all__ = [
@@ -158,4 +183,5 @@ __all__ = [
     "JOB_EVENT_TABLE",
     "OUTBOX_DELIVERED_AT_COLUMN",
     "canonical_event_grants",
+    "job_event_grants",
 ]

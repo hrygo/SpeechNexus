@@ -16,6 +16,16 @@ projects. Cancellation acceptance takes that same Job row first and closes its
 ``job_state`` before it writes the fence, which is why a Job whose cancellation was
 accepted can no longer win the claim CAS. No ``SKIP LOCKED`` and no vendor error branch
 are involved.
+
+``_record_progress`` and ``_finish`` also append the canonical ``job_events`` row for the
+same fact in the same transaction (cutover stage S1, plan §5). The canonical sequence is
+``coordination_jobs.last_event_seq + 1``, *not* the draft ``MAX(speech_job_events) + 1``:
+``_mark_running`` writes only the draft event (it takes no ``coordination_jobs`` row lock,
+so a legacy Job without a canonical parent would fail the foreign key), so the two
+sequences genuinely differ, and ``event_digest`` covers ``event_seq`` — a digest computed
+over the draft sequence would describe a different fact and could never be reconciled
+with the canonical row. Reads stay on the draft table until S2; the canonical row is a
+shadow that the reconciliation checks compare row by row.
 """
 
 from __future__ import annotations
@@ -24,6 +34,7 @@ import asyncio
 from collections.abc import Iterable
 from dataclasses import replace
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, cast
 
 from speechnexus_backend.speech.application.leases import (
@@ -51,12 +62,18 @@ from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema imp
 )
 from speechnexus_backend.speech.infrastructure.leases_postgres import PostgresLeaseTransactions
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechConnection, SpeechPool
+from speechnexus_backend.speech.infrastructure.public_job_progress_schema import (
+    LIFECYCLE_KIND,
+    PROGRESS_KIND,
+)
 from speechnexus_portable_sql.claims import (
     DEFAULT_CLAIM_STATE,
+    STATEMENTS,
     BatchClaim,
     ClaimedJobView,
     claim_batch,
     claimed_jobs,
+    event_digest,
     utc_from_epoch_us,
 )
 from speechnexus_portable_sql.clock import now_us, to_epoch_us
@@ -171,6 +188,67 @@ def _append_lifecycle_event(
         "VALUES (?, ?, ?, ?)",
         (job_id, _next_event_seq(connection, job_id), state, occurred_at_us),
     )
+
+
+#: 推进 canonical 事件头。**序号由头决定,不由草案的 ``MAX+1`` 决定**:S1 是影子写,
+#: ``_mark_running`` 仍只写草案事件(它没有 canonical 父行的行锁,见该方法的说明),所以
+#: 草案序号必然领先 canonical 序号;``event_digest`` 又覆盖 ``event_seq``,两条事实要用同一个
+#: 序号算摘要才可能被对账,那个序号只能是 ``coordination_jobs.last_event_seq + 1``。
+#:
+#: 只写 ``last_event_seq``,**不碰 ``claim_version``**:``claim_version`` 是 fence,``append_event``
+#: 的 ``job.event_head_update`` 顺手把它加一;在这里也加一会让同一 worker 手里
+#: ``ClaimedJob.claim_version`` 立刻过期,``_finish`` 的关闭 CAS 以 ``rowcount = 0`` 失败。
+#: 本语句在持有该 ``coordination_jobs`` 行的 ``FOR UPDATE`` 锁之后执行,所以不需要版本 CAS。
+_EVENT_HEAD_ADVANCE = "UPDATE coordination_jobs SET last_event_seq = ? WHERE job_id = ?"
+
+
+def _append_canonical_event(
+    connection: SpeechConnection,
+    *,
+    job_id: str,
+    state: str,
+    occurred_at_us: int,
+    kind: str | None = None,
+    progress_completed: int | None = None,
+    progress_total: int | None = None,
+) -> None:
+    """同事务追加一条 canonical ``job_events`` 事实(S1 事件双写的写侧)。
+
+    这是**第二条表示**,不是第二个权威:读路径仍在草案 ``speech_job_events`` 上,草案序号仍由
+    ``_next_event_seq`` 的 ``MAX+1`` 决定。两条表示在同一笔事务里写,所以不存在「一侧写了另一侧
+    没写」的中间态;canonical 侧的失败(例如缺列、越权)会把整个迁移一起回滚。
+
+    语句与列清单都不在这里重写:读取复用 ``claims.STATEMENTS["job.event_head"]``(同一条
+    ``SELECT ... FOR UPDATE``,``append_event`` 用的也是它),写入复用
+    ``claims.STATEMENTS["job_event.insert"]``;后者的列清单由
+    ``tests/ci/test_canonical_event_statement_parity.py`` 钉在
+    ``canonical_event_schema.JOB_EVENT_INSERT_COLUMNS`` 上,漂移即红。
+
+    ``payload_ref`` 一律 ``NULL``:产品决定是搬迁不引用外部负载(0068 之前已合并)。
+    """
+
+    head = connection.execute(STATEMENTS["job.event_head"], (job_id,)).fetchone()
+    if head is None:
+        # 这两条迁移的入口都已经 ``SELECT ... FROM coordination_jobs ... FOR UPDATE`` 并据
+        # ``rowcount`` 判过归属,所以缺父行意味着 Job 身份不完整(例如历史 Job 只有
+        # ``speech_jobs`` 行)。静默跳过会留下「草案有、canonical 永远没有」的缺口,那正是
+        # 对账之后无法补的形状,所以这里直接失败。
+        raise DispatchProtocolError(
+            "Canonical event head is absent; the Job has no coordination_jobs row to own its event"
+        )
+    event_seq = int(head["last_event_seq"]) + 1
+    digest = event_digest(
+        job_id=job_id,
+        event_seq=Decimal(event_seq),
+        state=state,
+        occurred_at=_canonical_moment(occurred_at_us, field="occurred_at"),
+        kind=kind,
+        progress_completed=progress_completed,
+        progress_total=progress_total,
+        payload_ref=None,
+    )
+    connection.execute(STATEMENTS["job_event.insert"], (job_id, event_seq, digest, None))
+    connection.execute(_EVENT_HEAD_ADVANCE, (event_seq, job_id))
 
 
 def _job(row: dict[str, Any]) -> DispatchJob:
@@ -544,6 +622,16 @@ class PostgresDispatchStateStore:
                     "?, 'progress', ?, ?, ?)",
                     (job.job_id, int(latest["seq"]) + 1, now, unit, completed, total),
                 )
+                # 同一笔事内写 canonical 影子事件(S1);失败则草案事件一起回滚。
+                _append_canonical_event(
+                    connection,
+                    job_id=job.job_id,
+                    state="running",
+                    occurred_at_us=now,
+                    kind=PROGRESS_KIND,
+                    progress_completed=completed,
+                    progress_total=total,
+                )
             return True
         except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
             raise DispatchUnavailableError("Dispatch progress storage failed") from None
@@ -632,6 +720,17 @@ class PostgresDispatchStateStore:
                     raise _TerminalGuardLostError
                 _append_lifecycle_event(
                     connection, job_id=job.job_id, state=target, occurred_at_us=now
+                )
+                # 同一笔事务里写 canonical 影子事件(S1):终态草案行与 canonical 行要么都在、
+                # 要么都不在,否则两侧的终态事实无法对账。
+                _append_canonical_event(
+                    connection,
+                    job_id=job.job_id,
+                    state=target,
+                    occurred_at_us=now,
+                    # 草案的终态行由 ``_append_lifecycle_event`` 写入,``kind`` 取 0039 的默认值;
+                    # 摘要覆盖 ``kind``,所以这里必须用同一个字面量,否则两侧摘要永远对不上。
+                    kind=LIFECYCLE_KIND,
                 )
                 closed = connection.execute(
                     "UPDATE coordination_jobs SET job_state = ? WHERE job_id = ? "

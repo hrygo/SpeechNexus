@@ -15,6 +15,10 @@ from speechnexus_backend.speech.application.voice_publications import VoicePubli
 from speechnexus_backend.speech.domain.job_prerequisites import ADMISSION_DSN
 from speechnexus_backend.speech.infrastructure.artifacts_minio import MinioArtifactRemoval
 from speechnexus_backend.speech.infrastructure.assets_minio import MinioAssetObjects
+from speechnexus_backend.speech.infrastructure.canonical_event_schema import (
+    JOB_EVENT_INSERT_COLUMNS,
+    JOB_EVENT_TABLE,
+)
 from speechnexus_backend.speech.infrastructure.claim_bucket_schema import (
     CLAIM_BUCKET_TABLE,
     CLAIM_BUCKET_UPDATE_COLUMNS,
@@ -225,6 +229,10 @@ _JOB_DECLARED_TABLES = tuple(
             # writer refuses to start on its own provisioning. The name is the
             # declaration's, not a literal: ``coordination_keyed_lock_schema`` owns it.
             COORDINATION_KEYED_LOCK_TABLE,
+            # canonical 事件表(0068)。S1 起派发身份在同一笔事务里追写 ``job_events`` 影子行,
+            # 那一行由 ``job_dispatch_grants`` 里的 ``job_event_grants`` 授予;这里只声明
+            # 关系属于本登录,否则逐列比对会把它当成「外来关系上的权限」拒绝启动。
+            JOB_EVENT_TABLE,
             "admission_operations",
             "speech_job_cancellation_fences",
             "speech_job_cancellation_reconciliations",
@@ -268,6 +276,9 @@ _JOB_UPDATE_SURFACE: dict[str, tuple[str, ...]] = {
         "claim_expires_at_us",
         "claim_version",
         "job_state",
+        # 事件头(S1):派发身份在 ``_record_progress``/``_finish`` 里把 canonical
+        # ``job_events`` 的序号推到这里。允许但不要求,理由与其他列相同。
+        "last_event_seq",
     ),
     "speech_job_cancellation_reconciliations": (
         "attempts",
@@ -290,6 +301,9 @@ _JOB_REQUIRED_UPDATE = frozenset(REQUIRED_UPDATE_COLUMNS) - {"coordination_jobs"
 _JOB_INSERT_SURFACE: dict[str, tuple[str, ...]] = {
     **JOB_WRITER_INSERT_COLUMNS,
     COORDINATION_KEYED_LOCK_TABLE: COORDINATION_KEYED_LOCK_INSERT_COLUMNS,
+    # S1 的影子写:canonical 事件行。列清单来自 ``canonical_event_schema`` 的唯一声明,
+    # 不在这里复制;``job_dispatch_grants`` 通过 ``job_event_grants`` 授的正是这份。
+    JOB_EVENT_TABLE: JOB_EVENT_INSERT_COLUMNS,
 }
 # The deletion executor removes exactly the authoritative public Job intent row of
 # the confirmed operation (#540) and one unreferenced voice draft revision. Every

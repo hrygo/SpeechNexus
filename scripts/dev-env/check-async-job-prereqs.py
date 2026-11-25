@@ -204,7 +204,14 @@ DISPATCH_WRITE_PROBES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "coordination_jobs",
         "UPDATE",
-        ("claim_owner_id", "claim_expires_at", "claim_version", "job_state"),
+        (
+            "claim_owner_id",
+            "claim_expires_at",
+            "claim_version",
+            "job_state",
+            # 事件头(S1):canonical ``job_events`` 的序号推到 ``last_event_seq``。
+            "last_event_seq",
+        ),
     ),
     (
         "speech_job_events",
@@ -219,6 +226,16 @@ DISPATCH_WRITE_PROBES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
             "progress_completed",
             "progress_total",
         ),
+    ),
+    # S1 的影子写:同一笔事务里追加 canonical 事件行。这里必须是字面量 ——
+    # ``tests/ci/test_reference_deploy_job_prereqs.py`` 用 ``ast.literal_eval`` 读这张表,
+    # 引用常量会直接 ValueError。列清单与 ``canonical_event_schema.JOB_EVENT_INSERT_COLUMNS``
+    # 的一致性由 ``tests/unit/test_job_startup_gate.py`` 的等式测试保:那份 gate 侧的副本是从
+    # 声明派生的,两边必须相等。
+    (
+        "job_events",
+        "INSERT",
+        ("job_id", "event_seq", "event_digest", "payload_ref"),
     ),
     (
         "speech_job_cancellation_not_submitted",
@@ -377,6 +394,8 @@ WRITER_UPDATE_COLUMNS: dict[str, tuple[str, ...]] = {
         "claim_expires_at_us",
         "claim_version",
         "job_state",
+        # 事件头(S1):canonical ``job_events`` 的序号推到 ``last_event_seq``。
+        "last_event_seq",
     ),
     # 桶租约行:``claim_batch`` 用它做 256 路轮转与同桶死租约回收。
     "coordination_claim_buckets": ("claim_owner_id", "lease_until", "version"),

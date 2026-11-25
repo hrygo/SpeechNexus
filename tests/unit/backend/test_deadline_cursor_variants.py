@@ -1,23 +1,24 @@
 """Every copied ``_DeadlineCursor`` must refuse to query after its budget expires.
 
 ``test_deadline_cursor.py`` pins the eleven ``_Cursor`` copies and explicitly
-leaves ``_DeadlineCursor`` out of its scope. Five copies of that class live under
+leaves ``_DeadlineCursor`` out of its scope. Four copies of that class live under
 ``backend/src`` and repeat the same shape: read the remaining budget, refuse when
 it is gone, install a transaction-local ``statement_timeout`` in milliseconds,
 then run the query.
 
-Four of the five were already pinned in part by their own functional suites
-(``test_production_claims.py``, ``test_production_owners.py``, ``test_runtime_postgres.py``
-cover refusing and the derived millisecond value; ``test_production_leases.py``
-covers refusing and sending nothing). ``quarantine_release_postgres`` had no
-coverage at all, and no test compared the five implementations against one
-shared contract -- a drift in one copy, or a constant millisecond value, could
-pass every existing suite.
+Three of the four were already pinned in part by their own functional suites
+(``test_production_owners.py``, ``test_runtime_postgres.py`` cover refusing and the
+derived millisecond value; ``test_production_leases.py`` covers refusing and sending
+nothing). ``quarantine_release_postgres`` had no coverage at all, and no test compared
+the four implementations against one shared contract -- a drift in one copy, or a
+constant millisecond value, could pass every existing suite.
 
-All five are behaviourally identical apart from the concrete cursor annotation,
-so one shared matrix runs against every implementation instead of five
+All four are behaviourally identical apart from the concrete cursor annotation,
+so one shared matrix runs against every implementation instead of four
 near-identical test files. The discovery guard keeps that table complete: a new
 ``class _DeadlineCursor`` declaration without an entry here fails the census.
+``claims_postgres`` left the table with its port (``#1102`` S3); the backend now
+holds four declarations.
 
 The census walks ``backend/src`` only. ``execution-gateway`` holds two more
 copies of the same shape (``execution_reader.py``, ``submit_postgres.py``) with
@@ -53,13 +54,9 @@ class Implementation:
     error: str
 
 
-# Five declarations exist today; ``quarantine_release_postgres`` is the copy that
-# is easiest to miss because the other four own the claim/lease/owner/runtime ports.
+# Four declarations exist today; ``quarantine_release_postgres`` is the copy that
+# is easiest to miss because the other three own the lease/owner/runtime ports.
 IMPLEMENTATIONS = (
-    Implementation(
-        "speechnexus_backend.speech.infrastructure.claims_postgres",
-        "_BudgetExpiredError",
-    ),
     Implementation(
         "speechnexus_backend.speech.infrastructure.leases_postgres",
         "_BudgetExpiredError",
@@ -273,7 +270,7 @@ def test_table_covers_every_deadline_cursor_declaration_in_the_backend() -> None
     discovered = discover_cursor_modules()
     tabled = {entry.module for entry in IMPLEMENTATIONS}
 
-    assert len(IMPLEMENTATIONS) == 5
+    assert len(IMPLEMENTATIONS) == 4
     assert discovered == tabled, (
         "A backend _DeadlineCursor declaration is not classified here.\n"
         f"untested: {sorted(discovered - tabled)}\n"

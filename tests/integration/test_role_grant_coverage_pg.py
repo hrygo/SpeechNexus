@@ -34,10 +34,9 @@ Coverage -- face, identity, grant function to re-run:
 * ``dispatch.claim``: ``PostgresDispatchQueue.claim_due`` -- dispatch /
   ``job_runtime_grants``, ``job_dispatch_grants``, ``public_job_grants``,
   ``coordination_runtime_grants``;
-* ``writer.claim_and_outbox``: ``create_in_transaction`` on an existing Job (the
-  replay branch reads the coordination row and the outbox row) plus
-  ``claim_in_transaction`` -- Job writer / ``job_runtime_grants`` plus the writer
-  baseline in ``provision-job-roles.py``;
+* ``writer.create_replay``: ``create_in_transaction`` on an existing Job (the
+  replay branch reads the coordination row and the outbox row) -- Job writer /
+  ``job_runtime_grants`` plus the writer baseline in ``provision-job-roles.py``;
 * ``binding_disable.coordinator``: the coordinator's intent, target and lease reads --
   binding-disable coordinator / ``disable_coordinator_grants``;
 * ``asset.inspection``: ``PostgresAssetMetadata.get`` and ``.object`` -- asset runtime /
@@ -104,7 +103,6 @@ from speechnexus_backend.admission_watch_runtime import (
     AdmissionWatchSettings,
 )
 from speechnexus_backend.speech.domain.assets import digest
-from speechnexus_backend.speech.domain.claims import ClaimJob
 from speechnexus_backend.speech.domain.jobs import CreateJob, JobFact
 from speechnexus_backend.speech.infrastructure.asset_schema import asset_runtime_grants
 from speechnexus_backend.speech.infrastructure.assets_postgres import PostgresAssetMetadata
@@ -113,10 +111,6 @@ from speechnexus_backend.speech.infrastructure.binding_disable_coordinator_postg
 )
 from speechnexus_backend.speech.infrastructure.binding_disable_targets_schema import (
     disable_coordinator_grants,
-)
-from speechnexus_backend.speech.infrastructure.claims_sql import (
-    claim_in_transaction,
-    read_claim,
 )
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
     RECONCILIATION_TABLE,
@@ -715,8 +709,8 @@ def _run_dispatch_claim(coverage: Coverage) -> str:
     return "claim=0"
 
 
-def _run_writer_claim(coverage: Coverage) -> str:
-    """The writer's create replay (which reads the outbox) plus its coordination claim."""
+def _run_writer_create_replay(coverage: Coverage) -> str:
+    """The writer's create replay: the coordination row plus the outbox row it published."""
     request = CreateJob(
         job_id=COORDINATION_JOB,
         operation_id=COORDINATION_JOB,
@@ -734,19 +728,12 @@ def _run_writer_claim(coverage: Coverage) -> str:
             # statement here is copied from the adapter, so a change to the production
             # SELECT reddens this face instead of passing on a stale copy.
             created = create_in_transaction(cursor, request, created_at_us=now_us)
-            current = read_claim(cursor, COORDINATION_JOB, lock=True)
-            result = claim_in_transaction(
-                cursor,
-                ClaimJob(COORDINATION_JOB, "worker-grant-coverage", current.claim_version, 30_000),
-                clock=lambda: now_us,
-            )
         connection.rollback()
     finally:
         connection.close()
     assert created.outcome == "replayed", created
     assert created.fact == JobFact(COORDINATION_JOB, DIGEST), created
-    assert result.outcome == "committed", result
-    return f"create={created.outcome} claim={result.outcome} version={current.claim_version}"
+    return f"create={created.outcome}"
 
 
 def _run_binding_disable(coverage: Coverage) -> str:
@@ -851,19 +838,14 @@ SURFACES: tuple[Surface, ...] = (
         _run_dispatch_claim,
     ),
     Surface(
-        "writer.claim_and_outbox",
+        "writer.create_replay",
         "writer",
         ("job_runtime_grants", "scripts/dev-env/provision-job-roles.py"),
         (
             Read("coordination_jobs"),
             Read("coordination_outbox"),
-            Read(
-                "coordination_jobs",
-                ("claim_owner_id", "claim_version", "claim_expires_at_us"),
-                "UPDATE",
-            ),
         ),
-        _run_writer_claim,
+        _run_writer_create_replay,
     ),
     Surface(
         "binding_disable.coordinator",
@@ -940,7 +922,7 @@ class Isolation:
 ISOLATION_CASES: tuple[Isolation, ...] = (
     # One surface only: nothing else in the deployment reads the lease row.
     Isolation("dispatch", "admission_leases"),
-    # One surface only: the writer's outbox claim is its own read.
+    # One surface only: the writer's create replay is its own outbox read.
     Isolation("writer", "coordination_outbox"),
     # The whole debt family reads the ledger, and no other identity does.
     Isolation("debt", RECONCILIATION_TABLE),

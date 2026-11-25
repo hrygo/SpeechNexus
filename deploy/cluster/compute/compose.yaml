@@ -81,10 +81,12 @@ services:
       - controller-state:/var/lib/speechnexus/controller
     restart: unless-stopped
 
-  # The dispatcher shares the gateway's loopback: the runtime refuses a plain-HTTP
-  # gateway origin that is not loopback, and the reference Compose runs this worker
-  # in the gateway's own network namespace. It therefore belongs with the gateway,
-  # not in the application plane.
+  # Superseded by the `job-dispatch` Deployment in `deploy/cluster/app-plane`.
+  # Claiming from here means crossing the bridge on every round: a measured 115 s
+  # per round against 0.15 s next to the database, while the binding's admission
+  # deadline is 120 s, so Jobs expired before dispatch (issues #1234 and #1250).
+  # Kept, not deleted, as the fallback documented in `deploy/cluster/README.md`;
+  # never run it alongside the Deployment.
   dispatch:
     image: ${PYTHON_IMAGE}
     network_mode: host

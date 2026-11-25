@@ -136,16 +136,19 @@ def _runtime_driver(
         )
 
         def build_kubernetes(store: SqliteIntentStore) -> NodeRuntimePort:
-            # Stop checkpoints arrive with the stop slice; the adapter takes the
-            # same durable store then.
+            # The same durable store that records intents also holds the stop
+            # checkpoints, so the Pod UID a stop is fenced on survives a restart.
             return KubernetesNodeRuntime(
                 api=api,
                 node_id=settings.node_id,
+                stop_checkpoints=store,
                 engine_credentials=credentials,
                 settings=KubernetesRuntimeSettings(
                     namespace=namespace,
                     pod_ready_timeout_seconds=settings.k8s_pod_ready_timeout_seconds,
                     poll_interval_seconds=settings.k8s_pod_poll_interval_seconds,
+                    stop_grace_seconds=settings.stop_timeout_seconds,
+                    exit_wait_seconds=settings.exit_wait_seconds,
                     gpu_memory_utilization=settings.engine_gpu_memory_utilization,
                 ),
             )

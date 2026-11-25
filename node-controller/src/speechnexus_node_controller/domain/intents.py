@@ -45,6 +45,11 @@ class RuntimeIntentErrorCode(StrEnum):
     WARMUP_DEADLINE_EXCEEDED = "warmup_deadline_exceeded"
     INSTANCE_DRAIN_INCOMPLETE = "instance_drain_incomplete"
     STOP_EVIDENCE_UNVERIFIED = "stop_evidence_unverified"
+    # A stop can complete while the engine left with a non-zero exit code. The
+    # code itself is the durable fact and travels in the stop evidence; this
+    # reason keeps the abnormal exit visible on the observation instead of
+    # letting it read as a clean shutdown.
+    ENGINE_EXIT_CODE_NONZERO = "engine_exit_code_nonzero"
     RUNTIME_UNAVAILABLE = "runtime_unavailable"
     OBSERVED_IDENTITY_MISMATCH = "observed_identity_mismatch"
     UNTRACKED_INSTANCE_OBSERVED = "untracked_instance_observed"

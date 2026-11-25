@@ -17,7 +17,9 @@
 # The approved templates mount host directories read-only (`read_only_binds`),
 # so this namespace must not enforce the `restricted` Pod Security Standard.
 #
-# `delete` is for the stop slice; this slice only creates and reads Pods.
+# `delete` is what the stop path uses: the request carries the Pod UID as an
+# API-level precondition, so a Pod rebuilt under the same name is refused by the
+# API server rather than deleted by the previous generation's stop.
 apiVersion: v1
 kind: Namespace
 metadata:

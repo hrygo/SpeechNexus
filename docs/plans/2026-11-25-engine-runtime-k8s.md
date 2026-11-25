@@ -235,6 +235,28 @@ S2 与 S4 合并时只带了通过用例，**没有留下"注入即红"的实测
 
 切换顺序有硬约束：compose 的 `controller` 与 Pod 都绑 8022，先起后停会 `address already in use`。已写进 README。
 
+#### 4.2.7 常驻控制器接管既有实例的实测（2026-11-26，未通过）
+
+控制器在集群里跑起来不等于能管引擎。为了让「在线」变成「可用」，让常驻控制器对一个**它没有 prepare 过的**
+引擎 Pod（`engine-instance-asr-1-2`，由上一代 compose 控制器创建）执行完整生命周期。结果是负面的，三个缺口都
+已具名成 issue：
+
+| 步骤 | 结果 | 缺口 |
+| --- | --- | --- |
+| `stop` gen 2 | Pod 被删除，但返回 `quarantined` / `stop_evidence_unverified` | 接管来的 Pod 删完才读退出码，永远读不到（#1261） |
+| `prepare` gen 3 | 被 `gateway_drain_incomplete` 拒绝 | quarantine 粘滞，该实例永久不能再起新代（#1261） |
+| 绕过控制器手起 Pod | vLLM 报 `Free memory 39.42/121.66 GiB < 0.92 utilization` | 模板声明 12 GiB，引擎按整卡 0.92 抢（#1262） |
+| 引擎消失期间的准入 | 仍 `admitting` / `valid` / 剩 68096 s | 就绪回执是自签时间戳，不校验实例存活（#1263） |
+
+停下之后按 12 GiB 预算（`--gpu-memory-utilization 0.0989`）手工拉起引擎容器恢复服务，端到端 Job 通过
+（`sha256:da4d6eb2…`）。控制器停在 quarantine 状态，未再提交新的代。
+
+**结论**：k8s 驱动对「自建自管」的实例是通的（4.2.6 的端到端即为证），对「接管来的」实例不通。控制器重启
+或从 compose 迁移过来，接管的正是后者——所以这条路径必须先修 #1261，才谈得上接管生产实例。
+
+当时的运行态：引擎是 docker 容器 `speechnexus-asr-1`（host 18190，`--gpu-memory-utilization 0.0989`），
+`engine-shim` 已停（引擎自己占 18190，不需要转发），控制器 Pod 在线但持有 quarantined gen 2。
+
 ## 5. 回退
 
 - 驱动开关默认 `docker`，切回即恢复；**不改数据库、不改契约**，所以没有迁移回退问题

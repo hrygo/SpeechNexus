@@ -153,6 +153,11 @@ deploy/job-dispatch --replicas=0`。
 `address already in use` 并进入 `CrashLoopBackOff`。回退反过来：`kubectl -n speechnexus scale
 deploy/node-controller --replicas=0`，再 `docker compose ... start controller`。
 
+**接管既有实例的边界**：控制器只对**自己创建过**的 Pod 能收干净。接管一个由别的控制器创建、
+没有 prepare 记录的 Pod 时，`stop` 删得掉 Pod 但拿不到退出码，返回 `stop_evidence_unverified` 并进入
+quarantine，此后该实例的新代 `prepare` 一律被 `gateway_drain_incomplete` 拒绝（#1261）。所以在
+compose → 集群切换时，已经在跑的实例要么先由旧控制器停干净，要么换 instance id，不要让新控制器接管。
+
 清单里只有 `${CONTROLLER_IMAGE}`，与 `compose.yaml` 同一约定，插值来自 `versions.env`。
 `component token`、`approved-templates.json` 都由下面两步从既有来源生成，不写进清单：
 

@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.admission import AdmissionService
 from speechnexus_backend.speech.application.speech_synthesis import SpeechLimits, SpeechSynthesis
+from speechnexus_backend.speech.domain.gateway_origin import require_safe_gateway_origin
 from speechnexus_backend.speech.domain.publications import PublicationUnavailableError
 from speechnexus_backend.speech.infrastructure.admission_postgres import (
     PostgresAdmissionTransactions,
@@ -76,6 +77,15 @@ def build_speech(settings: Settings) -> SpeechSynthesis | None:
     assert settings.speech_recipe_file is not None
     assert settings.object_storage_access_key is not None
     assert settings.object_storage_secret_key is not None
+    # The synchronous route presents the component credential twice (its own
+    # gateway client and the settlement runtime), so the origin rule is decided
+    # before the private recipe, the pool or the fact reader: a deployment that
+    # cannot carry the credential fails at startup instead of serving 503s.
+    require_safe_gateway_origin(
+        str(settings.execution_gateway_base_url),
+        allow_plaintext_origin=settings.execution_gateway_allow_plaintext_origin,
+        label="Synchronous speech gateway",
+    )
     recipe = load_tts_recipe(settings.speech_recipe_file)
     if recipe.approved.admission_expires_at_us <= time.time_ns() // 1_000:
         _LOGGER.warning("Synchronous speech unavailable; private recipe expired")

@@ -42,6 +42,7 @@ from speechnexus_backend.speech.application.public_jobs import (
     JobOutcomeUnknownError,
     PublicJobs,
 )
+from speechnexus_backend.speech.domain.gateway_origin import require_safe_gateway_origin
 from speechnexus_backend.speech.domain.job_dispatch import DispatchUnavailableError
 from speechnexus_backend.speech.domain.public_jobs import (
     CANCELLATION_UNCONFIRMED,
@@ -165,6 +166,10 @@ class JobCancellationSettings(BaseSettings):
         validation_alias="SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL",
         repr=False,
     )
+    allow_plaintext_origin: str = Field(
+        default="",
+        validation_alias="SPEECHNEXUS_EXECUTION_GATEWAY_ALLOW_PLAINTEXT_ORIGIN",
+    )
     gateway_credential: SecretStr | None = Field(
         default=None,
         validation_alias="SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL",
@@ -196,6 +201,14 @@ class JobCancellationSettings(BaseSettings):
             raise ValueError("Cancellation reconciliation requires " + ", ".join(sorted(missing)))
         if self.interval_seconds > 300:
             raise ValueError("Cancellation reconciliation interval is unbounded")
+        # Enabling this runtime is what puts the component credential on the wire,
+        # so the origin rule is decided here, at construction, not per pass.
+        assert self.gateway_base_url is not None
+        require_safe_gateway_origin(
+            str(self.gateway_base_url),
+            allow_plaintext_origin=self.allow_plaintext_origin,
+            label="Job cancellation gateway",
+        )
         return self
 
 

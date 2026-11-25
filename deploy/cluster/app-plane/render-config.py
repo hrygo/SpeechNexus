@@ -31,6 +31,12 @@ def role_dsn(env: dict[str, str], role: str, password_key: str) -> str:
 
 BUCKET = "speechnexus-results"
 
+# The two-host link reaches the gateway through the bridge, not loopback, so the
+# component credential would travel in clear text. The runtime refuses that unless
+# the deployment states the exact origin, so the origin is written once here and
+# passed to both credential-presenting app-plane units.
+GATEWAY_ORIGIN = "http://bridge.speechnexus.svc:18010"
+
 RECIPES = {
     "transcription-recipe.json": ROOT / "deploy/private/transcription-recipe.example.json",
     "speech-recipe.json": ROOT / "deploy/private/speech-recipe.example.json",
@@ -165,7 +171,8 @@ def main() -> int:
             "SPEECHNEXUS_SPEECH_ENABLED": "true",
             "SPEECHNEXUS_SPEECH_RECIPE_FILE": "/run/speechnexus-private/speech-recipe.json",
             "SPEECHNEXUS_SPEECH_DEFAULT_LANGUAGE": "en",
-            "SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL": "http://bridge.speechnexus.svc:18010",
+            "SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL": GATEWAY_ORIGIN,
+            "SPEECHNEXUS_EXECUTION_GATEWAY_ALLOW_PLAINTEXT_ORIGIN": GATEWAY_ORIGIN,
             "SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL": env[
                 "SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL"
             ],
@@ -233,7 +240,8 @@ def main() -> int:
             "SPEECHNEXUS_INSTANCE_ID": "dispatch-1",
             "SPEECHNEXUS_DATABASE_URL": env["SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL"],
             "SPEECHNEXUS_DATABASE_SCHEMA": "speech",
-            "SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL": "http://bridge.speechnexus.svc:18010",
+            "SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL": GATEWAY_ORIGIN,
+            "SPEECHNEXUS_EXECUTION_GATEWAY_ALLOW_PLAINTEXT_ORIGIN": GATEWAY_ORIGIN,
             "SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL": env[
                 "SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL"
             ],

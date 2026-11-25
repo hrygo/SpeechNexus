@@ -2387,12 +2387,16 @@ SPEECHNEXUS_EXECUTION_GATEWAY_ALLOW_PLAINTEXT_ORIGIN=http://gateway:8010
 规则是**逐字相等**，不是前缀或网段判断：opt-in 必须是 `scheme://host[:port]` 形式、仅限
 `http`，带 path、query、fragment 或凭据一律在启动时拒绝；它必须与 API 看到的网关 origin
 完全相同（`http://gateway:8010` 与 `http://gateway:8011` 不匹配，域名大小写也不同）。
-拒绝启动时错误会点名该键，并给出让当前 origin 通过所需的完整赋值。该键对 TTS 结算 worker、
-Job 派发 worker、binding 停用 worker 与 TTS 恢复命令是同一个判定：这些入口都从同一环境读取。
+拒绝启动时错误会点名该键，并给出让当前 origin 通过所需的完整赋值。该键对 API 进程的
+同步转写、同步语音合成、ASR 结算运行时与 TTS 结算运行时，以及 Job 派发 worker、独立
+TTS 结算 worker、binding 停用 worker、TTS 恢复命令和取消对账 worker 是同一个判定：这些
+入口都从同一环境读取，并在配置解析或构造期判定，不按请求判定。
 规则的 URL 形状要求比旧的恢复命令更严：**`https://` 也必须是裸 origin**。因此
 `https://gateway:8010/api` 与 `http://localhost:8010/api` 过去在 TTS 恢复命令里能通过，
 现在会在启动时拒绝；`python -m speechnexus_backend.recover_tts` 等恢复操作须给不带 path 的
-origin。同步 ASR 结算与取消对账也出示该凭据，但尚未接入这条校验（[#1084](https://github.com/hrygo/SpeechNexus/issues/1084)）。
+origin。同步 ASR 结算、同步转写与取消对账曾与这条校验脱节（[#1084](https://github.com/hrygo/SpeechNexus/issues/1084)），
+现在同样在启动期拒绝不安全的明文 origin；`tests/ci/test_gateway_origin_coverage.py` 从源码
+推导读取该凭据环境键的入口，新增入口漏接规则会让该检查变红。
 
 ## 8. 一次性注册引擎
 

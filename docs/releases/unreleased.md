@@ -30,7 +30,7 @@
 
 #### 部署顺序：迁移（含授权重放）先于新构建
 
-顺序是硬约束，不是建议：先把库迁到 head（当前是 `0067_coordination_keyed_locks`，它包含
+顺序是硬约束，不是建议：先把库迁到 head（当前是 `0068_canonical_event_tables`，其中包含
 `0064` 加上的 `bucket_no` 与 `due_at`），重放下节三个身份的 `coordination_jobs` INSERT 授权，
 **再**启动新构建。新构建的 Job 写入在 INSERT 里固定提供 `bucket_no` 与 `due_at`
 （`backend/src/speechnexus_backend/speech/infrastructure/job_writer_columns.py:29`），
@@ -50,7 +50,7 @@ for table coordination_jobs`（见下节），所以迁移与授权重放必须�
 之后不要回退到 `0064` 以下再运行新构建，否则同样是这个错误。
 
 `v0.1.0` 的目录树停在 `0057_asr_settlement`（发布说明写的 head 是
-`0056_debt_probe_live_state_index`，但 tag 里已经有 0057），此后新增九个 revision：
+`0056_debt_probe_live_state_index`，但 tag 里已经有 0057），此后新增十个 revision：
 
 | 迁移 | 做什么 |
 | --- | --- |
@@ -64,6 +64,7 @@ for table coordination_jobs`（见下节），所以迁移与授权重放必须�
 | `0065_canonical_jobs_reconcile` | 重跑 0064 的回填，覆盖 0064 之后写入、只有草案列的行；`claim_expires_at` 与 `due_at` 是 **fill-if-null**（只在 canonical 列为 `NULL` 时从草案 epoch 列／`speech_jobs.created_at_us` 换算，canonical 一旦写下就是权威，重跑不覆盖在飞租约），`bucket_no` 仍按 `bucket_for(job_id)` 重算；按 `MAX(speech_job_events.event_seq)` 回填 `last_event_seq`（无事件为 `0`）；提交前对账四条不变量（含「每行都有 `bucket_no`」与「草案说已领取的行必须已在 canonical 有租约」）。**不收紧 `bucket_no`**：写入切换（#1176）已让两个写入者在 INSERT 时提供 `bucket_for(job_id)`，但 `NOT NULL` 仍由后续修订落地；`downgrade` 把 `last_event_seq` 归零并防御性清掉 `NOT NULL`，不删列，也不回退 `claim_expires_at`（那可能是在飞租约） |
 | `0066_claim_bucket_table` | 建 `coordination_claim_buckets`（`bucket_no` `DECIMAL(38,0)` 主键、`claim_owner_id` `VARCHAR(128)`、`lease_until` `TIMESTAMP(6)`、`version` `DECIMAL(38,0)` NOT NULL，即 `migrations/0003_portable_claim_buckets.sql` 的 canonical 形状），并按 Python 的 `BUCKETS` 常量（256）播种 256 个 `version = 0`、无 owner、无租约的空桶；已存在的桶不重写，重入只补缺失的那些；`downgrade` 只 DROP 这张表 |
 | `0067_coordination_keyed_locks` | 建 `coordination_keyed_locks`：协调命名空间的键锁行表（`bucket_no` `DECIMAL(38,0)` 主键、`version` `DECIMAL(38,0)` 行锁许可列、`created_at` `TIMESTAMP(6)`），供 backend 与执行网关两个角色在同一行上取 `FOR UPDATE`；纯建表、不播种，行由第一次用到该桶的事务懒建，`downgrade` 只 DROP 这张表 |
+| `0068_canonical_event_tables` | 建 canonical `job_events`（`job_id` `VARCHAR(128)`、`event_seq` `DECIMAL(38,0)`、`event_digest` `VARCHAR(71)`、`payload_ref` `VARCHAR(512)` 可空，主键 `(job_id, event_seq)`，外键指向 `coordination_jobs(job_id)`），并给 `coordination_outbox` 加可空 `delivered_at TIMESTAMP(6)`；**纯加法，无写者、无读者**，草案列 `delivered_at_us` 原样保留，`downgrade` 只删这一列与 `job_events` 表 |
 | `0008_runtime_delivery` | 参数标记迁到 `?` 契约后，迁移把唯一的占位符内联成迁移事务时间戳；行为不变，仍给旧 outbox 行补 `unknown` 投递相位 |
 | `0023_publication_lifecycle`（视图定义） | 视图里的 `::numeric` 改成标准 `CAST(... AS numeric)`，语义等价；只在重新 bootstrap 时生效，不新增迁移 |
 
@@ -75,7 +76,7 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
   'select version_num from speech.alembic_version'
 ```
 
-第二段的期望输出是 `0067_coordination_keyed_locks`。迁移身份是独立 DDL 身份
+第二段的期望输出是 `0068_canonical_event_tables`。迁移身份是独立 DDL 身份
 （`SPEECHNEXUS_MIGRATION_DATABASE_URL`），不要用 `sn_api`。`0058`–`0063` 六个 revision 的
 `downgrade` 全部显式 `raise`（计划是删除凭据、账本是删除事实、索引是轮询读的访问路径），
 回退没有 `alembic downgrade` 这条路径，只能显式处理数据后手工回收。`0064` 只删自己加的
@@ -85,6 +86,15 @@ canonical 列，`0065` 把 `last_event_seq` 归零（并防御性清掉 `bucket_
 `0066` 的 `downgrade` 只 DROP `coordination_claim_buckets`：种子是表的内容，回到 0065 时这张表
 本该不存在，其余协调对象与行都不动。`0067` 的 `downgrade` 同样只 DROP
 `coordination_keyed_locks`：表里的行是锁行本身，没有别的表引用它，也没有需要保留的内容。
+`0068` 的 `downgrade` 只删本修订加的两样东西（`coordination_outbox.delivered_at` 列与
+`job_events` 表），两列此刻都没有写者，所以回退不丢事实；`delivered_at_us` 的值与
+`coordination_jobs` 的行都不动。
+
+`0068` **没有对应的运维动作**：它只建对象，事件写者与读者仍在草案表上，所以新构建不需要重放
+任何授权就能启动。这一步把「对象不存在」与「事件路径切换」拆开，代价是刻意让 `job_events` 在
+切换之前是空表 —— 现在往它写任何东西都没有读者。`canonical_event_grants` 因此也还没有调用点
+（见「本次变动的授权函数」）：它是 S1（事件双写）要用的声明，提前落下是为了让写者身份只需
+调用它，而不必在授权函数里另抄一份列清单。
 
 核实：**实跑 + 读代码**。2026-11-20 在临时 PostgreSQL 18.6 上以
 `SPEECHNEXUS_MIGRATION_DATABASE_URL` 跑 `speechnexus-job-migrate --schema speech`，
@@ -328,9 +338,10 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 
 ### 本次变动的授权函数
 
-门禁按文件判定，所以下面九个函数都必须在本页出现。**只有标「变」与「新增」的需要动作**：
+门禁按文件判定，所以下面二十四个函数都必须在本页出现。**只有标「变」与「新增」的需要动作**：
 标「变」的只要配置了对应身份就要重跑；标「新增」的只在要用删除能力的部署上需要（第 3 条）；
-标「未变」的只是被同一个文件带到本页，不需要重跑。
+标「未变」的只是被同一个文件带到本页，不需要重跑。`canonical_event_grants` 是唯一的例外：
+它是新增函数，但**现在没有任何调用点**，部署上不需要重放（见第 1 节的 `0068` 段）。
 
 | 函数 | 文件 | 变了什么 |
 | --- | --- | --- |
@@ -357,6 +368,7 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 | `gateway_keyed_lock_grants` | `gateway_query_grants.py` | **新增**，见第 6 条 |
 | `gateway_query_grants` | `gateway_query_grants.py` | 未变（同文件被改，函数体没动；只读读者的授权面由 `reader_authority.py` 逐列核对，本次没有扩它） |
 | `gateway_query_target_grants` | `gateway_query_grants.py` | 未变 |
+| `canonical_event_grants` | `canonical_event_schema.py` | **新增**：`job_events` 上按列 `SELECT (event_seq, event_digest, payload_ref)` 与 `INSERT (job_id, event_seq, event_digest, payload_ref)`，`coordination_outbox` 上只授 `delivered_at` 的 `INSERT`/`UPDATE`；没有 `UPDATE`/`DELETE` 事件行。**无调用点、无身份需要重放**，S1 事件双写时由写者身份调用 |
 
 ### 5. 重跑 `coordination_runtime_grants`：网关改为锁 canonical Job 行读围栏
 
@@ -870,6 +882,7 @@ SCRIPT
 | 授权面本身 | `tests/integration/test_role_grant_coverage_pg.py`（真实库上按每个受限身份逐面核对声明的授权面）、`tests/ci/test_compose_minimal_role_provisioning.py`（授权组仍被声明） |
 | admission-watch | `tests/integration/test_admission_watch_pg.py`、`tests/integration/test_admission_watch_process_pg.py`、`tests/unit/backend/test_admission_watch.py` |
 | 第 2 条的升级重放 | `tests/integration/test_upgrade_path_pg.py`（真库上构造 v0.1.0 的四列 ACL，重放本节命令原文，并断言未重跑前仍然是坏的） |
+| `0068` 的两件加法 | `tests/integration/test_canonical_event_tables_0068_pg.py`：真库上逐列核对 `job_events`（类型、NULL 性、主键、外键）与 `coordination_outbox.delivered_at` 的 `timestamp(6)`，把 `alembic_version` 戳回 `0067` 再 `upgrade head` 与直接重跑 DDL 两遍都不报错且已有事件行不丢，`downgrade` 只删本修订的两样东西，`canonical_event_grants` 按列核对到「事件表没有 UPDATE/DELETE」 |
 | 本页不会腐烂 | `scripts/dev-env/check-unreleased-notes.py` 与 `tests/ci/test_unreleased_notes_gate.py` |
 
 未覆盖，逐条点名：

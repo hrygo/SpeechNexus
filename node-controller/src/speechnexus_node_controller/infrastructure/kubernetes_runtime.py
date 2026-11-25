@@ -658,6 +658,37 @@ class KubernetesNodeRuntime:
             ),
         )
 
+    def _require_approved_image(
+        self,
+        request: RuntimeInstanceIntentRequest,
+        template: ApprovedRuntimeTemplate,
+        observed: PodState,
+    ) -> InstanceObservation | None:
+        """Prove the running bytes are the approved ones before ready is claimed.
+
+        ``docker_runtime`` proves the same thing by inspecting the image *before*
+        it starts the container. A Pod must exist before the runtime reports which
+        image it installed, so here the proof lands on the first observation that
+        carries an image id. A Pod that never reports one is never called ready:
+        ready means "this is the engine we approved", and an unproven image is not
+        that. The Pod is left in place so the mismatch stays diagnosable; the
+        observation is quarantined, which is what stops the intent from resolving.
+        """
+        if observed.image_id is not None and (
+            _image_digest_of(observed.image_id) == template.image_digest
+        ):
+            return None
+        running = _image_digest_of(observed.image_id) if observed.image_id else "unknown"
+        return self._observation(
+            request,
+            template,
+            ObservedInstanceState.QUARANTINED,
+            quarantine_reason=(
+                f"the container runs image {running}, not the approved digest "
+                f"{template.image_digest}"
+            ),
+        )
+
     def _await_generation(
         self,
         request: RuntimeInstanceIntentRequest,
@@ -672,6 +703,9 @@ class KubernetesNodeRuntime:
             if terminated is not None:
                 return terminated
             if observed.ready:
+                approved = self._require_approved_image(request, template, observed)
+                if approved is not None:
+                    return approved
                 return self._ready_observation(request, template, deadline)
             remaining = deadline - self._monotonic()
             if remaining <= 0:
@@ -811,7 +845,7 @@ class KubernetesNodeRuntime:
     ) -> dict[str, Any]:
         container: dict[str, Any] = {
             "name": ENGINE_CONTAINER_NAME,
-            "image": _pinned_image(template),
+            "image": _image_reference(template),
             "imagePullPolicy": "IfNotPresent",
             "resources": {"limits": {"memory": str(template.container_memory_limit_bytes)}},
             "securityContext": {
@@ -979,18 +1013,25 @@ def _is_event_explained(state: ObservedInstanceState, pod: PodState) -> bool:
     return state is ObservedInstanceState.LOADING and pod.phase == "Pending"
 
 
-def _pinned_image(template: ApprovedRuntimeTemplate) -> str:
-    """The image reference in digest form; a tag is a moving target for an intent.
+def _image_reference(template: ApprovedRuntimeTemplate) -> str:
+    """The reference the Pod runs, exactly as the template approved it.
 
-    The repository is kept as approved and only the tag is dropped, so a registry
-    with a port in its name keeps that port: the tag is the last ``:`` segment
-    after the final ``/``.
+    ``docker_runtime`` does the same: it starts the container from
+    ``image_reference`` and then proves the identity by inspecting the image and
+    comparing its id against ``image_digest``.  A digest reference would be a
+    different image name to the container runtime, so a locally built image that
+    lives only in the node's store cannot be resolved by it at all
+    (``docker.io/local/...@sha256:...`` is not ``docker.io/local/...:tag``).
+    The invariant is therefore enforced on the running container's image id, not
+    on the spelling of the reference -- see ``_require_approved_image``.
     """
-    reference = template.image_reference.split("@", 1)[0]
-    cut = reference.rfind(":")
-    if cut > reference.rfind("/"):
-        reference = reference[:cut]
-    return f"{reference}@{template.image_digest}"
+    return template.image_reference
+
+
+def _image_digest_of(image_id: str) -> str:
+    """The ``sha256:...`` part of a container status imageID, or the input."""
+    marker = image_id.rfind("sha256:")
+    return image_id[marker:] if marker >= 0 else image_id
 
 
 def _transport_probe(template: ApprovedRuntimeTemplate) -> dict[str, Any] | None:

@@ -39,7 +39,7 @@ scope: node-controller/src/speechnexus_node_controller
 
 | 模板字段 | Pod 侧 |
 | --- | --- |
-| `image_reference` + `image_digest` | `image` 用 digest 形式固定，不用 tag |
+| `image_reference` + `image_digest` | `image` 用**批准的原样引用**；完整性由**运行中容器的 imageID** 核对 `image_digest` 证明，与 `docker_runtime` 同一不变量 |
 | `command` | `command` + `args`（模板存的是 argv，原样拆） |
 | `container_memory_limit_bytes` | `resources.limits.memory` |
 | `max_peak_memory_bytes` | 不设 requests；峰值由 `--gpu-memory-utilization` 约束（同 `qwenpaw-asr` 的做法） |
@@ -48,6 +48,10 @@ scope: node-controller/src/speechnexus_node_controller
 | `network_name` | **无等价**，见 3.4 |
 | `readiness` | Pod `startupProbe`/`readinessProbe` 与控制器预热预算并存（见 3.3） |
 | `engine_auth` | 不变 |
+
+**里程碑实测（2026-11-25，MegaCube k3s）**：驱动为 `template-asr-1.7b` 产出的 Pod 体直接 apply 到真实集群，调度、`runtimeClassName: nvidia`、hostPath 只读挂载、argv→`args`、`NVIDIA_VISIBLE_DEVICES`、就绪探针与 12 GiB 上限全部通过；`/health` 200、`/v1/models` 返回 `qwen3-asr-1.7b`、容器内 `nvidia-smi` 见 `VLLM::EngineCore`。
+
+同一 Pod 体若把 `image` 写成 digest 形式则拉不下来：`local/qwen3-asr-vllm@sha256:…` 对 containerd 是**另一个镜像名**，本地构建、从未推送的镜像因此无法解析。所以这里不按 digest 拼引用，而是像 `docker_runtime` 那样按批准引用运行、再核对运行中容器的 `imageID`。
 
 ### 3.2 实例身份与 fencing
 

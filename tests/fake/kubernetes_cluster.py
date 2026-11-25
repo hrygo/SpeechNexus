@@ -32,6 +32,7 @@ from speechnexus_node_controller.infrastructure.kubernetes_api import (
     KubernetesApi,
     KubernetesApiSettings,
 )
+from tests.fake.controller import IMAGE_DIGEST
 
 NAMESPACE = "speechnexus"
 SERVICE_ACCOUNT = "speechnexus-node-controller"
@@ -66,6 +67,11 @@ class FakeKubernetesCluster:
         self.terminal_phase: str | None = None
         self.terminal_exit_code: int | None = None
         self.replacement_uid: str | None = None
+        # The id the runtime reports for the started container. Defaults to the
+        # approved digest the synthetic template declares, so a normally started
+        # Pod proves the approved image. A test that wants a substituted image
+        # sets this to another digest.
+        self.running_image_id: str = f"docker.io/local/synthetic-engine@{IMAGE_DIGEST}"
         # Deletion behaviour. ``pods_after_delete`` counts the GETs that still
         # return the Pod after a delete is accepted; None keeps it visible
         # forever, i.e. a deletion that was requested but never completed.
@@ -220,6 +226,12 @@ class FakeKubernetesCluster:
             status["phase"] = "Running"
             status["conditions"] = [{"type": "Ready", "status": "True"}]
             status["podIP"] = "10.0.0.7"
+            # Only the first transition reports the running container: a Pod
+            # scripted as terminated afterwards keeps its terminated status.
+            status.setdefault(
+                "containerStatuses",
+                [{"name": "engine", "imageID": self.running_image_id, "state": {"running": {}}}],
+            )
 
 
 def pod_from_manifest(body: Mapping[str, Any]) -> dict[str, Any]:

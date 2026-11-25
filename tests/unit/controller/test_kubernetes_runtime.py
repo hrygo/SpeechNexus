@@ -201,15 +201,34 @@ def test_prepare_refuses_a_template_that_declares_a_dedicated_network(
     assert "network_name" in observation.quarantine_reason
 
 
-def test_prepare_pins_the_image_by_digest_instead_of_its_tag(tmp_path: Path) -> None:
+def test_prepare_runs_the_approved_reference_and_proves_it_by_digest(
+    tmp_path: Path,
+) -> None:
     cluster = _FakeCluster()
     runtime, _clock = _runtime(tmp_path, cluster)
 
     runtime.prepare(build_request(), build_template())
 
+    # The reference is the approved one, exactly as docker_runtime passes it: a
+    # digest reference names a different image to the runtime, so a locally built
+    # image that only exists in the node's store can never be resolved by it.
     container = cluster.created[0]["spec"]["containers"][0]
-    assert container["image"] == f"local/synthetic-engine@{IMAGE_DIGEST}"
-    assert SAMPLE_IMAGE_REFERENCE not in container["image"]
+    assert container["image"] == SAMPLE_IMAGE_REFERENCE
+
+
+def test_prepare_never_reports_ready_for_an_image_that_is_not_the_approved_one(
+    tmp_path: Path,
+) -> None:
+    cluster = _FakeCluster()
+    # A pod that started some other build: the tag was repointed, the node had a
+    # stale layer, or the image was replaced under the same name.
+    cluster.running_image_id = "docker.io/local/synthetic-engine@sha256:" + "d" * 64
+    runtime, _clock = _runtime(tmp_path, cluster)
+
+    observation = runtime.prepare(build_request(), build_template())
+
+    assert observation.observed_instance_state is ObservedInstanceState.QUARANTINED
+    assert IMAGE_DIGEST in (observation.quarantine_reason or "")
 
 
 def test_prepare_uses_the_gpu_through_the_runtime_class_never_as_a_resource(

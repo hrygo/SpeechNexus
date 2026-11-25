@@ -60,6 +60,10 @@ class PodState:
     ready: bool
     pod_ip: str | None
     image: str | None
+    # The id the runtime reports for the container that actually started. A Pod
+    # spec names an image; only this says which bytes the engine is running, so
+    # it is what an approved digest is proved against.
+    image_id: str | None = None
     exit_code: int | None = None
     # A deleted Pod answers reads for as long as its grace period lasts. It can
     # still carry a stale Ready condition in that window, so the flag is part of
@@ -326,6 +330,7 @@ def _pod_state(payload: Any) -> PodState:
             else None
         ),
         image=_container_image(spec),
+        image_id=_container_image_id(status),
         exit_code=_exit_code(status),
         deleting=bool(metadata.get("deletionTimestamp")),
     )
@@ -390,6 +395,20 @@ def _container_image(spec: Any) -> str | None:
     first = containers[0]
     image = first.get("image") if isinstance(first, dict) else None
     return image if isinstance(image, str) else None
+
+
+def _container_image_id(status: Any) -> str | None:
+    """The imageID the kubelet reports for the engine container, when started."""
+    if not isinstance(status, dict):
+        return None
+    statuses = status.get("containerStatuses")
+    if not isinstance(statuses, list) or not statuses:
+        return None
+    first = statuses[0]
+    if not isinstance(first, dict):
+        return None
+    image_id = first.get("imageID")
+    return image_id if isinstance(image_id, str) and image_id else None
 
 
 def _exit_code(status: Any) -> int | None:

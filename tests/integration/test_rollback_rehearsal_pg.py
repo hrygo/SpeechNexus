@@ -292,6 +292,12 @@ def test_an_in_flight_lease_survives_the_tightening_step() -> None:
             "UPDATE coordination_jobs SET claim_expires_at = %s WHERE job_id = %s",
             (lease, job_id),
         )
+        # 迁移前后比较同一个值,而不是把它钉成某一个墙上时间:回填的不变量是「不擦在飞租约」,
+        # 与执行迁移的会话时区无关(本机 +08:00、CI UTC,钉死墙上时间会只在一边绿)。
+        before = admin.execute(
+            "SELECT claim_expires_at FROM coordination_jobs WHERE job_id = %s", (job_id,)
+        ).fetchone()
+        assert before is not None and before[0] is not None
 
         with engine.connect() as connection:
             config.attributes["connection"] = connection
@@ -302,10 +308,7 @@ def test_an_in_flight_lease_survives_the_tightening_step() -> None:
             (job_id,),
         ).fetchone()
         assert row is not None
-        assert row[0] == datetime(2026, 11, 24, 20, 30), (
-            "在飞租约被回填覆盖了;fill-if-null 的目的就是不擦掉正在跑的 Job。"
-            "会话是 +08:00,12:30Z 的墙上时间是 20:30"
-        )
+        assert row[0] == before[0], "在飞租约被回填覆盖了;fill-if-null 的目的就是不擦掉正在跑的 Job"
         assert int(row[1]) == int(bucket_for(job_id))
     finally:
         admin.execute(f'DROP SCHEMA "{schema}" CASCADE')

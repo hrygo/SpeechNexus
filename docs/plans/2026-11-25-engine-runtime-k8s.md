@@ -170,7 +170,7 @@ STEP4 FENCE_HELD: True
 | 引擎 | Pod `engine-instance-asr-1-2`，`10.42.0.103:18190`；容器 `speechnexus-asr-1` 已停 | `docker start speechnexus-asr-1`，网关端点文件改回 `127.0.0.1` |
 | 网关端点 | `gateway-file-asr-endpoint.json` 指向 Pod IP | 备份在 `gateway-file-asr-endpoint.json.bak-compose` |
 | 派发 | 应用面 `job-dispatch` Deployment（已实测 `claimed:1 succeeded:1`）；算力面 dispatch 容器已停 | 见 `deploy/cluster/README.md`「作业派发」 |
-| 控制器 | 仍是算力面的 compose 服务；k8s 工作负载清单已就绪但**未应用**（镜像未进 containerd） | 无需回退，未改变 |
+| 控制器 | **已是集群内 Pod**（`node-controller-55c95885b7-pxgfq`，1/1，host 网络绑 127.0.0.1:8022）；compose 的 `controller` 服务已停 | `kubectl scale deploy/node-controller --replicas=0`，再 `docker compose ... start controller` |
 
 两个地址问题（2026-11-26 已处置）：
 
@@ -211,6 +211,29 @@ S2 与 S4 合并时只带了通过用例，**没有留下"注入即红"的实测
 
 第一条注入值得单独说：它让 6 条一起红，因为"等 Ready"是 prepare 的唯一实质动作——不等就报 ready，
 等于把"能起 Pod"直接当成"实例可用"，而 S5 想证明的恰恰不是这个。
+
+#### 4.2.6 控制器成为常驻集群工作负载（2026-11-26 完成）
+
+镜像此前从未进过 k3s containerd，这是该切片唯一的阻塞。取到节点权限后按 `deploy/cluster/README.md` 的路径完成：
+
+| 步骤 | 实测 |
+| --- | --- |
+| 镜像进 containerd | 按当前 HEAD `bc090578` 构建，`docker save \| sudo k3s ctr images import -` → `docker.io/library/speechnexus-node-controller:bc090578` |
+| 两个输入 | ConfigMap `controller-approved-templates` 与 Secret `controller-component-token` 由既有来源生成 |
+| 工作负载 | `node-controller-55c95885b7-pxgfq` **1/1 Running**，零重启，宿主 `127.0.0.1:8022` 返回 200 |
+| ServiceAccount 权限 | `create/get/list/delete` pods 与 `pods/log` 均为 `yes`（计划 §6 的未验证项，至此取证） |
+| 网关可达 | 网关容器内 `127.0.0.1:8022/healthz` → 200 |
+| 应用面可达 | 应用面 Pod 内 `bridge:18020/healthz` → 200 |
+| 端到端 | 建 Job → `succeeded`，产物 `sha256:da4d6eb2…` 与前几次一致；引擎 Pod 未受影响（0 重启） |
+
+清单相对原设计改了两处，都是实测逼出来的：
+
+- **`hostNetwork: true` + 绑 `127.0.0.1`**：网关与桥都按宿主 `127.0.0.1:8022` 找控制器。原清单没有 host 网络，
+  Pod IP 上的服务对宿主网络里的网关不可达
+- **探针打到 `127.0.0.1`**：绑环回后，默认按 Pod IP 探测永远连不上，kubelet 会把健康的控制器重启掉
+  （实测 `CrashLoopBackOff`，4 次重启后才发现）
+
+切换顺序有硬约束：compose 的 `controller` 与 Pod 都绑 8022，先起后停会 `address already in use`。已写进 README。
 
 ## 5. 回退
 

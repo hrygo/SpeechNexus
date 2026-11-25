@@ -42,8 +42,17 @@ spec:
         app: speechnexus-node-controller
     spec:
       serviceAccountName: speechnexus-node-controller
-      # The Pod must never be rescheduled onto another node while the RWO claim
-      # is attached, and this cluster is a single node anyway.
+      # The gateway reaches the controller at loopback, exactly as it did when
+      # this ran as a compose service, and that path is also what the bridge
+      # tunnel forwards (18020 -> host 127.0.0.1:8022). Sharing the host network
+      # namespace keeps both working and lets the controller bind loopback, so
+      # the replacement is reachability-identical to the service it replaces.
+      # Moving to a Service instead means also moving the gateway, which is a
+      # separate change.
+      hostNetwork: true
+      # Without this a host-network Pod inherits the node's resolver and cannot
+      # see cluster DNS.
+      dnsPolicy: ClusterFirstWithHostNet
       containers:
         - name: controller
           image: ${CONTROLLER_IMAGE}
@@ -56,10 +65,11 @@ spec:
               value: production
             - name: SPEECHNEXUS_CONTROLLER_NODE_ID
               value: node-megacube-1
-            # Bound to every interface: the compose service could use loopback
-            # because it shared the host network; a Pod cannot.
+            # Loopback, same as the compose service: sharing the host network
+            # namespace means the Pod can bind it, and nothing off-host can
+            # reach it.
             - name: SPEECHNEXUS_CONTROLLER_HOST
-              value: 0.0.0.0
+              value: 127.0.0.1
             - name: SPEECHNEXUS_CONTROLLER_PORT
               value: "8022"
             - name: SPEECHNEXUS_CONTROLLER_COMPONENT_TOKEN
@@ -78,15 +88,20 @@ spec:
               value: speechnexus
             - name: SPEECHNEXUS_CONTROLLER_K8S_SERVICE_ACCOUNT_NAME
               value: speechnexus-node-controller
+          # Probed on loopback, not on the Pod IP: the server binds the host's
+          # loopback by design, so a probe against 10.42.x would never connect
+          # and the kubelet would restart a healthy controller.
           readinessProbe:
             httpGet:
               path: /healthz
               port: http
+              host: 127.0.0.1
             periodSeconds: 5
           livenessProbe:
             httpGet:
               path: /healthz
               port: http
+              host: 127.0.0.1
             periodSeconds: 20
             failureThreshold: 3
           securityContext:

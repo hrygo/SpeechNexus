@@ -1051,6 +1051,13 @@ def adopt_historical_events(
         if seq != 0:
             raise ContractError(f"{job_id!r} already has events; adoption is a one-shot backfill")
         for index, event in enumerate(events, start=1):
+            if event.payload_ref is not None:  # pragma: no cover - injection probe
+                # 口径是产品决定的:搬迁不携带 payload 引用。草案表本来就没有这一列,所以任何
+                # 非空引用都不是「搬来的」,而是搬迁代码在替产品发明事实。这里拒绝而不是丢掉,
+                # 否则一个错误会以「引用为空」的样子进入历史。
+                raise ContractError(
+                    "a historical event carries no payload reference: migration writes NULL"
+                )
             occurred_at = utc_from_epoch_us(event.occurred_at_us, field="occurred_at_us")
             if occurred_at is None:
                 raise ContractError("a historical event needs a real timestamp")

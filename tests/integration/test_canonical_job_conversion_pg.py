@@ -260,6 +260,61 @@ def test_adopted_history_then_a_new_event_keeps_the_sequence_continuous(
         assert rows[index - 1][1] == expected
 
 
+def test_adoption_writes_no_payload_reference_and_refuses_one(
+    namespace: tuple[str, str],
+) -> None:
+    """产品口径:搬迁不携带 payload 引用。落库必须是 NULL,传进来一个就必须拒绝.
+
+    两个方向都断言,因为「写 NULL」很容易,难的是没有人能在某一次搬迁里替产品发明一个引用:
+    草案表根本没有这一列,任何非空值都不是搬来的。
+    """
+
+    url, name = namespace
+    connection = _connect(url, name)
+    try:
+        _insert(
+            connection,
+            canonical_job_from_draft(job_id="job-payload", **_draft(operation_id="op-payload")),
+        )
+        connection.commit()
+        adopt_historical_events(
+            connection,
+            job_id="job-payload",
+            events=[
+                HistoricalEvent(state="pending", occurred_at_us=int(MOMENT.timestamp() * 1_000_000))
+            ],
+        )
+        connection.commit()
+        rows = read_events(connection, job_id="job-payload", after_seq=Decimal(0))
+        assert [reference for _, _, reference in rows] == [None]
+    finally:
+        connection.close()
+
+    connection = _connect(url, name)
+    try:
+        _insert(
+            connection,
+            canonical_job_from_draft(job_id="job-payload-2", **_draft(operation_id="op-payload-2")),
+        )
+        connection.commit()
+        with pytest.raises(ContractError, match="no payload reference"):
+            adopt_historical_events(
+                connection,
+                job_id="job-payload-2",
+                events=[
+                    HistoricalEvent(
+                        state="pending",
+                        occurred_at_us=int(MOMENT.timestamp() * 1_000_000),
+                        payload_ref="s3://speechnexus/results/payload.json",
+                    )
+                ],
+            )
+        connection.rollback()
+        assert read_events(connection, job_id="job-payload-2", after_seq=Decimal(0)) == []
+    finally:
+        connection.close()
+
+
 def test_adoption_refuses_a_job_that_already_has_events(namespace: tuple[str, str]) -> None:
     url, name = namespace
     connection = _connect(url, name)

@@ -252,3 +252,61 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 16Mi
+---
+# The job dispatcher lives next to the database it claims from, not on the
+# compute plane. Claiming across the bridge serialises every round on the
+# tunnel: a measured 115 s per round there against 0.15 s here, while the
+# binding's admission deadline is 120 s, so Jobs expired before they were ever
+# dispatched (issues #1234 and #1250). One replica only: the worker holds a
+# bucket lease and a second holder would split the same due Jobs.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: job-dispatch
+  namespace: speechnexus
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: job-dispatch
+  template:
+    metadata:
+      labels:
+        app: job-dispatch
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: job-dispatch
+          image: speechnexus-python:913d0e0a
+          imagePullPolicy: IfNotPresent
+          command: ["speechnexus-job-dispatch-worker"]
+          envFrom:
+            - secretRef:
+                name: dispatch-env
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 32Mi

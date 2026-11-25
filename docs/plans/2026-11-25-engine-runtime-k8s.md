@@ -161,6 +161,22 @@ STEP4 FENCE_HELD: True
 - 由**控制器管辖**的引擎实例的 `stop`：手工启动的引擎容器 `managed-by=speechnexus-operator-manual`，控制器不接管，也没有释放路径。上节的 stop 针对的是探针自建的 Pod。
 - 本次 k8s 路径的就绪回执仍是按 docker 引擎签署的（回执窗口 24 h 内有效），执行时端点已指向 Pod。回执证明的是实例身份，不是「哪个进程在服务」。
 
+#### 4.2.5 演练后的运行态与回退（2026-11-26）
+
+迁移把三处原本指向 docker 引擎的东西甩在了后面。这份清单是**演练环境的现状**，不是部署清单：
+
+| 单元 | 现状 | 回退 |
+| --- | --- | --- |
+| 引擎 | Pod `engine-instance-asr-1-2`，`10.42.0.103:18190`；容器 `speechnexus-asr-1` 已停 | `docker start speechnexus-asr-1`，网关端点文件改回 `127.0.0.1` |
+| 网关端点 | `gateway-file-asr-endpoint.json` 指向 Pod IP | 备份在 `gateway-file-asr-endpoint.json.bak-compose` |
+| 派发 | 应用面 `job-dispatch` Deployment（已实测 `claimed:1 succeeded:1`）；算力面 dispatch 容器已停 | 见 `deploy/cluster/README.md`「作业派发」 |
+| 控制器 | 仍是算力面的 compose 服务；k8s 工作负载清单已就绪但**未应用**（镜像未进 containerd） | 无需回退，未改变 |
+
+两个已知的时间炸弹：
+
+- **就绪回执约 23 h 后耗尽**（#1253）：续租作业读的 `http://bridge.speechnexus.svc:18190/health` 转的是宿主 docker 引擎端口，引擎换成 Pod 后不可达。回执一过期，准入静默转 `invalid`。
+- **Pod IP 是易变值**：网关端点文件里手写 `10.42.0.103`，Pod 一重建即失效。这是演练的临时做法，正解是由控制器上报的实例事实驱动。
+
 ## 5. 回退
 
 - 驱动开关默认 `docker`，切回即恢复；**不改数据库、不改契约**，所以没有迁移回退问题

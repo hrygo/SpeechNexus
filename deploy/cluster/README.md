@@ -69,6 +69,23 @@ kubectl delete namespace speechnexus
 
 应用面全部对象都在该 namespace 内，删除即恢复；MegaCube 侧不受影响。
 
+## 作业派发
+
+派发器在应用面：`deploy/cluster/app-plane/workers.yaml` 的 `job-dispatch` Deployment，
+配置来自 `render-config.py` 写出的 `dispatch-env` Secret。**只跑一个副本**——它持的是桶租约，
+第二个持有者会把同一批到期 Job 拆成两半。
+
+算力面 `compose.yaml` 里的 `dispatch` 服务已由它取代，保留作为回退，**不得与 Deployment 同时运行**：
+
+| 位置 | 一轮 claim 耗时 | 结果 |
+| --- | --- | --- |
+| 算力面（跨桥） | ≈115 s | 撞上 120 s 准入截止，Job 派发前就过期 |
+| 应用面（本地库） | 0.15 s | `queued → succeeded` 约 10 s |
+
+回退：`docker compose -p speechnexus-cluster-compute --env-file .runtime/cluster-compute.env
+-f deploy/cluster/compute/compose.yaml up -d dispatch`，同时 `kubectl -n speechnexus scale
+deploy/job-dispatch --replicas=0`。
+
 ## 算力面控制器
 
 `deploy/cluster/compute/controller-deployment.yaml` 把控制器作为常驻 k3s 工作负载运行，

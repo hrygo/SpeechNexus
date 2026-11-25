@@ -65,6 +65,9 @@ for table coordination_jobs`（见下节），所以迁移与授权重放必须�
 | `0066_claim_bucket_table` | 建 `coordination_claim_buckets`（`bucket_no` `DECIMAL(38,0)` 主键、`claim_owner_id` `VARCHAR(128)`、`lease_until` `TIMESTAMP(6)`、`version` `DECIMAL(38,0)` NOT NULL，即 `migrations/0003_portable_claim_buckets.sql` 的 canonical 形状），并按 Python 的 `BUCKETS` 常量（256）播种 256 个 `version = 0`、无 owner、无租约的空桶；已存在的桶不重写，重入只补缺失的那些；`downgrade` 只 DROP 这张表 |
 | `0067_coordination_keyed_locks` | 建 `coordination_keyed_locks`：协调命名空间的键锁行表（`bucket_no` `DECIMAL(38,0)` 主键、`version` `DECIMAL(38,0)` 行锁许可列、`created_at` `TIMESTAMP(6)`），供 backend 与执行网关两个角色在同一行上取 `FOR UPDATE`；纯建表、不播种，行由第一次用到该桶的事务懒建，`downgrade` 只 DROP 这张表 |
 | `0068_canonical_event_tables` | 建 canonical `job_events`（`job_id` `VARCHAR(128)`、`event_seq` `DECIMAL(38,0)`、`event_digest` `VARCHAR(71)`、`payload_ref` `VARCHAR(512)` 可空，主键 `(job_id, event_seq)`，外键指向 `coordination_jobs(job_id)`），并给 `coordination_outbox` 加可空 `delivered_at TIMESTAMP(6)`；**纯加法，无写者、无读者**，草案列 `delivered_at_us` 原样保留，`downgrade` 只删这一列与 `job_events` 表 |
+| `0069_tighten_job_bucket_due` | **S4**：先回填再收紧 —— 全表用 `bucket_for(job_id)` 重算 `bucket_no`、按 `speech_jobs.created_at_us` 填 `due_at`（fill-if-null，UTC 墙上时间），任一列仍有 `NULL` 就抛错点名行数（`due_at` 没有第二个来源，不编造时刻），然后 `ALTER COLUMN ... SET NOT NULL`；`downgrade` 只放开这两个 `NOT NULL` |
+| `0070_retire_draft_claim_epoch` | **S5（单向）**：`ALTER TABLE coordination_jobs DROP COLUMN claim_expires_at_us`；`downgrade` 显式 `raise`——越过 S5 之后重跑 `0064`/`0065` 以 `42703` 失败，回退只能走备份恢复 |
+| `0001_jobs` | 行为不变，只是把草案 epoch 列 `claim_expires_at_us` 从 `JOB_DDL` 移到本修订自己的 `_LEGACY_DRAFT_COLUMNS` 里补一条 `ALTER`：`JOB_DDL` 现在描述 head 形状（也是 InnoDB 验证 schema 的来源），历史列留在已发布修订里，`0064`/`0065` 才有列可读、空库仍能重放到 `0069`，`0070` 再删它 |
 | `0008_runtime_delivery` | 参数标记迁到 `?` 契约后，迁移把唯一的占位符内联成迁移事务时间戳；行为不变，仍给旧 outbox 行补 `unknown` 投递相位 |
 | `0023_publication_lifecycle`（视图定义） | 视图里的 `::numeric` 改成标准 `CAST(... AS numeric)`，语义等价；只在重新 bootstrap 时生效，不新增迁移 |
 
@@ -76,7 +79,7 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
   'select version_num from speech.alembic_version'
 ```
 
-第二段的期望输出是 `0068_canonical_event_tables`。迁移身份是独立 DDL 身份
+第二段的期望输出是 `0070_retire_draft_claim_epoch`。迁移身份是独立 DDL 身份
 （`SPEECHNEXUS_MIGRATION_DATABASE_URL`），不要用 `sn_api`。`0058`–`0063` 六个 revision 的
 `downgrade` 全部显式 `raise`（计划是删除凭据、账本是删除事实、索引是轮询读的访问路径），
 回退没有 `alembic downgrade` 这条路径，只能显式处理数据后手工回收。`0064` 只删自己加的
@@ -88,7 +91,7 @@ canonical 列，`0065` 把 `last_event_seq` 归零（并防御性清掉 `bucket_
 `coordination_keyed_locks`：表里的行是锁行本身，没有别的表引用它，也没有需要保留的内容。
 `0068` 的 `downgrade` 只删本修订加的两样东西（`coordination_outbox.delivered_at` 列与
 `job_events` 表），两列此刻都没有写者，所以回退不丢事实；`delivered_at_us` 的值与
-`coordination_jobs` 的行都不动。
+`coordination_jobs` 的行都不动。`0069` 的 `downgrade` 只放开两个 `NOT NULL`（列与值都保留）。`0070` 的 `downgrade` **拒绝执行**：`claim_expires_at_us` 是单向退役，删列之后再跑 `0064`/`0065` 是 `42703`（`0064` 的回填语句读这一列），所以回退只有备份恢复一条路（计划 §6）。
 
 `0068` 自己只建对象，但 S1（事件双写）给了 `job_events` 第一个写者，于是多了一条运维动作：
 部署新构建之前重放 `job_dispatch_grants`（见第 9 条）。读路径仍留在草案
@@ -352,8 +355,8 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 | `gateway_cancellation_fence_grants` | `job_cancellation_fence_schema.py` | 未变 |
 | `deletion_plan_grants` | `job_schema.py` | **新增**，见第 3 条 |
 | `deletion_execution_grants` | `job_schema.py` | **新增**，见第 3 条 |
-| `job_runtime_grants` | `job_schema.py` | **变**：`coordination_jobs` 的 INSERT 授权随 `COORDINATION_JOB_INSERT_COLUMNS` 自动加 `bucket_no`、`due_at`（函数体未改，见第 1 条） |
-| `coordination_runtime_grants` | `coordination_grants.py` | **变**：`coordination_jobs` 的 INSERT 列加 `bucket_no`、`due_at`（见第 1 条）；给 speech 角色 `coordination_claim_buckets` 的 `SELECT` 与 `claim_owner_id`／`lease_until`／`version` 三列 `UPDATE`，不给 `INSERT`／`DELETE`；gateway 角色新增 `coordination_jobs` 的 `UPDATE (claim_version)` 行锁许可（见第 5 条，不写这一列）。迁移后重放一次即可（`provision-job-roles.py` 会带上） |
+| `job_runtime_grants` | `job_schema.py` | **变**：`coordination_jobs` 的 INSERT 授权随 `COORDINATION_JOB_INSERT_COLUMNS` 自动加 `bucket_no`、`due_at`（函数体未改，见第 1 条）；S4/S5 起 `UPDATE` 授权面不再含 `claim_expires_at_us`（见第 11 条） |
+| `coordination_runtime_grants` | `coordination_grants.py` | **变**：`coordination_jobs` 的 UPDATE 面不再含 `claim_expires_at_us`（S4/S5，见第 11 条）；`coordination_jobs` 的 INSERT 列加 `bucket_no`、`due_at`（见第 1 条）；给 speech 角色 `coordination_claim_buckets` 的 `SELECT` 与 `claim_owner_id`／`lease_until`／`version` 三列 `UPDATE`，不给 `INSERT`／`DELETE`；gateway 角色新增 `coordination_jobs` 的 `UPDATE (claim_version)` 行锁许可（见第 5 条，不写这一列）。迁移后重放一次即可（`provision-job-roles.py` 会带上） |
 | `public_job_admission_grants` | `public_job_admission_grants.py` | **变**：`coordination_jobs` 的 INSERT 列加 `bucket_no`、`due_at`，见第 1 条 |
 | `binding_disable_admission_grants` | `admission_postgres.py` | 未变（SQL 参数标记迁到 `?`，授权列未动） |
 | `tts_voice_admission_grants` | `admission_grants.py` | **变**：追加 `coordination_keyed_lock_grants` 的四条，见第 7 条 |
@@ -924,6 +927,47 @@ HTTP 边界就是 `400 invalid_job_request`；没有游标等价于从最早事�
 只核对 `job_events` 的 `INSERT` 与 `last_event_seq` 的 `UPDATE`，没有核对这条 `SELECT` 的谓词列，
 所以漏重放会以首次读的 42501 显形；这一轮没有加门禁探针。
 
+### 11. S4/S5：收紧 `bucket_no`，并退役草案 epoch 列
+
+两个迁移按顺序落地，**它们是两步、不是一步**：`0069` 收紧约束（可回退：`downgrade` 只放开
+`NOT NULL`），`0070` 删除 `coordination_jobs.claim_expires_at_us`（**单向**：`downgrade` 拒绝）。
+
+1. `0069` 先回填再加约束。回填口径与 `0064`/`0065` 同一份：`bucket_no` 逐行用
+   `bucket_for(job_id)` 重算，`due_at` 从 `speech_jobs.created_at_us` 换算成 naive UTC
+   `TIMESTAMP(6)`（fill-if-null，幂等）。**head 上能有几行 `NULL` 由迁移史推出，不是估计**：
+   `0064` 与 `0065` 都对全表重算并在提交前断言 0 行 `bucket_no IS NULL`，之后新增的行只能来自
+   Job writer，而它的 INSERT 列声明（`COORDINATION_JOB_INSERT_COLUMNS`）含这一列 —— 所以按
+   写入路径 head 上 0 行，`bucket_no` 因此收紧为 `NOT NULL`。InnoDB 验证 schema 的
+   `CANONICAL_JOB_DDL` 同步把该列声明为 `NOT NULL`：两个引擎都必须拒绝「writer 漏列」的
+   写入（实测 MySQL `1364`、PostgreSQL `23502`），否则同一个缺陷只在一边可见。
+
+   **`due_at` 保持可空，这是判据不是遗漏。** `0065` 的对账只覆盖「有对应 `speech_jobs` 行且
+   `created_at_us > 0`」的 Job，有意允许 NULL 留下；而这种形状真实存在：`0001_jobs` 建
+   `coordination_jobs` 时 `speech_jobs` 还不存在（`0016` 才有），那批行上没有任何时间列可
+   换算。给这类行写一个算出来的时刻等于记录没人观测过的事实（`0054` 的规则），而且
+   `due_at` 是认领候选谓词 `due_at <= now` 的一侧，把创建时刻未知的历史 Job 改成「立刻到期」
+   会改变它能否被派发。`NULL` 继续表示「创建时刻未知、不参与派发」；写入侧仍每次都提供它。
+2. `0070` 删 `claim_expires_at_us`。删前已确认运行路径无读者、无写者：认领读写的是 canonical
+   `claim_expires_at`（`0064` 的 `TIMESTAMP(6)`），写入者重放路径不碰这一列，`claims_sql` 已在
+   S3 整口删除。剩下的引用都是声明面与迁移史，随本次一起改完。
+3. **S4/S5 之后两个身份的 `coordination_jobs` UPDATE 授权面少了一列**：
+   `coordination_runtime_grants`（派发身份）与 `job_runtime_grants`（writer 身份）都不再授予
+   `claim_expires_at_us`。部署时重放一次 `provision-job-roles.py`（它同时装上两组，见第 1 条），
+   否则旧角色的多余列授权会让 writer 启动闸门以
+   `Public Job writer UPDATE columns do not match the declared surface on coordination_jobs`
+   失败 —— 这是有意的：多给一列同样可疑。
+4. **`coordination_outbox.delivered_at_us` 不在本次退役范围。** 计划 §5 把它与 `claim_expires_at_us`
+   并列，但 `runtime_delivery_sql` 的 ACK 与「未投递」判定仍按它读写
+   （`UPDATE coordination_outbox SET delivered_at_us=?` / `... delivered_at_us IS NULL`），
+   `runtime_delivery_grants` 授的正是这一列，消费方是独立的 `runtime-delivery-worker`。
+   它属于 runtime 意图投递，不是派发草案列；退役它需要先把那条路径切到 canonical
+   `delivered_at`（BIGINT epoch → `TIMESTAMP(6)`），是另一个切片。
+
+```bash
+docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
+  --profile migration run --rm migrate
+```
+
 ## 边界澄清（行为未变）
 
 - 单次合成的**入口声明**上限是 4096 字符（`MAX_SPEECH_TEXT_CHARS`）：同步入口超界 `400 invalid_request`（带 `param: input`），异步 Job 对 **>4096** 的请求体答 `422 unsupported_parameter`（**异步只保证 `error.code`，`param` 为 `null`**）；不切分、不截断，更长的正文由调用方分片。
@@ -996,6 +1040,7 @@ HTTP 边界就是 `400 invalid_job_request`；没有游标等价于从最早事�
 | 第 2 条的升级重放 | `tests/integration/test_upgrade_path_pg.py`（真库上构造 v0.1.0 的四列 ACL，重放本节命令原文，并断言未重跑前仍然是坏的） |
 | `0068` 的两件加法 | `tests/integration/test_canonical_event_tables_0068_pg.py`：真库上逐列核对 `job_events`（类型、NULL 性、主键、外键）与 `coordination_outbox.delivered_at` 的 `timestamp(6)`，把 `alembic_version` 戳回 `0067` 再 `upgrade head` 与直接重跑 DDL 两遍都不报错且已有事件行不丢，`downgrade` 只删本修订的两样东西，`canonical_event_grants` 按列核对到「事件表没有 UPDATE/DELETE」 |
 | 事件双写 S1/S1b | `tests/integration/test_canonical_event_double_write_pg.py`：真库、真实授权身份跑 `mark_running` → `record_progress` → `finish`，断言 canonical 序号从 1 起密、逐行摘要重算相等、`payload_ref` 为 `NULL`；`job_events` 改名后 started / 进度 / 终态三条路径都不留半成品；没有 `coordination_jobs` 行的 Job 被拒绝且同一轮的对照 Job 仍被领取；`started_event_gaps` 按名点出历史缺口 |
+| S4 收紧与 S5 退役 | `tests/integration/test_job_shape_0069_pg.py`：空库 `upgrade head` 后逐列断言 `bucket_no` 是 `NOT NULL`、`due_at` 仍可空（理由见第 11 条）、`claim_expires_at_us` 不存在、canonical `claim_expires_at` 仍在；一行 `bucket_no` 为 `NULL` 的旧形状数据先撞 `23502`，同一个库跑完 `0069` 后该行被回填成 `bucket_for(job_id)` 与 UTC 墙上时间并保留；没有 `speech_jobs.created_at_us` 来源的行保留 `NULL` 且迁移成功、行仍可读；把 `alembic_version` 戳回 `0063_deletion_targets_blocked` 再 `upgrade head` 以 `42703` 失败 |
 | 本页不会腐烂 | `scripts/dev-env/check-unreleased-notes.py` 与 `tests/ci/test_unreleased_notes_gate.py` |
 
 未覆盖，逐条点名：

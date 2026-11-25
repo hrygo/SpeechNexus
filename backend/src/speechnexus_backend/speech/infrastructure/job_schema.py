@@ -17,6 +17,11 @@ from speechnexus_backend.speech.infrastructure.job_writer_columns import (
     JOB_INTENT_INSERT_COLUMNS,
 )
 
+#: head 形状的 ``coordination_jobs`` / ``coordination_outbox`` 建表文本。除了被已发布的
+#: ``0001_jobs`` 引用,它也是 InnoDB 验证 schema 的唯一来源(``tests/support/coordination_ddl``),
+#: 所以这里不出现已经退役的列:草案 epoch 列 ``claim_expires_at_us`` 由 ``0001`` 自己补一条
+#: ``ALTER``(见该修订的 ``_LEGACY_DRAFT_COLUMNS``),由 ``0070`` 删除。把历史列留在 ``JOB_DDL``
+#: 里会让 MySQL 验证 schema 与迁移后的生产形状漂移,那正是 #1176 段 B1/B2 的形状。
 JOB_DDL: tuple[str, ...] = (
     """CREATE TABLE coordination_jobs (
         job_id VARCHAR(128) COLLATE "C" PRIMARY KEY,
@@ -26,7 +31,6 @@ JOB_DDL: tuple[str, ...] = (
         initial_event_digest VARCHAR(71) COLLATE "C" NOT NULL,
         request_digest VARCHAR(71) COLLATE "C" NOT NULL,
         claim_owner_id VARCHAR(128) COLLATE "C",
-        claim_expires_at_us BIGINT NOT NULL DEFAULT 0 CHECK (claim_expires_at_us >= 0),
         claim_version BIGINT NOT NULL DEFAULT 0 CHECK (claim_version >= 0),
         job_state VARCHAR(24) NOT NULL DEFAULT 'pending',
         UNIQUE (operation_id, attempt_id)
@@ -47,7 +51,9 @@ JOB_DDL: tuple[str, ...] = (
 #: 单独成元组而不是改 ``JOB_DDL``:``JOB_DDL`` 被历史迁移 ``0001_jobs.py`` 引用,改它等于
 #: 改写已发布迁移的行为。
 CANONICAL_JOB_DDL: tuple[str, ...] = (
-    "ALTER TABLE coordination_jobs ADD COLUMN bucket_no SMALLINT",
+    # ``NOT NULL`` 与 ``0069`` 收紧之后的生产形状一致:否则同一个「writer 忘了给
+    # bucket_no」的缺陷在 InnoDB 上只会写进 NULL 而不报错,验证 schema 就失去了意义。
+    "ALTER TABLE coordination_jobs ADD COLUMN bucket_no SMALLINT NOT NULL",
     # 0064 added ``due_at`` in the same way; the writer now fills it, so the InnoDB
     # verification schema must carry the column too or the shared INSERT fails only there.
     "ALTER TABLE coordination_jobs ADD COLUMN due_at TIMESTAMP(6)",

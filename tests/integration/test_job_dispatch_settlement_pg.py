@@ -74,6 +74,9 @@ from speechnexus_backend.speech.infrastructure.job_dispatch_postgres import (
     PostgresDispatchStateStore,
     PostgresLeaseSettler,
 )
+from speechnexus_backend.speech.infrastructure.job_writer_columns import (
+    COORDINATION_JOB_INSERT_COLUMNS,
+)
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.stored_command_planner import (
     StoredCommandPlanner,
@@ -81,6 +84,7 @@ from speechnexus_backend.speech.infrastructure.stored_command_planner import (
 from speechnexus_backend.speech.infrastructure.tts_settlement_preflight import (
     require_complete_tts_roots,
 )
+from speechnexus_portable_sql.claims import bucket_for, utc_from_epoch_us
 
 pytestmark = [
     pytest.mark.integration,
@@ -130,18 +134,26 @@ def _legacy_voice_anchor(db: Any, job_id: str, request_digest: str) -> None:
         "VALUES (%s,%s,'voice_design',%s,%s,%s,'pending',1,%s,%s)",
         (job_id, WORKSPACE, BINDING, request_digest, request_digest, now, now),
     )
+    # 0069 之后 ``bucket_no`` / ``due_at`` 不可空,所以这条手工种子也必须按写入者的 INSERT
+    # 列声明来写:两列的值分别来自 ``bucket_for(job_id)`` 与 ``speech_jobs.created_at_us``。
+    values = {
+        "job_id": job_id,
+        "operation_id": job_id,
+        "attempt_id": job_id + "-attempt",
+        "initial_event_id": job_id + "-event",
+        "initial_event_digest": request_digest,
+        "request_digest": request_digest,
+        "bucket_no": int(bucket_for(job_id)),
+        "due_at": utc_from_epoch_us(now, field="due_at"),
+    }
+    assert set(COORDINATION_JOB_INSERT_COLUMNS) == set(values), sorted(values)
     db.query(
-        "INSERT INTO coordination_jobs (job_id, operation_id, attempt_id, initial_event_id, "
-        "initial_event_digest, request_digest, claim_expires_at_us, job_state) "
-        "VALUES (%s,%s,%s,%s,%s,%s,0,'pending')",
-        (
-            job_id,
-            job_id,
-            job_id + "-attempt",
-            job_id + "-event",
-            request_digest,
-            request_digest,
-        ),
+        "INSERT INTO coordination_jobs ("
+        + ", ".join(COORDINATION_JOB_INSERT_COLUMNS)
+        + ") VALUES ("
+        + ", ".join("%s" for _ in COORDINATION_JOB_INSERT_COLUMNS)
+        + ")",
+        tuple(values[column] for column in COORDINATION_JOB_INSERT_COLUMNS),
     )
     db.query(
         "INSERT INTO admission_operations (operation_id, workspace_id, request_digest, "

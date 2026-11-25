@@ -398,7 +398,6 @@ WRITER_UPDATE_COLUMNS: dict[str, tuple[str, ...]] = {
     "coordination_jobs": (
         "claim_owner_id",
         "claim_expires_at",
-        "claim_expires_at_us",
         "claim_version",
         "job_state",
         # 事件头(S1):canonical ``job_events`` 的序号推到 ``last_event_seq``。

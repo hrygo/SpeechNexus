@@ -5,9 +5,10 @@ lease and CAS-es ``coordination_jobs`` into ``job_state = 'claimed'``, so a clai
 transaction because the write and the ownership evidence are the same row. Everything a
 worker does afterwards (renew, progress, terminal close) is conditional on that row still
 carrying its current ``claim_owner_id`` / ``claim_version`` / non-expired
-``claim_expires_at``; the draft ``claim_expires_at_us`` epoch column is no longer written
-here, because canonical columns are authoritative once written (0065 only fills them where
-they are still ``NULL``).
+``claim_expires_at``; the draft ``claim_expires_at_us`` epoch column that used to hold the
+same lease no longer exists (0070), and it was never written here after the canonical
+column became authoritative (0065 only fills canonical columns where they are still
+``NULL``).
 
 Lock order is fixed at bucket row -> Job row -> event/outbox: ``claim_batch`` reads the
 bucket fence ``FOR UPDATE``, then touches ``coordination_jobs``, and the state store below

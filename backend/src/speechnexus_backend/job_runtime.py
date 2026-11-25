@@ -273,7 +273,6 @@ _JOB_UPDATE_SURFACE: dict[str, tuple[str, ...]] = {
     "coordination_jobs": (
         "claim_owner_id",
         "claim_expires_at",
-        "claim_expires_at_us",
         "claim_version",
         "job_state",
         # 事件头(S1):派发身份在 ``_record_progress``/``_finish`` 里把 canonical

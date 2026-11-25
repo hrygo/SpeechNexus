@@ -155,7 +155,7 @@ def jobs_db() -> Iterator[JobSandbox]:
             f'GRANT SELECT ON "{schema}".admission_operations, "{schema}".coordination_jobs '
             f'TO "{role}"',
             # #1176 段 B2: the claim takes a canonical lease and a bucket lease.
-            f"GRANT UPDATE (claim_owner_id, claim_expires_at, claim_expires_at_us, "
+            f"GRANT UPDATE (claim_owner_id, claim_expires_at, "
             f"claim_version, job_state) "
             f'ON "{schema}".coordination_jobs TO "{role}"',
             *claim_bucket_grants(schema, role),

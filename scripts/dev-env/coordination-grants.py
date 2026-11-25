@@ -39,7 +39,7 @@ SPEECH_UPDATES = {
         "lease_state cleanup_state budget_released_at_us "
         "quarantine_observed_at_us quarantine_reason_code version"
     ),
-    "coordination_jobs": "claim_owner_id claim_expires_at_us claim_version job_state",
+    "coordination_jobs": "claim_owner_id claim_expires_at claim_version job_state",
     "coordination_outbox": "delivered_at_us",
     "coordination_claim_buckets": "claim_owner_id lease_until version",
 }

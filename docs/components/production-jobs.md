@@ -1174,16 +1174,19 @@ Job/outbox SELECT 和创建所需列的 INSERT；没有 UPDATE、DELETE、持久
 
 三处边界必须与代码一致；测试按真实授权运行，不放宽：
 
-- **Job writer 的认领列**：`coordination_jobs` 的 `claim_owner_id`、`claim_expires_at_us`、
+- **Job writer 的认领列**：`coordination_jobs` 的 `claim_owner_id`、`claim_expires_at`、
   `claim_version`、`job_state` UPDATE **不在赋予 writer 的任何 grant 组里**
   （`job_runtime_grants` 按创建面刻意不给 UPDATE），只由
   `scripts/dev-env/provision-job-roles.py` 的 `WRITER_BASELINE_UPDATE` 安装；dispatch 拿到
   的同类 `UPDATE` 来自 `coordination_runtime_grants`（见上表「执行派发领取」一行）。只装
   `job_runtime_grants` 的 writer 能读到认领行，写回认领列会被拒成 `42501`；运行时报文与
   [`compose-minimal.md`](../operations/compose-minimal.md) 的 `role_privileges_missing`
-  都指向重跑该脚本。建 writer 必须跑脚本，不能只跑函数。该 baseline 现在**没有 writer
-  语句在使用**：S3 删掉第二认领口后认领只由 dispatch 身份执行，这里的 UPDATE 面留给 S4/S5
-  按草案列退役一并收窄。
+  都指向重跑该脚本。建 writer 必须跑脚本，不能只跑函数。S5 退役草案 epoch 列之后，这份
+  baseline 与启动闸门声明面都只剩上面这四列 canonical 列；**没有 writer 语句在使用它们**
+  （S3 删掉第二认领口后认领只由 dispatch 身份执行），留着是为了让 writer 角色在需要认领
+  写回时不必再扩一次授权面。多授一列同样可疑：启动闸门对 `coordination_jobs` 校验的是
+  「已授 ⊆ 声明」，多出来的列会让 writer 以
+  `Public Job writer UPDATE columns do not match the declared surface` 启动失败。
 - **资产面没有独立角色**：参考部署把 `asset_runtime_grants` 直接授给 API 身份
   （[`compose-minimal.md`](../operations/compose-minimal.md) §6 的
   `asset_runtime_grants(schema, "sn_api")`），没有单独资产角色。测试用一个只装该函数的

@@ -12,15 +12,132 @@
 
 from __future__ import annotations
 
+import ast
 import re
+from pathlib import Path
+from typing import cast
 
-from speechnexus_backend.speech.infrastructure.canonical_event_schema import (
-    JOB_EVENT_INSERT_COLUMNS,
-    JOB_EVENT_PRIMARY_KEY,
-    JOB_EVENT_SELECT_COLUMNS,
-    JOB_EVENT_TABLE,
+#: guards job 在没有安装项目依赖的环境里跑 ``tests/ci``,所以这里不 import 任何项目包 ——
+#: 两份文本都从源文件读。导入失败会把这条判据变成 ImportError,而 ImportError 看起来
+#: 和「判据不存在」一样红,却什么都不检查。
+ROOT = Path(__file__).resolve().parents[2]
+SCHEMA = ROOT / "backend/src/speechnexus_backend/speech/infrastructure/canonical_event_schema.py"
+CLAIMS = ROOT / "packages/portable-sql/src/speechnexus_portable_sql/claims.py"
+
+
+def _probe_projection(node: ast.expr) -> tuple[str, int] | None:
+    """识别 ``tuple(x for x, _ in SRC)`` 这种纯投影。
+
+    只支持这一种形状:遇到别的推导式就返回 ``None``,由 ``ast.literal_eval`` 报错,而不是
+    猜一个语义出来——猜错会让判据静默比对错东西。
+    """
+
+    if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+        return None
+    if node.func.id != "tuple" or len(node.args) != 1 or node.keywords:
+        return None
+    generator = node.args[0]
+    if not isinstance(generator, ast.GeneratorExp) or len(generator.generators) != 1:
+        return None
+    comprehension = generator.generators[0]
+    if not isinstance(comprehension.iter, ast.Name) or not isinstance(
+        comprehension.target, ast.Tuple
+    ):
+        return None
+    names = comprehension.target.elts
+    if not all(isinstance(item, ast.Name) for item in names):
+        return None
+    if not isinstance(generator.elt, ast.Name):
+        return None
+    for index, item in enumerate(names):
+        assert isinstance(item, ast.Name)
+        if item.id == generator.elt.id:
+            return comprehension.iter.id, index
+    return None
+
+
+def _module_constants(path: Path, names: set[str]) -> dict[str, object]:
+    """从模块源码里取字面量常量,不执行模块。
+
+    允许 ``A = B`` 这种别名:同一模块里的名字按定义顺序解析,``B`` 本身也是字面量才算数。
+    """
+
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    bound: dict[str, ast.expr] = {}
+    for node in tree.body:
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            if node.value is not None:
+                bound[node.target.id] = node.value
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    bound[target.id] = node.value
+
+    resolved: dict[str, object] = {}
+
+    def resolve(name: str, seen: frozenset[str] = frozenset()) -> object:
+        if name in seen:
+            raise AssertionError(f"{path.name}: {name} resolves through itself")
+        if name not in bound:
+            raise AssertionError(f"{path.name} no longer defines {name}")
+        node = bound[name]
+        if isinstance(node, ast.Name):
+            return resolve(node.id, seen | {name})
+        projected = _probe_projection(node)
+        if projected is not None:
+            source, index = projected
+            return tuple(
+                pair[index]
+                for pair in cast("tuple[tuple[str, ...], ...]", resolve(source, seen | {name}))
+            )
+        return ast.literal_eval(node)
+
+    for name in names:
+        resolved[name] = resolve(name)
+    return resolved
+
+
+_SCHEMA = _module_constants(
+    SCHEMA,
+    {
+        "JOB_EVENT_INSERT_COLUMNS",
+        "JOB_EVENT_PRIMARY_KEY",
+        "JOB_EVENT_SELECT_COLUMNS",
+        "JOB_EVENT_TABLE",
+    },
 )
-from speechnexus_portable_sql.claims import STATEMENTS
+JOB_EVENT_INSERT_COLUMNS: tuple[str, ...] = cast(
+    "tuple[str, ...]", _SCHEMA["JOB_EVENT_INSERT_COLUMNS"]
+)
+JOB_EVENT_PRIMARY_KEY: tuple[str, ...] = cast("tuple[str, ...]", _SCHEMA["JOB_EVENT_PRIMARY_KEY"])
+JOB_EVENT_SELECT_COLUMNS: tuple[str, ...] = cast(
+    "tuple[str, ...]", _SCHEMA["JOB_EVENT_SELECT_COLUMNS"]
+)
+JOB_EVENT_TABLE: str = cast("str", _SCHEMA["JOB_EVENT_TABLE"])
+
+
+def _statement(name: str) -> str:
+    tree = ast.parse(CLAIMS.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Dict):
+            continue
+        for key, value in zip(node.keys, node.values, strict=True):
+            if (
+                isinstance(key, ast.Constant)
+                and key.value == name
+                and isinstance(value, ast.Constant)
+                and isinstance(value.value, str)
+            ):
+                return value.value
+    raise AssertionError(f"claims.STATEMENTS has no {name!r}")
+
+
+class _Statements:
+    def __getitem__(self, name: str) -> str:
+        return _statement(name)
+
+
+STATEMENTS: dict[str, str] = cast("dict[str, str]", _Statements())
 
 INSERT = re.compile(r"^INSERT INTO (\w+) \(([^)]*)\) VALUES", re.IGNORECASE)
 READ = re.compile(r"^SELECT (.+?) FROM (\w+) WHERE", re.IGNORECASE)

@@ -18,7 +18,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: register
-          image: speechnexus-python:203d412b
+          image: speechnexus-python:913d0e0a
           imagePullPolicy: IfNotPresent
           command:
             - /bin/sh

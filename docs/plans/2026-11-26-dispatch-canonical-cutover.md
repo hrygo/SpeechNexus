@@ -452,53 +452,83 @@ C 的输出已逐字抄在 §3.1、§3.2、§4.2。
 
 ```python
 import psycopg
+
 ADMIN, DB = "dbname=postgres", "sn_cutover_probe_20261126"
 a = psycopg.connect(ADMIN, autocommit=True)
-a.execute(f"DROP DATABASE IF EXISTS {DB}"); a.execute(f"CREATE DATABASE {DB}"); a.close()
+a.execute(f"DROP DATABASE IF EXISTS {DB}")
+a.execute(f"CREATE DATABASE {DB}")
+a.close()
 c = psycopg.connect(f"dbname={DB}", autocommit=False)
-c.execute('''
+c.execute("""
 CREATE TABLE draft_shape (claim_expires_at_us BIGINT NOT NULL, job_state VARCHAR(24) NOT NULL);
 CREATE TABLE coordination_jobs (job_id VARCHAR(128) PRIMARY KEY, claim_expires_at TIMESTAMP(6));
 INSERT INTO draft_shape VALUES (0, 'pending');
 INSERT INTO coordination_jobs VALUES ('job-1', NULL);
-''')
+""")
 c.commit()
 
 print("== A. 0 与 NULL 在认领谓词下的差别 ==")
-print("draft  claim_expires_at_us = 0  <= now_us  ->",
-      c.execute("SELECT count(*) FROM draft_shape WHERE claim_expires_at_us <= 9999999999999999").fetchone()[0])
-print("canon  claim_expires_at IS NULL <= now     ->",
-      c.execute("SELECT count(*) FROM coordination_jobs WHERE claim_expires_at <= TIMESTAMP '2026-11-23 00:00:00'").fetchone()[0])
-print("canon  谓词求值为 NULL(不是 false)        ->",
-      c.execute("SELECT (NULL::timestamp <= TIMESTAMP '2026-11-23 00:00:00') IS NULL").fetchone()[0])
+print(
+    "draft  claim_expires_at_us = 0  <= now_us  ->",
+    c.execute(
+        "SELECT count(*) FROM draft_shape WHERE claim_expires_at_us <= 9999999999999999"
+    ).fetchone()[0],
+)
+print(
+    "canon  claim_expires_at IS NULL <= now     ->",
+    c.execute(
+        "SELECT count(*) FROM coordination_jobs WHERE claim_expires_at <= TIMESTAMP '2026-11-23 00:00:00'"
+    ).fetchone()[0],
+)
+print(
+    "canon  谓词求值为 NULL(不是 false)        ->",
+    c.execute("SELECT (NULL::timestamp <= TIMESTAMP '2026-11-23 00:00:00') IS NULL").fetchone()[0],
+)
 
 print("== B. aware 值写进 TIMESTAMP(6) 的会话时区折叠 ==")
 c.execute("SET TIME ZONE 'Asia/Shanghai'")
-print("直接赋 timestamptz (session +08:00)         ->",
-      c.execute("SELECT ('2026-11-23 12:00:00+00'::timestamptz)::timestamp(6)").fetchone()[0])
-print("AT TIME ZONE 'UTC' (canonical 换算)         ->",
-      c.execute("SELECT ('2026-11-23 12:00:00+00'::timestamptz AT TIME ZONE 'UTC')::timestamp(6)").fetchone()[0])
-c.rollback(); c.close()
-a = psycopg.connect(ADMIN, autocommit=True); a.execute(f"DROP DATABASE {DB} WITH (FORCE)"); a.close()
+print(
+    "直接赋 timestamptz (session +08:00)         ->",
+    c.execute("SELECT ('2026-11-23 12:00:00+00'::timestamptz)::timestamp(6)").fetchone()[0],
+)
+print(
+    "AT TIME ZONE 'UTC' (canonical 换算)         ->",
+    c.execute(
+        "SELECT ('2026-11-23 12:00:00+00'::timestamptz AT TIME ZONE 'UTC')::timestamp(6)"
+    ).fetchone()[0],
+)
+c.rollback()
+c.close()
+a = psycopg.connect(ADMIN, autocommit=True)
+a.execute(f"DROP DATABASE {DB} WITH (FORCE)")
+a.close()
 ```
 
 ### 9.2 谁阻塞谁（探针 C）
 
 ```python
 import psycopg, time, threading
+
 ADMIN, DB = "dbname=postgres", "sn_cutover_probe_lock3"
 a = psycopg.connect(ADMIN, autocommit=True)
-a.execute(f"DROP DATABASE IF EXISTS {DB}"); a.execute(f"CREATE DATABASE {DB}"); a.close()
-def conn(): return psycopg.connect(f"dbname={DB}", autocommit=False)
+a.execute(f"DROP DATABASE IF EXISTS {DB}")
+a.execute(f"CREATE DATABASE {DB}")
+a.close()
+
+
+def conn():
+    return psycopg.connect(f"dbname={DB}", autocommit=False)
+
+
 c = conn()
-c.execute('''
+c.execute("""
 CREATE TABLE coordination_claim_buckets (bucket_no DECIMAL(38,0) PRIMARY KEY,
   claim_owner_id VARCHAR(128), lease_until TIMESTAMP(6), version DECIMAL(38,0) NOT NULL);
 CREATE TABLE coordination_jobs (job_id VARCHAR(128) PRIMARY KEY,
   bucket_no DECIMAL(38,0) NOT NULL, due_at TIMESTAMP(6) NOT NULL, job_state VARCHAR(24) NOT NULL);
 INSERT INTO coordination_claim_buckets VALUES (0, NULL, NULL, 0);
 INSERT INTO coordination_jobs VALUES ('job-1', 0, TIMESTAMP '2026-11-23 00:00:00', 'pending');
-''')
+""")
 c.commit()
 
 # 持有者只锁桶行,不碰 Job 行 —— 这正是「桶锁先于 Job 锁」要观测的形状
@@ -507,35 +537,53 @@ hold.execute("SELECT bucket_no FROM coordination_claim_buckets WHERE bucket_no =
 hold_pid = hold.info.backend_pid
 st = {}
 
+
 def second():
-    s = conn(); st["pid"] = s.info.backend_pid; s.execute("SET lock_timeout = '3s'")
+    s = conn()
+    st["pid"] = s.info.backend_pid
+    s.execute("SET lock_timeout = '3s'")
     try:
         s.execute("SELECT bucket_no FROM coordination_claim_buckets WHERE bucket_no = 0 FOR UPDATE")
         st["r"] = "acquired"
     except psycopg.errors.LockNotAvailable:
         st["r"] = "blocked"
-    s.rollback(); s.close()
+    s.rollback()
+    s.close()
 
-t = threading.Thread(target=second); t.start()
+
+t = threading.Thread(target=second)
+t.start()
 obs = conn()
 for _ in range(40):
-    rows = obs.execute('''
+    rows = obs.execute("""
       SELECT a.pid, a.wait_event_type, a.wait_event, pg_blocking_pids(a.pid)
       FROM pg_stat_activity a WHERE a.datname = current_database() AND a.wait_event_type = 'Lock'
-    ''').fetchall()
-    if rows: break
+    """).fetchall()
+    if rows:
+        break
     time.sleep(0.05)
 print("waiter:", rows)
-print("holder:", obs.execute('''
+print(
+    "holder:",
+    obs.execute(
+        """
   SELECT pid, state, left(query, 80) AS last_query,
     (SELECT string_agg(DISTINCT c.relname || ':' || l.mode, ',')
        FROM pg_locks l JOIN pg_class c ON c.oid = l.relation
       WHERE l.pid = a.pid AND l.locktype = 'relation') AS relation_locks
   FROM pg_stat_activity a WHERE pid = %s
-''', (hold_pid,)).fetchone())
-t.join(); print("second:", st.get("r"))
-hold.rollback(); hold.close(); obs.close()
-a = psycopg.connect(ADMIN, autocommit=True); a.execute(f"DROP DATABASE {DB} WITH (FORCE)"); a.close()
+""",
+        (hold_pid,),
+    ).fetchone(),
+)
+t.join()
+print("second:", st.get("r"))
+hold.rollback()
+hold.close()
+obs.close()
+a = psycopg.connect(ADMIN, autocommit=True)
+a.execute(f"DROP DATABASE {DB} WITH (FORCE)")
+a.close()
 ```
 
 实测断言的三件事：`pg_blocking_pids(waiter) == {holder}`；`wait_event='transactionid'`（行锁没有

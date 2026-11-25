@@ -131,9 +131,9 @@
           "rule": "portable_sql.claims.event_digest(job_id, event_seq, state, occurred_at=occurred_at_us 折 UTC, kind, progress_completed, progress_total, payload_ref);草案表无摘要列,搬迁按此规则重算,历史事件与迁移后新事件因此可比较"
         },
         "payload_ref": {
-          "kind": "gap",
+          "kind": "seed",
           "source": null,
-          "reason": "草案表不存 payload 引用;首个版本可以全 NULL,但要显式决定而不是默认"
+          "rule": "产品决定(2026-11-25):搬迁不携带 payload 引用,一律写 NULL。事件只表达状态迁移,恢复按 event_digest 去重;内容仍留在原处,由客户端按 job_id 重取。adopt_historical_events 拒绝非空引用,所以这条口径不会被某一次搬迁悄悄改写"
         }
       },
       "anchor": {

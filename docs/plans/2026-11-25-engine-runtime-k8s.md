@@ -105,26 +105,41 @@ S5 是验收点，不是加功能。
 
 同一切片留下的边界：测试夹具注入 service+readiness 的路径**绕过开关**。它是测试专用 seam，生产入口 `main → create_app → _build_dependencies` 不经过；要把守卫上提到 `create_app` 会改变现有注入语义，**留给 S2 定**。
 
-### 4.2 S5 验收记录（未完成）
+### 4.2 S5 验收记录（2026-11-25 完成）
 
-算力面一侧已经成立，验收卡在应用面，**不是 k8s 驱动的问题**。
+同一个 Job 定义、同一个实例身份，分别由 compose 引擎与 k8s 引擎执行，产物逐字节一致。
 
-已验证（2026-11-25）：
+| 路径 | Job | 引擎 | 结果 | 产物 |
+| --- | --- | --- | --- | --- |
+| compose | `job-991788410b564ddda2eaca46126c8ac5` | docker 容器 `speechnexus-asr-1`，`127.0.0.1:18190` | `succeeded`，`cleanup_state=complete` | 74 B，`sha256:da4d6eb2…e0c53` |
+| k8s #1 | `job-31771a045dc94435badba668beb8e9fe` | Pod `engine-instance-asr-1-2`，`10.42.0.103:18190` | `succeeded`，`cleanup_state=complete` | 74 B，**同一摘要** |
+| k8s #2 | `job-7f29f824398c4ae394538577a3c8a7a4` | 同上，**docker 引擎已停止** | `succeeded`，`cleanup_state=complete` | 74 B，**同一摘要** |
 
-- 引擎在 k3s 上服务：Pod `engine-instance-asr-1-2` `1/1 Running`，`http://10.42.0.103:18190/health → 200`、`/v1/models → qwen3-asr-1.7b`
-- 驱动在集群内跑通 `prepare → ready`：`controller-probe` 用 ServiceAccount `speechnexus-node-controller` 加载 in-cluster token，经真实 API server 建 Pod、等 Ready、报 `STEP prepare -> ready`
-- 镜像不变量取「批准的原样引用 + 核对运行中容器 `imageID`」；喂 docker 来源的 digest 时驱动报 `quarantined` 并点名两个摘要
-- 网关能直接打到引擎 Pod（容器内 `urllib … /health → 200`）；端点切到 `10.42.0.103:18190` 后容器内配置生效，可切回
-- 应用面接受 k8s 引擎的运维取证：`speechnexus-register-engine --renew-readiness --engine-url <Pod>` 成功；`--generation 2` 被正确拒绝（`previous_generation_active`），因为手工容器没有释放路径
+产物内容：`{"text":"The quick brown fox jumps over the lazy dog.","duration_ms":3447}`。
 
-未完成（阻塞）：
+三条 Job 的实例事实一致：`execution_revision=1`、`cleanup_state=complete`、同一 `effective_configuration`（`model-asr-minimal` revision 1、`policy_revision` 1、`degradation=none`）。**唯一不同是执行它的引擎进程**，这正是本切片要证明的那一项。
 
-- `POST /v1/nexus/jobs` 一律 `503 engine_state_mismatch`，**compose 路径同样如此**，因此没有可对照的基准
-- 两个只读出口对同一实例给出相反结论（CLI `valid` / HTTP `invalid`），见 #1246
-- 对外码把三种内部拒绝折叠成一句「重新注册」，实测重注册两次无效，见 #1245
-- 已排除：就绪回执过期、回执签错引擎、intent 解不开、observation 不合法、就绪回执不合法——三份文档在**部署中的 api Pod 内**用其自带代码校验全部通过
+第 3 条是取证关键：把 docker 引擎 `docker stop` 之后重跑同一 Job 仍然成功，且 Pod 日志出现 `POST /v1/audio/transcriptions HTTP/1.1 200 OK`。所以它不可能由 compose 引擎代劳。
 
-结论：S5 的「一个 Job 走 k8s 引擎跑完」与「两条路径逐项对照」均**未达成**，不得记为通过。
+引擎侧此前已验证：Pod `1/1 Running`、`/health → 200`、`/v1/models → qwen3-asr-1.7b`；驱动经 in-cluster ServiceAccount 走真实 API server 报 `prepare -> ready`；喂 docker 来源摘要时驱动报 `quarantined` 并点名两个摘要。
+
+#### 4.2.1 验收过程中发现的真实阻塞（与本切片无关）
+
+S5 之前连续多轮无法进行，原因是应用面自身，**compose 路径同样无法建出 Job**，因此当时没有可对照的基准。三点已分别建 issue：#1245（三种内部拒绝码折叠成一句「重新注册」）、#1246（就绪判定两份实现，CLI 与 HTTP 结论相反）、#1248（派发前过期的 Job 永久泄漏准入租约，并把平台锁成 `engine_state_mismatch`）。
+
+#### 4.2.2 派发器的部署位置
+
+派发器跑在**算力面**时，每一轮 claim 都要跨 SSH 隧道回应用面数据库，实测一轮约 115 s；而准入截止由绑定 `timeout_seconds` 决定（本次 120 s），于是 Job 常在派发前过期，正好落进 #1248 的泄漏。
+
+把同一个派发器放进应用面集群（本地数据库往返），一轮 claim 实测 **0.15 s**，Job 从 `queued` 到 `succeeded` 约 10 s。
+
+结论：**派发器必须与应用面数据库同域部署**，算力面只跑引擎与网关。这一点写入下一轮的实施项，不由本切片顺带改动。
+
+#### 4.2.3 仍未验证
+
+- 控制器作为**常驻集群内服务**：镜像 `speechnexus-node-controller` 只在 docker，k3s containerd 无法拉取 `local/` 镜像，导入需要 root（或一个内网 registry）。当前 `prepare` 是在一次性 Pod 里用仓库源码驱动验证的。
+- `stop` / `recover_stop` 的 k8s 路径**未在真实集群上驱动过**：手工启动的引擎容器 `managed-by=speechnexus-operator-manual`，控制器不接管，也没有释放路径。
+- 本次 k8s 路径的就绪回执仍是按 docker 引擎签署的（回执窗口 24 h 内有效），执行时端点已指向 Pod。回执证明的是实例身份，不是「哪个进程在服务」。
 
 ## 5. 回退
 

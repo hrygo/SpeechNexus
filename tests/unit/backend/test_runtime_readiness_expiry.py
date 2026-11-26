@@ -20,6 +20,7 @@ validity, the observation path does not.
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import Any
 
 import pytest
 
@@ -185,3 +186,32 @@ def test_a_caller_that_reports_the_declared_window_alone_keeps_its_vocabulary() 
         receipt.readiness_state(now_us, freshness_us=DEFAULT_READINESS_FRESHNESS_US)
         == READINESS_UNOBSERVED
     )
+
+
+def test_the_refusal_sentence_names_the_fact_that_actually_refuses() -> None:
+    """One cause class, two recoveries: the text has to follow the instance state."""
+    from speechnexus_backend.speech.domain.job_admission_readiness import (
+        AdmissionReadinessCause,
+        ReadinessInstanceReport,
+        refused_readiness,
+    )
+
+    def report(state: str) -> Any:
+        instance = ReadinessInstanceReport(
+            "instance-1", 1, state, NOW + 86_400_000_000, 86_400, 8, 0, 0
+        )
+        return refused_readiness(
+            AdmissionReadinessCause.ENGINE_RECEIPT_EXPIRED,
+            workspace_id="workspace-default",
+            now_us=NOW,
+            instances=(instance,),
+        )
+
+    unobserved = report("unobserved")
+    expired = report("expired")
+    assert unobserved.cause is expired.cause is AdmissionReadinessCause.ENGINE_RECEIPT_EXPIRED
+    assert "No health probe has re-signed" in unobserved.detail
+    assert "observed_seconds_ago" in unobserved.detail
+    # The elapsed-window sentence must not be reused for a receipt nobody re-signed.
+    assert "outside its window" in expired.detail
+    assert "outside its window" not in unobserved.detail

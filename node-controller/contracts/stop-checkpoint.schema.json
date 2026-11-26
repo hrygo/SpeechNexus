@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Node-private stop checkpoint record v1",
+  "title": "Node-private stop checkpoint record v2",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -9,10 +9,11 @@
     "container_id",
     "exit_code",
     "exited_at",
-    "released_at"
+    "released_at",
+    "deletion_requested_at"
   ],
   "properties": {
-    "format_version": { "const": 1, "type": "integer" },
+    "format_version": { "const": 2, "type": "integer" },
     "request": {
       "allOf": [
         {
@@ -24,26 +25,34 @@
     "container_id": { "type": "string", "minLength": 1, "maxLength": 128 },
     "exit_code": { "type": ["integer", "null"] },
     "exited_at": { "type": ["string", "null"], "format": "date-time" },
-    "released_at": { "type": ["string", "null"], "format": "date-time" }
+    "released_at": { "type": ["string", "null"], "format": "date-time" },
+    "deletion_requested_at": { "type": ["string", "null"], "format": "date-time" }
   },
   "oneOf": [
     {
       "properties": {
         "exit_code": { "type": "null" },
         "exited_at": { "type": "null" },
-        "released_at": { "type": "null" }
+        "released_at": { "type": "null" },
+        "deletion_requested_at": { "type": "null" }
       }
     },
     {
       "properties": {
-        "exit_code": { "type": "integer" },
+        "exit_code": { "type": "null" },
+        "exited_at": { "type": "null" },
+        "released_at": { "type": "null" },
+        "deletion_requested_at": { "type": "string" }
+      }
+    },
+    {
+      "properties": {
         "exited_at": { "type": "string" },
         "released_at": { "type": "null" }
       }
     },
     {
       "properties": {
-        "exit_code": { "type": "integer" },
         "exited_at": { "type": "string" },
         "released_at": { "type": "string" }
       }

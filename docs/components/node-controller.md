@@ -128,6 +128,11 @@ adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把
   `network_name` 可引用批准的自定义 Docker 网络，不能选择 `host`、`container:*` 等网络
   模式；省略时保留 daemon 默认网络行为。网络名本身不证明出站受限，真实内容路径须另外验证
   网络隔离与部署边界；ASR 探针要求实测 `Internal=true` 的 bridge 网络。
+- **镜像证明**：就绪的含义是「跑的就是批准的那份字节」，prepare 与周期性观察共用同一个证明点：
+  运行中容器报告的镜像摘要必须等于模板的 `image_digest`，否则观察是 quarantined，意图不转 ready。
+  这个摘要的口径随运行时而异——docker 驱动比的是镜像 id（config digest），k8s 驱动比的是
+  containerd 的 imageID（target digest），同一份字节在两边并不是同一个值；因此模板的该字段属于
+  「面向某个运行时的批准」，取值从节点上读，不从构建机抄。
 - **重新发现**：容器查找包含 node、instance 与 generation 标签；只在当前运行容器的实际
   Memory/MemorySwap 和显式网络配置均匹配模板时报告就绪。旧无限额或漂移容器进入
   quarantine，仍允许按原身份停止、删除并取证，不把重启当作资源保证已生效。

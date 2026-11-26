@@ -71,16 +71,23 @@ kubectl delete namespace speechnexus
 
 ## 就绪回执的续期与报警
 
-就绪回执是实例可准入的唯一依据，有效期 24 h。回执过期后 `GET /v1/nexus/jobs/admission-readiness`
-转 `invalid`，所有建 Job 的请求开始 503，而**报出来的原因不会指向回执**。所以两件事都上了调度：
+就绪回执是可准入的依据，它由一次**真实健康探测**签出。有效期是声明（默认 24 h），但准入还看第二个
+事实：**这份回执多久以前签的**。超过 15 min 没被重新探测，状态就是 `unobserved`，准入按
+`503 engine_not_ready` 拒绝——回执只说明签字那一刻引擎在，不说明现在在。两个事实因此可以分辨：
+窗口耗尽报 `expired`，没人看引擎报 `unobserved`。
 
 | CronJob | 频率 | 作用 |
 | --- | --- | --- |
-| `engine-readiness-renew` | 每 6 h | 重新探测引擎健康并续租 24 h |
+| `engine-readiness-renew` | 每 5 min | 探测引擎健康并重签回执（刷新 `verified_at`） |
 | `engine-readiness` | 每小时 | 报告回执状态；带 `--fail-on-expiring --warn-within-seconds 21600` |
 
-报警信号就是**失败的那个 Job**：回执进入 6 h 窗口而续租没成功时，小时报的 Job 变 `Failed`，
-日志结尾是 `error: readiness_expiring`，条目里带 `remediation`。故意让它可以红，实测过两次：
+续租周期必须短于新鲜度窗口（5 min × 3 = 15 min），否则一次漏跑就把实例打成 `unobserved`。
+反过来说，**引擎停下之后 15 min 内平台一定停止承诺容量**，不再有「引擎已经没了、准入还在收活」
+的窗口（#1263）。
+
+报警信号有两个层次：`unobserved`/`expired` 自己就让准入 503（产品面可见），小时报的 Job
+同时变 `Failed`，日志结尾 `error: readiness_unobserved` 或 `error: readiness_expiring`，条目里带
+`observed_seconds_ago` 与 `remediation`。故意让它可以红，实测过：
 
 ```bash
 # 把警戒窗口放大到超过剩余时间 → 立刻转 expiring 并失败
@@ -90,10 +97,15 @@ speechnexus-engine-readiness --warn-within-seconds 100000 --fail-on-expiring
 # 把健康地址指到一个不可达端口 → 续租失败并失败退出
 SPEECHNEXUS_ENGINE_HEALTH_URL=http://127.0.0.1:18190/health speechnexus-register-engine ... --renew-readiness
 # → error: engine_unreachable: health endpoint is unreachable from this operator host
+
+# 停掉引擎、又不让续租跑 → 15 min 后准入转 refus「engine_not_ready: readiness_unobserved」
+speechnexus-engine-readiness
+# → {"readiness_state": "unobserved", "observed_seconds_ago": 1080, ...}
+# → error: readiness_unobserved: instance-asr-1 g3 (observed_seconds_ago=1080)
 ```
 
-两个频率的关系是刻意的：续租周期 6 h、报警窗口 6 h、报警周期 1 h——续租有一次失败，
-小时报还有三次机会把它变红，而不是等到回执耗尽才发现。
+续租失败时小时报仍会红，但那只是运维视角；真正挡住用户的准入侧在同一时刻已经拒绝，不需要
+等人看日志。
 
 ## 引擎地址链
 

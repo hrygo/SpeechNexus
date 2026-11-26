@@ -61,6 +61,9 @@ from speechnexus_backend.speech.domain.runtime_intents import (
     RuntimeHost,
     RuntimeRejectedError,
 )
+from speechnexus_backend.speech.domain.runtime_observations import (
+    DEFAULT_READINESS_FRESHNESS_US,
+)
 from speechnexus_backend.speech.domain.speech_synthesis import (
     MAX_SPEECH_TEXT_CHARS,
     PLANNER_CHARS_MAX,
@@ -1518,8 +1521,12 @@ def _readiness_runtime(
         readiness = validate_stored_readiness(
             record.readiness_document, record.request, record.approved_plan
         )
-        readiness_state = readiness.expiry_state(
-            now_us, warning_us=DEFAULT_READINESS_WARNING_SECONDS * 1_000_000
+        # The same two facts admission itself reads, so the product answer cannot
+        # report a receipt as usable that the next create would refuse.
+        readiness_state = readiness.readiness_state(
+            now_us,
+            warning_us=DEFAULT_READINESS_WARNING_SECONDS * 1_000_000,
+            freshness_us=DEFAULT_READINESS_FRESHNESS_US,
         )
     cursor.execute(
         "SELECT COALESCE(SUM(l.reserved_slots), 0) AS slots FROM admission_leases AS l "

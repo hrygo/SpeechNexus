@@ -613,7 +613,7 @@ type ReleaseTier = ExternalSharedCapabilityDomainsSchemaJsonReleaseTier
 class AdmissionReadinessInstance(TypedDict):
     instance_id: Identifier
     instance_generation: int
-    readiness_state: Literal["valid", "expiring", "expired", "missing", "invalid"]
+    readiness_state: Literal["valid", "expiring", "unobserved", "expired", "missing", "invalid"]
     readiness_expires_at: str | None
     remaining_seconds: int | None
     max_slots: int

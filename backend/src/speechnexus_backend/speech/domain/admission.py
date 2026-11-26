@@ -338,6 +338,9 @@ ADMISSION_REJECTION_CODES: frozenset[str] = CAPACITY_REJECTION_CODES | frozenset
         "qualification_source_unverified",
         # The pinned instance is the right one; only its readiness receipt elapsed.
         "readiness_expired",
+        # The pinned instance is still the right one, but no health probe has
+        # re-signed its receipt inside the freshness window.
+        "readiness_unobserved",
         # The request does not match the approved recipe for the pinned instance.
         "recipe_mismatch",
         # Observation, generation, topology or topology-owner identity disagrees.
@@ -381,8 +384,11 @@ PUBLIC_ADMISSION_CODES: dict[str, str] = {
     "policy_or_resource_disabled": "engine_resource_disabled",
     "qualification_source_unverified": "engine_resource_disabled",
     "unapproved_runtime_template": "engine_resource_disabled",
-    # The ready instance is the pinned one, but its receipt is outside the window.
+    # The ready instance is the pinned one, but its receipt is outside the window
+    # or too old to vouch for the engine now. Both say the same thing to a caller:
+    # this engine is not known to be ready, so the same request waits or retries.
     "readiness_expired": "engine_not_ready",
+    "readiness_unobserved": "engine_not_ready",
     # The request does not match the recipe approved for the pinned instance.
     "recipe_mismatch": "recipe_not_admitted",
     # Concurrency/fencing races and a draining gateway both clear themselves, so

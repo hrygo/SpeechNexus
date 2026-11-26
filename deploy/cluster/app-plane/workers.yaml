@@ -132,8 +132,9 @@ metadata:
   name: engine-readiness
   namespace: speechnexus
 spec:
-  # Hourly: the warning window is wider than the period, so an unmet renewal
-  # shows up as failed Jobs well before the 24 h receipt is gone.
+  # Hourly: this report is the operator's view of the window, not the admission
+  # rule. A stale receipt already refuses work on its own (`unobserved`), so this
+  # job is no longer the only thing that can catch a broken renewal.
   schedule: "17 * * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 2
@@ -186,9 +187,12 @@ metadata:
   name: engine-readiness-renew
   namespace: speechnexus
 spec:
-  # Every six hours against a 24 h receipt: three chances to renew before the
-  # hourly report's six-hour warning window closes.
-  schedule: "7 */6 * * *"
+  # Every five minutes against the 15 min freshness window admission enforces:
+  # the receipt stopped being a self-signed 24 h pass and now says "a probe saw
+  # this engine recently", so the probe interval has to be shorter than the
+  # window, not shorter than the receipt's declared TTL (#1263). Three missed
+  # runs in a row is what turns an instance into `unobserved` and refuses work.
+  schedule: "*/5 * * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 2
   failedJobsHistoryLimit: 3

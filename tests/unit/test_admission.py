@@ -27,6 +27,10 @@ from speechnexus_backend.speech.domain.admission import (
 )
 from speechnexus_backend.speech.domain.capacity import PhysicalResources
 from speechnexus_backend.speech.domain.owners import MAX_VERSION
+from speechnexus_backend.speech.domain.runtime_observations import (
+    DEFAULT_READINESS_FRESHNESS_US,
+    READINESS_VALID,
+)
 from speechnexus_backend.speech.infrastructure.admission_codec import (
     business_command_from_value,
     prepare_admission,
@@ -430,3 +434,28 @@ def test_unknown_and_success_results_cannot_invent_retry_or_partial_success() ->
         AdmissionResult("committed", ADMISSION.identity)
     with pytest.raises(ValueError):
         AdmissionFact(AdmissionIdentity("operation-admit", "attempt-admit"), (), 1)
+
+
+def test_a_receipt_nobody_re_signed_inside_the_freshness_window_is_refused() -> None:
+    """The window says how long a signature may live, not how long the engine runs."""
+    # Verified long ago, expires far in the future: the exact shape that kept
+    # admitting work against a stopped engine (#1263).
+    unobserved = replace(
+        RUNTIMES[0],
+        readiness=replace(
+            RUNTIMES[0].readiness,
+            verified_at_us=NOW - DEFAULT_READINESS_FRESHNESS_US - 1_000_000,
+            expires_at_us=NOW + 20 * 60 * 60 * 1_000_000,
+        ),
+    )
+
+    assert unobserved.readiness.expiry_state(NOW) == READINESS_VALID
+    with pytest.raises(AdmissionRejectedError, match="readiness_unobserved"):
+        _decide(runtimes=(unobserved,), now_us=NOW)
+
+    # The same request is admitted again once a probe re-signs the same instance.
+    resigned = replace(
+        unobserved,
+        readiness=replace(unobserved.readiness, verified_at_us=NOW - 60 * 1_000_000),
+    )
+    assert _decide(runtimes=(resigned,), now_us=NOW).reservations[0].stage == STAGE

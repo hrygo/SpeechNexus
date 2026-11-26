@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-26T01:10:45+08:00",
+  "fetched_at": "2026-11-26T18:06:15+08:00",
   "issues": [
     {
       "number": 336,
@@ -1666,6 +1666,16 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/1253",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "引擎切成 Pod 后就绪续租不可达：约 23 h 后回执耗尽，准入会静默转成 invalid",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/338"
+    },
+    {
+      "number": 1262,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/1262",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "模板声明 12 GiB，引擎默认抢 92% 整卡：显卡一共享就起不来，且死配置无人读",
       "state": "open",
       "state_reason": null,
       "labels": [],

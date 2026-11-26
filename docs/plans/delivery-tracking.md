@@ -1,6 +1,6 @@
 # SpeechNexus 需求与交付跟踪
 
-GitHub 来源：GitHub 快照；快照时间：2026-11-26T01:10:45+08:00。
+GitHub 来源：GitHub 快照；快照时间：2026-11-26T18:06:15+08:00。
 实现/集成/验证事实基线核验日期：2026-11-20；逐行另注的增量核验日期优先，各证据仅证明其实际覆盖范围。
 PRD 定义需求，设计规定实现约束；本表关联唯一主 Epic、当前事实、实施卡与验收证据。
 未建卡不等于需求遗漏；任务关闭不自动完成需求。结构校验不替代语义 MECE 审查或业务验收。
@@ -109,6 +109,7 @@ PRD 定义需求，设计规定实现约束；本表关联唯一主 Epic、当�
 - [workbench 迁移在 HEAD 上必然失败：用 ? 占位符配裸 psycopg 连接 #1231](https://github.com/hrygo/SpeechNexus/issues/1231)：父 Epic 未核实；待分类与关联需求。
 - [常驻 dispatch 认领要 115s，admission deadline 只有 120s：结构上永远擦边，且自阻塞 #1234](https://github.com/hrygo/SpeechNexus/issues/1234)：待关联需求。
 - [应用面清单硬编码镜像 sha，每次升级要手工改 12 处且必漏 #1238](https://github.com/hrygo/SpeechNexus/issues/1238)：父 Epic 未核实；待分类与关联需求。
+- [模板声明 12 GiB，引擎默认抢 92% 整卡：显卡一共享就起不来，且死配置无人读 #1262](https://github.com/hrygo/SpeechNexus/issues/1262)：待关联需求。
 
 ## 下一步建卡
 

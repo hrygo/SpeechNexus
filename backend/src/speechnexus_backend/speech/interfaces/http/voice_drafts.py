@@ -178,8 +178,10 @@ _ERRORS: dict[str, tuple[int, str, str, str, bool]] = {
     "engine_not_ready": (
         503,
         "service_unavailable_error",
-        "The pinned engine's readiness receipt expired; re-register the engine "
-        "(speechnexus-register-engine --renew-readiness), then resubmit.",
+        "The pinned engine is not known to be ready: its readiness receipt is missing, "
+        "expired, or has not been re-signed by a health probe recently. Re-register the "
+        "engine (speechnexus-register-engine --renew-readiness) and check that the "
+        "renewal task can reach it, then resubmit.",
         "engine_unavailable",
         False,
     ),

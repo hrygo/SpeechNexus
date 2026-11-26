@@ -584,6 +584,7 @@ def test_the_report_and_the_renewal_expose_an_expiring_then_expired_receipt(
         "ready_instances": 1,
         "valid": 0,
         "expiring": 1,
+        "unobserved": 0,
         "expired": 0,
         "missing": 0,
         "invalid": 0,

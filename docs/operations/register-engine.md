@@ -203,12 +203,18 @@ speechnexus-register-engine \
 speechnexus-engine-readiness --warn-within-seconds 21600
 ```
 
-每行给出 `readiness_state`（`valid` / `expiring` / `expired` / `missing` /
-`invalid`）、`expires_at_us`、`remaining_seconds`（已过期为负）和 `remediation`；
-汇总给出各状态计数与 `unusable`。任一实例 `expired` / `missing` / `invalid` 时退出码
-为 `5`（`EXIT_UNAVAILABLE`），`--fail-on-expiring` 让 `expiring` 也返回非零，供监控
-在创建失败前告警。`--warn-within-seconds` 默认 `21600`（TTL 的四分之一），只是上报
-阈值，不改变准入判定。
+每行给出 `readiness_state`（`valid` / `expiring` / `unobserved` / `expired` /
+`missing` / `invalid`）、`expires_at_us`、`remaining_seconds`（已过期为负）、
+`observed_seconds_ago`（距上次探测重签多久）和 `remediation`；汇总给出各状态计数与
+`unusable`。任一实例 `expired` / `unobserved` / `missing` / `invalid` 时退出码为 `5`
+（`EXIT_UNAVAILABLE`），`--fail-on-expiring` 让 `expiring` 也返回非零，供监控在创建失败
+前告警。`--warn-within-seconds` 默认 `21600`（TTL 的四分之一），只是上报阈值，不改变
+准入判定。
+
+`unobserved` 与 `expired` 是两个不同的事实：前者表示声明窗口还没走完，但**已经超过新鲜度
+窗口（15 min）没有探测重签**，准入同样拒绝（`503 engine_not_ready`）——回执只说明签字
+那一刻引擎在。它由 `engine-readiness-renew`（每 5 min）持续续租消除；如果状态长期停在
+`unobserved`，先查续租任务能否探测到引擎，而不是先改回执。
 
 命令未明确成功时，应查询原实例、generation、intent 和池 owner，再决定是否按原参数重试。
 数据库提交回执丢失时结果可能未知；即使命令输出“no registration was committed”，也不能仅凭

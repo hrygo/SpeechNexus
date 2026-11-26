@@ -114,9 +114,11 @@ def _require(
     expired_code: str | None = None,
 ) -> str | None:
     """The refusal code ``require_valid`` raises, or ``None`` when the receipt passes."""
-    arguments = {} if expired_code is None else {"expired_code": expired_code}
     try:
-        receipt.require_valid(OBSERVATION, PLAN, now_us, **arguments)
+        if expired_code is None:
+            receipt.require_valid(OBSERVATION, PLAN, now_us)
+        else:
+            receipt.require_valid(OBSERVATION, PLAN, now_us, expired_code=expired_code)
     except RuntimeRejectedError as error:
         return str(error.code)
     return None

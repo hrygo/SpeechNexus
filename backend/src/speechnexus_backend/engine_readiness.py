@@ -41,8 +41,10 @@ from typing import Any, TextIO, cast
 
 from speechnexus_backend.engine_registration import EXIT_INVALID, EXIT_UNAVAILABLE
 from speechnexus_backend.speech.domain.runtime_observations import (
+    DEFAULT_READINESS_FRESHNESS_US,
     READINESS_EXPIRED,
     READINESS_EXPIRING,
+    READINESS_UNOBSERVED,
     READINESS_VALID,
     VerifiedRuntimeReadiness,
 )
@@ -113,13 +115,29 @@ def readiness_report(rows: Sequence[Row], *, now_us: int, warn_within_us: int) -
                 }
             )
             continue
-        state = receipt.expiry_state(now_us, warning_us=warn_within_us)
+        # Two independent facts refuse admission, so the report prints both: the
+        # declared window and how long ago a health probe actually re-signed it.
+        state = receipt.readiness_state(
+            now_us,
+            warning_us=warn_within_us,
+            freshness_us=DEFAULT_READINESS_FRESHNESS_US,
+        )
         remaining_us = receipt.expires_at_us - now_us
+        observed_us = now_us - receipt.verified_at_us
         remediation: str | None = None
         if state == READINESS_EXPIRED:
             remediation = (
                 "admission refuses this instance with 503 engine_not_ready; "
                 f"run {RENEW_COMMAND} to re-sign the receipt"
+            )
+        elif state == READINESS_UNOBSERVED:
+            # Not "the engine is down": nobody has probed it inside the freshness
+            # window, so the platform must stop promising capacity until it has.
+            remediation = (
+                "admission refuses this instance with 503 engine_not_ready; no health "
+                f"probe has re-signed the receipt inside "
+                f"{DEFAULT_READINESS_FRESHNESS_US // 1_000_000} s, so run {RENEW_COMMAND} "
+                "and check the renewal task (a failed probe names the engine)"
             )
         elif state == READINESS_EXPIRING:
             remediation = f"run {RENEW_COMMAND} before expires_at_us"
@@ -131,6 +149,8 @@ def readiness_report(rows: Sequence[Row], *, now_us: int, warn_within_us: int) -
                 "readiness_state": state,
                 "expires_at_us": receipt.expires_at_us,
                 "remaining_seconds": remaining_us // 1_000_000,
+                "observed_at_us": receipt.verified_at_us,
+                "observed_seconds_ago": observed_us // 1_000_000,
                 "remediation": remediation,
             }
         )
@@ -141,6 +161,7 @@ def _summary(report: Sequence[Row]) -> Row:
     counts = {
         READINESS_VALID: 0,
         READINESS_EXPIRING: 0,
+        READINESS_UNOBSERVED: 0,
         READINESS_EXPIRED: 0,
         READINESS_MISSING: 0,
         READINESS_INVALID: 0,
@@ -152,6 +173,7 @@ def _summary(report: Sequence[Row]) -> Row:
         **counts,
         # One number a monitor can threshold without enumerating states.
         "unusable": counts[READINESS_EXPIRED]
+        + counts[READINESS_UNOBSERVED]
         + counts[READINESS_MISSING]
         + counts[READINESS_INVALID],
     }
@@ -276,13 +298,24 @@ def main(
     summary = _summary(report)
     print(json.dumps({"summary": summary}, sort_keys=True), file=stream)
     for entry in report:
-        if entry["readiness_state"] in (READINESS_EXPIRED, READINESS_MISSING, READINESS_INVALID):
+        if entry["readiness_state"] in (
+            READINESS_EXPIRED,
+            READINESS_UNOBSERVED,
+            READINESS_MISSING,
+            READINESS_INVALID,
+        ):
             failures.write(
                 f"error: readiness_{entry['readiness_state']}: "
                 f"{entry['instance_id']} g{entry['instance_generation']} "
-                f"(expires_at_us={entry['expires_at_us']})\n"
+                f"(expires_at_us={entry['expires_at_us']}, "
+                f"observed_seconds_ago={entry.get('observed_seconds_ago')})\n"
             )
-    if summary[READINESS_EXPIRED] or summary[READINESS_MISSING] or summary[READINESS_INVALID]:
+    if (
+        summary[READINESS_EXPIRED]
+        or summary[READINESS_UNOBSERVED]
+        or summary[READINESS_MISSING]
+        or summary[READINESS_INVALID]
+    ):
         return EXIT_UNAVAILABLE
     if options.fail_on_expiring and summary[READINESS_EXPIRING]:
         failures.write(

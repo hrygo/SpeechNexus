@@ -1822,6 +1822,9 @@ def load_admission_readiness(
         instances=tuple(reports),
         quota=quota,
         workspace_state=state,
+        # The report's per-instance state is the declared window; the refusal code is
+        # the fact admission actually refused on, so the sentence can name it exactly.
+        refusal_code=refusal,
     )
 
 

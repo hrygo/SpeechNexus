@@ -34,6 +34,18 @@ from speechnexus_backend.speech.domain.admission import (
     AdmissionQuota,
 )
 from speechnexus_backend.speech.domain.public_jobs import identifier
+from speechnexus_backend.speech.domain.runtime_observations import (
+    READINESS_EXPIRED as READINESS_EXPIRED,
+)
+from speechnexus_backend.speech.domain.runtime_observations import (
+    READINESS_EXPIRING as READINESS_EXPIRING,
+)
+from speechnexus_backend.speech.domain.runtime_observations import (
+    READINESS_UNOBSERVED_CODE as READINESS_UNOBSERVED_CODE,
+)
+from speechnexus_backend.speech.domain.runtime_observations import (
+    READINESS_VALID as READINESS_VALID,
+)
 
 # The public codes the report points an operator at. The admission vocabulary is the
 # single source for the three admission-owned answers; the capacity, workspace and
@@ -88,9 +100,9 @@ CAUSE_BY_PUBLIC_CODE: dict[str, AdmissionReadinessCause] = {
     code: cause for cause, code in CAUSE_CODES.items()
 }
 
-READINESS_VALID = "valid"
-READINESS_EXPIRING = "expiring"
-READINESS_EXPIRED = "expired"
+# The four states a receipt can be classified into live with the classification
+# itself; only the two "there is no usable receipt at all" states are specific to
+# this report, so the spellings cannot drift apart.
 READINESS_MISSING = "missing"
 READINESS_INVALID = "invalid"
 
@@ -195,6 +207,8 @@ def _detail(
     workspace_id: str,
     workspace_state: str | None,
     quota: AdmissionQuota | None,
+    instances: tuple[ReadinessInstanceReport, ...] = (),
+    refusal_code: str | None = None,
 ) -> str:
     code = CAUSE_CODES[cause]
     if cause is AdmissionReadinessCause.WORKSPACE_NOT_FOUND:
@@ -227,6 +241,18 @@ def _detail(
             f"{code} until an instance becomes ready or a slot is released."
         )
     if cause is AdmissionReadinessCause.ENGINE_RECEIPT_EXPIRED:
+        # One cause class covers two different recoveries, so the sentence follows the
+        # per-instance state instead of restating the enum member's name: a receipt
+        # nobody re-signed is not an elapsed window, and an operator who reads "outside
+        # its window" would look in the wrong place (#1263).
+        if refusal_code == READINESS_UNOBSERVED_CODE:
+            return (
+                "No health probe has re-signed this instance's readiness receipt inside the "
+                f"freshness window, so a create answers {code}. A receipt states what was "
+                "true when it was signed, not that the engine is still there: check the "
+                f"renewal task and the engine, then run `{RENEW_COMMAND}` (the read-only "
+                f"report `{READINESS_REPORT_CODE}` prints observed_seconds_ago)."
+            )
         return (
             "The ready instance a create would pin holds a readiness receipt outside its "
             f"window, so a create answers {code}; re-sign it with `{RENEW_COMMAND}` (the "
@@ -275,13 +301,21 @@ def refused_readiness(
     instances: tuple[ReadinessInstanceReport, ...] = (),
     quota: AdmissionQuota | None = None,
     workspace_state: str | None = None,
+    refusal_code: str | None = None,
 ) -> AdmissionReadiness:
     return AdmissionReadiness(
         AdmissionReadinessStatus.DEGRADED,
         cause,
         workspace_id,
         now_us,
-        _detail(cause, workspace_id=workspace_id, workspace_state=workspace_state, quota=quota),
+        _detail(
+            cause,
+            workspace_id=workspace_id,
+            workspace_state=workspace_state,
+            quota=quota,
+            instances=instances,
+            refusal_code=refusal_code,
+        ),
         instances,
         quota,
     )

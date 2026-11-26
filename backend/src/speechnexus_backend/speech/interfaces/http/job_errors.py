@@ -147,16 +147,21 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
     # read or write durable state. Nothing an operator can do to an engine repairs
     # it, and no admission refusal may borrow it (#828 review B3).
     "job_unavailable": (503, "service_unavailable_error", STORE_UNAVAILABLE.detail),
-    # The pinned instance is ready, but its readiness receipt elapsed. The store is
-    # healthy and no Job row was written; an operator re-signs the receipt and the
-    # same request is then admitted. Recovery needs that out-of-band step, so the
-    # refusal does not invite a retry of its own (#828, review B1).
+    # The pinned instance exists but is not known to be ready: its receipt is
+    # missing, its declared window elapsed, or no health probe has re-signed it
+    # recently. The store is healthy and no Job row was written; an operator re-signs
+    # the receipt and the same request is then admitted. Recovery needs that
+    # out-of-band step, so the refusal does not invite a retry of its own (#828,
+    # review B1). The sentence names all three facts because one public code covers
+    # them: claiming "expired" when nobody has looked would send the operator after a
+    # window that never elapsed (#1263).
     "engine_not_ready": (
         503,
         "service_unavailable_error",
-        "The engine readiness receipt for the pinned instance has expired; "
-        "re-register the engine (speechnexus-register-engine --renew-readiness), "
-        "then send a new request.",
+        "The pinned engine is not known to be ready: its readiness receipt is missing, "
+        "has expired, or has not been re-signed by a health probe recently. "
+        "Re-register the engine (speechnexus-register-engine --renew-readiness) and "
+        "check that the renewal task can reach it, then send a new request.",
     ),
     # The pinned runtime state disagrees with the request (generation, topology,
     # observation or pool-owner identity): registering the engine again reconciles

@@ -204,6 +204,19 @@ PASSTHROUGH_RAISE_POINTS: dict[tuple[str, str, str, str | None], dict[str, Any]]
         ),
         "allowed": ("reconciliation_required", "readiness_expired"),
     },
+    (
+        "domain/runtime_observations.py",
+        "require_valid",
+        "unobserved_code",
+        None,
+    ): {
+        "reason": (
+            "A stale observation is a different fact from an elapsed window: the same "
+            "instance may be perfectly healthy and only needs its receipt re-signed, so "
+            "the caller may name that refusal. The default is the only spelling here."
+        ),
+        "allowed": ("readiness_unobserved",),
+    },
 }
 
 
@@ -568,6 +581,7 @@ def test_the_storage_answer_is_reserved_for_the_store() -> None:
     [
         ("idempotency_conflict", "idempotency_conflict"),
         ("readiness_expired", "engine_not_ready"),
+        ("readiness_unobserved", "engine_not_ready"),
         ("reconciliation_required", "engine_state_mismatch"),
         ("not_found", "engine_state_mismatch"),
         ("policy_or_resource_disabled", "engine_resource_disabled"),

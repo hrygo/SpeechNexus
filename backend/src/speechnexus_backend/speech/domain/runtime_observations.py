@@ -205,6 +205,30 @@ READINESS_EXPIRING = "expiring"
 READINESS_EXPIRED = "expired"
 """The receipt's ``expires_at_us`` has passed, so admission refuses it."""
 
+READINESS_UNOBSERVED = "unobserved"
+"""No health probe has re-signed this receipt inside the freshness window.
+
+A receipt is a statement about the moment it was signed, never about now: the
+24 h window only says the operator allowed that long. Without a freshness bound a
+stopped engine kept admitting work until the window elapsed (#1263), so admission
+reads two independent facts: the declared window and how long ago the instance was
+actually observed. ``unobserved`` names the second one and deliberately does not
+claim the engine is down: the platform has not looked, which is why it must stop
+promising capacity.
+"""
+
+READINESS_UNOBSERVED_CODE = "readiness_unobserved"
+"""The admission refusal a receipt nobody re-signed produces."""
+
+DEFAULT_READINESS_FRESHNESS_US = 15 * 60 * 1_000_000
+"""Three missed renewals at the deployed five-minute cadence.
+
+The renewal task probes the engine and re-signs the receipt every five minutes
+(``deploy/cluster/app-plane/workers.yaml``). Fifteen minutes tolerates two missed
+probes, a slow bridge or one pod restart; past that the receipt describes a past
+that is too old to admit work against.
+"""
+
 
 @dataclass(frozen=True, slots=True)
 class VerifiedRuntimeReadiness:
@@ -229,22 +253,36 @@ class VerifiedRuntimeReadiness:
         integer(self.verified_at_us, minimum=1)
         integer(self.expires_at_us, minimum=self.verified_at_us + 1)
 
-    def expiry_state(self, now_us: int, *, warning_us: int = 0) -> str:
+    def readiness_state(
+        self, now_us: int, *, warning_us: int = 0, freshness_us: int | None = None
+    ) -> str:
         """Classify this receipt against one clock without asserting identity facts.
 
-        ``expiry_state`` answers only "how much of the declared window is left", so
-        an operator surface can report ``valid``/``expiring``/``expired`` without
-        re-deriving the window or duplicating the comparison in ``require_valid``.
-        The warning window is a reporting choice, never an admission rule: only
-        ``expired`` refuses work.
+        The classification answers the only question a caller may ask: can this
+        receipt be used right now, and if not, which fact refuses it. Three facts
+        are independent, so the order below is the single place that decides which
+        one is reported: an elapsed declared window outranks a stale observation,
+        which outranks the reporting-only warning window.
+
+        ``freshness_us`` is the admission rule that a receipt must have been signed
+        recently; passing ``None`` reports the declared window alone, which is what
+        the renewal path and its operator report want.
         """
         integer(now_us, minimum=1)
         integer(warning_us, minimum=0)
         if now_us >= self.expires_at_us:
             return READINESS_EXPIRED
+        if freshness_us is not None:
+            integer(freshness_us, minimum=1)
+            if now_us - self.verified_at_us > freshness_us:
+                return READINESS_UNOBSERVED
         if self.expires_at_us - now_us <= warning_us:
             return READINESS_EXPIRING
         return READINESS_VALID
+
+    def expiry_state(self, now_us: int, *, warning_us: int = 0) -> str:
+        """The declared window alone: ``valid``/``expiring``/``expired``."""
+        return self.readiness_state(now_us, warning_us=warning_us)
 
     def require_valid(
         self,
@@ -253,6 +291,8 @@ class VerifiedRuntimeReadiness:
         now_us: int,
         *,
         expired_code: str = "reconciliation_required",
+        unobserved_code: str = READINESS_UNOBSERVED_CODE,
+        freshness_us: int | None = DEFAULT_READINESS_FRESHNESS_US,
     ) -> None:
         """Refuse a stale identity or a receipt outside its window.
 
@@ -274,8 +314,13 @@ class VerifiedRuntimeReadiness:
             or self.qualification_digest != plan.qualification_digest
         ):
             raise RuntimeRejectedError("reconciliation_required")
-        if now_us >= self.expires_at_us:
+        state = self.readiness_state(now_us, freshness_us=freshness_us)
+        if state == READINESS_EXPIRED:
             raise RuntimeRejectedError(expired_code)
+        if state == READINESS_UNOBSERVED:
+            # A stale observation is not an elapsed window: re-signing readiness on
+            # the same instance clears it, and the engine may be perfectly healthy.
+            raise RuntimeRejectedError(unobserved_code)
         if now_us < self.verified_at_us:
             # A receipt dated in the future is not an expired one: the observer's
             # clock disagrees with the store, so only a fresh observation helps.

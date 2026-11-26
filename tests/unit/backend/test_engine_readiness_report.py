@@ -133,6 +133,7 @@ def test_main_reports_every_instance_then_a_summary_and_exits_zero_for_valid(
         "ready_instances": 2,
         "valid": 1,
         "expiring": 1,
+        "unobserved": 0,
         "expired": 0,
         "missing": 0,
         "invalid": 0,
@@ -178,6 +179,7 @@ def test_main_reports_an_empty_deployment_as_zero_instances(
                 "ready_instances": 0,
                 "valid": 0,
                 "expiring": 0,
+                "unobserved": 0,
                 "expired": 0,
                 "missing": 0,
                 "invalid": 0,
@@ -222,3 +224,34 @@ def test_the_report_cannot_renew_a_receipt() -> None:
     assert "engine_instances" in engine_readiness._QUERY
     for verb in ("INSERT", "UPDATE", "DELETE", "TRUNCATE"):
         assert verb not in engine_readiness._QUERY
+
+
+def test_a_receipt_nobody_re_signed_is_reported_as_unobserved_and_alerts() -> None:
+    """A window with 23 h left is not a licence to promise capacity now."""
+    later = NOW + 3_600 * 1_000_000
+    stale = _receipt(verified=NOW, expires=NOW + 24 * 3_600 * 1_000_000)
+    report = engine_readiness.readiness_report(
+        [_row(document=stale)], now_us=later, warn_within_us=0
+    )
+    entry = report[0]
+
+    assert entry["readiness_state"] == "unobserved"
+    assert entry["remaining_seconds"] > 0
+    assert entry["observed_seconds_ago"] == 3600
+    assert "no health probe has re-signed the receipt" in entry["remediation"]
+    assert engine_readiness._summary(report)["unusable"] == 1
+
+
+def test_main_alerts_on_an_unobserved_receipt_without_being_asked(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    later = NOW + 3_600 * 1_000_000
+    rows = [
+        _row(document=_receipt(verified=NOW, expires=NOW + 24 * 3_600 * 1_000_000), now_us=later)
+    ]
+    code = engine_readiness.main(["--database-url", DSN], env={}, connect=lambda *_, **__: rows)
+    captured = capsys.readouterr()
+
+    assert code == EXIT_UNAVAILABLE
+    assert "error: readiness_unobserved: instance-1 g1" in captured.err
+    assert "observed_seconds_ago=3600" in captured.err

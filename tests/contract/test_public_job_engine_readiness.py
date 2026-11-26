@@ -138,8 +138,10 @@ def test_a_store_that_really_refused_the_read_keeps_the_outage_answer() -> None:
 @pytest.mark.parametrize(
     ("admission_code", "public"),
     [
-        # The elapsed receipt names its own recovery.
+        # The elapsed receipt names its own recovery, and so does a receipt no probe
+        # has re-signed: both mean "this engine is not known to be ready".
         ("readiness_expired", CODE),
+        ("readiness_unobserved", CODE),
         # The three engine-side neighbours that used to answer the storage outage
         # are now distinct causes with distinct recoveries (#828 review B3).
         ("reconciliation_required", "engine_state_mismatch"),

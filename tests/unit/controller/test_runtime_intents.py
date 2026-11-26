@@ -14,6 +14,7 @@ from tests.fake.controller import (
 
 from speechnexus_node_controller.domain.intents import (
     InstanceHead,
+    InstanceObservation,
     InvalidRuntimeRequestError,
     MemoryArchitecture,
     MemoryHold,
@@ -168,3 +169,55 @@ def test_unresolved_prepare_keeps_the_generation_undrained() -> None:
     head = InstanceHead.derive("instance-asr-1", [intent])
     assert head.unresolved_prepare_intent_id == "intent-1"
     assert not head.is_drained
+
+
+def test_a_refused_template_keeps_the_drivers_own_reason_on_the_intent() -> None:
+    """FAILED covers two facts; the driver's code is what tells them apart.
+
+    A run that died and a template this deployment refuses to run both end as
+    ``failed``, but only the second one created nothing. Collapsing the driver's
+    reason into ``instance_prepare_failed`` leaves the client unable to see that
+    the refusal was about the deployment's configuration (#1262).
+    """
+    intent = RuntimeInstanceIntent(
+        request=build_request(),
+        created_at=FIXED_NOW,
+        updated_at=FIXED_NOW,
+    )
+
+    intent.mark_observed(
+        InstanceObservation(
+            instance_id=intent.instance_id,
+            instance_generation=intent.instance_generation,
+            approved_template_id=intent.request.approved_template_id,
+            config_digest=intent.request.config_digest,
+            observed_instance_state=ObservedInstanceState.FAILED,
+            error_code=RuntimeIntentErrorCode.GPU_BUDGET_UNDECLARED,
+            quarantine_reason="state the deployment's VRAM bound",
+        ),
+        at=FIXED_NOW,
+    )
+
+    assert intent.intent_state is RuntimeIntentState.FAILED
+    assert intent.error_code is RuntimeIntentErrorCode.GPU_BUDGET_UNDECLARED
+
+
+def test_a_failed_observation_without_a_reason_keeps_the_generic_code() -> None:
+    intent = RuntimeInstanceIntent(
+        request=build_request(),
+        created_at=FIXED_NOW,
+        updated_at=FIXED_NOW,
+    )
+
+    intent.mark_observed(
+        InstanceObservation(
+            instance_id=intent.instance_id,
+            instance_generation=intent.instance_generation,
+            approved_template_id=intent.request.approved_template_id,
+            config_digest=intent.request.config_digest,
+            observed_instance_state=ObservedInstanceState.FAILED,
+        ),
+        at=FIXED_NOW,
+    )
+
+    assert intent.error_code is RuntimeIntentErrorCode.INSTANCE_PREPARE_FAILED

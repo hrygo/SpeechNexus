@@ -458,11 +458,19 @@ class RuntimeInstanceIntent:
         elif state in {ObservedInstanceState.STOPPED, ObservedInstanceState.ABSENT}:
             self.intent_state = RuntimeIntentState.FAILED
             self.memory_hold = MemoryHold.NONE
-            self.error_code = RuntimeIntentErrorCode.INSTANCE_PREPARE_FAILED
+            self.error_code = (
+                observation.error_code or RuntimeIntentErrorCode.INSTANCE_PREPARE_FAILED
+            )
         else:
+            # FAILED covers two different facts and the observation is what tells
+            # them apart: a run that died, and a template this deployment refuses to
+            # run at all. Collapsing the driver's own reason into the generic one
+            # left the client with no way to see that nothing was even created.
             self.intent_state = RuntimeIntentState.FAILED
             self.memory_hold = MemoryHold.PEAK
-            self.error_code = RuntimeIntentErrorCode.INSTANCE_PREPARE_FAILED
+            self.error_code = (
+                observation.error_code or RuntimeIntentErrorCode.INSTANCE_PREPARE_FAILED
+            )
 
     def _fold_stop(self, observation: InstanceObservation) -> None:
         state = observation.observed_instance_state

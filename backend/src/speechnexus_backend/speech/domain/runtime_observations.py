@@ -217,6 +217,9 @@ claim the engine is down: the platform has not looked, which is why it must stop
 promising capacity.
 """
 
+READINESS_UNOBSERVED_CODE = "readiness_unobserved"
+"""The admission refusal a receipt nobody re-signed produces."""
+
 DEFAULT_READINESS_FRESHNESS_US = 15 * 60 * 1_000_000
 """Three missed renewals at the deployed five-minute cadence.
 
@@ -288,7 +291,7 @@ class VerifiedRuntimeReadiness:
         now_us: int,
         *,
         expired_code: str = "reconciliation_required",
-        unobserved_code: str = "readiness_unobserved",
+        unobserved_code: str = READINESS_UNOBSERVED_CODE,
         freshness_us: int | None = DEFAULT_READINESS_FRESHNESS_US,
     ) -> None:
         """Refuse a stale identity or a receipt outside its window.

@@ -41,7 +41,7 @@ from speechnexus_backend.speech.domain.runtime_observations import (
     READINESS_EXPIRING as READINESS_EXPIRING,
 )
 from speechnexus_backend.speech.domain.runtime_observations import (
-    READINESS_UNOBSERVED as READINESS_UNOBSERVED,
+    READINESS_UNOBSERVED_CODE as READINESS_UNOBSERVED_CODE,
 )
 from speechnexus_backend.speech.domain.runtime_observations import (
     READINESS_VALID as READINESS_VALID,
@@ -208,6 +208,7 @@ def _detail(
     workspace_state: str | None,
     quota: AdmissionQuota | None,
     instances: tuple[ReadinessInstanceReport, ...] = (),
+    refusal_code: str | None = None,
 ) -> str:
     code = CAUSE_CODES[cause]
     if cause is AdmissionReadinessCause.WORKSPACE_NOT_FOUND:
@@ -244,7 +245,7 @@ def _detail(
         # per-instance state instead of restating the enum member's name: a receipt
         # nobody re-signed is not an elapsed window, and an operator who reads "outside
         # its window" would look in the wrong place (#1263).
-        if any(instance.readiness_state == READINESS_UNOBSERVED for instance in instances):
+        if refusal_code == READINESS_UNOBSERVED_CODE:
             return (
                 "No health probe has re-signed this instance's readiness receipt inside the "
                 f"freshness window, so a create answers {code}. A receipt states what was "
@@ -300,6 +301,7 @@ def refused_readiness(
     instances: tuple[ReadinessInstanceReport, ...] = (),
     quota: AdmissionQuota | None = None,
     workspace_state: str | None = None,
+    refusal_code: str | None = None,
 ) -> AdmissionReadiness:
     return AdmissionReadiness(
         AdmissionReadinessStatus.DEGRADED,
@@ -312,6 +314,7 @@ def refused_readiness(
             workspace_state=workspace_state,
             quota=quota,
             instances=instances,
+            refusal_code=refusal_code,
         ),
         instances,
         quota,

@@ -3930,8 +3930,8 @@
         },
         "readiness_state": {
           "type": "string",
-          "enum": ["valid", "expiring", "unobserved", "expired", "missing", "invalid"],
-          "description": "Whether admission can use this instance's readiness receipt right now,\nthe same vocabulary the read-only `speechnexus-engine-readiness` report\nprints. `valid` admits work and `expiring` still does inside the warning\ninterval. `unobserved` means nobody has probed the engine inside the\nfreshness window, so admission refuses the instance even though the\nreceipt's own TTL has not run out: the receipt states what was true when\nit was signed, not that the engine is still there. `missing` and\n`invalid` are receipts admission cannot read at all.\n"
+          "enum": ["valid", "expiring", "expired", "missing", "invalid"],
+          "description": "The readiness *window*, the same vocabulary the read-only\n`speechnexus-engine-readiness` report prints. `expiring` is inside the\nwarning interval but still admits work; `missing` and `invalid` are\nreceipts admission cannot read at all.\n"
         },
         "readiness_expires_at": {
           "oneOf": [

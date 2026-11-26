@@ -196,19 +196,20 @@ def test_the_refusal_sentence_names_the_fact_that_actually_refuses() -> None:
         refused_readiness,
     )
 
-    def report(state: str) -> Any:
+    def report(refusal_code: str | None) -> Any:
         instance = ReadinessInstanceReport(
-            "instance-1", 1, state, NOW + 86_400_000_000, 86_400, 8, 0, 0
+            "instance-1", 1, "valid", NOW + 86_400_000_000, 86_400, 8, 0, 0
         )
         return refused_readiness(
             AdmissionReadinessCause.ENGINE_RECEIPT_EXPIRED,
             workspace_id="workspace-default",
             now_us=NOW,
             instances=(instance,),
+            refusal_code=refusal_code,
         )
 
-    unobserved = report("unobserved")
-    expired = report("expired")
+    unobserved = report("readiness_unobserved")
+    expired = report("readiness_expired")
     assert unobserved.cause is expired.cause is AdmissionReadinessCause.ENGINE_RECEIPT_EXPIRED
     assert "No health probe has re-signed" in unobserved.detail
     assert "observed_seconds_ago" in unobserved.detail

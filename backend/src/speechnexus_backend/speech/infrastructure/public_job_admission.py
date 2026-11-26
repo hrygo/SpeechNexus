@@ -61,9 +61,6 @@ from speechnexus_backend.speech.domain.runtime_intents import (
     RuntimeHost,
     RuntimeRejectedError,
 )
-from speechnexus_backend.speech.domain.runtime_observations import (
-    DEFAULT_READINESS_FRESHNESS_US,
-)
 from speechnexus_backend.speech.domain.speech_synthesis import (
     MAX_SPEECH_TEXT_CHARS,
     PLANNER_CHARS_MAX,
@@ -1521,12 +1518,8 @@ def _readiness_runtime(
         readiness = validate_stored_readiness(
             record.readiness_document, record.request, record.approved_plan
         )
-        # The same two facts admission itself reads, so the product answer cannot
-        # report a receipt as usable that the next create would refuse.
-        readiness_state = readiness.readiness_state(
-            now_us,
-            warning_us=DEFAULT_READINESS_WARNING_SECONDS * 1_000_000,
-            freshness_us=DEFAULT_READINESS_FRESHNESS_US,
+        readiness_state = readiness.expiry_state(
+            now_us, warning_us=DEFAULT_READINESS_WARNING_SECONDS * 1_000_000
         )
     cursor.execute(
         "SELECT COALESCE(SUM(l.reserved_slots), 0) AS slots FROM admission_leases AS l "
@@ -1829,6 +1822,9 @@ def load_admission_readiness(
         instances=tuple(reports),
         quota=quota,
         workspace_state=state,
+        # The report's per-instance state is the declared window; the refusal code is
+        # the fact admission actually refused on, so the sentence can name it exactly.
+        refusal_code=refusal,
     )
 
 

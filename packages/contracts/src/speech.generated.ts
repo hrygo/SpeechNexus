@@ -2692,17 +2692,13 @@ export interface components {
       instance_id: components["schemas"]["Identifier"];
       instance_generation: number;
       /**
-       * @description Whether admission can use this instance's readiness receipt right now,
-       *     the same vocabulary the read-only `speechnexus-engine-readiness` report
-       *     prints. `valid` admits work and `expiring` still does inside the warning
-       *     interval. `unobserved` means nobody has probed the engine inside the
-       *     freshness window, so admission refuses the instance even though the
-       *     receipt's own TTL has not run out: the receipt states what was true when
-       *     it was signed, not that the engine is still there. `missing` and
-       *     `invalid` are receipts admission cannot read at all.
+       * @description The readiness *window*, the same vocabulary the read-only
+       *     `speechnexus-engine-readiness` report prints. `expiring` is inside the
+       *     warning interval but still admits work; `missing` and `invalid` are
+       *     receipts admission cannot read at all.
        * @enum {string}
        */
-      readiness_state: "valid" | "expiring" | "unobserved" | "expired" | "missing" | "invalid";
+      readiness_state: "valid" | "expiring" | "expired" | "missing" | "invalid";
       readiness_expires_at: string | null;
       /** @description Whole seconds left before `readiness_expires_at`; negative once elapsed. */
       remaining_seconds: number | null;

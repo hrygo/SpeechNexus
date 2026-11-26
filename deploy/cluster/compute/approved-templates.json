@@ -3,7 +3,7 @@
     {
       "template_id": "template-asr-1.7b",
       "image_reference": "local/qwen3-asr-vllm:0.28.0-arm64",
-      "image_digest": "sha256:61cc94fec25198aeefcd93b96088a8e8db106d61d834a36d3b89ba7bf5b10765",
+      "image_digest": "sha256:c8c5b6985d146a7a383e708675910794ab0e90b49580b9c403302895b02d78cd",
       "memory_architecture": "unified_memory",
       "allowed_pool_ids": [
         "asr-batch"

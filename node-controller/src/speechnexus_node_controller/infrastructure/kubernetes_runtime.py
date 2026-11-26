@@ -523,6 +523,14 @@ class KubernetesNodeRuntime:
                 quarantine_reason=mismatch,
             )
         state, error_code = self._observed_state(request, template, pod)
+        if state is ObservedInstanceState.READY:
+            # Ready means "this is the engine we approved", on every path. This
+            # sweep used to skip that proof, so a Pod running bytes the template
+            # never approved was reported ready one sweep after prepare refused it:
+            # the refusal looked like a hiccup that healed itself (#1270).
+            unapproved = self._require_approved_image(request, template, pod)
+            if unapproved is not None:
+                return unapproved
         return self._observation(
             request,
             template,

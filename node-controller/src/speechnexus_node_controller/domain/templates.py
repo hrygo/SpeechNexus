@@ -164,7 +164,18 @@ class ReadOnlyBind:
 
 @dataclass(frozen=True, slots=True)
 class ApprovedRuntimeTemplate:
-    """One pre-approved runtime template pinned to an immutable image digest."""
+    """One pre-approved runtime template pinned to an immutable image digest.
+
+    ``image_digest`` is the digest the **target node runtime reports** for the
+    image, and that spelling is runtime-specific: the Docker driver compares it
+    with the container's ``Image`` (Docker's image id, i.e. the config digest),
+    while the Kubernetes driver compares it with the container status ``imageID``
+    (containerd's image target digest). For the same bytes those are different
+    values, so a template is approved *for a driver*: copying a Docker id into a
+    template that runs under Kubernetes makes every observation look unapproved
+    (#1270). The value is therefore pinned from the node, never guessed from the
+    build host.
+    """
 
     template_id: str
     image_reference: str

@@ -40,7 +40,7 @@ spec:
       # copied into an in-memory volume with the mode the loader accepts.
       initContainers:
         - name: stage-recipes
-          image: speechnexus-python:913d0e0a
+          image: speechnexus-python:3a6a2683
           imagePullPolicy: IfNotPresent
           command:
             - /bin/sh
@@ -60,7 +60,7 @@ spec:
               mountPath: /run/speechnexus-private
       containers:
         - name: api
-          image: speechnexus-python:913d0e0a
+          image: speechnexus-python:3a6a2683
           command: ["speechnexus-api"]
           envFrom:
             - secretRef:

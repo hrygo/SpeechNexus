@@ -71,6 +71,11 @@ services:
       SPEECHNEXUS_CONTROLLER_APPROVED_TEMPLATES_FILE: /etc/speechnexus/approved-templates.json
       SPEECHNEXUS_CONTROLLER_INTENT_STORE_PATH: /var/lib/speechnexus/controller/intents.sqlite3
       SPEECHNEXUS_CONTROLLER_DOCKER_SOCKET_PATH: /var/run/docker.sock
+      # Engine share of one GPU. Listed explicitly because this file enumerates
+      # env instead of inheriting the file: unset here means vLLM claims 92% of
+      # the card and cannot start beside any other GPU work.
+      SPEECHNEXUS_CONTROLLER_ENGINE_GPU_MEMORY_MIB: ${SPEECHNEXUS_CONTROLLER_ENGINE_GPU_MEMORY_MIB}
+      SPEECHNEXUS_CONTROLLER_ENGINE_GPU_MEMORY_UTILIZATION: ${SPEECHNEXUS_CONTROLLER_ENGINE_GPU_MEMORY_UTILIZATION}
     group_add: ["988"]
     depends_on:
       config-init:

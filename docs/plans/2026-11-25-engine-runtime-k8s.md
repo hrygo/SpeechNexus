@@ -254,6 +254,31 @@ S2 与 S4 合并时只带了通过用例，**没有留下"注入即红"的实测
 **结论**：k8s 驱动对「自建自管」的实例是通的（4.2.6 的端到端即为证），对「接管来的」实例不通。控制器重启
 或从 compose 迁移过来，接管的正是后者——所以这条路径必须先修 #1261，才谈得上接管生产实例。
 
+#### 4.2.8 接管来的实例现在收得干净（2026-11-26 修复并实测）
+
+**根因**：集群运行时其实有两种「退出事实」——进程退出码，以及**带着被钉住 UID 的 Pod 从 API 消失**。
+旧实现只认前者，而接管来的 Pod 在删除之后就拿不到退出码，于是把「已释放」降级成「未知」，进入 quarantine。
+
+**改法**：删除请求被 API 接受后，先把「本次停用请求了移除这个 UID」写进 checkpoint（`deletion_requested_at`，
+记录格式升到 v2，v1 仍可读）；随后 Pod 消失即视为退出事实成立，证据里 `exit_code` 为 `null`
+——实例契约本来就允许该成员为空，如实表示「集群没有公布退出码」，而不是编一个 0。
+删除请求被 API 拒绝为「没有这个 Pod」时不写释放证据：那种壳下这次停用并没有移除任何东西。
+
+**实测**（MegaCube k3s，控制器换成本分支镜像，意图库清空后重放接管场景）：
+
+| 步骤 | 改前 | 改后 |
+| --- | --- | --- |
+| 停一个手工建、控制器没有 prepare 记录的 gen 2 Pod | `quarantined` / `stop_evidence_unverified` | `succeeded` / `stopped`，证据 `exit_code: 0`、`runtime_container_id` = Pod UID |
+| 紧接着 prepare gen 3 | `gateway_drain_incomplete`（永久） | `succeeded` / `ready`，Pod 就绪 |
+| 端到端 Job | — | `succeeded`，产物 `sha256:da4d6eb2…` 与既往一致 |
+
+**同批修掉的死配置**：`SPEECHNEXUS_CONTROLLER_ENGINE_GPU_MEMORY_UTILIZATION` 一直没人读，两个部署路径现在都显式传。
+取值不是「留给引擎自己看着办」，而是模板峰值除以卡总显存（本机 12 GiB / 121.66 GiB ≈ 0.099）。
+
+**新暴露的预算问题**：引擎从建 Pod 到可服务实测约 4 分钟，而 `pod_ready_timeout_seconds` 是 180 秒，
+首次 prepare 因此返回 `reconciling` / `warmup_deadline_exceeded`，靠后续观察才转成 `ready`。
+结果正确，但把「正在加载」当成了「超时」——预热预算要按实测重定（#1250 一侧）。
+
 当时的运行态：引擎是 docker 容器 `speechnexus-asr-1`（host 18190，`--gpu-memory-utilization 0.0989`），
 `engine-shim` 已停（引擎自己占 18190，不需要转发），控制器 Pod 在线但持有 quarantined gen 2。
 

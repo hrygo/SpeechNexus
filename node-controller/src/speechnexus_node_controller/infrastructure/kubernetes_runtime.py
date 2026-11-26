@@ -286,10 +286,15 @@ class KubernetesNodeRuntime:
             # delete it: the old generation's intent must never kill the new one.
             return self._stop_conflict(request, template)
         if pod is None:
-            if checkpoint.exited_at is None:
-                # Gone with no recorded exit fact, and not removed by this call:
+            if checkpoint.exited_at is not None:
+                return self._released_observation(checkpoint, template, observed=False)
+            if checkpoint.deletion_requested_at is None:
+                # Gone with no recorded exit fact and no recorded removal request:
                 # do not turn "already absent" into "this stop succeeded".
                 return self._observation(request, template, ObservedInstanceState.ABSENT)
+            # The API accepted this stop's removal of the pinned UID and the UID is
+            # gone: the generation exited, even though no exit code was published.
+            checkpoint = self._record_observed_absence(checkpoint)
             return self._released_observation(checkpoint, template, observed=False)
         self._require_stop_identity(pod, request, template)
         if checkpoint.released_at is not None:
@@ -305,9 +310,14 @@ class KubernetesNodeRuntime:
             # means this Pod is no longer the runtime the checkpoint recorded.
             return self._stop_conflict(request, template)
         checkpoint = self._record_observed_exit(checkpoint, pod)
-        conflict = self._request_deletion(checkpoint, template)
+        accepted, conflict = self._request_deletion(checkpoint, template)
         if conflict is not None:
             return conflict
+        if not accepted:
+            # The API server had no Pod of this name: the generation was already
+            # gone when the removal was requested, so its exit is not ours to
+            # claim. Only absence stays reportable here, without release evidence.
+            return self._observation(request, template, ObservedInstanceState.ABSENT)
         deadline = self._monotonic() + self._settings.exit_wait_seconds
         while True:
             current = self._api.get_pod(name)
@@ -330,17 +340,23 @@ class KubernetesNodeRuntime:
                 )
             self._sleep(min(self._settings.poll_interval_seconds, remaining))
         if checkpoint.exited_at is None:
-            # The Pod left the API, but no terminated state was ever observed, so
-            # the exit fact is unknown. Claiming one would fabricate the proof.
-            return self._observation(request, template, ObservedInstanceState.ABSENT)
+            # The Pod left the API after this stop's deletion was accepted. That is
+            # the exit fact a cluster runtime can observe: the object carrying the
+            # pinned UID is gone, so the generation's process is gone with it. The
+            # exit code stays unset because the API never published one.
+            checkpoint = self._record_observed_absence(checkpoint)
         return self._released_observation(checkpoint, template, observed=True)
 
     def _request_deletion(
         self, checkpoint: StopCheckpoint, template: ApprovedRuntimeTemplate
-    ) -> InstanceObservation | None:
-        """Delete the pinned Pod; ``None`` means the request was accepted or moot."""
+    ) -> tuple[bool, InstanceObservation | None]:
+        """Delete the pinned Pod.
+
+        The first member is whether the API server accepted the removal, the second
+        is a conflict observation when the fence refused it.
+        """
         try:
-            self._api.delete_pod(
+            accepted = self._api.delete_pod(
                 self._pod_name(checkpoint.request),
                 # Sent as the API server's own precondition so the fence holds even
                 # if the Pod is replaced between the read above and this request.
@@ -349,9 +365,25 @@ class KubernetesNodeRuntime:
             )
         except KubernetesApiError as error:
             if error.status_code == 409:
-                return self._stop_conflict(checkpoint.request, template)
+                return False, self._stop_conflict(checkpoint.request, template)
             raise
-        return None
+        if not accepted:
+            return False, None
+        # Persist the accepted request before waiting: if this process dies while
+        # the Pod is leaving, the next one can still tell our removal from a Pod
+        # that was already absent when the stop arrived.
+        self._stop_checkpoints.save_stop_checkpoint(
+            replace(checkpoint, deletion_requested_at=self._wall_clock())
+        )
+        return True, None
+
+    def _record_observed_absence(self, checkpoint: StopCheckpoint) -> StopCheckpoint:
+        """Commit the exit fact the API allows us to see: the pinned Pod left."""
+        if checkpoint.exited_at is not None:
+            return checkpoint
+        return self._stop_checkpoints.save_stop_checkpoint(
+            replace(checkpoint, exited_at=self._wall_clock(), exit_code=None)
+        )
 
     def _record_observed_exit(self, checkpoint: StopCheckpoint, pod: PodState) -> StopCheckpoint:
         """Commit the API's terminated exit code once, before any release fact."""

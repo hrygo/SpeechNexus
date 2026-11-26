@@ -27,6 +27,7 @@ import pytest
 from tests.fake.controller import (
     FIXED_NOW,
     SAMPLE_INSTANCE_ID,
+    InMemoryIntentStore,
     InMemoryStopCheckpoints,
     build_request,
     build_template,
@@ -41,6 +42,7 @@ from tests.fake.kubernetes_cluster import (
     mark_terminated,
 )
 
+from speechnexus_node_controller.application.runtime_control import NodeRuntimeControlService
 from speechnexus_node_controller.domain.intents import (
     IntentConflictError,
     ObservedInstanceState,
@@ -48,9 +50,11 @@ from speechnexus_node_controller.domain.intents import (
     RuntimeControllerUnavailableError,
     RuntimeInstanceIntent,
     RuntimeIntentErrorCode,
+    RuntimeIntentState,
 )
 from speechnexus_node_controller.domain.ports import StopCheckpointStore
 from speechnexus_node_controller.domain.stop_checkpoint import StopCheckpoint
+from speechnexus_node_controller.domain.templates import ApprovedTemplateRegistry
 from speechnexus_node_controller.infrastructure.kubernetes_runtime import (
     KubernetesNodeRuntime,
     KubernetesRuntimeSettings,
@@ -129,7 +133,7 @@ def _pin_only_stop(
     checkpoint = store.get_stop_checkpoint(STOP)
     assert checkpoint is not None
     assert checkpoint.container_id == POD_UID
-    assert checkpoint.stage == "targeted"
+    assert checkpoint.stage == "deletion_requested"
     return runtime, store
 
 
@@ -197,7 +201,7 @@ def test_stop_reports_stopping_while_the_deleted_pod_is_still_in_the_api(
     assert len(cluster.deletes) == 1
     checkpoint = store.get_stop_checkpoint(STOP)
     assert checkpoint is not None
-    assert checkpoint.stage == "targeted"
+    assert checkpoint.stage == "deletion_requested"
 
 
 def test_stop_never_reports_stopped_while_a_terminated_pod_stays_listed(
@@ -242,7 +246,7 @@ def test_stop_never_deletes_a_rebuilt_pod_whose_uid_changed(tmp_path: Path) -> N
     checkpoint = store.get_stop_checkpoint(STOP)
     assert checkpoint is not None
     assert checkpoint.container_id == POD_UID
-    assert checkpoint.stage == "targeted"
+    assert checkpoint.stage == "deletion_requested"
 
 
 def test_the_api_server_precondition_refuses_a_pod_rebuilt_between_read_and_delete(
@@ -292,7 +296,7 @@ def test_a_restarted_controller_still_fences_a_rebuilt_pod_from_the_checkpoint(
     checkpoint = store.get_stop_checkpoint(STOP)
     assert checkpoint is not None
     assert checkpoint.container_id == POD_UID
-    assert checkpoint.stage == "targeted"
+    assert checkpoint.stage == "deletion_requested"
 
 
 def test_a_restarted_controller_completes_the_persisted_stop_for_the_pinned_uid(
@@ -512,7 +516,7 @@ def test_the_uid_fence_survives_a_reopened_durable_checkpoint_store(tmp_path: Pa
         checkpoint = reopened.get_stop_checkpoint(STOP)
         assert checkpoint is not None
         assert checkpoint.container_id == POD_UID
-        assert checkpoint.stage == "targeted"
+        assert checkpoint.stage == "deletion_requested"
     finally:
         reopened.close()
 
@@ -547,3 +551,103 @@ def test_a_reopened_durable_checkpoint_store_completes_the_same_pod_stop(
         assert cluster.deletes[1]["body"]["preconditions"] == {"uid": POD_UID}
     finally:
         reopened.close()
+
+
+def _adopted_pod(cluster: FakeKubernetesCluster) -> dict[str, Any]:
+    """Seed a Pod this controller never prepared, i.e. the state a takeover starts from."""
+    source = FakeKubernetesCluster()
+    runtime, _clock = _runtime(Path("/tmp"), source)
+    assert runtime.prepare(PREPARE, TEMPLATE).observed_instance_state is ObservedInstanceState.READY
+    adopted = copy.deepcopy(source.pods[POD_NAME])
+    cluster.pods[POD_NAME] = adopted
+    return adopted
+
+
+def test_stop_of_an_adopted_pod_records_release_evidence_without_an_exit_code(
+    tmp_path: Path,
+) -> None:
+    """A generation this controller inherited still has to drain on the first stop."""
+    cluster = FakeKubernetesCluster()
+    adopted = _adopted_pod(cluster)
+    assert adopted["metadata"]["uid"] == POD_UID
+    runtime, _clock = _runtime(tmp_path, cluster, checkpoints=InMemoryStopCheckpoints())
+
+    observation = runtime.stop(STOP, TEMPLATE)
+
+    # The API accepted this stop's removal and the pinned UID left: the generation
+    # exited. The cluster publishes no exit code for it, and the contract allows
+    # that member to be null instead of inventing a clean zero.
+    assert observation.observed_instance_state is ObservedInstanceState.STOPPED
+    assert observation.stop_evidence is not None
+    assert observation.stop_evidence.exit_code is None
+    assert observation.stop_evidence.runtime_container_id == POD_UID
+    assert observation.error_code is None
+    assert POD_NAME not in cluster.pods
+
+
+def test_a_restarted_controller_finishes_the_adopted_stop_it_had_already_requested(
+    tmp_path: Path,
+) -> None:
+    """The accepted removal is durable, so a crash leaves no generation behind."""
+    cluster = FakeKubernetesCluster()
+    database = tmp_path / "intents.sqlite3"
+    first_store = SqliteIntentStore(database)
+    _record_stop_intent(first_store)
+    try:
+        _adopted_pod(cluster)
+        runtime, _clock = _runtime(tmp_path, cluster, checkpoints=first_store)
+        cluster.pods_after_delete = None
+        pinned = runtime.stop(STOP, TEMPLATE)
+        assert pinned.observed_instance_state is ObservedInstanceState.STOPPING
+        requested = first_store.get_stop_checkpoint(STOP)
+        assert requested is not None
+        assert requested.deletion_requested_at is not None
+    finally:
+        first_store.close()
+    # The Pod leaves the API while no controller is running.
+    cluster.pods.pop(POD_NAME, None)
+    deletes_before = len(cluster.deletes)
+
+    reopened = SqliteIntentStore(database)
+    try:
+        restarted, _clock = _runtime(tmp_path, cluster, checkpoints=reopened)
+        observation = restarted.recover_stop(STOP, TEMPLATE)
+
+        assert observation is not None
+        assert observation.observed_instance_state is ObservedInstanceState.ABSENT
+        assert observation.stop_evidence is not None
+        assert observation.stop_evidence.exit_code is None
+        assert len(cluster.deletes) == deletes_before
+        released = reopened.get_stop_checkpoint(STOP)
+        assert released is not None
+        assert released.stage == "released"
+    finally:
+        reopened.close()
+
+
+def test_the_drain_gate_opens_after_an_adopted_pod_stop(tmp_path: Path) -> None:
+    """The node must be able to prepare the next generation after a takeover stop."""
+    cluster = FakeKubernetesCluster()
+    _adopted_pod(cluster)
+    runtime, _clock = _runtime(tmp_path, cluster, checkpoints=InMemoryStopCheckpoints())
+    service = NodeRuntimeControlService(
+        node_id=NODE_ID,
+        templates=ApprovedTemplateRegistry((TEMPLATE,)),
+        store=InMemoryIntentStore(),
+        runtime=runtime,
+        now=lambda: FIXED_NOW,
+    )
+
+    stopped = service.submit_intent(STOP)
+    assert stopped.intent.intent_state is RuntimeIntentState.SUCCEEDED
+    assert stopped.intent.observed_instance_state is ObservedInstanceState.STOPPED
+
+    cluster.exit_code_on_delete = 0
+    cluster.pods_after_delete = 1
+    prepared = service.submit_intent(
+        replace(PREPARE, intent_id="intent-prepare-gen-2", instance_generation=2, fencing_token=3)
+    )
+
+    assert prepared.intent.intent_state is RuntimeIntentState.SUCCEEDED
+    assert prepared.intent.observed_instance_state is ObservedInstanceState.READY
+    assert f"engine-{SAMPLE_INSTANCE_ID}-2" in cluster.pods

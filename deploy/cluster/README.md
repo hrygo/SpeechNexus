@@ -176,7 +176,14 @@ kubectl -n speechnexus create secret generic controller-component-token \
   --dry-run=client -o yaml | kubectl apply -f -
 
 CONTROLLER_IMAGE=$(grep '^CONTROLLER_IMAGE=' deploy/cluster/versions.env | cut -d= -f2) \
+CONTROLLER_ENGINE_GPU_MEMORY_UTILIZATION=$(grep '^SPEECHNEXUS_CONTROLLER_ENGINE_GPU_MEMORY_UTILIZATION=' \
+  .runtime/cluster/compute.env | cut -d= -f2) \
   envsubst < deploy/cluster/compute/controller-deployment.yaml | kubectl apply -f -
+```
+
+`ENGINE_GPU_MEMORY_UTILIZATION` 是引擎在一张卡上的份额，必须显式给：留空时驱动不追加任何参数，
+vLLM 按整卡 92% 预留，卡上有别的服务就直接起不来。取值是模板声明的峰值除以卡的总显存
+（本机 1.7B 模板 12 GiB / 121.66 GiB ≈ 0.099），不是留给引擎「自己看着办」。
 ```
 
 投产前先停掉 compose 的控制器，否则同一个 `node_id` 上有两个写入者抢同一份意图：

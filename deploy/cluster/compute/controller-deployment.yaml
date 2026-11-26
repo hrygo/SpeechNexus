@@ -88,6 +88,12 @@ spec:
               value: speechnexus
             - name: SPEECHNEXUS_CONTROLLER_K8S_SERVICE_ACCOUNT_NAME
               value: speechnexus-node-controller
+            # The engine's share of one GPU. Without this the driver appends no
+            # flag and vLLM claims 92% of the card, which fails on any host that
+            # also runs other GPU work: the template promises a 12 GiB instance,
+            # the engine must not promise itself the whole device.
+            - name: SPEECHNEXUS_CONTROLLER_ENGINE_GPU_MEMORY_UTILIZATION
+              value: "${CONTROLLER_ENGINE_GPU_MEMORY_UTILIZATION}"
           # Probed on loopback, not on the Pod IP: the server binds the host's
           # loopback by design, so a probe against 10.42.x would never connect
           # and the kubelet would restart a healthy controller.

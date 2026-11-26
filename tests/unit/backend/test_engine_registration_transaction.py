@@ -42,10 +42,14 @@ from speechnexus_backend.speech.domain.capacity import PhysicalResources
 from speechnexus_backend.speech.domain.runtime_intents import (
     ApprovedRuntimePlan,
     RuntimeBinding,
+    RuntimeDeadline,
+    RuntimeIntent,
 )
 from speechnexus_backend.speech.domain.runtime_observations import VerifiedRuntimeReadiness
+from speechnexus_backend.speech.infrastructure.runtime_codec import encode_record, prepare_request
 from speechnexus_backend.speech.infrastructure.runtime_observation_codec import (
     readiness_to_document,
+    validate_stored_readiness,
 )
 from speechnexus_portable_sql.clock import now_statement
 
@@ -259,6 +263,26 @@ def readiness(
     return cast(dict[str, Any], readiness_to_document(receipt))
 
 
+def request_document(spec: RegistrationSpec, intent_id: str, *, token: int = 1) -> str:
+    """The stored prepare request, built the way the registration builds it.
+
+    Production stores it in ``runtime_instance_intents.request_document`` (NOT NULL),
+    and the renewal path re-signs the identity it holds (#1246), so the fake row has
+    to carry one too.
+    """
+    request = RuntimeIntent(
+        intent_id,
+        spec.plan.binding,
+        spec.instance_id,
+        spec.generation,
+        "prepare",
+        token,
+        spec.plan.memory,
+        RuntimeDeadline("2250-01-01T00:00:00.123456789Z"),
+    )
+    return encode_record(prepare_request(request), spec.plan, "register-engine")
+
+
 def intent_row(
     spec: RegistrationSpec,
     intent_id: str,
@@ -267,6 +291,7 @@ def intent_row(
     observation: bool = True,
     receipt: dict[str, Any] | None = None,
     version: int = 1,
+    token: int = 1,
 ) -> dict[str, Any]:
     return {
         "target_node_id": spec.plan.binding.target_node_id,
@@ -276,6 +301,7 @@ def intent_row(
         "action": "prepare",
         "intent_state": state,
         "request_digest": DIGEST,
+        "request_document": request_document(spec, intent_id, token=token),
         "observation_document": "{}" if observation else None,
         "readiness_document": receipt if receipt is not None else readiness(spec),
         "version": version,
@@ -1079,7 +1105,12 @@ def stub_domain(
         )
         store.heads[spec.instance_id] = head_row(spec, prepare=command.request.intent_id)
         store.intents[(spec.plan.binding.target_node_id, command.request.intent_id)] = intent_row(
-            spec, command.request.intent_id, state="pending", observation=False, receipt={}
+            spec,
+            command.request.intent_id,
+            state="pending",
+            observation=False,
+            receipt={},
+            token=command.request.fencing_token,
         )
         return SimpleNamespace(outcome=create, error_code="runtime_create_rejected")
 
@@ -1298,3 +1329,76 @@ def test_explicit_capacity_that_fits_only_one_instance_does_not_warn(
     assert result.capacity_headroom is None
     assert captured.err == ""
     assert captured.out
+
+
+def test_renewal_re_signs_the_identity_that_is_stored_so_admission_can_use_it() -> None:
+    """#1246: renewing must not answer a different question than admission asks.
+
+    Admission compares the receipt field by field against the stored prepare
+    request and plan. Signing it from the claim this run resolved -- a plan that
+    may have moved on since the instance was prepared -- writes a receipt whose
+    window is fresh and which every create still refuses as ``engine_state_mismatch``.
+    """
+    spec = make_spec()
+    store = ready_store(spec, receipt=readiness(spec, verified=NOW - 10, expires=NOW))
+    stored_plan = replace(spec.plan, topology_digest="sha256:" + "b" * 64)
+    stored_request = RuntimeIntent(
+        "register-instance-1-g1",
+        stored_plan.binding,
+        spec.instance_id,
+        spec.generation,
+        "prepare",
+        1,
+        stored_plan.memory,
+        RuntimeDeadline("2250-01-01T00:00:00.123456789Z"),
+    )
+    store.intents[("node-1", "register-instance-1-g1")]["request_document"] = encode_record(
+        prepare_request(stored_request), stored_plan, "register-engine"
+    )
+
+    result = _existing_result(
+        store.cursor(),
+        spec,
+        pool=store.pools["asr-batch"],
+        owner_id="speechnexus-operator",
+        evidence_digest=DIGEST,
+        evidence_document={},
+        probe=make_probe(),
+        readiness_ttl_us=60_000_000,
+    )
+
+    assert result is not None
+    assert result.readiness_renewed is True
+    written = [params for sql, params in store.writes if "runtime_instance_intents" in sql]
+    assert written, "the renewal must have written the receipt"
+    document = str(written[0][0])
+    assert stored_plan.topology_digest in document
+    # The receipt admission will read validates against the stored plan.
+    validate_stored_readiness(document, stored_request, stored_plan)
+
+
+def test_renewal_refuses_an_intent_from_a_superseded_fencing_epoch() -> None:
+    """Re-signing a dead epoch would make the receipt fresh and useless at once."""
+    spec = make_spec()
+    store = ready_store(spec, receipt=readiness(spec, verified=NOW - 10, expires=NOW))
+    store.intents[("node-1", "register-instance-1-g1")]["request_document"] = request_document(
+        spec, "register-instance-1-g1", token=2
+    )
+    before = len(store.writes)
+
+    error = error_of(
+        lambda: _existing_result(
+            store.cursor(),
+            spec,
+            pool=store.pools["asr-batch"],
+            owner_id="speechnexus-operator",
+            evidence_digest=DIGEST,
+            evidence_document={},
+            probe=make_probe(),
+            readiness_ttl_us=60_000_000,
+        )
+    )
+
+    assert error.code == "reconciliation_required"
+    assert "fencing epoch" in error.message
+    assert len(store.writes) == before, "a refused renewal must not write a receipt"

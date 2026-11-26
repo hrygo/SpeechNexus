@@ -43,6 +43,7 @@ concurrency are covered by their own suites.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from dataclasses import replace
 from typing import Any
@@ -70,11 +71,15 @@ from tests.integration.test_public_job_admission_http_pg import (
     _app,
     _body,
     _error,
+    _readiness_document,
 )
 from tests.integration.test_public_job_atomic_admission_pg import _job, _seed, _store
 from tests.integration.test_runtime_observations import _command, _receipt, _wire
 
 from speechnexus_backend.speech.domain.publications import Publication
+from speechnexus_backend.speech.domain.readiness_verdict import (
+    READINESS_INVALID,
+)
 from speechnexus_backend.speech.infrastructure.publications_sql import append_publication
 
 REPORT_CAUSE_BY_CREATE_CODE: dict[str, str] = {
@@ -1017,3 +1022,52 @@ def test_an_unknown_workspace_is_reported_by_its_own_name(
     assert report.cause is not None and report.cause.value == "workspace_not_found"
     assert report.workspace_id == "workspace-absent"
     assert report.instances == ()
+
+
+def test_a_receipt_for_another_fencing_epoch_is_invalid_on_both_surfaces(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """#1246: a fresh window is not a usable receipt, and the log says which fact.
+
+    A renewal used to re-sign the receipt from the claim it resolved rather than the
+    stored prepare request, so the receipt carried another fencing epoch: its window
+    was fresh, the operator report called it ``valid`` (it classified the window
+    alone) while admission refused every create as ``engine_state_mismatch``. The
+    report now reaches the same verdict, and the reason reaches the log instead of
+    only the collapsed public code.
+    """
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    document = json.loads(_readiness_document(db))
+    document["fencing_token"] = int(document["fencing_token"]) + 1
+    _query(
+        db,
+        "UPDATE runtime_instance_intents SET readiness_document = %s "
+        "WHERE intent_id = 'runtime-new'",
+        (json.dumps(document, separators=(",", ":")),),
+    )
+
+    records: list[str] = []
+
+    class _Capture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record.getMessage())
+
+    target = logging.getLogger("speechnexus_backend.speech.infrastructure.public_job_admission")
+    handler: logging.Handler = _Capture()
+    target.addHandler(handler)
+    try:
+        store = _store(admission_database)
+        report = store.admission_readiness(WORKSPACE)
+        created = store.create(_job())
+    finally:
+        target.removeHandler(handler)
+
+    row = next(item for item in report.instances if item.instance_id == INSTANCE[0])
+    assert row.readiness_state == READINESS_INVALID
+    assert row.readiness_expires_at_us is None
+    assert created.error_code == "engine_state_mismatch"
+    assert report.status == "degraded"
+    assert report.cause is not None and report.cause.value == "engine_state_mismatch"
+    # The operator's half of the answer: which field disagreed, not just "invalid".
+    assert any("fencing_token" in message for message in records), records

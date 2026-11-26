@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from dataclasses import asdict, dataclass
 from typing import Any, Literal, Protocol, cast
 
@@ -90,6 +91,7 @@ from speechnexus_backend.speech.infrastructure.qualification_source_evidence imp
 from speechnexus_backend.speech.infrastructure.runtime_codec import decode_record
 from speechnexus_backend.speech.infrastructure.runtime_observation_codec import (
     decode_observation,
+    stored_readiness_verdict,
     validate_stored_readiness,
 )
 from speechnexus_backend.speech.infrastructure.runtime_sql import (
@@ -1324,6 +1326,8 @@ def rejection_code(code: str) -> str:
 # the identities below are constant so no request-shaped fact can enter the
 # verdict. The report never commits it.
 _PROBE_WORKSPACE_DEFAULT = "workspace-default"
+logger = logging.getLogger(__name__)
+
 _PROBE_OPERATION = "probe-admission-readiness-op"
 _PROBE_ATTEMPT = "probe-admission-readiness-attempt"
 _PROBE_JOB = "probe-admission-readiness-job"
@@ -1483,10 +1487,11 @@ def _readiness_runtime(
     Returns the admission facts, the host row (``None`` when it is missing, which
     a create answers as a reconciliation refusal), the readiness window state the
     public per-instance row reports, and the raw instance row the binding's plan
-    gate compares against. ``missing``/``invalid`` are reported
-    rather than raised: a stored intent admission cannot decode is a fact about
-    the deployment, and dropping it would let the report answer ``admitting``
-    while every create for that instance is refused (#857).
+    gate compares against. A receipt that is ``missing`` or ``invalid`` is still
+    reported, with the refusal the create answers, because dropping it would let
+    the report answer ``admitting`` while every create for that instance is refused
+    (#857). The verdict comes from the operator report's judgement, so both exits
+    say ``invalid`` for the same row instead of one saying ``valid`` (#1246).
     """
     instance_row = _readiness_one(
         cursor,
@@ -1506,20 +1511,56 @@ def _readiness_runtime(
         "SELECT * FROM runtime_instance_intents WHERE target_node_id=? AND intent_id=?",
         (instance_row["host_node_id"], prepare_id),
     )
+    # Ask the shared judgement before building the record: ``_record`` refuses an
+    # unusable receipt too, but with one collapsed code, and the reason is exactly
+    # what an operator needs (#1246). The same function decides both exits, so this
+    # cannot disagree with the operator report.
+    window = DEFAULT_READINESS_WARNING_SECONDS * 1_000_000
+    reason: str | None = None
+    try:
+        prepared_stored, stored_plan, _creator = decode_record(intent["request_document"])
+    except ValueError, TypeError, KeyError:
+        reason = "the stored intent request does not decode"
+    else:
+        verdict = stored_readiness_verdict(
+            intent["readiness_document"],
+            request=prepared_stored.request,
+            plan=stored_plan,
+            now_us=now_us,
+            warning_us=window,
+        )
+        reason = verdict.reason
+    if reason is not None:
+        # The public answer stays collapsed; the log is where the collapsed answer
+        # stops being a dead end.
+        logger.warning(
+            "instance readiness is unusable: instance=%s generation=%s reason=%s",
+            instance_row["instance_id"],
+            instance_row["instance_generation"],
+            reason,
+        )
     record = _record(intent)
     instance = _runtime_instance(instance_row, record)
     if record.observation_document is None:
         raise PublicJobAdmissionRejectedError("job_unavailable")
     observation = decode_observation(record.observation_document).observation
-    if record.readiness_document is None:
-        readiness_state = READINESS_MISSING
+    verdict = stored_readiness_verdict(
+        record.readiness_document,
+        request=record.request,
+        plan=record.approved_plan,
+        now_us=now_us,
+        warning_us=window,
+    )
+    readiness_state = verdict.state
+    if verdict.state in (READINESS_MISSING, READINESS_INVALID):
+        # ``missing`` is "nothing was recorded", ``invalid`` is "what was recorded
+        # cannot be used": the caller records the refusal either way, and keeping
+        # the two codes apart keeps a storage gap apart from a stored state that
+        # needs reconciling.
         readiness = None
     else:
         readiness = validate_stored_readiness(
-            record.readiness_document, record.request, record.approved_plan
-        )
-        readiness_state = readiness.expiry_state(
-            now_us, warning_us=DEFAULT_READINESS_WARNING_SECONDS * 1_000_000
+            record.readiness_document or "", record.request, record.approved_plan
         )
     cursor.execute(
         "SELECT COALESCE(SUM(l.reserved_slots), 0) AS slots FROM admission_leases AS l "
@@ -1531,7 +1572,9 @@ def _readiness_runtime(
     )
     batch = int(cursor.fetchall()[0]["slots"])
     if readiness is None:
-        raise PublicJobAdmissionRejectedError("job_unavailable")
+        raise PublicJobAdmissionRejectedError(
+            "job_unavailable" if verdict.state == READINESS_MISSING else "reconciliation_required"
+        )
     cursor.execute(
         "SELECT * FROM host_nodes WHERE host_node_id=?",
         (instance_row["host_node_id"],),

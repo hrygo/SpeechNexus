@@ -27,6 +27,11 @@ from typing import Any, Final, ParamSpec, TypeVar
 
 import httpx
 
+from speechnexus_node_controller.domain.gpu_budget import (
+    GpuBudget,
+    GpuBudgetUndeclaredError,
+    resolve_gpu_budget,
+)
 from speechnexus_node_controller.domain.intents import (
     InstanceObservation,
     IntentConflictError,
@@ -122,6 +127,7 @@ class DockerRuntimeSettings:
     # unified-memory GPUs report no device memory at all, so the only reliable
     # source is the operator's number.
     gpu_memory_mib: int | None = None
+    gpu_total_mib: int | None = None
     gpu_memory_utilization: float | None = None
     libvgpu_path: str | None = None
 
@@ -161,6 +167,9 @@ class DockerNodeRuntime:
         self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
     ) -> InstanceObservation:
         """Reuse a matching container or create exactly one for this generation."""
+        undeclared = self._undeclared_gpu_budget(request, template)
+        if undeclared is not None:
+            return undeclared
         self._anchor_warmup_budget(request, template)
         environment = self._container_environment(request, template)
         self._require_approved_image(template)
@@ -400,8 +409,42 @@ class DockerNodeRuntime:
             FENCING_TOKEN_LABEL: str(request.fencing_token),
         }
 
+    def _undeclared_gpu_budget(
+        self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
+    ) -> InstanceObservation | None:
+        """Refuse before the daemon is touched: a bound the deployment cannot state.
+
+        The engine's own default would take 92% of the card, so "no statement" is
+        not a neutral setting and this driver will not start the container on it
+        (#1262). Nothing is created, so the refusal is a configuration fact rather
+        than a failed instance.
+        """
+        try:
+            self._gpu_budget(template)
+        except GpuBudgetUndeclaredError as error:
+            return InstanceObservation(
+                instance_id=request.instance_id,
+                instance_generation=request.instance_generation,
+                approved_template_id=template.template_id,
+                config_digest=request.config_digest,
+                observed_instance_state=ObservedInstanceState.FAILED,
+                error_code=RuntimeIntentErrorCode.GPU_BUDGET_UNDECLARED,
+                quarantine_reason=error.reason,
+                nothing_was_created=True,
+            )
+        return None
+
+    def _gpu_budget(self, template: ApprovedRuntimeTemplate) -> GpuBudget | None:
+        """The VRAM bound this deployment states for this template, or a refusal."""
+        return resolve_gpu_budget(
+            gpu_device_count=template.gpu_device_count,
+            budget_mib=self._settings.gpu_memory_mib,
+            total_mib=self._settings.gpu_total_mib,
+            utilization=self._settings.gpu_memory_utilization,
+        )
+
     def _gpu_quota_applies(self, template: ApprovedRuntimeTemplate) -> bool:
-        """A GPU template on a deployment that declared a VRAM budget."""
+        """A GPU template whose VRAM this deployment can also enforce with libvgpu."""
         return bool(template.gpu_device_count) and self._settings.gpu_memory_mib is not None
 
     def _engine_command(self, template: ApprovedRuntimeTemplate) -> tuple[str, ...] | None:
@@ -417,12 +460,10 @@ class DockerNodeRuntime:
         if template.command is None:
             return None
         command = tuple(template.command)
-        utilization = self._settings.gpu_memory_utilization
-        if not self._gpu_quota_applies(template) or utilization is None:
+        budget = self._gpu_budget(template)
+        if budget is None or "--gpu-memory-utilization" in command:
             return command
-        if "--gpu-memory-utilization" in command:
-            return command
-        return (*command, "--gpu-memory-utilization", f"{utilization:g}")
+        return (*command, *budget.argument)
 
     def _libvgpu_bind(self, template: ApprovedRuntimeTemplate) -> str | None:
         """The read-only bind that makes the VRAM cap enforceable inside the container."""

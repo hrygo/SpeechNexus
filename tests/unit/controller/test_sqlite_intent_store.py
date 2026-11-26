@@ -14,6 +14,7 @@ from tests.fake.controller import (
 )
 
 from speechnexus_node_controller.domain.intents import (
+    InstanceHead,
     InstanceObservation,
     MemoryHold,
     NativeRuntimeEvidence,
@@ -292,3 +293,60 @@ def test_the_store_refuses_an_unbounded_observation_query(tmp_path: Path, limit:
             store.list_unresolved(after_intent_id=None, limit=limit)
     finally:
         store.close()
+
+
+def test_a_preflight_refusal_survives_a_restart(tmp_path: Path) -> None:
+    """The escape hatch is only useful if the fact outlives this process (#1262)."""
+    store = _store(tmp_path)
+    intent = _intent()
+    intent.mark_observed(
+        InstanceObservation(
+            instance_id=intent.instance_id,
+            instance_generation=intent.instance_generation,
+            approved_template_id=intent.request.approved_template_id,
+            config_digest=intent.request.config_digest,
+            observed_instance_state=ObservedInstanceState.FAILED,
+            error_code=RuntimeIntentErrorCode.GPU_BUDGET_UNDECLARED,
+            nothing_was_created=True,
+        ),
+        at=FIXED_NOW,
+    )
+    store.add(intent)
+    store.close()
+
+    reopened = _store(tmp_path)
+    loaded = reopened.get("intent-1")
+    reopened.close()
+
+    assert loaded is not None
+    assert loaded.nothing_was_created
+    assert InstanceHead.derive(loaded.instance_id, [loaded]).is_drained
+
+
+def test_a_record_without_the_flag_reads_as_a_run_that_created_something(
+    tmp_path: Path,
+) -> None:
+    """Records written before the field existed must not gain an escape hatch."""
+    store = _store(tmp_path)
+    store.add(_intent())
+    store.close()
+
+    connection = sqlite3.connect(store.path)
+    record = connection.execute(
+        "SELECT record FROM runtime_instance_intents WHERE intent_id = 'intent-1'"
+    ).fetchone()
+    stored = json.loads(record[0])
+    del stored["state"]["nothing_was_created"]
+    connection.execute(
+        "UPDATE runtime_instance_intents SET record = ? WHERE intent_id = ?",
+        (json.dumps(stored), "intent-1"),
+    )
+    connection.commit()
+    connection.close()
+
+    reopened = _store(tmp_path)
+    loaded = reopened.get("intent-1")
+    reopened.close()
+
+    assert loaded is not None
+    assert not loaded.nothing_was_created

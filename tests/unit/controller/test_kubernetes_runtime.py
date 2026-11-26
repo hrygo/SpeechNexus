@@ -201,6 +201,42 @@ def test_prepare_refuses_a_template_that_declares_a_dedicated_network(
     assert "network_name" in observation.quarantine_reason
 
 
+def test_prepare_refuses_a_gpu_template_this_deployment_never_bounded(
+    tmp_path: Path,
+) -> None:
+    """No Pod is created for a VRAM bound the deployment cannot state (#1262).
+
+    Creating it anyway is what shipped: the engine's own default took 92% of the
+    card, so the failure surfaced at engine start-up on a shared card and nowhere
+    on a dedicated one.
+    """
+    cluster = _FakeCluster()
+    runtime, _clock = _runtime(tmp_path, cluster)
+
+    observation = runtime.prepare(build_request(), build_template(gpu_device_count=1))
+
+    assert cluster.created == []
+    assert cluster.requests == []
+    assert observation.observed_instance_state is ObservedInstanceState.FAILED
+    assert observation.error_code is RuntimeIntentErrorCode.GPU_BUDGET_UNDECLARED
+    assert "SPEECHNEXUS_CONTROLLER_ENGINE_GPU_MEMORY_UTILIZATION" in (
+        observation.quarantine_reason or ""
+    )
+
+
+def test_prepare_derives_the_engine_bound_from_the_two_declared_numbers(
+    tmp_path: Path,
+) -> None:
+    """A budget plus the card's size is enough to state the bound without a ratio."""
+    cluster = _FakeCluster()
+    runtime, _clock = _runtime(tmp_path, cluster, gpu_memory_mib=12316, gpu_total_mib=124577)
+
+    runtime.prepare(build_request(), build_template(gpu_device_count=1, command=("--model", "m")))
+
+    container = cluster.created[0]["spec"]["containers"][0]
+    assert container["args"][-2:] == ["--gpu-memory-utilization", "0.0988"]
+
+
 def test_prepare_runs_the_approved_reference_and_proves_it_by_digest(
     tmp_path: Path,
 ) -> None:
@@ -235,7 +271,7 @@ def test_prepare_uses_the_gpu_through_the_runtime_class_never_as_a_resource(
     tmp_path: Path,
 ) -> None:
     cluster = _FakeCluster()
-    runtime, _clock = _runtime(tmp_path, cluster)
+    runtime, _clock = _runtime(tmp_path, cluster, gpu_memory_mib=6144, gpu_total_mib=24576)
 
     runtime.prepare(build_request(), build_template(gpu_device_count=1))
 

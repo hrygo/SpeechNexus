@@ -149,6 +149,8 @@ def _runtime_driver(
                     poll_interval_seconds=settings.k8s_pod_poll_interval_seconds,
                     stop_grace_seconds=settings.stop_timeout_seconds,
                     exit_wait_seconds=settings.exit_wait_seconds,
+                    gpu_memory_mib=settings.engine_gpu_memory_mib,
+                    gpu_total_mib=settings.engine_gpu_total_mib,
                     gpu_memory_utilization=settings.engine_gpu_memory_utilization,
                 ),
             )
@@ -170,6 +172,7 @@ def _runtime_driver(
                 stop_timeout_seconds=settings.stop_timeout_seconds,
                 exit_wait_seconds=settings.exit_wait_seconds,
                 gpu_memory_mib=settings.engine_gpu_memory_mib,
+                gpu_total_mib=settings.engine_gpu_total_mib,
                 gpu_memory_utilization=settings.engine_gpu_memory_utilization,
                 libvgpu_path=(
                     str(settings.engine_libvgpu_path)

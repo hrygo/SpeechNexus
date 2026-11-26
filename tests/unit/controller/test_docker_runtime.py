@@ -25,6 +25,7 @@ from speechnexus_node_controller.domain.intents import (
     ObservedInstanceState,
     RuntimeActionKind,
     RuntimeControllerUnavailableError,
+    RuntimeIntentErrorCode,
     UnapprovedRuntimeTemplateError,
 )
 from speechnexus_node_controller.domain.templates import (
@@ -115,7 +116,7 @@ def test_prepare_refuses_a_generation_that_already_carries_another_digest() -> N
 def test_prepare_carries_identity_labels_and_hardening() -> None:
     engine = _engine()
     request = build_request()
-    runtime = _runtime(engine)
+    runtime = _runtime(engine, gpu_memory_mib=6144, gpu_total_mib=24576)
     runtime.prepare(
         request,
         build_template(
@@ -132,7 +133,14 @@ def test_prepare_carries_identity_labels_and_hardening() -> None:
     assert container.labels[GENERATION_LABEL] == str(request.instance_generation)
     assert container.labels[TEMPLATE_ID_LABEL] == request.approved_template_id
     assert container.labels[CONFIG_DIGEST_LABEL] == request.config_digest
-    assert container.command == ("serve", "--port", "9000")
+    # A GPU template always carries the bound this deployment derives for it.
+    assert container.command == (
+        "serve",
+        "--port",
+        "9000",
+        "--gpu-memory-utilization",
+        "0.25",
+    )
     assert container.host_config["Privileged"] is False
     assert container.host_config["Init"] is True
     assert container.host_config["CapDrop"] == ["ALL"]
@@ -740,11 +748,53 @@ def test_gpu_quota_leaves_a_template_that_already_states_it_alone() -> None:
     )
 
 
-def test_no_gpu_quota_means_no_cap_and_no_shim() -> None:
-    """Without deployment config the controller must not invent a VRAM budget."""
+def test_a_gpu_template_without_a_declared_bound_is_refused_before_anything_starts() -> None:
+    """Starting it unbounded is not neutral: the engine would take 92% of the card.
+
+    Omitting the flag leaves vLLM's own default, which fails wherever the card is
+    shared and is invisible wherever it is dedicated (#1262). Nothing is created,
+    so the refusal is a configuration fact rather than a failed instance.
+    """
     engine = _engine()
     runtime = _runtime(engine)
+    observation = runtime.prepare(
+        build_request(), build_template(gpu_device_count=1, command=("--model", "m"))
+    )
+
+    assert observation.observed_instance_state is ObservedInstanceState.FAILED
+    assert observation.error_code is RuntimeIntentErrorCode.GPU_BUDGET_UNDECLARED
+    assert "SPEECHNEXUS_CONTROLLER_ENGINE_GPU_MEMORY_UTILIZATION" in (
+        observation.quarantine_reason or ""
+    )
+    assert engine.created == []
+
+
+def test_a_derived_bound_never_asks_for_more_than_the_declared_budget() -> None:
+    """Two declared numbers, one derived ratio: the peak stays under the budget."""
+    engine = _engine()
+    runtime = _runtime(
+        engine,
+        gpu_memory_mib=12316,
+        gpu_total_mib=124577,
+        libvgpu_path="/opt/speechnexus/libvgpu.so",
+    )
     runtime.prepare(build_request(), build_template(gpu_device_count=1, command=("--model", "m")))
+    created = engine.created[0]
+
+    assert created.command is not None
+    assert created.command[-2] == "--gpu-memory-utilization"
+    ratio = float(created.command[-1])
+    # 12316 / 124577 = 0.09886..., rounded down so the engine never exceeds 12316 MiB.
+    assert ratio == 0.0988
+    assert ratio * 124577 <= 12316
+    assert "CUDA_DEVICE_MEMORY_LIMIT=12316m" in created.environment
+
+
+def test_no_gpu_quota_means_no_cap_and_no_shim_for_a_template_without_a_gpu() -> None:
+    """A CPU-only template touches none of the GPU configuration."""
+    engine = _engine()
+    runtime = _runtime(engine)
+    runtime.prepare(build_request(), build_template(command=("--model", "m")))
     created = engine.created[0]
 
     assert created.command == ("--model", "m")

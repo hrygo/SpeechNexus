@@ -14,6 +14,7 @@ from tests.fake.controller import (
 
 from speechnexus_node_controller.domain.intents import (
     InstanceHead,
+    InstanceObservation,
     InvalidRuntimeRequestError,
     MemoryArchitecture,
     MemoryHold,
@@ -167,4 +168,109 @@ def test_unresolved_prepare_keeps_the_generation_undrained() -> None:
     )
     head = InstanceHead.derive("instance-asr-1", [intent])
     assert head.unresolved_prepare_intent_id == "intent-1"
+    assert not head.is_drained
+
+
+def test_a_refused_template_keeps_the_drivers_own_reason_on_the_intent() -> None:
+    """FAILED covers two facts; the driver's code is what tells them apart.
+
+    A run that died and a template this deployment refuses to run both end as
+    ``failed``, but only the second one created nothing. Collapsing the driver's
+    reason into ``instance_prepare_failed`` leaves the client unable to see that
+    the refusal was about the deployment's configuration (#1262).
+    """
+    intent = RuntimeInstanceIntent(
+        request=build_request(),
+        created_at=FIXED_NOW,
+        updated_at=FIXED_NOW,
+    )
+
+    intent.mark_observed(
+        InstanceObservation(
+            instance_id=intent.instance_id,
+            instance_generation=intent.instance_generation,
+            approved_template_id=intent.request.approved_template_id,
+            config_digest=intent.request.config_digest,
+            observed_instance_state=ObservedInstanceState.FAILED,
+            error_code=RuntimeIntentErrorCode.GPU_BUDGET_UNDECLARED,
+            quarantine_reason="state the deployment's VRAM bound",
+        ),
+        at=FIXED_NOW,
+    )
+
+    assert intent.intent_state is RuntimeIntentState.FAILED
+    assert intent.error_code is RuntimeIntentErrorCode.GPU_BUDGET_UNDECLARED
+
+
+def test_a_failed_observation_without_a_reason_keeps_the_generic_code() -> None:
+    intent = RuntimeInstanceIntent(
+        request=build_request(),
+        created_at=FIXED_NOW,
+        updated_at=FIXED_NOW,
+    )
+
+    intent.mark_observed(
+        InstanceObservation(
+            instance_id=intent.instance_id,
+            instance_generation=intent.instance_generation,
+            approved_template_id=intent.request.approved_template_id,
+            config_digest=intent.request.config_digest,
+            observed_instance_state=ObservedInstanceState.FAILED,
+        ),
+        at=FIXED_NOW,
+    )
+
+    assert intent.error_code is RuntimeIntentErrorCode.INSTANCE_PREPARE_FAILED
+
+
+def test_a_refused_generation_does_not_block_the_next_one() -> None:
+    """A pre-flight refusal never created an engine, so it cannot owe stop evidence.
+
+    Without this, one refused prepare bricks the instance: the next generation needs
+    the refused one stopped-with-evidence, and there is nothing to stop (#1262).
+    """
+    refused = RuntimeInstanceIntent(
+        request=build_request(intent_id="intent-prep-1"),
+        created_at=FIXED_NOW,
+        updated_at=FIXED_NOW,
+    )
+    refused.mark_observed(
+        InstanceObservation(
+            instance_id=refused.instance_id,
+            instance_generation=refused.instance_generation,
+            approved_template_id=refused.request.approved_template_id,
+            config_digest=refused.request.config_digest,
+            observed_instance_state=ObservedInstanceState.FAILED,
+            error_code=RuntimeIntentErrorCode.GPU_BUDGET_UNDECLARED,
+            nothing_was_created=True,
+        ),
+        at=FIXED_NOW,
+    )
+    head = InstanceHead.derive(refused.instance_id, [refused])
+
+    assert refused.intent_state is RuntimeIntentState.FAILED
+    assert head.voided_generations == frozenset({refused.instance_generation})
+    assert head.is_drained
+
+
+def test_a_prepare_that_created_something_still_owes_stop_evidence() -> None:
+    """The escape hatch is exactly the pre-flight fact, not "the prepare failed"."""
+    failed = RuntimeInstanceIntent(
+        request=build_request(intent_id="intent-prep-1"),
+        created_at=FIXED_NOW,
+        updated_at=FIXED_NOW,
+    )
+    failed.mark_observed(
+        InstanceObservation(
+            instance_id=failed.instance_id,
+            instance_generation=failed.instance_generation,
+            approved_template_id=failed.request.approved_template_id,
+            config_digest=failed.request.config_digest,
+            observed_instance_state=ObservedInstanceState.FAILED,
+        ),
+        at=FIXED_NOW,
+    )
+    head = InstanceHead.derive(failed.instance_id, [failed])
+
+    assert head.voided_generations == frozenset()
     assert not head.is_drained

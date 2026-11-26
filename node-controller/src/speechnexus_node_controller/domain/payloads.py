@@ -46,6 +46,7 @@ INTENT_RECORD_STATE_FIELDS: Final = frozenset(
         "created_at",
         "updated_at",
         "native_runtime_evidence",
+        "nothing_was_created",
     }
 )
 _VECTOR_FIELDS: Final = (
@@ -123,6 +124,7 @@ def intent_record_payload(intent: RuntimeInstanceIntent) -> dict[str, Any]:
             "created_at": intent.created_at.isoformat(),
             "updated_at": intent.updated_at.isoformat(),
             "native_runtime_evidence": native_evidence_payload(intent.native_runtime_evidence),
+            "nothing_was_created": intent.nothing_was_created,
         },
     }
 
@@ -208,6 +210,8 @@ def parse_intent_record(record: Mapping[str, Any]) -> RuntimeInstanceIntent:
         error_code=_optional_error_code(state.get("error_code")),
         version=_integer(state, "version"),
         native_runtime_evidence=parse_native_evidence(state.get("native_runtime_evidence")),
+        # Records written before the field existed simply created something.
+        nothing_was_created=_flag(state.get("nothing_was_created")),
     )
 
 
@@ -357,6 +361,15 @@ def _timestamp(payload: Mapping[str, Any], name: str) -> datetime:
         return datetime.fromisoformat(value)
     except ValueError as error:
         raise InvalidRuntimeRequestError(f"{name} is not an RFC 3339 timestamp") from error
+
+
+def _flag(value: object) -> bool:
+    """A record field that older records do not carry: absent means ``False``."""
+    if value is None:
+        return False
+    if not isinstance(value, bool):
+        raise InvalidRuntimeRequestError("nothing_was_created must be a boolean")
+    return value
 
 
 def _mapping(payload: Mapping[str, Any], name: str) -> Mapping[str, Any]:

@@ -11,6 +11,7 @@ service records intent and observation facts and never deducts a budget.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -50,6 +51,8 @@ from speechnexus_node_controller.domain.templates import (
     ApprovedRuntimeTemplate,
     ApprovedTemplateRegistry,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -462,5 +465,26 @@ class NodeRuntimeControlService:
             or observation.config_digest != intent.request.config_digest
         ):
             intent.quarantine(RuntimeIntentErrorCode.OBSERVED_IDENTITY_MISMATCH, at=self._now())
+            logger.warning(
+                "observation belongs to another identity than the intent",
+                extra={
+                    "intent_id": intent.intent_id,
+                    "instance_generation": intent.instance_generation,
+                    "observed_instance_state": observation.observed_instance_state.value,
+                    "reason": observation.quarantine_reason,
+                },
+            )
             return
         intent.mark_observed(observation, at=self._now())
+        if intent.intent_state is RuntimeIntentState.QUARANTINED:
+            # The client only sees a code; the driver's words are what make the code
+            # actionable ("another runtime identity" vs "the container runs image X").
+            logger.warning(
+                "intent quarantined by an observation",
+                extra={
+                    "intent_id": intent.intent_id,
+                    "instance_generation": intent.instance_generation,
+                    "error_code": intent.error_code.value if intent.error_code else None,
+                    "reason": observation.quarantine_reason,
+                },
+            )

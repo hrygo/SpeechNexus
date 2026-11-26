@@ -430,6 +430,7 @@ class DockerNodeRuntime:
                 observed_instance_state=ObservedInstanceState.FAILED,
                 error_code=RuntimeIntentErrorCode.GPU_BUDGET_UNDECLARED,
                 quarantine_reason=error.reason,
+                nothing_was_created=True,
             )
         return None
 

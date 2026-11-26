@@ -706,6 +706,7 @@ class KubernetesNodeRuntime:
                 ObservedInstanceState.FAILED,
                 error_code=RuntimeIntentErrorCode.GPU_BUDGET_UNDECLARED,
                 quarantine_reason=error.reason,
+                nothing_was_created=True,
             )
         return None
 
@@ -840,6 +841,7 @@ class KubernetesNodeRuntime:
         *,
         error_code: RuntimeIntentErrorCode | None = None,
         quarantine_reason: str | None = None,
+        nothing_was_created: bool = False,
     ) -> InstanceObservation:
         return InstanceObservation(
             instance_id=request.instance_id,
@@ -851,6 +853,7 @@ class KubernetesNodeRuntime:
             observed_peak_memory=None,
             quarantine_reason=quarantine_reason,
             error_code=error_code,
+            nothing_was_created=nothing_was_created,
             native_runtime_evidence=(
                 self._native_evidence(request, template)
                 if state is ObservedInstanceState.READY

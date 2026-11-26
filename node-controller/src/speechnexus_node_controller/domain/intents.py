@@ -338,6 +338,11 @@ class InstanceObservation:
     quarantine_reason: str | None = None
     error_code: RuntimeIntentErrorCode | None = None
     native_runtime_evidence: NativeRuntimeEvidence | None = None
+    # True only for a pre-flight refusal: the driver rejected the template before
+    # creating anything, so this generation never had an engine to stop. It is what
+    # lets the next generation proceed instead of waiting for stop evidence that
+    # cannot exist (#1262).
+    nothing_was_created: bool = False
 
 
 @dataclass(slots=True)
@@ -355,6 +360,10 @@ class RuntimeInstanceIntent:
     error_code: RuntimeIntentErrorCode | None = None
     version: int = field(default=1)
     native_runtime_evidence: NativeRuntimeEvidence | None = None
+    # A prepare this deployment refused before creating anything. The generation
+    # therefore has no engine and cannot produce stop evidence, so the head must
+    # not require it before admitting the next one (#1262).
+    nothing_was_created: bool = False
 
     def __post_init__(self) -> None:
         if self.request.action is RuntimeActionKind.STOP:
@@ -431,6 +440,8 @@ class RuntimeInstanceIntent:
             )
         else:
             self._fold_stop(observation)
+        if self.action is RuntimeActionKind.PREPARE:
+            self.nothing_was_created = observation.nothing_was_created
         self._touch(at)
 
     def _fold_prepare(self, observation: InstanceObservation) -> None:
@@ -518,12 +529,22 @@ class InstanceHead:
     unresolved_stop_intent_id: str | None
     last_fencing_token: int
     stopped_generations: frozenset[int]
+    voided_generations: frozenset[int] = frozenset()
 
     @property
     def is_drained(self) -> bool:
-        """True when the current generation has no unresolved lifecycle work."""
+        """True when the current generation has no unresolved lifecycle work.
+
+        A generation whose prepare this deployment refused before creating anything
+        was never a running engine: waiting for its stop evidence would never
+        finish, so it is drained by definition (#1262).
+        """
         if self.current_generation is None:
             return True
+        if self.current_generation in self.voided_generations:
+            return (
+                self.unresolved_prepare_intent_id is None and self.unresolved_stop_intent_id is None
+            )
         return (
             self.current_generation in self.stopped_generations
             and self.unresolved_prepare_intent_id is None
@@ -540,15 +561,23 @@ class InstanceHead:
             if intent.action is RuntimeActionKind.STOP
             and intent.intent_state is RuntimeIntentState.SUCCEEDED
         )
+        voided = frozenset(
+            intent.instance_generation
+            for intent in intents
+            if intent.action is RuntimeActionKind.PREPARE
+            and intent.nothing_was_created
+            and intent.intent_state is RuntimeIntentState.FAILED
+        )
         unresolved_stop = cls._latest_unresolved(intents, RuntimeActionKind.STOP)
         unresolved_prepare = cls._latest_unresolved(intents, RuntimeActionKind.PREPARE)
         current = high_water
-        if high_water is not None and high_water in stopped:
+        if high_water is not None and (high_water in stopped or high_water in voided):
             current = max(
                 (
                     intent.instance_generation
                     for intent in intents
                     if intent.instance_generation not in stopped
+                    and intent.instance_generation not in voided
                 ),
                 default=None,
             )
@@ -560,6 +589,7 @@ class InstanceHead:
             unresolved_stop_intent_id=unresolved_stop,
             last_fencing_token=max((intent.request.fencing_token for intent in intents), default=0),
             stopped_generations=stopped,
+            voided_generations=voided,
         )
 
     @staticmethod

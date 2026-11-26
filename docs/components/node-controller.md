@@ -121,6 +121,9 @@ adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把
   模板要 GPU 而三者都缺时，prepare 在创建任何对象之前被拒绝，`error_code` 为
   `gpu_budget_undeclared`：不追加上限并不等于不限，引擎自己的默认是整卡 92%，在独占时看不出来、
   在共享时直接起不来（#1262）。判定只有 `domain/gpu_budget.py` 一处。
+  这种「创建前拒绝」会随观察记下 `nothing_was_created`，head 因此把该代次视为 `voided`：
+  下一代的 prepare 不再要求它「带证据停止」——它从来没有过引擎，那个证据永远拿不到。否则一次
+  配置性拒绝就会把这台实例永久封死。
 - **配置来源**：批准模板来自部署配置文件（`template_config.py`，未知字段拒绝），不是请求。
   `network_name` 可引用批准的自定义 Docker 网络，不能选择 `host`、`container:*` 等网络
   模式；省略时保留 daemon 默认网络行为。网络名本身不证明出站受限，真实内容路径须另外验证

@@ -122,6 +122,10 @@ CONTROLLER_KUBERNETES_IDENTITY = (
     "SPEECHNEXUS_CONTROLLER_K8S_SERVICE_ACCOUNT_NAME",
 )
 CONTROLLER_SETTINGS_PAIRS = "tests/unit/controller/test_settings.py"
+CONTROLLER_GPU_UTILIZATION = "SPEECHNEXUS_CONTROLLER_ENGINE_GPU_MEMORY_UTILIZATION"
+CONTROLLER_GPU_BUDGET = "SPEECHNEXUS_CONTROLLER_ENGINE_GPU_MEMORY_MIB"
+CONTROLLER_GPU_TOTAL = "SPEECHNEXUS_CONTROLLER_ENGINE_GPU_TOTAL_MIB"
+GPU_BUDGET = "node-controller/src/speechnexus_node_controller/domain/gpu_budget.py"
 
 # Identity DSNs each runtime constructs only under ``SPEECHNEXUS_PROCESS_ROLE=api``.
 API_ROLE_IDENTITIES = (
@@ -534,15 +538,38 @@ ROWS: tuple[Row, ...] = (
     ),
     Row(
         keys=(
-            "SPEECHNEXUS_CONTROLLER_ENGINE_GPU_MEMORY_MIB",
-            "SPEECHNEXUS_CONTROLLER_ENGINE_GPU_MEMORY_UTILIZATION",
+            CONTROLLER_GPU_UTILIZATION,
+            CONTROLLER_GPU_BUDGET,
+            CONTROLLER_GPU_TOTAL,
             "SPEECHNEXUS_CONTROLLER_ENGINE_LIBVGPU_PATH",
         ),
-        prerequisite="模板带显存额度或上限大于 0；额度为 0 表示显式不设限",
-        behaviour=DOCUMENTED,
-        disposition="无需：额度是部署配置，ADR 0015 已声明依赖",
-        names_keys=False,
-        evidence="docs/decisions/0015-gpu-memory-quota-by-configuration.md::额度是部署配置",
+        prerequisite=(
+            "模板要 GPU 时至少声明份额，或同时声明额度与卡总量由控制器派生；"
+            "libvgpu 路径只在额度同时声明时生效"
+        ),
+        behaviour=NAMED,
+        disposition="已修 #1262（原本什么都不声明就按引擎默认 92% 整卡启动）",
+        evidence=(
+            "tests/unit/controller/test_kubernetes_runtime.py::"
+            "test_prepare_refuses_a_gpu_template_this_deployment_never_bounded"
+        ),
+        probes=probe(
+            (
+                GPU_BUDGET,
+                (
+                    "resolve_gpu_budget",
+                    "GpuBudgetUndeclaredError.undeclared",
+                    "BUDGET_MIB_VARIABLE",
+                    "TOTAL_MIB_VARIABLE",
+                    "UTILIZATION_VARIABLE",
+                ),
+            ),
+        ),
+        message_keys=(
+            CONTROLLER_GPU_UTILIZATION,
+            CONTROLLER_GPU_BUDGET,
+            CONTROLLER_GPU_TOTAL,
+        ),
     ),
     Row(
         keys=WORKBENCH_LLM_KEYS,

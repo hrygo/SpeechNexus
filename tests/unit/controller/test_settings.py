@@ -235,3 +235,37 @@ def test_kubernetes_timings_are_bounded(required_settings: dict[str, Any]) -> No
             k8s_pod_ready_timeout_seconds=0,
             **required_settings,
         )
+
+
+def test_a_blank_gpu_number_is_unset_not_a_startup_error(
+    required_settings: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Compose and the Deployment always pass the variable; blank means "left out".
+
+    A fresh deployment renders these keys without values, and failing at startup on
+    a value nobody set would hide the real refusal — which belongs at prepare, where
+    a template actually asks for the GPU (#1262).
+    """
+    monkeypatch.setenv("SPEECHNEXUS_CONTROLLER_ENGINE_GPU_MEMORY_MIB", "")
+    monkeypatch.setenv("SPEECHNEXUS_CONTROLLER_ENGINE_GPU_TOTAL_MIB", "  ")
+    monkeypatch.setenv("SPEECHNEXUS_CONTROLLER_ENGINE_GPU_MEMORY_UTILIZATION", "")
+
+    settings = Settings(**required_settings)
+
+    assert settings.engine_gpu_memory_mib is None
+    assert settings.engine_gpu_total_mib is None
+    assert settings.engine_gpu_memory_utilization is None
+
+
+def test_a_stated_gpu_bound_survives_the_blank_normalisation(
+    required_settings: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SPEECHNEXUS_CONTROLLER_ENGINE_GPU_MEMORY_MIB", "12316")
+    monkeypatch.setenv("SPEECHNEXUS_CONTROLLER_ENGINE_GPU_TOTAL_MIB", "124577")
+    monkeypatch.setenv("SPEECHNEXUS_CONTROLLER_ENGINE_GPU_MEMORY_UTILIZATION", "0.0989")
+
+    settings = Settings(**required_settings)
+
+    assert settings.engine_gpu_memory_mib == 12316
+    assert settings.engine_gpu_total_mib == 124577
+    assert settings.engine_gpu_memory_utilization == 0.0989

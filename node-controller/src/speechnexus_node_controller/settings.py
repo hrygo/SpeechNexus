@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 from typing import Final, Literal
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from speechnexus_node_controller.domain.intents import (
@@ -67,8 +67,12 @@ class Settings(BaseSettings):
     readiness_timeout_seconds: float = Field(default=3.0, gt=0, le=30)
     # The GPU memory budget is deployment configuration, not a template constant:
     # the same approved template runs on a 48 GB production card and on this
-    # unified-memory box. Absent values mean the controller does not cap VRAM.
+    # unified-memory box. A GPU template with no statement here is refused at
+    # prepare instead of being started unbounded, because the engine's own default
+    # takes 92% of the whole card (#1262). `resolve_gpu_budget` is the only place
+    # that decides which of these three values the engine is told.
     engine_gpu_memory_mib: int | None = Field(default=None, gt=0, le=1_000_000)
+    engine_gpu_total_mib: int | None = Field(default=None, gt=0, le=1_000_000)
     engine_gpu_memory_utilization: float | None = Field(default=None, gt=0, le=1.0)
     engine_libvgpu_path: Path | None = None
     # Kubernetes driver identity. The namespaced Role grants pod permissions to
@@ -85,6 +89,26 @@ class Settings(BaseSettings):
     local_observer_enabled: bool = True
     observation_interval_seconds: float = Field(default=2.0, gt=0, le=3600)
     observation_batch_size: int = Field(default=50, ge=1, le=500)
+
+    @field_validator(
+        "engine_gpu_memory_mib",
+        "engine_gpu_total_mib",
+        "engine_gpu_memory_utilization",
+        mode="before",
+    )
+    @classmethod
+    def an_empty_gpu_number_is_unset(cls, value: object) -> object:
+        """One spelling for "unset": a blank env value never parses as a number.
+
+        ``docker compose`` and the Deployment manifest always pass the variable, so
+        the blank string is what "the operator left it out" looks like on the way
+        in. Treating it as a parse error would make a fresh deployment fail at
+        startup on a value it never set; treating it as unset keeps the refusal at
+        prepare, where the template asks for the GPU.
+        """
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     @model_validator(mode="after")
     def prefixed_environment_names_a_setting(self) -> Settings:

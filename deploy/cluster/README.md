@@ -188,6 +188,10 @@ kubectl -n speechnexus create secret generic controller-component-token \
   --dry-run=client -o yaml | kubectl apply -f -
 
 CONTROLLER_IMAGE=$(grep '^CONTROLLER_IMAGE=' deploy/cluster/versions.env | cut -d= -f2) \
+CONTROLLER_ENGINE_GPU_MEMORY_MIB=$(grep '^SPEECHNEXUS_CONTROLLER_ENGINE_GPU_MEMORY_MIB=' \
+  .runtime/cluster/compute.env | cut -d= -f2) \
+CONTROLLER_ENGINE_GPU_TOTAL_MIB=$(grep '^SPEECHNEXUS_CONTROLLER_ENGINE_GPU_TOTAL_MIB=' \
+  .runtime/cluster/compute.env | cut -d= -f2) \
 CONTROLLER_ENGINE_GPU_MEMORY_UTILIZATION=$(grep '^SPEECHNEXUS_CONTROLLER_ENGINE_GPU_MEMORY_UTILIZATION=' \
   .runtime/cluster/compute.env | cut -d= -f2) \
   envsubst < deploy/cluster/compute/controller-deployment.yaml | kubectl apply -f -
@@ -196,6 +200,11 @@ CONTROLLER_ENGINE_GPU_MEMORY_UTILIZATION=$(grep '^SPEECHNEXUS_CONTROLLER_ENGINE_
 `ENGINE_GPU_MEMORY_UTILIZATION` 是引擎在一张卡上的份额，必须显式给：留空时驱动不追加任何参数，
 vLLM 按整卡 92% 预留，卡上有别的服务就直接起不来。取值是模板声明的峰值除以卡的总显存
 （本机 1.7B 模板 12 GiB / 121.66 GiB ≈ 0.099），不是留给引擎「自己看着办」。
+
+也可以不给份额，改成声明两个数让控制器派生：`GPU_MEMORY_MIB`（额度，同时是 libvgpu 的硬上限）
+与 `GPU_TOTAL_MIB`（卡的总量），派生结果向下取整，因此引擎永远不会超过额度。三者都留空时，
+带 GPU 的模板会在 prepare 被点名拒绝（`gpu_budget_undeclared`），不会以「不限」的名义启动一台
+按整卡 92% 抢显存的引擎。
 ```
 
 投产前先停掉 compose 的控制器，否则同一个 `node_id` 上有两个写入者抢同一份意图：

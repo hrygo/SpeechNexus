@@ -59,6 +59,11 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any, Final
 
+from speechnexus_node_controller.domain.gpu_budget import (
+    GpuBudget,
+    GpuBudgetUndeclaredError,
+    resolve_gpu_budget,
+)
 from speechnexus_node_controller.domain.intents import (
     InstanceObservation,
     IntentConflictError,
@@ -159,8 +164,11 @@ class KubernetesRuntimeSettings:
     exit_wait_seconds: float = 30.0
     name_prefix: str = "engine"
     nvidia_runtime_class_name: str = "nvidia"
-    # Deployment-supplied VRAM budget, passed to the engine's own flag. The
-    # driver never expresses the peak bound as a Kubernetes resource request.
+    # Deployment-supplied VRAM budget. The driver never expresses the peak bound
+    # as a Kubernetes resource request; `resolve_gpu_budget` turns these three
+    # facts into the one ratio the engine is told, or refuses the template.
+    gpu_memory_mib: int | None = None
+    gpu_total_mib: int | None = None
     gpu_memory_utilization: float | None = None
 
 
@@ -675,19 +683,39 @@ class KubernetesNodeRuntime:
     def _unsupported_template(
         self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
     ) -> InstanceObservation | None:
-        """Refuse a template field this driver cannot represent, without acting."""
-        if template.network_name is None:
-            return None
-        return self._observation(
-            request,
-            template,
-            ObservedInstanceState.FAILED,
-            error_code=RuntimeIntentErrorCode.INSTANCE_PREPARE_FAILED,
-            quarantine_reason=(
-                "unsupported template field: network_name has no Kubernetes equivalent; "
-                "silently ignoring it would widen the isolation the approved template "
-                "declares, so this driver refuses the template instead"
-            ),
+        """Refuse a template this deployment cannot represent, without acting."""
+        if template.network_name is not None:
+            return self._observation(
+                request,
+                template,
+                ObservedInstanceState.FAILED,
+                error_code=RuntimeIntentErrorCode.INSTANCE_PREPARE_FAILED,
+                quarantine_reason=(
+                    "unsupported template field: network_name has no Kubernetes "
+                    "equivalent; silently ignoring it would widen the isolation the "
+                    "approved template declares, so this driver refuses the template "
+                    "instead"
+                ),
+            )
+        try:
+            self._gpu_budget(template)
+        except GpuBudgetUndeclaredError as error:
+            return self._observation(
+                request,
+                template,
+                ObservedInstanceState.FAILED,
+                error_code=RuntimeIntentErrorCode.GPU_BUDGET_UNDECLARED,
+                quarantine_reason=error.reason,
+            )
+        return None
+
+    def _gpu_budget(self, template: ApprovedRuntimeTemplate) -> GpuBudget | None:
+        """The VRAM bound this deployment states for this template, or a refusal."""
+        return resolve_gpu_budget(
+            gpu_device_count=template.gpu_device_count,
+            budget_mib=self._settings.gpu_memory_mib,
+            total_mib=self._settings.gpu_total_mib,
+            utilization=self._settings.gpu_memory_utilization,
         )
 
     def _require_approved_image(
@@ -973,12 +1001,10 @@ class KubernetesNodeRuntime:
         if template.command is None:
             return None
         command = tuple(template.command)
-        utilization = self._settings.gpu_memory_utilization
-        if not template.gpu_device_count or utilization is None:
+        budget = self._gpu_budget(template)
+        if budget is None or "--gpu-memory-utilization" in command:
             return command
-        if "--gpu-memory-utilization" in command:
-            return command
-        return (*command, "--gpu-memory-utilization", f"{utilization:g}")
+        return (*command, *budget.argument)
 
     def _pod_name(self, request: RuntimeInstanceIntentRequest) -> str:
         """``engine-{instance_id}-{generation}``, bounded to a valid DNS label."""

@@ -53,6 +53,10 @@ class RuntimeIntentErrorCode(StrEnum):
     RUNTIME_UNAVAILABLE = "runtime_unavailable"
     OBSERVED_IDENTITY_MISMATCH = "observed_identity_mismatch"
     UNTRACKED_INSTANCE_OBSERVED = "untracked_instance_observed"
+    # The template asks for a GPU but the deployment never stated how much VRAM an
+    # engine may take. The engine would otherwise default to 92 % of the whole
+    # card, so the refusal is about the configuration and nothing was started.
+    GPU_BUDGET_UNDECLARED = "gpu_budget_undeclared"
 
 
 class RuntimeActionKind(StrEnum):

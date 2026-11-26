@@ -136,14 +136,21 @@ def render_compute(values: dict[str, str], versions: dict[str, str]) -> str:
         # only known after a prepare. An empty value makes Compose refuse to start the
         # shim with a message naming the variable, instead of guessing.
         "ENGINE_ADDRESS": preserved_engine_address() or "",
-        # VRAM budget for one engine. The approved template carries no GPU memory
-        # number, so this is the only place a deployment states how much VRAM an
-        # engine may use. Values assume the shim below is installed on the node.
+        # VRAM bound for one engine. The approved template carries no GPU memory
+        # number, so a deployment states it here: either the ratio directly, or the
+        # budget plus the card's total so the controller derives the ratio. Nothing
+        # is rendered as a default ratio, because 0.9 of a 122 GiB card is 110 GiB --
+        # a bound that contradicts the 12 GiB instance the template promises and
+        # only fails once the card is shared (#1262). With all three blank the
+        # controller refuses a GPU template at prepare and names these keys.
         "SPEECHNEXUS_CONTROLLER_ENGINE_GPU_MEMORY_MIB": values.get(
             "SPEECHNEXUS_ENGINE_GPU_MEMORY_MIB", "12316"
         ),
+        "SPEECHNEXUS_CONTROLLER_ENGINE_GPU_TOTAL_MIB": values.get(
+            "SPEECHNEXUS_ENGINE_GPU_TOTAL_MIB", ""
+        ),
         "SPEECHNEXUS_CONTROLLER_ENGINE_GPU_MEMORY_UTILIZATION": values.get(
-            "SPEECHNEXUS_ENGINE_GPU_MEMORY_UTILIZATION", "0.9"
+            "SPEECHNEXUS_ENGINE_GPU_MEMORY_UTILIZATION", ""
         ),
         "SPEECHNEXUS_CONTROLLER_ENGINE_LIBVGPU_PATH": values.get(
             "SPEECHNEXUS_ENGINE_LIBVGPU_PATH", "/opt/speechnexus/libvgpu.so"

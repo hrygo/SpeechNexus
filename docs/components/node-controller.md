@@ -115,6 +115,12 @@ adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把
   失败或容器仍存活时只报告当前观察，不伪造证据（意图留在未解决或 quarantine）。
 - **退出码语义**：停止证据记录 wait 与 inspect 一致的实际退出码，代码不把 0 或 143 作为唯一
   成功条件；容器是否成功服务由网关的执行事实判断，控制器不把退出码当作执行结果。
+- **显存上限**：批准模板不带显存数字（同一份文件要跑在不同显存的卡上），上限只能由部署声明：
+  直接给份额 `SPEECHNEXUS_CONTROLLER_ENGINE_GPU_MEMORY_UTILIZATION`，或给额度
+  `..._GPU_MEMORY_MIB` 加卡的总量 `..._GPU_TOTAL_MIB` 由控制器派生（向下取整，不会超过额度）。
+  模板要 GPU 而三者都缺时，prepare 在创建任何对象之前被拒绝，`error_code` 为
+  `gpu_budget_undeclared`：不追加上限并不等于不限，引擎自己的默认是整卡 92%，在独占时看不出来、
+  在共享时直接起不来（#1262）。判定只有 `domain/gpu_budget.py` 一处。
 - **配置来源**：批准模板来自部署配置文件（`template_config.py`，未知字段拒绝），不是请求。
   `network_name` 可引用批准的自定义 Docker 网络，不能选择 `host`、`container:*` 等网络
   模式；省略时保留 daemon 默认网络行为。网络名本身不证明出站受限，真实内容路径须另外验证

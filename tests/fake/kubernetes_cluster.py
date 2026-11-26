@@ -261,10 +261,23 @@ def mark_terminated(pod: dict[str, Any], exit_code: int) -> None:
     ]
 
 
-def mark_running(pod: dict[str, Any], *, ready: bool) -> None:
-    """Script one Pod as running, with or without its Ready condition."""
+def mark_running(
+    pod: dict[str, Any],
+    *,
+    ready: bool,
+    image_id: str = f"docker.io/local/synthetic-engine@{IMAGE_DIGEST}",
+) -> None:
+    """Script one Pod as running, with or without its Ready condition.
+
+    A running container always reports the image it installed, so a ready Pod says
+    which bytes it is running; the readiness proof compares that against the
+    template. Pass ``image_id`` to script a substituted image.
+    """
     pod["status"]["phase"] = "Running"
     pod["status"]["conditions"] = [{"type": "Ready", "status": "True" if ready else "False"}]
+    pod["status"]["containerStatuses"] = [
+        {"name": "engine", "imageID": image_id, "state": {"running": {}}}
+    ]
     if ready:
         pod["status"]["podIP"] = "10.0.0.7"
 

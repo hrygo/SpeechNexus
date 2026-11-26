@@ -458,3 +458,42 @@ def _warmup_readiness(tmp_path: Path) -> ReadinessRule:
             timeout_seconds=30.0,
         ),
     )
+
+
+def test_inspect_refuses_to_call_an_unapproved_image_ready(tmp_path: Path) -> None:
+    """Ready means the approved bytes, on the inspect path too (#1270).
+
+    The prepare path proved the image and refused; this sweep used to skip the
+    proof, so the refusal was overwritten by a ready observation one sweep later
+    and the intent looked like it had healed itself. A Pod running an image the
+    template never approved is quarantined here as well.
+    """
+    cluster = FakeKubernetesCluster()
+    cluster.ready_after_gets = None
+    runtime, _clock = _runtime(tmp_path, cluster)
+    pod = _install_pod(cluster, runtime)
+    mark_running(
+        pod,
+        ready=True,
+        image_id="docker.io/local/synthetic-engine@sha256:" + "b" * 64,
+    )
+
+    observation = runtime.inspect(PREPARE, build_template())
+
+    assert observation is not None
+    assert observation.observed_instance_state is ObservedInstanceState.QUARANTINED
+    assert observation.quarantine_reason is not None
+    assert "sha256:" + "b" * 64 in observation.quarantine_reason
+    assert "approv" in observation.quarantine_reason
+
+
+def test_inspect_calls_the_approved_image_ready(tmp_path: Path) -> None:
+    cluster = FakeKubernetesCluster()
+    cluster.ready_after_gets = None
+    runtime, _clock = _runtime(tmp_path, cluster)
+    mark_running(_install_pod(cluster, runtime), ready=True)
+
+    observation = runtime.inspect(PREPARE, build_template())
+
+    assert observation is not None
+    assert observation.observed_instance_state is ObservedInstanceState.READY

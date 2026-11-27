@@ -40,11 +40,15 @@ from speechnexus_backend.speech.domain.runtime_observations import (
     ObserveRuntimeIntent,
     VerifiedRuntimeReadiness,
 )
-from speechnexus_backend.speech.infrastructure.runtime_codec import prepare_request
+from speechnexus_backend.speech.infrastructure.runtime_codec import (
+    decode_record,
+    prepare_request,
+)
 from speechnexus_backend.speech.infrastructure.runtime_observation_codec import (
     prepare_observation,
     readiness_from_document,
     readiness_to_document,
+    validate_stored_readiness,
 )
 from speechnexus_backend.speech.infrastructure.runtime_observation_sql import (
     observe_in_transaction,
@@ -715,17 +719,41 @@ def _existing_result(
         # receipt instead of depending on how early the scheduler ran.
         renewed = readiness.expires_at_us <= now_us or renew_readiness
         if renewed:
+            # Re-sign the identity that is actually stored, not the one this run
+            # resolved: admission compares the receipt field by field against the
+            # stored prepare request and plan, so a receipt built from today's
+            # claim is unusable the moment the two differ -- a renewal would then
+            # "succeed" while every create kept answering engine_state_mismatch
+            # (#1246). Only the timestamps and the probe evidence are fresh.
+            try:
+                prepared_stored, stored_plan, _creator = decode_record(intent["request_document"])
+            except ValueError:
+                raise RegistrationError(
+                    "reconciliation_required",
+                    "the stored prepare intent no longer decodes, so its readiness "
+                    "receipt cannot be re-signed; register a new generation",
+                ) from None
+            stored_request = prepared_stored.request
+            if int(stored_request.fencing_token) != int(pool["fencing_token"]):
+                raise RegistrationError(
+                    "reconciliation_required",
+                    "the stored prepare intent belongs to a superseded fencing epoch; "
+                    "register a new generation instead of renewing this one",
+                )
             refreshed = VerifiedRuntimeReadiness(
-                spec.plan.binding,
-                spec.instance_id,
-                spec.generation,
-                int(pool["fencing_token"]),
-                spec.plan.topology_digest,
-                spec.plan.qualification_digest,
+                stored_request.binding,
+                stored_request.instance_id,
+                stored_request.instance_generation,
+                stored_request.fencing_token,
+                stored_plan.topology_digest,
+                stored_plan.qualification_digest,
                 evidence_digest,
                 now_us,
                 now_us + readiness_ttl_us,
             )
+            # The write is only worth making if admission can use what lands: the
+            # check the next create will run, run here first.
+            validate_stored_readiness(readiness_to_document(refreshed), stored_request, stored_plan)
             cursor.execute(
                 "UPDATE runtime_instance_intents SET readiness_document = ?, "
                 "updated_at_us = ?, version = version + 1 WHERE target_node_id = ? "

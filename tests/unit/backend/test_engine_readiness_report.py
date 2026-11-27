@@ -28,10 +28,17 @@ import pytest
 from speechnexus_backend import engine_readiness
 from speechnexus_backend.engine_registration import EXIT_INVALID, EXIT_UNAVAILABLE
 from speechnexus_backend.speech.domain.capacity import PhysicalResources
-from speechnexus_backend.speech.domain.runtime_intents import ApprovedRuntimePlan, RuntimeBinding
+from speechnexus_backend.speech.domain.runtime_intents import (
+    ApprovedRuntimePlan,
+    RuntimeBinding,
+    RuntimeDeadline,
+    RuntimeIntent,
+)
 from speechnexus_backend.speech.domain.runtime_observations import VerifiedRuntimeReadiness
+from speechnexus_backend.speech.infrastructure.runtime_codec import encode_record, prepare_request
 from speechnexus_backend.speech.infrastructure.runtime_observation_codec import (
     readiness_to_document,
+    validate_stored_readiness,
 )
 
 NOW = 1_000_000_000
@@ -56,14 +63,36 @@ def _plan() -> ApprovedRuntimePlan:
     )
 
 
-def _receipt(*, verified: int, expires: int) -> str:
+def _request(plan: ApprovedRuntimePlan, *, fencing_token: int = 1) -> RuntimeIntent:
+    return RuntimeIntent(
+        "register-instance-1-g1",
+        plan.binding,
+        "instance-1",
+        1,
+        "prepare",
+        fencing_token,
+        plan.memory,
+        RuntimeDeadline("2250-01-01T00:00:00.123456789Z"),
+    )
+
+
+def _request_document(*, fencing_token: int = 1, plan: ApprovedRuntimePlan | None = None) -> str:
+    resolved = plan or _plan()
+    return encode_record(
+        prepare_request(_request(resolved, fencing_token=fencing_token)),
+        resolved,
+        "register-engine",
+    )
+
+
+def _receipt(*, verified: int, expires: int, token: int = 1) -> str:
     plan = _plan()
     return readiness_to_document(
         VerifiedRuntimeReadiness(
             plan.binding,
             "instance-1",
             1,
-            1,
+            token,
             plan.topology_digest,
             plan.qualification_digest,
             DIGEST,
@@ -73,12 +102,15 @@ def _receipt(*, verified: int, expires: int) -> str:
     )
 
 
-def _row(*, document: str | None, now_us: int = NOW) -> dict[str, Any]:
+def _row(
+    *, document: str | None, now_us: int = NOW, request_document: str | None = None
+) -> dict[str, Any]:
     return {
         "instance_id": "instance-1",
         "instance_generation": 1,
         "host_node_id": "node-1",
         "current_prepare_intent_id": "register-instance-1-g1",
+        "request_document": _request_document() if request_document is None else request_document,
         "readiness_document": document,
         "database_now_us": now_us,
     }
@@ -255,3 +287,71 @@ def test_main_alerts_on_an_unobserved_receipt_without_being_asked(
     assert code == EXIT_UNAVAILABLE
     assert "error: readiness_unobserved: instance-1 g1" in captured.err
     assert "observed_seconds_ago=3600" in captured.err
+
+
+def test_a_receipt_that_describes_another_plan_is_invalid_not_valid() -> None:
+    """#1246: the window is not the whole judgement.
+
+    A receipt signed for a different fencing epoch has a perfectly valid window, so
+    classifying the window alone reported it ``valid`` while admission refused the
+    instance as ``invalid``. The report must answer the question admission answers.
+    """
+    stale_epoch = _receipt(verified=NOW - 10, expires=NOW + 60_000_000_000, token=9)
+
+    report = engine_readiness.readiness_report(
+        [_row(document=stale_epoch)], now_us=NOW, warn_within_us=0
+    )
+
+    assert report[0]["readiness_state"] == "invalid"
+    assert report[0]["expires_at_us"] is None
+    assert report[0]["remaining_seconds"] is None
+    assert "fencing_token" in report[0]["reason"]
+    assert engine_readiness._summary(report)["unusable"] == 1
+
+
+def test_the_report_and_admission_refuse_the_same_receipt_for_the_same_reason() -> None:
+    """One judgement, two exits: the report's reason is the validator's reason."""
+    plan = _plan()
+    stale_epoch = _receipt(verified=NOW - 10, expires=NOW + 60_000_000_000, token=9)
+
+    report = engine_readiness.readiness_report(
+        [_row(document=stale_epoch)], now_us=NOW, warn_within_us=0
+    )
+    with pytest.raises(ValueError) as refused:
+        validate_stored_readiness(stale_epoch, _request(plan), plan)
+
+    assert report[0]["readiness_state"] == "invalid"
+    assert "fencing_token" in report[0]["reason"]
+    assert "fencing_token" in str(refused.value)
+
+
+def test_a_ready_instance_whose_stored_plan_does_not_decode_is_invalid() -> None:
+    report = engine_readiness.readiness_report(
+        [
+            _row(
+                document=_receipt(verified=NOW - 10, expires=NOW + 60_000_000_000),
+                request_document="{not a runtime record",
+            )
+        ],
+        now_us=NOW,
+        warn_within_us=0,
+    )
+    entry = report[0]
+
+    assert entry["readiness_state"] == "invalid"
+    assert "does not decode" in entry["reason"]
+    assert engine_readiness._summary(report)["unusable"] == 1
+
+
+def test_main_alerts_when_a_receipt_describes_another_plan(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    rows = [_row(document=_receipt(verified=NOW - 10, expires=NOW + 60_000_000_000, token=9))]
+    code = engine_readiness.main(["--database-url", DSN], env={}, connect=lambda *_, **__: rows)
+    captured = capsys.readouterr()
+    documents = [json.loads(line) for line in captured.out.splitlines() if line]
+
+    assert code == EXIT_UNAVAILABLE
+    assert documents[0]["readiness_state"] == "invalid"
+    assert "fencing_token" in documents[0]["reason"]
+    assert "error: readiness_invalid: instance-1 g1" in captured.err

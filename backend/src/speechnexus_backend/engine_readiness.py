@@ -40,6 +40,17 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any, TextIO, cast
 
 from speechnexus_backend.engine_registration import EXIT_INVALID, EXIT_UNAVAILABLE
+from speechnexus_backend.speech.domain.readiness_verdict import (
+    READINESS_INVALID as READINESS_INVALID_STATE,
+)
+from speechnexus_backend.speech.domain.readiness_verdict import (
+    READINESS_MISSING as READINESS_MISSING_STATE,
+)
+from speechnexus_backend.speech.domain.readiness_verdict import ReadinessVerdict
+from speechnexus_backend.speech.domain.runtime_intents import (
+    ApprovedRuntimePlan,
+    RuntimeIntent,
+)
 from speechnexus_backend.speech.domain.runtime_observations import (
     DEFAULT_READINESS_FRESHNESS_US,
     READINESS_EXPIRED,
@@ -48,19 +59,23 @@ from speechnexus_backend.speech.domain.runtime_observations import (
     READINESS_VALID,
     VerifiedRuntimeReadiness,
 )
+from speechnexus_backend.speech.infrastructure.runtime_codec import decode_record
 from speechnexus_backend.speech.infrastructure.runtime_observation_codec import (
     readiness_from_document,
+    stored_readiness_verdict,
 )
 from speechnexus_portable_sql.clock import ClockReader
 from speechnexus_portable_sql.clock import now_us as now_us_for
 from speechnexus_portable_sql.psycopg_driver import connect as portable_connect
 from speechnexus_portable_sql.vendor import dict_row, psycopg
 
-READINESS_MISSING = "missing"
+# The two unusable states are part of the shared verdict vocabulary: the report
+# must speak the same words the judgement does (#1246).
+READINESS_MISSING = READINESS_MISSING_STATE
 """The ready instance has no prepare intent or no stored receipt at all."""
 
-READINESS_INVALID = "invalid"
-"""The stored receipt no longer decodes, so admission cannot use it either."""
+READINESS_INVALID = READINESS_INVALID_STATE
+"""The stored receipt cannot be used, so admission cannot use it either."""
 
 DEFAULT_WARNING_SECONDS = 21_600
 """A quarter of the 24 h default receipt TTL: one renewal interval of warning."""
@@ -80,9 +95,31 @@ def _settings(env: Mapping[str, str]) -> tuple[str, str]:
     return database_url, schema
 
 
-def _decode(raw: str) -> VerifiedRuntimeReadiness | None:
+def _stored_identity(
+    row: Row,
+) -> tuple[RuntimeIntent | None, ApprovedRuntimePlan | None, str | None]:
+    """The immutable plan the receipt must describe, or why it cannot be read.
+
+    The plan is read from the same intent row the receipt came from, so the report
+    compares the receipt against exactly what admission compares it against. A row
+    whose intent document does not decode is unusable for the same reason admission
+    refuses it, and the decoder's own words are the reason the report prints.
+    """
+    document = row.get("request_document")
+    if not isinstance(document, str):
+        return None, None, "the prepare intent has no readable request document"
     try:
-        return readiness_from_document(raw)
+        prepared, plan, _creator = decode_record(document)
+    except ValueError as error:
+        return None, None, f"the stored runtime plan does not decode: {error}"
+    return prepared.request, plan, None
+
+
+def _decoded_receipt(document: object) -> VerifiedRuntimeReadiness | None:
+    if not isinstance(document, str):
+        return None
+    try:
+        return readiness_from_document(document)
     except ValueError:
         return None
 
@@ -93,21 +130,42 @@ def readiness_report(rows: Sequence[Row], *, now_us: int, warn_within_us: int) -
     ``rows`` are the joined instance/head/intent facts. The classification is a
     pure function of them plus ``now_us`` so the caller's query and the operator's
     reading cannot disagree about which window was checked.
+
+    Identity is part of the judgement, not an extra: a receipt that describes a
+    different plan admits nothing, so reporting it ``valid`` because its window has
+    not elapsed told the operator the opposite of what admission would answer
+    (#1246). The verdict is the one admission uses, and ``reason`` names the fact
+    that decided it.
     """
     report: list[Row] = []
     for row in rows:
         document = row.get("readiness_document")
-        receipt = _decode(document) if isinstance(document, str) else None
-        if receipt is None:
-            state = READINESS_MISSING if document is None else READINESS_INVALID
+        request, plan, unreadable = _stored_identity(row)
+        if unreadable is not None:
+            # The plan the receipt must describe cannot be read, so no window can
+            # make the receipt usable: admission refuses it for the same reason.
+            verdict = ReadinessVerdict(READINESS_INVALID, None, None, unreadable)
+        else:
+            verdict = stored_readiness_verdict(
+                document if isinstance(document, str) else None,
+                request=request,
+                plan=plan,
+                now_us=now_us,
+                warning_us=warn_within_us,
+                freshness_us=DEFAULT_READINESS_FRESHNESS_US,
+            )
+        state = verdict.state
+        reason = verdict.reason
+        if verdict.expires_at_us is None or reason is not None:
             report.append(
                 {
                     "instance_id": row["instance_id"],
                     "instance_generation": int(row["instance_generation"]),
                     "target_node_id": row.get("host_node_id"),
                     "readiness_state": state,
-                    "expires_at_us": None,
+                    "expires_at_us": verdict.expires_at_us,
                     "remaining_seconds": None,
+                    "reason": reason,
                     "remediation": (
                         "the ready instance has no usable readiness receipt; "
                         f"re-register it with {RENEW_COMMAND}"
@@ -115,14 +173,9 @@ def readiness_report(rows: Sequence[Row], *, now_us: int, warn_within_us: int) -
                 }
             )
             continue
-        # Two independent facts refuse admission, so the report prints both: the
-        # declared window and how long ago a health probe actually re-signed it.
-        state = receipt.readiness_state(
-            now_us,
-            warning_us=warn_within_us,
-            freshness_us=DEFAULT_READINESS_FRESHNESS_US,
-        )
-        remaining_us = receipt.expires_at_us - now_us
+        receipt = _decoded_receipt(document)
+        assert receipt is not None
+        remaining_us = verdict.expires_at_us - now_us
         observed_us = now_us - receipt.verified_at_us
         remediation: str | None = None
         if state == READINESS_EXPIRED:
@@ -181,7 +234,7 @@ def _summary(report: Sequence[Row]) -> Row:
 
 _QUERY = (
     "SELECT e.instance_id, e.instance_generation, e.host_node_id, "
-    "h.current_prepare_intent_id, i.readiness_document "
+    "h.current_prepare_intent_id, i.request_document, i.readiness_document "
     "FROM engine_instances AS e "
     "JOIN runtime_instance_heads AS h ON h.instance_id = e.instance_id "
     "AND h.current_generation = e.instance_generation "

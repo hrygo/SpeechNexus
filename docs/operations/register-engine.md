@@ -177,7 +177,12 @@ engine_resource_disabled`（实例、池或审批未激活）、`503 recipe_not_
 配方不一致），它们都不表示存储故障。
 
 续期必须在真实 `/health` 探测后重签收据，不能只改数据库；定期任务用
-`--renew-readiness`，它在收据仍然有效时也强制重签：
+`--renew-readiness`，它在收据仍然有效时也强制重签。重签保留**存储里那份**身份（
+`request_document` 里的实例世代、fencing、拓扑与资格），只更新时间戳与探测证据：准入逐字段
+比对收据与存储的计划，用本次运行解析出的计划去签，会在计划或 fencing 世代变化后写出一份
+「时间新鲜但谁也不认」的收据，而命令本身看起来仍然成功。存储的意图属于已被取代的 fencing
+世代、或请求文档解不出时，续期直接返回 `reconciliation_required` 并说明要新登记一个世代，
+不写收据。
 
 ```bash
 speechnexus-register-engine \
@@ -206,7 +211,12 @@ speechnexus-engine-readiness --warn-within-seconds 21600
 每行给出 `readiness_state`（`valid` / `expiring` / `unobserved` / `expired` /
 `missing` / `invalid`）、`expires_at_us`、`remaining_seconds`（已过期为负）、
 `observed_seconds_ago`（距上次探测重签多久）和 `remediation`；汇总给出各状态计数与
-`unusable`。任一实例 `expired` / `unobserved` / `missing` / `invalid` 时退出码为 `5`
+`unusable`。
+
+`readiness_state` 就是准入用的那一份判定，两者不会给出相反答案：判定按收据的**身份**
+（实例世代、fencing、拓扑、资格、批准计划）和声明窗口一起看，只看窗口会把「窗口还没走完、
+但写的不是这份计划」的收据误报成 `valid`。判定不通过时该行额外带 `reason`，点名是哪个字段
+或哪一步解码不通过；`expires_at_us` 为 `null`，因为不可用的收据不产生任何可用容量。任一实例 `expired` / `unobserved` / `missing` / `invalid` 时退出码为 `5`
 （`EXIT_UNAVAILABLE`），`--fail-on-expiring` 让 `expiring` 也返回非零，供监控在创建失败
 前告警。`--warn-within-seconds` 默认 `21600`（TTL 的四分之一），只是上报阈值，不改变
 准入判定。

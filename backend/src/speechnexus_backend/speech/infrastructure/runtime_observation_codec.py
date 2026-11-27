@@ -8,6 +8,12 @@ from typing import Any, cast
 
 from speechnexus_contracts.validation import validate_profile
 
+from speechnexus_backend.speech.domain.readiness_verdict import (
+    READINESS_INVALID,
+    ReadinessVerdict,
+    mismatched_identity_fields,
+    readiness_verdict,
+)
 from speechnexus_backend.speech.domain.runtime_intents import (
     ApprovedRuntimePlan,
     RuntimeBinding,
@@ -181,18 +187,59 @@ def validate_stored_readiness(
     document: str, request: RuntimeIntent, plan: ApprovedRuntimePlan
 ) -> VerifiedRuntimeReadiness:
     receipt = readiness_from_document(document)
-    if (
-        receipt.binding != request.binding
-        or receipt.binding != plan.binding
-        or receipt.instance_id != request.instance_id
-        or receipt.instance_generation != request.instance_generation
-        or receipt.fencing_token != request.fencing_token
-        or receipt.topology_digest != plan.topology_digest
-        or receipt.qualification_digest != plan.qualification_digest
-        or request.action != "prepare"
-    ):
-        raise ValueError("Stored readiness does not match its immutable runtime plan")
+    mismatched = mismatched_identity_fields(receipt, request, plan)
+    if mismatched:
+        # Naming the fields is what tells an operator whether the receipt was
+        # signed for another fencing epoch or the plan itself changed.
+        raise ValueError(
+            "Stored readiness does not match its immutable runtime plan: "
+            + ", ".join(mismatched)
+            + " disagree"
+        )
     return receipt
+
+
+def stored_readiness_verdict(
+    document: str | None,
+    *,
+    request: RuntimeIntent | None,
+    plan: ApprovedRuntimePlan | None,
+    now_us: int,
+    warning_us: int,
+    freshness_us: int | None = None,
+) -> ReadinessVerdict:
+    """The one readiness judgement both read-only exits and admission share (#1246).
+
+    A document that does not decode is a verdict (``invalid`` with the decoder's
+    own words), not an exception: an operator asking "what does this instance
+    promise?" needs the answer, and admission needs a reason to log.
+    """
+    if document is None:
+        return readiness_verdict(
+            None,
+            request=request,
+            plan=plan,
+            now_us=now_us,
+            warning_us=warning_us,
+            freshness_us=freshness_us,
+        )
+    try:
+        receipt = readiness_from_document(document)
+    except ValueError as error:
+        return ReadinessVerdict(
+            READINESS_INVALID,
+            None,
+            None,
+            f"the stored receipt does not decode: {error}",
+        )
+    return readiness_verdict(
+        receipt,
+        request=request,
+        plan=plan,
+        now_us=now_us,
+        warning_us=warning_us,
+        freshness_us=freshness_us,
+    )
 
 
 def observation_for_boundary(value: Any) -> tuple[RuntimeObservation, str]:

@@ -416,6 +416,7 @@ def test_internal_execution_and_runtime_control_openapi_specs_are_valid() -> Non
         "/internal/v1/nodes/{node_id}/instance-intents",
         "/internal/v1/nodes/{node_id}/instance-intents/{intent_id}",
         "/internal/v1/nodes/{node_id}/instance-intents/{intent_id}/qualification-observation",
+        "/internal/v1/nodes/{node_id}/instances/{instance_id}/head",
         "/internal/v1/nodes/{node_id}/instances/{instance_id}/generations/"
         "{instance_generation}/verified-stop",
         "/internal/v1/nodes/{node_id}/reconcile",

@@ -66,6 +66,33 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/internal/v1/nodes/{node_id}/instances/{instance_id}/head": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Query the lifecycle head this node derived for one instance
+     * @description The generation this node actually prepared for an instance, derived from its
+     *     own intent store: the high water, the generation still current after stops and
+     *     voided prepares, the fencing token, and any unresolved prepare or stop intent.
+     *     Admission needs it because the coordination ledger keeps a separate counter;
+     *     when the two drifted (ledger 1, node 11 for the same instance) a readiness
+     *     receipt attested a generation no pod served (#1282). A node that has never
+     *     been asked about the instance answers `null` generations, not an error: "no
+     *     intent" and "cannot read the store" are different facts.
+     */
+    get: operations["getInstanceHead"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/internal/v1/nodes/{node_id}/instances/{instance_id}/generations/{instance_generation}/verified-stop": {
     parameters: {
       query?: never;
@@ -288,6 +315,19 @@ export interface components {
       /** Format: date-time */
       updated_at: string;
     } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+    RuntimeInstanceHeadResponse: {
+      instance_id: string;
+      /**
+       * @description The generation still current on this node after stops and voided prepares,
+       *     or null when the node holds no intent for the instance.
+       */
+      current_generation: number | null;
+      /** @description The highest generation this node was ever asked about. */
+      generation_high_water: number | null;
+      last_fencing_token: number;
+      unresolved_prepare_intent_id: string | null;
+      unresolved_stop_intent_id: string | null;
+    };
     RuntimeQualificationObservationResponse: components["schemas"]["RuntimeCoordinationObservation"] &
       unknown;
     ObservedNodeInstanceFact: {
@@ -527,6 +567,44 @@ export interface operations {
       401: components["responses"]["Unauthorized"];
       /** @description Runtime instance intent not found on this node controller. */
       404: {
+        headers: {
+          "X-Request-ID"?: components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RuntimeControlErrorResponse"];
+        };
+      };
+    };
+  };
+  getInstanceHead: {
+    parameters: {
+      query?: never;
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestIdHeader"];
+      };
+      path: {
+        node_id: components["parameters"]["NodeIdPath"];
+        /** @description Instance identity the head is derived for. */
+        instance_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The derived lifecycle head of this instance. */
+      200: {
+        headers: {
+          "X-Request-ID"?: components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RuntimeInstanceHeadResponse"];
+        };
+      };
+      401: components["responses"]["Unauthorized"];
+      /** @description The target node does not match this controller. */
+      409: {
         headers: {
           "X-Request-ID"?: components["headers"]["XRequestId"];
           [name: string]: unknown;

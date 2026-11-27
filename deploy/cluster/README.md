@@ -42,6 +42,20 @@ PG `15440`、S3 `19100`，不得改回常用值。应用面的就绪单元在集
 继续给旧代次续命，或者每次续租都被 `stale_instance_generation` 拒绝——两种都不会有人发现，
 直到回执耗尽（[#1253](https://github.com/hrygo/SpeechNexus/issues/1253)）。
 
+账本里的那个数**不等于**节点实际准备好的代次：控制器在自己的意图库里另记一套，两边没有任何人
+把它们对齐。实测过一次两边分别读 1 和 11，而真正在服务的 Pod 是第 11 代——续租照旧成功、报告照旧
+说 `valid` 且还剩 24 小时。因此两个就绪作业都带 `SPEECHNEXUS_CONTROLLER_API_URL` 与
+`SPEECHNEXUS_CONTROLLER_API_TOKEN`（后者取自 `controller-component-token`，不复制第二份令牌），
+先在签名或判定之前问节点「你准备好的是哪一代」：
+
+- 两边不一致：续租以 `instance_generation_mismatch` 失败并同时报出两个数字与两条出路（把节点那代
+  登记进账本，或按账本那代重新 prepare）；报告把该行降级为 `invalid`、`reason` 为
+  `instance_generation_mismatch`，不再等 24 小时窗口自然到期。
+- 节点问不到：续租以 `controller_unreachable`（或 `controller_refused`）失败，报告把该行降级为
+  `invalid`。未知不算健康，跳过检查就会签名出与 #1282 一模一样的「绿而错」。
+- 两个变量**都不设**时检查不执行，这是本地 compose 形态；集群里两个都设，缺一个直接报
+  `controller_not_configured`，不留半套配置。
+
 ## 数据面放在哪里
 
 结论：**PostgreSQL 与对象存储留在这套既有的、正在服务的实例上；只把不持有数据面的应用面单元搬进集群。**

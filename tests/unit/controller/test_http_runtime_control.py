@@ -461,3 +461,47 @@ async def test_a_second_variant_on_one_node_is_an_http_conflict(settings: Settin
     assert body["code"] == "intent_conflict"
     assert body["retryable"] is False
     assert "instance-customvoice" in body["message"]
+
+
+async def test_the_head_route_reports_the_generation_this_node_prepared(
+    settings: Settings,
+) -> None:
+    """#1282: admission needs the generation the node prepared, not the ledger's.
+
+    A node that never saw the instance answers null generations rather than an error:
+    "no intent yet" and "store unreadable" are different facts.
+    """
+    service, _store, _runtime = _service(runtime=ScriptedNodeRuntime(ready_on_prepare=True))
+    head_path = f"/internal/v1/nodes/{_NODE}/instances/{SAMPLE_INSTANCE_ID}/head"
+
+    async with _client(settings, service) as client:
+        empty = await client.get(head_path, headers=_HEADERS)
+        body = request_payload(build_request())
+        submitted = await client.post(_INTENTS_PATH, json=body, headers=_HEADERS)
+        assert submitted.status_code == 200
+        prepared = await client.get(head_path, headers=_HEADERS)
+
+    assert empty.status_code == 200
+    assert empty.json()["current_generation"] is None
+    assert empty.json()["generation_high_water"] is None
+    assert prepared.status_code == 200
+    payload = prepared.json()
+    assert payload["instance_id"] == SAMPLE_INSTANCE_ID
+    assert payload["current_generation"] == 1
+    assert payload["generation_high_water"] == 1
+    assert payload["last_fencing_token"] == body["fencing_token"]
+
+
+async def test_the_head_route_is_scoped_to_this_node_and_requires_the_credential(
+    settings: Settings,
+) -> None:
+    service, _store, _runtime = _service()
+    foreign = f"/internal/v1/nodes/node-other-1/instances/{SAMPLE_INSTANCE_ID}/head"
+    own = f"/internal/v1/nodes/{_NODE}/instances/{SAMPLE_INSTANCE_ID}/head"
+
+    async with _client(settings, service) as client:
+        anonymous = await client.get(own)
+        other_node = await client.get(foreign, headers=_HEADERS)
+
+    assert anonymous.status_code == 401
+    assert other_node.status_code == 409

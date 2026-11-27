@@ -119,6 +119,26 @@ class RuntimeInstanceIntentResponse(BaseModel):
     updated_at: datetime
 
 
+class RuntimeInstanceHeadResponse(BaseModel):
+    """The lifecycle head the controller derived for one instance.
+
+    Admission needs the generation the node actually prepared, and only the
+    controller can answer that: its intent store is the record of what was asked of
+    this node. The coordination ledger has its own counter, and in the field the two
+    drifted to 1 and 11 for the same instance (#1282), so the receipt that attests a
+    generation has to be checked against this number before it is signed.
+    """
+
+    model_config = _MODEL_CONFIG
+
+    instance_id: str
+    current_generation: int | None
+    generation_high_water: int | None
+    last_fencing_token: int
+    unresolved_prepare_intent_id: str | None
+    unresolved_stop_intent_id: str | None
+
+
 class RuntimeQualificationObservationResponse(RuntimeInstanceIntentResponse):
     native_runtime_evidence: NativeRuntimeEvidencePayload | None = None
 

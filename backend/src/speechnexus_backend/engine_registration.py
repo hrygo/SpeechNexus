@@ -15,7 +15,7 @@ import os
 import re
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -24,6 +24,12 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
+from speechnexus_backend.controller_head import (
+    ControllerConsultationError,
+    configured_endpoint,
+    generation_disagreement,
+    read_head,
+)
 from speechnexus_backend.speech.domain.capacity import PhysicalResources
 from speechnexus_backend.speech.domain.runtime_intents import (
     ApprovedRuntimePlan,
@@ -1442,6 +1448,40 @@ def _report(result: RegistrationResult) -> None:
     print(_result_json(result))
 
 
+def _require_the_node_prepares_this_generation(
+    spec: RegistrationSpec, options: argparse.Namespace
+) -> None:
+    """Refuse to attest a generation the node has not prepared (#1282).
+
+    The ledger and the controller count generations separately, and nothing made them
+    move together: the live instance was registered at generation 1 while the node had
+    prepared 11, so this command signed a receipt for a generation no pod served and
+    every surface called it healthy. The node is asked before anything is written, and
+    an unreachable node fails the run instead of skipping the check: an unverified
+    attestation is exactly the green-but-wrong state this closes.
+    """
+    endpoint = configured_endpoint(_process_environment())
+    if endpoint is None:
+        return
+    node_id = spec.plan.binding.target_node_id
+    try:
+        head = read_head(
+            endpoint,
+            node_id=node_id,
+            instance_id=spec.instance_id,
+            timeout_seconds=options.health_timeout_seconds,
+        )
+    except ControllerConsultationError as error:
+        raise RegistrationError(error.code, error.message, EXIT_UNAVAILABLE) from None
+    disagreement = generation_disagreement(spec.generation, head, node_id=node_id)
+    if disagreement is not None:
+        raise RegistrationError("instance_generation_mismatch", disagreement, EXIT_CONFLICT)
+
+
+def _process_environment() -> Mapping[str, str]:
+    return os.environ
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description=(
@@ -1553,6 +1593,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 database_url, schema, _instance_hint(options)
             )
         spec = _spec_from_args(options)
+        _require_the_node_prepares_this_generation(spec, options)
         result = register_engine(
             database_url=database_url,
             schema=schema,

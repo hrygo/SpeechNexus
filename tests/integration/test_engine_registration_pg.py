@@ -16,8 +16,10 @@ from tests.integration.test_production_jobs import JobDatabase
 from tests.integration.test_production_jobs import database as database
 
 from speechnexus_backend import engine_readiness
+from speechnexus_backend import engine_registration as registration
 from speechnexus_backend.engine_registration import (
     EXIT_UNAVAILABLE,
+    RegistrationError,
     RegistrationResult,
     RegistrationSpec,
     _spec_from_recipe,
@@ -878,3 +880,42 @@ def test_the_quota_re_read_waits_for_the_row_lock(
     assert failures == [], [repr(error) for error in failures]
     assert blocked >= 1, "the registration did not wait on the quota row lock"
     assert [outcome.outcome for outcome in result] == ["registered"]
+
+
+def test_a_renewal_without_a_generation_renews_what_the_ledger_says_is_current(
+    database: JobDatabase,
+    engine_origin: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """#1253 on the real schema: the generation comes from the head, read-only.
+
+    The cluster renewal used to carry a constant ``--generation 1``. Once the
+    controller prepares a later generation that constant is a lie, and the receipt
+    it keeps re-signing describes a device nobody serves. Omitting the flag makes
+    ``runtime_instance_heads`` the authority, so the resolution itself has to work
+    against the shipped schema, in a session that cannot write.
+    """
+    recipe_path = _write_recipe(tmp_path / "recipe.json", _recipe_document())
+    registered = _run_registration(capsys, _register_args(database, recipe_path, engine_origin))
+    instance_id = cast(str, registered["instance_id"])
+    head = database.query(
+        "SELECT current_generation FROM runtime_instance_heads WHERE instance_id = %s",
+        (instance_id,),
+    )
+    assert head and int(head[0]["current_generation"]) == 1
+
+    assert registration.resolve_current_generation(database.url, database.schema, instance_id) == 1
+
+    # The renewal path with no --generation lands on the same generation the ledger
+    # reports, so the receipt it re-signs is the one admission validates.
+    args = _register_args(database, recipe_path, engine_origin)
+    index = args.index("--generation")
+    del args[index : index + 2]
+    renewed = _run_registration(capsys, [*args, "--renew-readiness"])
+    assert renewed["instance_generation"] == 1
+    assert renewed["readiness"]["renewed"] is True
+
+    with pytest.raises(RegistrationError) as caught:
+        registration.resolve_current_generation(database.url, database.schema, "instance-absent")
+    assert caught.value.code == "generation_required"

@@ -25,7 +25,7 @@ PG `15440`、S3 `19100`，不得改回常用值。
 | `node_id`（应用面） | `node-app-1` |
 | `node_id`（算力面） | `node-megacube-1` |
 | `gateway_id` | `gateway-megacube-1` |
-| `instance_id` / `generation` | `instance-asr-1` / `1` |
+| `instance_id` | `instance-asr-1`（代次由控制器账本决定，见下） |
 | `pool_id` | `asr-batch` |
 | 工作区 | `workspace-default` |
 
@@ -39,6 +39,13 @@ PG `15440`、S3 `19100`，不得改回常用值。
 - 算力面：`deploy/cluster/compute/compose.yaml` 是版本化来源，文件里只有 `${VAR}`；
   `init-env.py` 另外写出 `.runtime/cluster/compute.env`（隧道化 DSN 与镜像标签），
   上机时 `scp` 两者并用 `docker compose --env-file compute.env up -d`，插值由 Compose 完成。
+
+代次（`generation`）不写进任何清单：控制器每次 prepare 一个代次，账本里的
+`runtime_instance_heads.current_generation` 才是权威。续租作业因此不带 `--generation`，
+由 `speechnexus-register-engine` 自己去读；只有**第一次**登记（还没有 head）要显式给一个，
+否则命令以 `generation_required` 拒绝并说明这一点。把代次写死在清单里，会在控制器换代之后
+继续给旧代次续命，或者每次续租都被 `stale_instance_generation` 拒绝——两种都不会有人发现，
+直到回执耗尽（[#1253](https://github.com/hrygo/SpeechNexus/issues/1253)）。
 
 ## 顺序
 

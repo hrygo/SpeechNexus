@@ -217,8 +217,10 @@ spec:
               imagePullPolicy: IfNotPresent
               command:
                 - speechnexus-register-engine
-                - --generation
-                - "1"
+                # No --generation: the ledger's current generation is the authority on
+                # what is serving. Restating it here is a constant that goes stale the
+                # moment the controller prepares a new generation, and the renewal then
+                # re-signs a receipt nobody serves or refuses every run (#1253).
                 - --node
                 - node-megacube-1
                 - --gateway

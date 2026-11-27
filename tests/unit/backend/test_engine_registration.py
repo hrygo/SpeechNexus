@@ -1232,3 +1232,103 @@ def test_the_documented_module_entry_point_prints_help(
         runpy.run_module("speechnexus_backend.engine_registration", run_name="__main__")
     assert exited.value.code == 0
     assert "--generation" in capsys.readouterr().out
+
+
+def test_the_renewal_takes_the_generation_from_the_ledger_when_it_is_omitted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#1253: the serving generation is a fact, not an operator constant.
+
+    The cluster renewal used to carry ``--generation 1`` while the controller had
+    prepared a later generation: the renewal either re-signed a receipt for a device
+    nobody serves or refused every run, and the receipt quietly ran out.
+    """
+    seen: dict[str, object] = {}
+
+    def capture(**kwargs: object) -> RegistrationResult:
+        seen.update(kwargs)
+        raise RegistrationError("stop_after_capture", "captured arguments", EXIT_CONFLICT)
+
+    monkeypatch.setattr(registration, "register_engine", capture)
+    monkeypatch.setattr(registration, "resolve_current_generation", lambda *_, **__: 4)
+    with pytest.raises(SystemExit) as exited:
+        main([*manual_argv(drop=("--generation",)), "--renew-readiness"])
+    assert exited.value.code == EXIT_CONFLICT
+    spec = cast(registration.RegistrationSpec, seen["spec"])
+    assert spec.generation == 4
+
+
+def test_an_omitted_generation_without_a_head_tells_the_caller_to_pass_it(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def refuse(*_: object, **__: object) -> int:
+        raise RegistrationError(
+            "generation_required",
+            "instance instance-1 has no runtime head yet, so there is no current "
+            "generation to renew; pass --generation for the first registration",
+            EXIT_INVALID,
+        )
+
+    monkeypatch.setattr(registration, "resolve_current_generation", refuse)
+    with pytest.raises(SystemExit) as exited:
+        main([*manual_argv(drop=("--generation",)), "--renew-readiness"])
+    assert exited.value.code == EXIT_INVALID
+    assert "generation_required" in capsys.readouterr().err
+
+
+def test_an_omitted_generation_still_requires_an_instance(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as exited:
+        main([*manual_argv(drop=("--generation", "--instance"))])
+    assert exited.value.code == EXIT_INVALID
+    assert "missing_instance" in capsys.readouterr().err
+
+
+def test_resolve_current_generation_reads_the_head_and_refuses_without_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Cursor:
+        def __init__(self, rows: list[dict[str, Any]]) -> None:
+            self._rows = rows
+            self.statements: list[str] = []
+
+        def execute(self, query: str, parameters: tuple[object, ...] = ()) -> object:
+            self.statements.append(query)
+            return self
+
+        def fetchall(self) -> list[dict[str, Any]]:
+            return self._rows
+
+        def __enter__(self) -> _Cursor:
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            return None
+
+    class _Connection:
+        def __init__(self, rows: list[dict[str, Any]]) -> None:
+            self.cursor_instance = _Cursor(rows)
+            self.read_only = False
+
+        def cursor(self) -> _Cursor:
+            return self.cursor_instance
+
+        def close(self) -> None:
+            return None
+
+    found = _Connection([{"current_generation": 4}])
+    monkeypatch.setattr(registration, "portable_connect", lambda *_, **__: found)
+    assert registration.resolve_current_generation(DSN, "speech", "instance-1") == 4
+    # The resolution is read-only: it may never depend on write rights.
+    assert found.read_only is True
+    assert any(
+        "runtime_instance_heads" in statement for statement in found.cursor_instance.statements
+    )
+
+    missing = _Connection([])
+    monkeypatch.setattr(registration, "portable_connect", lambda *_, **__: missing)
+    with pytest.raises(RegistrationError) as caught:
+        registration.resolve_current_generation(DSN, "speech", "instance-1")
+    assert caught.value.code == "generation_required"
+    assert "--generation" in caught.value.message

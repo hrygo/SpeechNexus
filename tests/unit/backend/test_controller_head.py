@@ -92,7 +92,13 @@ def test_the_head_is_read_from_the_node_that_prepared_the_instance(
     # have to guess which plane is right.
     message = generation_disagreement(1, head, node_id="node-megacube-1")
     assert message is not None
-    for fact in ("generation 1", "generation 11", "--generation 11", "node-megacube-1"):
+    for fact in (
+        "generation 1",
+        "generation 11",
+        "previous_generation_active",
+        "node-megacube-1",
+        "restarts the engine",
+    ):
         assert fact in message
 
 

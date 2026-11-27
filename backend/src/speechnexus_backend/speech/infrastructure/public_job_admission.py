@@ -28,6 +28,7 @@ from speechnexus_backend.speech.domain.admission import (
     AdmissionQuota,
     AdmissionRequest,
     AdmissionRuntime,
+    AdmissionStateInvalidError,
     AdmitRecipe,
     ApprovedAdmissionRecipe,
     ApprovedStage,
@@ -1582,7 +1583,14 @@ def _readiness_runtime(
     host_rows = cursor.fetchall()
     host = _host(host_rows[0]) if host_rows else None
     return (
-        AdmissionRuntime(instance, _head(head), observation, readiness, batch),
+        AdmissionRuntime(
+            instance,
+            _head(head),
+            observation,
+            readiness,
+            batch,
+            "the unreleased admission_leases of this instance generation",
+        ),
         host,
         readiness_state,
         instance_row,
@@ -1761,6 +1769,33 @@ def load_admission_readiness(
             runtime, host, readiness_state, instance_row = _readiness_runtime(
                 cursor, candidate, now_us=now_us
             )
+        except AdmissionStateInvalidError as error:
+            # The counters and the leases disagree: say so once, with the numbers, and
+            # keep the row's answer out of the "re-register the engine" class (#1248).
+            logger.warning(
+                "instance slot counters disagree with its leases: instance=%s generation=%s "
+                "lease_slots=%s held_slots=%s quarantined_slots=%s source=%s",
+                error.instance_id,
+                error.instance_generation,
+                error.batch_slots,
+                error.held_slots,
+                error.quarantined_slots,
+                error.slots_source,
+            )
+            reports.append(
+                ReadinessInstanceReport(
+                    error.instance_id,
+                    error.instance_generation,
+                    READINESS_INVALID,
+                    None,
+                    None,
+                    0,
+                    error.held_slots,
+                    error.quarantined_slots,
+                )
+            )
+            refusal = refusal or "reconciliation_required"
+            continue
         except (
             PublicJobAdmissionRejectedError,
             RuntimeRejectedError,

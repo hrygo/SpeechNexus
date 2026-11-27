@@ -146,16 +146,18 @@ docker compose -p speechnexus-cluster-compute --env-file .runtime/cluster-comput
 配置来自 `render-config.py` 写出的 `dispatch-env` Secret。**只跑一个副本**——它持的是桶租约，
 第二个持有者会把同一批到期 Job 拆成两半。
 
-算力面 `compose.yaml` 里的 `dispatch` 服务已由它取代，保留作为回退，**不得与 Deployment 同时运行**：
+算力面 `compose.yaml` **不再有** `dispatch` 服务，也不提供这个回退：在那边认领要跨桥，慢的
+不只是它自己。
 
-| 位置 | 一轮 claim 耗时 | 结果 |
+| 派发器位置 | 一轮 claim 耗时 | 结果 |
 | --- | --- | --- |
-| 算力面（跨桥） | ≈115 s | 撞上 120 s 准入截止，Job 派发前就过期 |
+| 算力面（跨桥） | ≈115 s | 撞上 120 s 准入截止，Job 派发前就过期；长事务还把**其他** claim 串行化 |
 | 应用面（本地库） | 0.15 s | `queued → succeeded` 约 10 s |
 
-回退：`docker compose -p speechnexus-cluster-compute --env-file .runtime/cluster-compute.env
--f deploy/cluster/compute/compose.yaml up -d dispatch`，同时 `kubectl -n speechnexus scale
-deploy/job-dispatch --replicas=0`。
+所以「派发器停了」的正确处置是让这个 Deployment 恢复（`kubectl -n speechnexus rollout restart
+deploy/job-dispatch`，必要时 `scale --replicas=1`），不是把派发器搬回算力面。要临时在别处跑一份，
+必须在数据库旁边、并且先 `scale --replicas=0` 停掉集群里这个——两个持有者会把同一批到期 Job
+拆成两半，`job-dispatch` 用的是桶租约而不是进程内锁。
 
 ## 算力面控制器
 

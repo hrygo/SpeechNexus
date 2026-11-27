@@ -254,3 +254,24 @@ class ClusterTemplateBudgetTests(unittest.TestCase):
                 self.assertIsInstance(budget, int)
                 self.assertGreaterEqual(budget, 300)
                 self.assertLessEqual(budget, 3600)
+
+
+COMPUTE_COMPOSE = ROOT / "deploy/cluster/compute/compose.yaml"
+
+
+class ComputePlaneDispatchTests(unittest.TestCase):
+    """The compute plane must not host a job dispatcher.
+
+    Claiming from there crosses the bridge on every round: a measured 115 s against
+    the binding's 120 s admission deadline, so Jobs expired before dispatch, and the
+    long transaction serialised every other claim. It also silently competed with the
+    Deployment beside the database when both ran (#1234, #1250).
+    """
+
+    def test_the_compute_plane_defines_no_dispatcher(self) -> None:
+        services = read(COMPUTE_COMPOSE).split("services:", 1)[1]
+        defined = re.findall(r"^  ([a-z][a-z0-9-]*):$", services, re.MULTILINE)
+        self.assertNotIn("dispatch", defined)
+        self.assertIn("controller", defined)
+        # The reason it is absent has to survive in the header, not only in a PR.
+        self.assertIn("#1250", read(COMPUTE_COMPOSE))

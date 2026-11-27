@@ -161,6 +161,41 @@ class ReadinessOperatorSurfaceTests(unittest.TestCase):
         self.assertIn("systemd", runbook)
 
 
+CLUSTER_WORKERS = ROOT / "deploy/cluster/app-plane/workers.yaml"
+CLUSTER_README = ROOT / "deploy/cluster/README.md"
+
+
+class ClusterRenewalTests(unittest.TestCase):
+    """The cluster renewal must take the generation from the ledger, not a manifest.
+
+    A restated generation is a constant that goes stale as soon as the controller
+    prepares a new one: the renewal then re-signs a receipt nobody serves, or every
+    run answers ``stale_instance_generation`` and the receipt quietly runs out. Both
+    failures are silent for hours, so the wiring is checked here (#1253).
+    """
+
+    def test_the_cluster_renewal_does_not_restate_the_generation(self) -> None:
+        text = read(CLUSTER_WORKERS)
+        renewal = text.split("name: engine-readiness-renew", 1)[1]
+        # The command list, not the comments: the reason for the absence of the flag
+        # is written next to it and naturally names it.
+        flags = [
+            line.strip()[2:] for line in renewal.splitlines() if line.strip().startswith("- --")
+        ]
+        self.assertIn(RENEW_FLAG, flags)
+        self.assertIn("--instance", flags)
+        self.assertNotIn("--generation", flags)
+        # The reason it is absent must survive next to it: a reviewer who re-adds the
+        # flag has to read why it was removed.
+        self.assertIn("#1253", renewal)
+
+    def test_the_cluster_readme_says_where_the_generation_comes_from(self) -> None:
+        text = read(CLUSTER_README)
+        self.assertIn("runtime_instance_heads", text)
+        self.assertIn("generation_required", text)
+        self.assertIn("#1253", text)
+
+
 class StartupGateReadinessTests(unittest.TestCase):
     def test_the_gate_points_at_the_renewal_instead_of_the_storage_answer(self) -> None:
         gate = read(GATE)

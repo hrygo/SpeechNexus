@@ -85,7 +85,7 @@ speechnexus-register-engine \
 | `--schema` | 协调表 schema；缺省读 `SPEECHNEXUS_DATABASE_SCHEMA` 或 `speech` |
 | `--recipe-file` | owner-only 私有配方；缺省读 `SPEECHNEXUS_TRANSCRIPTION_RECIPE_FILE` |
 | `--engine-url` | 引擎 origin 或 `/health` URL；缺省读 `SPEECHNEXUS_ENGINE_HEALTH_URL` |
-| `--generation` | 实例 generation，必须为正整数且不得回退到 high water 以下 |
+| `--generation` | 实例 generation；续期时可省略（取账本里的当前代次，见下），首次登记必须给，且不得回退到 high water 以下 |
 | `--workspace` | 准入 workspace（默认 `workspace-default`） |
 | `--max-attempts` | 该 workspace 首次创建时的并发 attempt 上限；已有上限必须大于或等于请求值，不会被该命令调大 |
 | `--owner-id` | 池 owner 身份；默认 `speechnexus-operator` |
@@ -187,9 +187,16 @@ engine_resource_disabled`（实例、池或审批未激活）、`503 recipe_not_
 ```bash
 speechnexus-register-engine \
   --schema speech --engine-url http://127.0.0.1:18100 \
-  --generation 1 --instance instance-asr-1 \
+  --instance instance-asr-1 \
   --readiness-ttl-seconds 86400 --renew-readiness
 ```
+
+续期**不带** `--generation`：正在服务的是哪个代次由控制器的账本
+（`runtime_instance_heads.current_generation`）决定，命令自己去读。把代次写死在定时任务或
+清单里，会在控制器换代之后继续给旧代次续命，或每次都返回 `stale_instance_generation`
+（消息里带上当前代次），而这两种都不会有人发现，直到回执耗尽、准入转成不可用。还没有 head
+的实例（也就是从未登记过）无法解析代次，命令返回 `generation_required` 并提示首次登记要显式给
+一个。
 
 已知缺陷：参考部署没有集群内的自动信号覆盖收据状态（`/readyz` 有意不因过期失败，
 报告命令不被 Compose 调度，启动闸门只打印一次），跟踪

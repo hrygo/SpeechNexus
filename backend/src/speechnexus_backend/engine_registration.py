@@ -651,9 +651,13 @@ def _existing_result(
     current = int(head["current_generation"])
     high_water = int(head["generation_high_water"])
     if spec.generation < current or (spec.generation <= high_water and spec.generation != current):
+        # Both numbers matter to a stale caller: the current generation is the one a
+        # renewal should have named, and the high water is why an intermediate number
+        # is refused too.
         raise RegistrationError(
             "stale_instance_generation",
-            f"generation {spec.generation} is not above high water {high_water}",
+            f"generation {spec.generation} is not above high water {high_water}; "
+            f"the current generation is {current}",
         )
     if spec.generation == current:
         instance = _one(
@@ -1283,6 +1287,83 @@ def _spec_from_args(args: argparse.Namespace) -> RegistrationSpec:
     return _spec_from_manual(args)
 
 
+def resolve_current_generation(
+    database_url: str,
+    schema: str,
+    instance_id: str,
+    *,
+    connect_timeout_seconds: int = 5,
+) -> int:
+    """The generation the ledger says is current for this instance.
+
+    A renewal has to describe the generation that is actually serving, and the only
+    authority on that is ``runtime_instance_heads``. A manifest that restates the
+    number drifts the moment the controller prepares a new generation: the renewal
+    then either re-signs a receipt nobody serves or refuses every run, and the
+    receipt quietly runs out (#1253). Reading it here keeps the deployment free of a
+    constant that goes stale.
+
+    An instance without a head has never been registered, so there is nothing to
+    resolve: the first registration must say which generation it creates.
+    """
+    if not re.fullmatch(r"[a-z][a-z0-9_]{2,62}", schema):
+        raise RegistrationError("invalid_schema", "schema name is invalid", EXIT_INVALID)
+    identifier(instance_id)
+    connection = portable_connect(
+        database_url,
+        row_factory=dict_row,
+        connect_timeout=connect_timeout_seconds,
+    )
+    try:
+        # The resolution must never depend on write rights: a read-only session makes
+        # that a database-enforced property rather than a promise.
+        connection.read_only = True
+        with connection.cursor() as raw:
+            cursor = _Cursor(raw, time.monotonic() + 5.0)
+            cursor.execute("SELECT set_config('search_path', ?, true)", (schema + ",pg_catalog",))
+            rows = _rows(
+                cursor,
+                "SELECT current_generation FROM runtime_instance_heads WHERE instance_id = ?",
+                (instance_id,),
+            )
+    finally:
+        connection.close()
+    if not rows:
+        raise RegistrationError(
+            "generation_required",
+            f"instance {instance_id} has no runtime head yet, so there is no current "
+            "generation to renew; pass --generation for the first registration",
+            EXIT_INVALID,
+        )
+    return int(rows[0]["current_generation"])
+
+
+def _instance_hint(args: argparse.Namespace) -> str:
+    """The instance a run names, from the flag or from the recipe it registers.
+
+    ``--generation`` is resolved against the ledger by instance id, so the id has to
+    be known before the spec exists. Recipe mode names the instance inside the
+    private recipe, the same file the spec is built from.
+    """
+    if args.instance:
+        return cast(str, args.instance)
+    if args.recipe_file:
+        try:
+            recipe = load_transcription_recipe(Path(args.recipe_file).expanduser())
+        except ValueError as error:
+            raise RegistrationError(
+                "invalid_recipe",
+                "private transcription recipe is unreadable or internally inconsistent",
+                EXIT_INVALID,
+            ) from error
+        return recipe.instance_id
+    raise RegistrationError(
+        "missing_instance",
+        "--instance is required when --generation is omitted",
+        EXIT_INVALID,
+    )
+
+
 def _settings(args: argparse.Namespace) -> tuple[str, str]:
     database_url = args.database_url or os.environ.get("SPEECHNEXUS_DATABASE_URL", "")
     if not database_url:
@@ -1388,7 +1469,16 @@ def main(argv: Sequence[str] | None = None) -> None:
         default=os.environ.get("SPEECHNEXUS_ENGINE_HEALTH_URL"),
         help="Engine origin or health URL; /health is appended to an origin",
     )
-    parser.add_argument("--generation", required=True, type=_positive)
+    parser.add_argument(
+        "--generation",
+        type=_positive,
+        default=None,
+        help=(
+            "Generation to register. Omit it for a renewal: the ledger's current "
+            "generation is the authority on which one is serving, and a restated "
+            "number drifts as soon as a new generation is prepared"
+        ),
+    )
     parser.add_argument("--workspace", default="workspace-default")
     parser.add_argument("--max-attempts", type=_positive, default=8)
     parser.add_argument("--owner-id", default="speechnexus-operator")
@@ -1457,6 +1547,10 @@ def main(argv: Sequence[str] | None = None) -> None:
                 "missing_engine_url",
                 "set --engine-url or SPEECHNEXUS_ENGINE_HEALTH_URL",
                 EXIT_INVALID,
+            )
+        if options.generation is None:
+            options.generation = resolve_current_generation(
+                database_url, schema, _instance_hint(options)
             )
         spec = _spec_from_args(options)
         result = register_engine(

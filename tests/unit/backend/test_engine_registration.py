@@ -20,6 +20,7 @@ import pytest
 import rfc8785
 
 from speechnexus_backend import engine_registration as registration
+from speechnexus_backend.controller_head import NodeInstanceHead as _NodeInstanceHead
 from speechnexus_backend.engine_registration import (
     EXIT_CONFLICT,
     EXIT_INVALID,
@@ -1332,3 +1333,93 @@ def test_resolve_current_generation_reads_the_head_and_refuses_without_one(
         registration.resolve_current_generation(DSN, "speech", "instance-1")
     assert caught.value.code == "generation_required"
     assert "--generation" in caught.value.message
+
+
+def test_a_generation_the_node_never_prepared_is_refused_before_anything_is_written(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#1282: the ledger said 1 while the node had prepared 11.
+
+    The command signed a receipt for generation 1, every surface called it healthy, and
+    the pod serving traffic was generation 11. The node is asked before the write, and a
+    disagreement fails the run with both numbers and both ways out.
+    """
+    spec = _spec_from_manual(manual_args())
+    options = argparse.Namespace(health_timeout_seconds=5.0)
+    monkeypatch.setattr(
+        registration,
+        "_process_environment",
+        lambda: {
+            "SPEECHNEXUS_CONTROLLER_API_URL": "http://127.0.0.1:8080",
+            "SPEECHNEXUS_CONTROLLER_API_TOKEN": "token",
+        },
+    )
+    monkeypatch.setattr(
+        registration,
+        "read_head",
+        lambda *_, **__: _NodeInstanceHead("instance-1", 11, 11),
+    )
+
+    with pytest.raises(RegistrationError) as caught:
+        registration._require_the_node_prepares_this_generation(spec, options)
+
+    assert (caught.value.code, caught.value.exit_code) == (
+        "instance_generation_mismatch",
+        EXIT_CONFLICT,
+    )
+    assert "generation 1" in caught.value.message
+    assert "generation 11" in caught.value.message
+
+
+def test_an_agreeing_node_lets_the_registration_proceed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    spec = _spec_from_manual(manual_args())
+    options = argparse.Namespace(health_timeout_seconds=5.0)
+    monkeypatch.setattr(
+        registration,
+        "_process_environment",
+        lambda: {
+            "SPEECHNEXUS_CONTROLLER_API_URL": "http://127.0.0.1:8080",
+            "SPEECHNEXUS_CONTROLLER_API_TOKEN": "token",
+        },
+    )
+    monkeypatch.setattr(
+        registration,
+        "read_head",
+        lambda *_, **__: _NodeInstanceHead("instance-1", 1, 1),
+    )
+
+    registration._require_the_node_prepares_this_generation(spec, options)
+
+
+def test_an_unreachable_controller_refuses_the_attestation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # An unverified attestation is the green-but-wrong state this closes: skipping the
+    # check when the controller is down would sign exactly what #1282 was about.
+    spec = _spec_from_manual(manual_args())
+    options = argparse.Namespace(health_timeout_seconds=5.0)
+    monkeypatch.setattr(
+        registration,
+        "_process_environment",
+        lambda: {
+            "SPEECHNEXUS_CONTROLLER_API_URL": "http://127.0.0.1:9",
+            "SPEECHNEXUS_CONTROLLER_API_TOKEN": "token",
+        },
+    )
+
+    with pytest.raises(RegistrationError) as caught:
+        registration._require_the_node_prepares_this_generation(spec, options)
+
+    assert (caught.value.code, caught.value.exit_code) == (
+        "controller_unreachable",
+        EXIT_UNAVAILABLE,
+    )
+
+
+def test_no_configured_controller_keeps_the_command_working() -> None:
+    spec = _spec_from_manual(manual_args())
+    registration._require_the_node_prepares_this_generation(
+        spec, argparse.Namespace(health_timeout_seconds=5.0)
+    )

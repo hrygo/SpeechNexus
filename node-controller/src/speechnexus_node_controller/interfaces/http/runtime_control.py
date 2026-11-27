@@ -26,6 +26,7 @@ from speechnexus_node_controller.interfaces.http.schemas import (
     NodeReconcileRequestPayload,
     NodeReconcileResponse,
     RuntimeControlErrorResponse,
+    RuntimeInstanceHeadResponse,
     RuntimeInstanceIntentRequestPayload,
     RuntimeInstanceIntentResponse,
     RuntimeQualificationObservationResponse,
@@ -143,6 +144,34 @@ def create_runtime_control_router(
             raise RuntimeIntentNotFoundError("No recorded runtime intent exists")
         return RuntimeQualificationObservationResponse.model_validate(
             intent_response_payload(intent, include_native=True)
+        )
+
+    @router.get(
+        "/internal/v1/nodes/{node_id}/instances/{instance_id}/head",
+        operation_id="getInstanceHead",
+        summary="Query the lifecycle head this node derived for one instance",
+        response_model=RuntimeInstanceHeadResponse,
+        response_model_exclude_unset=True,
+        dependencies=[Depends(credential)],
+        responses={
+            200: {"headers": _REQUEST_ID_RESPONSE_HEADER},
+            401: _error_response("The per-node component credential is missing or invalid."),
+            409: _error_response("The target node does not match this controller."),
+        },
+    )
+    async def get_instance_head(
+        node_id: str,
+        instance_id: Annotated[str, Path(min_length=1, max_length=200)],
+    ) -> RuntimeInstanceHeadResponse:
+        require_own_node(node_id)
+        head = await run_in_threadpool(service.head, instance_id)
+        return RuntimeInstanceHeadResponse(
+            instance_id=head.instance_id,
+            current_generation=head.current_generation,
+            generation_high_water=head.generation_high_water,
+            last_fencing_token=head.last_fencing_token,
+            unresolved_prepare_intent_id=head.unresolved_prepare_intent_id,
+            unresolved_stop_intent_id=head.unresolved_stop_intent_id,
         )
 
     @router.get(

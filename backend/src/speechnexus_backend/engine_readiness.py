@@ -39,6 +39,15 @@ import sys
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, TextIO, cast
 
+from speechnexus_backend.controller_head import (
+    CONTROLLER_URL_VARIABLE,
+    ControllerConsultationError,
+    ControllerEndpoint,
+    NodeInstanceHead,
+    configured_endpoint,
+    generation_disagreement,
+    read_head,
+)
 from speechnexus_backend.engine_registration import EXIT_INVALID, EXIT_UNAVAILABLE
 from speechnexus_backend.speech.domain.readiness_verdict import (
     READINESS_INVALID as READINESS_INVALID_STATE,
@@ -210,6 +219,74 @@ def readiness_report(rows: Sequence[Row], *, now_us: int, warn_within_us: int) -
     return report
 
 
+def with_node_generations(
+    report: Sequence[Row],
+    *,
+    endpoint: ControllerEndpoint | None,
+    read: Callable[..., NodeInstanceHead] | None = None,
+    timeout_seconds: float = 5.0,
+) -> list[Row]:
+    """Downgrade every row whose generation the node never prepared (#1282).
+
+    The report is the surface operators read, so a receipt signed for a generation the
+    node does not serve must stop reading ``valid`` here even while its 24 h window has
+    hours left: waiting for it to expire reports a healthy engine for a day after the
+    divergence is already known. ``invalid`` is the state admission already refuses for,
+    so the report and the create path keep answering the same thing.
+    """
+    if endpoint is None:
+        return list(report)
+    reader = read_head if read is None else read
+    checked: list[Row] = []
+    for entry in report:
+        node_id = entry.get("target_node_id")
+        if not isinstance(node_id, str) or not node_id:
+            checked.append(entry)
+            continue
+        try:
+            head = reader(
+                endpoint,
+                node_id=node_id,
+                instance_id=str(entry["instance_id"]),
+                timeout_seconds=timeout_seconds,
+            )
+        except ControllerConsultationError as error:
+            # Unknown is not healthy: an unverifiable row is reported as unfinished
+            # verification rather than carrying a window nobody checked.
+            checked.append(
+                {
+                    **entry,
+                    "readiness_state": READINESS_INVALID,
+                    "expires_at_us": None,
+                    "remaining_seconds": None,
+                    "reason": error.code,
+                    "remediation": (
+                        f"the node controller could not be asked which generation it prepared "
+                        f"({error.message}); fix {CONTROLLER_URL_VARIABLE} or the controller, "
+                        "then re-run this report"
+                    ),
+                }
+            )
+            continue
+        disagreement = generation_disagreement(
+            int(entry["instance_generation"]), head, node_id=node_id
+        )
+        if disagreement is None:
+            checked.append(entry)
+            continue
+        checked.append(
+            {
+                **entry,
+                "readiness_state": READINESS_INVALID,
+                "expires_at_us": None,
+                "remaining_seconds": None,
+                "reason": "instance_generation_mismatch",
+                "remediation": disagreement,
+            }
+        )
+    return checked
+
+
 def _summary(report: Sequence[Row]) -> Row:
     counts = {
         READINESS_VALID: 0,
@@ -346,6 +423,11 @@ def main(
         now_us=now_us,
         warn_within_us=options.warn_within_seconds * 1_000_000,
     )
+    try:
+        endpoint = configured_endpoint(source)
+    except ControllerConsultationError as invalid:
+        parser.exit(EXIT_INVALID, f"error: {invalid.code}: {invalid.message}\n")
+    report = with_node_generations(report, endpoint=endpoint)
     for entry in report:
         print(json.dumps(entry, sort_keys=True), file=stream)
     summary = _summary(report)

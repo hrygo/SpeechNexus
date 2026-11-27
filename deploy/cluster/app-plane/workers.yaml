@@ -176,6 +176,20 @@ spec:
               envFrom:
                 - secretRef:
                     name: readiness-env
+              env:
+                # #1282: the ledger and the controller count generations separately, and
+                # they drifted to 1 and 11 for this instance while the pod serving
+                # traffic was the eleventh. Both jobs ask the node which generation it
+                # prepared and refuse to sign or report a receipt for a different one;
+                # the controller is hostNetwork on this node, so the host's loopback is
+                # the address. Without the pair the check would silently not run.
+                - name: SPEECHNEXUS_CONTROLLER_API_URL
+                  value: http://127.0.0.1:8022
+                - name: SPEECHNEXUS_CONTROLLER_API_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: controller-component-token
+                      key: token
               securityContext:
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true
@@ -248,6 +262,20 @@ spec:
               envFrom:
                 - secretRef:
                     name: readiness-env
+              env:
+                # #1282: the ledger and the controller count generations separately, and
+                # they drifted to 1 and 11 for this instance while the pod serving
+                # traffic was the eleventh. Both jobs ask the node which generation it
+                # prepared and refuse to sign or report a receipt for a different one;
+                # the controller is hostNetwork on this node, so the host's loopback is
+                # the address. Without the pair the check would silently not run.
+                - name: SPEECHNEXUS_CONTROLLER_API_URL
+                  value: http://127.0.0.1:8022
+                - name: SPEECHNEXUS_CONTROLLER_API_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: controller-component-token
+                      key: token
               securityContext:
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true

@@ -153,6 +153,51 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RuntimeControlErrorResponse"
+  /internal/v1/nodes/{node_id}/instances/{instance_id}/head:
+    get:
+      operationId: getInstanceHead
+      summary: Query the lifecycle head this node derived for one instance
+      description: |
+        The generation this node actually prepared for an instance, derived from its
+        own intent store: the high water, the generation still current after stops and
+        voided prepares, the fencing token, and any unresolved prepare or stop intent.
+        Admission needs it because the coordination ledger keeps a separate counter;
+        when the two drifted (ledger 1, node 11 for the same instance) a readiness
+        receipt attested a generation no pod served (#1282). A node that has never
+        been asked about the instance answers `null` generations, not an error: "no
+        intent" and "cannot read the store" are different facts.
+      parameters:
+        - $ref: "#/components/parameters/NodeIdPath"
+        - name: instance_id
+          in: path
+          required: true
+          description: Instance identity the head is derived for.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+        - $ref: "#/components/parameters/XRequestIdHeader"
+      responses:
+        "200":
+          description: The derived lifecycle head of this instance.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeInstanceHeadResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: The target node does not match this controller.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeControlErrorResponse"
   /internal/v1/nodes/{node_id}/instances/{instance_id}/generations/{instance_generation}/verified-stop:
     get:
       operationId: getVerifiedInstanceStop
@@ -875,6 +920,40 @@ components:
                 properties:
                   unified_memory_bytes:
                     const: 0
+    RuntimeInstanceHeadResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - instance_id
+        - current_generation
+        - generation_high_water
+        - last_fencing_token
+        - unresolved_prepare_intent_id
+        - unresolved_stop_intent_id
+      properties:
+        instance_id:
+          type: string
+        current_generation:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: |
+            The generation still current on this node after stops and voided prepares,
+            or null when the node holds no intent for the instance.
+        generation_high_water:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: The highest generation this node was ever asked about.
+        last_fencing_token:
+          type: integer
+          minimum: 0
+        unresolved_prepare_intent_id:
+          type: string
+          nullable: true
+        unresolved_stop_intent_id:
+          type: string
+          nullable: true
     RuntimeQualificationObservationResponse:
       allOf:
         - $ref: "#/components/schemas/RuntimeCoordinationObservation"

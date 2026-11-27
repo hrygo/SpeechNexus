@@ -198,6 +198,23 @@ speechnexus-register-engine \
 的实例（也就是从未登记过）无法解析代次，命令返回 `generation_required` 并提示首次登记要显式给
 一个。
 
+账本的代次与节点实际准备好的代次是两套计数，没有任何机制让它们一起走。实测过一次：账本读 1、
+节点读 11，而真正在服务的 Pod 是第 11 代，续租照旧成功、报告照旧说 `valid` 且剩余 24 小时。
+配了 `SPEECHNEXUS_CONTROLLER_API_URL` 与 `SPEECHNEXUS_CONTROLLER_API_TOKEN` 之后，命令在签名
+之前先问节点「你准备好的是哪一代」：
+
+| 情况 | 结果 |
+| --- | --- |
+| 两边一致 | 照常签发收据 |
+| 两边不一致 | `instance_generation_mismatch`（退出码 4），消息同时给出两个数字与两条出路：把节点那代登记进账本，或按账本那代重新 prepare |
+| 控制器问不到 | `controller_unreachable` / `controller_refused`（退出码 5） |
+| 只配了一个变量 | `controller_not_configured`（退出码 2） |
+| 两个都不配 | 不检查（本地 compose 形态） |
+
+未知不算健康：问不到控制器时拒绝签名，而不是跳过检查。`speechnexus-engine-readiness` 也做同一
+比较，不一致或问不到时把该行降级为 `invalid`（`reason` 为 `instance_generation_mismatch` 或
+控制器错误码），不等 24 小时窗口自然到期（[#1282](https://github.com/hrygo/SpeechNexus/issues/1282)）。
+
 已知缺陷：参考部署没有集群内的自动信号覆盖收据状态（`/readyz` 有意不因过期失败，
 报告命令不被 Compose 调度，启动闸门只打印一次），跟踪
 [#845](https://github.com/hrygo/SpeechNexus/issues/845)。定时续期只缩短窗口，不消除该缺口。

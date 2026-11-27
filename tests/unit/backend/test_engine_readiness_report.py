@@ -26,6 +26,7 @@ import psycopg
 import pytest
 
 from speechnexus_backend import engine_readiness
+from speechnexus_backend.controller_head import ControllerConsultationError, NodeInstanceHead
 from speechnexus_backend.engine_registration import EXIT_INVALID, EXIT_UNAVAILABLE
 from speechnexus_backend.speech.domain.capacity import PhysicalResources
 from speechnexus_backend.speech.domain.runtime_intents import (
@@ -355,3 +356,95 @@ def test_main_alerts_when_a_receipt_describes_another_plan(
     assert documents[0]["readiness_state"] == "invalid"
     assert "fencing_token" in documents[0]["reason"]
     assert "error: readiness_invalid: instance-1 g1" in captured.err
+
+
+def test_a_generation_the_node_never_prepared_stops_reading_valid(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#1282: the receipt said gen 1, the node had prepared gen 11.
+
+    Waiting for the receipt's own window to elapse would report a healthy engine for the
+    rest of the day after the divergence is already known, so the node is asked and the
+    row is downgraded to the state admission refuses for.
+    """
+    rows = [_row(document=_receipt(verified=NOW - 10, expires=NOW + 60_000_000_000))]
+    monkeypatch.setattr(
+        engine_readiness,
+        "read_head",
+        lambda *_, **__: NodeInstanceHead("instance-1", 11, 11),
+    )
+    code = engine_readiness.main(
+        ["--database-url", DSN],
+        env={
+            "SPEECHNEXUS_CONTROLLER_API_URL": "http://127.0.0.1:8080",
+            "SPEECHNEXUS_CONTROLLER_API_TOKEN": "token",
+        },
+        connect=lambda *_, **__: rows,
+    )
+    captured = capsys.readouterr()
+    entry = json.loads(captured.out.splitlines()[0])
+
+    assert code == EXIT_UNAVAILABLE
+    assert entry["readiness_state"] == "invalid"
+    assert entry["reason"] == "instance_generation_mismatch"
+    assert entry["expires_at_us"] is None
+    assert "generation 11" in entry["remediation"]
+    assert "error: readiness_invalid: instance-1 g1" in captured.err
+
+
+def test_an_agreeing_node_leaves_the_report_untouched(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rows = [_row(document=_receipt(verified=NOW - 10, expires=NOW + 60_000_000_000))]
+    monkeypatch.setattr(
+        engine_readiness,
+        "read_head",
+        lambda *_, **__: NodeInstanceHead("instance-1", 1, 1),
+    )
+    code = engine_readiness.main(
+        ["--database-url", DSN],
+        env={
+            "SPEECHNEXUS_CONTROLLER_API_URL": "http://127.0.0.1:8080",
+            "SPEECHNEXUS_CONTROLLER_API_TOKEN": "token",
+        },
+        connect=lambda *_, **__: rows,
+    )
+    captured = capsys.readouterr()
+    assert code == 0
+    assert json.loads(captured.out.splitlines()[0])["readiness_state"] == "valid"
+
+
+def test_an_unreachable_controller_makes_the_report_alert_instead_of_guessing(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Unknown is not healthy: a row nobody could verify must not carry a window.
+    rows = [_row(document=_receipt(verified=NOW - 10, expires=NOW + 60_000_000_000))]
+
+    def unavailable(*_: object, **__: object) -> object:
+        raise ControllerConsultationError("controller_unreachable", "the controller is unreachable")
+
+    monkeypatch.setattr(engine_readiness, "read_head", unavailable)
+    code = engine_readiness.main(
+        ["--database-url", DSN],
+        env={
+            "SPEECHNEXUS_CONTROLLER_API_URL": "http://127.0.0.1:9",
+            "SPEECHNEXUS_CONTROLLER_API_TOKEN": "token",
+        },
+        connect=lambda *_, **__: rows,
+    )
+    captured = capsys.readouterr()
+    entry = json.loads(captured.out.splitlines()[0])
+
+    assert code == EXIT_UNAVAILABLE
+    assert (entry["readiness_state"], entry["reason"]) == ("invalid", "controller_unreachable")
+    assert "SPEECHNEXUS_CONTROLLER_API_URL" in entry["remediation"]
+
+
+def test_a_report_without_a_controller_keeps_the_previous_behaviour(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    rows = [_row(document=_receipt(verified=NOW - 10, expires=NOW + 60_000_000_000))]
+    code = engine_readiness.main(["--database-url", DSN], env={}, connect=lambda *_, **__: rows)
+    captured = capsys.readouterr()
+    assert code == 0
+    assert json.loads(captured.out.splitlines()[0])["readiness_state"] == "valid"

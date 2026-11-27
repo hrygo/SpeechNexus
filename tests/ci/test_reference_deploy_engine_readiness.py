@@ -196,6 +196,36 @@ class ClusterRenewalTests(unittest.TestCase):
         self.assertIn("#1253", text)
 
 
+class ClusterGenerationCrossCheckTests(unittest.TestCase):
+    """Both readiness jobs must ask the node which generation it prepared (#1282).
+
+    The ledger and the controller keep separate generation counters, and in the field
+    they read 1 and 11 for the same instance while the pod serving traffic was the
+    eleventh: the jobs renewed and reported a receipt for a generation nobody served,
+    and both called it healthy. The cross-check only runs when the endpoint pair is
+    configured, so losing it from the manifest is silent — which is why it is checked
+    here rather than left to review.
+    """
+
+    def test_both_readiness_jobs_declare_the_controller_endpoint_and_credential(
+        self,
+    ) -> None:
+        text = read(CLUSTER_WORKERS)
+        for job in ("name: engine-readiness", "name: engine-readiness-renew"):
+            body = text.split(job, 1)[1].split("---", 1)[0]
+            self.assertIn("SPEECHNEXUS_CONTROLLER_API_URL", body, job)
+            self.assertIn("SPEECHNEXUS_CONTROLLER_API_TOKEN", body, job)
+            # The credential comes from the controller's own Secret, not from a copy:
+            # two copies of one token is two things to rotate.
+            self.assertIn("controller-component-token", body, job)
+            self.assertIn("#1282", body, job)
+
+    def test_the_cluster_readme_explains_the_cross_check(self) -> None:
+        text = read(CLUSTER_README)
+        self.assertIn("SPEECHNEXUS_CONTROLLER_API_URL", text)
+        self.assertIn("instance_generation_mismatch", text)
+
+
 class StartupGateReadinessTests(unittest.TestCase):
     def test_the_gate_points_at_the_renewal_instead_of_the_storage_answer(self) -> None:
         gate = read(GATE)

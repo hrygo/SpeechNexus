@@ -13,6 +13,7 @@ from speechnexus_backend.speech.domain.admission import (
     AdmissionRejectedError,
     AdmissionResult,
     AdmissionRuntime,
+    AdmissionStateInvalidError,
     Admitted,
     decide_create_admission,
     require_live_authority,
@@ -90,7 +91,20 @@ def _runtime(cursor: AdmissionCursor, instance: Row, head: Row, intent: Row) -> 
             "AND a.service_class <> 'realtime'",
             (instance["instance_id"], instance["instance_generation"]),
         )["slots"]
-        return AdmissionRuntime(runtime_instance, _head(head), observation, readiness, int(batch))
+        return AdmissionRuntime(
+            runtime_instance,
+            _head(head),
+            observation,
+            readiness,
+            int(batch),
+            "the unreleased admission_leases of this instance generation",
+        )
+    except AdmissionStateInvalidError:
+        # The counters and the leases disagree. That is an accounting defect, so it
+        # answers the deployment-defect class instead of the "re-register the engine"
+        # class it used to be folded into (#1248): re-registering cannot repair a
+        # slot counter.
+        raise AdmissionRejectedError("admission_state_invalid") from None
     except RuntimeRejectedError as error:
         raise AdmissionRejectedError(error.code) from None
     except ValueError, TypeError, KeyError:

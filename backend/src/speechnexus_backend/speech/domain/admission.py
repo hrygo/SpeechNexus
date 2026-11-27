@@ -262,6 +262,43 @@ class AdmissionPool:
     service_class: str
 
 
+class AdmissionStateInvalidError(ValueError):
+    """The slot counters and the leases that are supposed to explain them disagree.
+
+    This is a deployment-wide accounting defect, not a refusal a caller can act on:
+    the leases say one thing and ``engine_instances`` says another, so admission
+    cannot tell how much of the instance is really in use. It stays a ``ValueError``
+    so every existing fail-closed handler still refuses, and it carries the numbers
+    because the previous message named none of them and the generic
+    ``engine_state_mismatch`` answer sent operators to re-register an engine that was
+    never the problem (#1248).
+    """
+
+    def __init__(
+        self,
+        *,
+        instance_id: str,
+        instance_generation: int,
+        batch_slots: int,
+        held_slots: int,
+        quarantined_slots: int,
+        slots_source: str,
+    ) -> None:
+        self.instance_id = instance_id
+        self.instance_generation = instance_generation
+        self.batch_slots = batch_slots
+        self.held_slots = held_slots
+        self.quarantined_slots = quarantined_slots
+        self.slots_source = slots_source
+        super().__init__(
+            f"instance {instance_id} generation {instance_generation}: the unreleased "
+            f"lease slots from {slots_source} read {batch_slots}, but engine_instances "
+            f"records held_slots={held_slots} and quarantined_slots={quarantined_slots}; "
+            "the counters and the leases disagree, so no admission decision about this "
+            "instance can be trusted until they are reconciled"
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class AdmissionRuntime:
     instance: RuntimeInstance
@@ -269,11 +306,19 @@ class AdmissionRuntime:
     observation: RuntimeObservation
     readiness: VerifiedRuntimeReadiness
     batch_slots: int
+    slots_source: str = "admission_leases"
 
     def __post_init__(self) -> None:
         integer(self.batch_slots)
         if self.batch_slots > self.instance.held_slots + self.instance.quarantined_slots:
-            raise ValueError("Batch slots exceed all unreleased slots")
+            raise AdmissionStateInvalidError(
+                instance_id=self.instance.instance_id,
+                instance_generation=self.instance.instance_generation,
+                batch_slots=self.batch_slots,
+                held_slots=self.instance.held_slots,
+                quarantined_slots=self.instance.quarantined_slots,
+                slots_source=self.slots_source,
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -321,6 +366,8 @@ ADMISSION_REJECTION_CODES: frozenset[str] = CAPACITY_REJECTION_CODES | frozenset
         "idempotency_conflict",
         # A clock or version counter left its declared range: an internal defect.
         "invalid_counter",
+        # The slot counters and the leases that should explain them disagree.
+        "admission_state_invalid",
         "invalid_execution_request",
         "invalid_runtime_request",
         # Another intent already owns this runtime identity: replay or query it.
@@ -370,6 +417,12 @@ PUBLIC_ADMISSION_CODES: dict[str, str] = {
     # A clock, version counter or runtime command left its declared range: a
     # deployment defect rather than a caller mistake.
     "invalid_counter": "admission_state_invalid",
+    # The instance's held/quarantined slots and its unreleased leases disagree. It
+    # answers the declared deployment-defect envelope on purpose: no retry and no
+    # re-registration repairs a counter, so the operator has to reconcile the rows
+    # (#1248). Naming it here instead of relying on the unmapped-code fallback keeps
+    # the raise point readable.
+    "admission_state_invalid": "admission_state_invalid",
     "invalid_execution_request": "admission_state_invalid",
     "invalid_runtime_request": "admission_state_invalid",
     # This request's admission deadline elapsed: only a new request can succeed.

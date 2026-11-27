@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -402,3 +404,57 @@ def test_two_workspaces_keep_their_own_streaks_and_their_own_ids(
     assert _extra(alerted, "cause") == "engine_receipt_expired"
     for record in records:
         assert _extra(record, "workspace_id") in {WORKSPACE, other}
+
+
+def test_slot_counters_that_disagree_with_the_leases_name_every_number() -> None:
+    """#1248: the invariant used to raise a bare ValueError with no facts.
+
+    Admission folded it into ``reconciliation_required`` and the public mapping
+    answered ``engine_state_mismatch`` — "register the engine again" for a counter
+    that no registration can repair. The name carries the instance, both counters and
+    the source of the lease sum instead, so one log line says what to reconcile.
+    """
+    from speechnexus_backend.speech.domain.admission import (
+        AdmissionRuntime,
+        AdmissionStateInvalidError,
+    )
+
+    admission_fixtures = importlib.import_module("tests.fake.admission")
+    drifted = replace(
+        admission_fixtures.INSTANCE,
+        held_slots=1,
+        quarantined_slots=0,
+        instance_state="ready",
+    )
+
+    with pytest.raises(AdmissionStateInvalidError) as caught:
+        AdmissionRuntime(
+            drifted,
+            admission_fixtures.HEAD,
+            admission_fixtures.OBSERVATION,
+            admission_fixtures.READINESS,
+            3,
+            "the unreleased admission_leases of this instance generation",
+        )
+
+    error = caught.value
+    # Still a ValueError: every existing fail-closed handler keeps refusing.
+    assert isinstance(error, ValueError)
+    assert (error.instance_id, error.instance_generation) == (
+        drifted.instance_id,
+        drifted.instance_generation,
+    )
+    assert (error.batch_slots, error.held_slots, error.quarantined_slots) == (3, 1, 0)
+    message = str(error)
+    for fact in (drifted.instance_id, "3", "held_slots=1", "quarantined_slots=0"):
+        assert fact in message
+
+
+def test_the_defect_answers_its_own_500_and_never_the_re_register_class() -> None:
+    from speechnexus_backend.speech.domain.admission import PUBLIC_ADMISSION_CODES
+
+    assert PUBLIC_ADMISSION_CODES["admission_state_invalid"] == "admission_state_invalid"
+    # The class this defect must never be folded into: its documented recovery is
+    # "register the engine again", which cannot repair a slot counter.
+    assert PUBLIC_ADMISSION_CODES["admission_state_invalid"] != "engine_state_mismatch"
+    assert PUBLIC_ADMISSION_CODES["reconciliation_required"] == "engine_state_mismatch"

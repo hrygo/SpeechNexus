@@ -18,7 +18,7 @@ spec:
         runAsNonRoot: true
       containers:
         - name: migrate
-          image: speechnexus-python:3a6a2683
+          image: ${PYTHON_IMAGE}
           command: ["speechnexus-job-migrate", "--schema", "speech"]
           env:
             - name: SPEECHNEXUS_MIGRATION_DATABASE_URL

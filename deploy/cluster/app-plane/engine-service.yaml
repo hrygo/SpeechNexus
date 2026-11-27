@@ -1,0 +1,21 @@
+# A stable name for the controller-created engine Pod.
+#
+# The engine is a Pod whose address changes on every generation, so nothing in the
+# cluster may carry its IP: the readiness renewal would then re-sign a receipt from
+# a host-local tunnel or a stale address and fail with `engine_unreachable`, which is
+# exactly the failure that drained the receipt after ~23 h (#1253). This Service
+# selects whatever Pod currently serves the instance, and the Pod's own readiness
+# probe (`GET /health` on 18190, period 2 s) keeps a warming or draining generation
+# out of the endpoint list during a switch.
+apiVersion: v1
+kind: Service
+metadata:
+  name: engine-asr-1
+  namespace: speechnexus
+spec:
+  selector:
+    speechnexus.io/instance-id: instance-asr-1
+  ports:
+    - name: http
+      port: 18190
+      targetPort: 18190

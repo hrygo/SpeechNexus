@@ -28,7 +28,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: asset-inspector
-          image: speechnexus-asset-inspector:203d412b
+          image: ${ASSET_INSPECTOR_IMAGE}
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

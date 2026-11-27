@@ -143,6 +143,16 @@ _MAX_LABEL_VALUE: Final = 63
 _MAX_POD_NAME: Final = 63
 
 
+# Calibrated against a measured cold load, not guessed: the ASR engine reaches
+# /health 200 about 240 s after the controller creates its Pod (two samples on
+# MegaCube: 3m47s, 4m10s), so a 180 s budget reported ordinary loading as
+# ``warmup_deadline_exceeded`` and sent whoever read it after a fault (#1250).
+# This is the single definition point: the process settings and the driver settings
+# both default to it, and an approved template that states ``load_budget_seconds``
+# overrides both.
+DEFAULT_POD_READY_TIMEOUT_SECONDS: Final = 600.0
+
+
 @dataclass(frozen=True, slots=True)
 class KubernetesRuntimeSettings:
     """Bounded timings and naming for one cluster-backed node runtime."""
@@ -152,8 +162,9 @@ class KubernetesRuntimeSettings:
     namespace: str
     # How long one prepare action may wait for the Pod to report Ready. This is
     # the transport budget; a template that declares controller-side warmup keeps
-    # its own budget from ``readiness.warmup.timeout_seconds``.
-    pod_ready_timeout_seconds: float = 180.0
+    # its own budget from ``readiness.warmup.timeout_seconds``, and a template that
+    # declares ``load_budget_seconds`` overrides this one.
+    pod_ready_timeout_seconds: float = DEFAULT_POD_READY_TIMEOUT_SECONDS
     poll_interval_seconds: float = 1.0
     # Deletion grace the API server hands the kubelet (the same "stop timeout"
     # the container driver passes to its daemon), and the wall-clock budget for
@@ -898,10 +909,15 @@ class KubernetesNodeRuntime:
         if deadline is not None:
             return deadline
         warmup = template.readiness.warmup
+        # The budget answers "how long may this model take to become reachable",
+        # which is a fact about the model and the hardware, so the approved template
+        # states it. Falling back to the deployment default keeps a template that
+        # declares nothing working, but a cold load longer than that default turns
+        # ordinary progress into a reported fault (#1250).
         budget = (
             warmup.timeout_seconds
             if warmup is not None
-            else self._settings.pod_ready_timeout_seconds
+            else template.load_budget_seconds or self._settings.pod_ready_timeout_seconds
         )
         remaining = (request.deadline_at - self._wall_clock()).total_seconds()
         deadline = self._monotonic() + min(budget, remaining)

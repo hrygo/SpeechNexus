@@ -115,6 +115,13 @@ adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把
   失败或容器仍存活时只报告当前观察，不伪造证据（意图留在未解决或 quarantine）。
 - **退出码语义**：停止证据记录 wait 与 inspect 一致的实际退出码，代码不把 0 或 143 作为唯一
   成功条件；容器是否成功服务由网关的执行事实判断，控制器不把退出码当作执行结果。
+- **加载预算**：传输预算（等 Pod 报告 Ready 的时间）由模型规模决定，所以由批准模板声明
+  `load_budget_seconds`，缺省时退回部署默认值
+  `SPEECHNEXUS_CONTROLLER_K8S_POD_READY_TIMEOUT_SECONDS`。降级到退回值是唯一会让「还在正常
+  加载」变成报警的路径：实测这台机器上引擎从建 Pod 到 `/health` 200 约 240 秒（两次采样
+  3m47s、4m10s），而旧默认 180 秒会把正常的冷加载报成 `warmup_deadline_exceeded`，让人去查
+  一个不存在的故障。预算真的被超出时仍然报同一个原因——那条原因要表示「超过预期」，不表示
+  「还没好」。
 - **显存上限**：批准模板不带显存数字（同一份文件要跑在不同显存的卡上），上限只能由部署声明：
   直接给份额 `SPEECHNEXUS_CONTROLLER_ENGINE_GPU_MEMORY_UTILIZATION`，或给额度
   `..._GPU_MEMORY_MIB` 加卡的总量 `..._GPU_TOTAL_MIB` 由控制器派生（向下取整，不会超过额度）。

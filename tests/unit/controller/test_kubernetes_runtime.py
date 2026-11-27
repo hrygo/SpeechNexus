@@ -470,3 +470,56 @@ def _warmup_body(tmp_path: Path) -> Path:
 
 def _warmup_digest() -> str:
     return "sha256:" + hashlib.sha256(_WARMUP_BODY).hexdigest()
+
+
+def test_a_declared_load_budget_covers_a_cold_load_the_deployment_default_would_have_cut(
+    tmp_path: Path,
+) -> None:
+    """#1250: a normal cold load must not be reported as an exceeded budget.
+
+    The engine reaches /health about 240 s after the controller creates its Pod
+    (measured twice on the cluster). With the 180 s default in force, a prepare that
+    was simply still loading answered ``warmup_deadline_exceeded`` and sent whoever
+    read it after a fault. The approved template now states how long its model may
+    take, so the budget follows the model instead of the deployment default.
+    """
+    cluster = _FakeCluster()
+    cluster.ready_after_gets = 5
+    runtime, clock = _runtime(
+        tmp_path,
+        cluster,
+        pod_ready_timeout_seconds=2.5,
+        poll_interval_seconds=1.0,
+    )
+
+    observation = runtime.prepare(build_request(), build_template(load_budget_seconds=600))
+
+    assert observation.observed_instance_state is ObservedInstanceState.READY
+    assert observation.error_code is None
+    # Five polls of one fake second each: three of them are past the 2.5 s the
+    # deployment default allowed, so only the declared budget can cover them.
+    assert len(clock.sleeps) == 4
+
+
+def test_a_declared_load_budget_still_names_an_overrun(tmp_path: Path) -> None:
+    """A budget that is really exceeded is still a fault, not quiet progress."""
+    cluster = _FakeCluster()
+    cluster.ready_after_gets = None
+    runtime, _clock = _runtime(
+        tmp_path,
+        cluster,
+        pod_ready_timeout_seconds=600.0,
+        poll_interval_seconds=1.0,
+    )
+
+    observation = runtime.prepare(build_request(), build_template(load_budget_seconds=2))
+
+    assert observation.observed_instance_state is ObservedInstanceState.LOADING
+    assert observation.error_code is RuntimeIntentErrorCode.WARMUP_DEADLINE_EXCEEDED
+
+
+def test_the_deployment_default_budget_covers_a_measured_cold_load() -> None:
+    """The fallback for a template that declares nothing is calibrated, not guessed."""
+    settings = KubernetesRuntimeSettings(namespace=NAMESPACE)
+    # Measured on MegaCube: 3m47s and 4m10s from Pod creation to /health 200.
+    assert settings.pod_ready_timeout_seconds >= 300

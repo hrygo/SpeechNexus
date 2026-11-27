@@ -46,7 +46,8 @@
         "HF_HUB_OFFLINE": "1",
         "TRANSFORMERS_OFFLINE": "1",
         "TRITON_CACHE_DIR": "/tmp/triton-cache"
-      }
+      },
+      "load_budget_seconds": 600
     }
   ]
 }

@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 from pydantic import SecretStr, ValidationError
+from tests.fake.controller import build_template
 
 from speechnexus_node_controller.domain.intents import (
     InvalidRuntimeRequestError,
@@ -390,3 +391,39 @@ def test_the_deployed_voice_clone_template_pins_a_real_base_warmup(tmp_path: Pat
     assert document["ref_text"] and document["input"]
     assert "x_vector_only_mode" not in document
     assert (directory / "warmup-reference.wav").is_file()
+
+
+def test_a_declared_load_budget_reaches_the_registry(tmp_path: Path) -> None:
+    """#1250: the budget that bounds a cold load is a fact about the model.
+
+    It has to survive the file → registry trip, otherwise the driver silently
+    falls back to the deployment default and reports ordinary loading as an
+    exceeded budget again.
+    """
+    templates = load_approved_templates(
+        _write(tmp_path, {"templates": [_template(load_budget_seconds=600)]})
+    )
+
+    assert templates[0].load_budget_seconds == 600
+    assert (
+        load_approved_templates(_write(tmp_path, {"templates": [_template()]}))[
+            0
+        ].load_budget_seconds
+        is None
+    )
+
+
+@pytest.mark.parametrize("budget", [0, -1, 3601, 100_000])
+def test_a_load_budget_outside_the_bounded_range_is_refused(tmp_path: Path, budget: int) -> None:
+    with pytest.raises((ValidationError, ValueError)):
+        load_approved_templates(
+            _write(tmp_path, {"templates": [_template(load_budget_seconds=budget)]})
+        )
+
+
+def test_the_domain_refuses_a_load_budget_the_file_model_would_let_through() -> None:
+    """The registry is a public entry point too, not only the JSON file."""
+    with pytest.raises(ValueError, match="load budget"):
+        build_template(load_budget_seconds=0)
+    with pytest.raises(ValueError, match="load budget"):
+        build_template(load_budget_seconds=3601)

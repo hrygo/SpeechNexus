@@ -71,6 +71,7 @@ class _TemplateModel(BaseModel):
     engine_auth: EngineAuthKind = EngineAuthKind.NONE
     environment: dict[str, str] | None = None
     variant_slot: str | None = None
+    load_budget_seconds: int | None = Field(default=None, ge=1, le=3600)
 
 
 class _TemplateFileModel(BaseModel):
@@ -117,6 +118,7 @@ def _to_template(model: _TemplateModel) -> ApprovedRuntimeTemplate:
         read_only_binds=tuple(
             ReadOnlyBind(source=bind.source, target=bind.target) for bind in model.read_only_binds
         ),
+        load_budget_seconds=model.load_budget_seconds,
         network_name=model.network_name,
         engine_auth=model.engine_auth,
         environment=tuple((model.environment or {}).items()),

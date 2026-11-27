@@ -34,7 +34,7 @@ spec:
         runAsNonRoot: true
       containers:
         - name: postgres
-          image: postgres:16.15-alpine
+          image: ${POSTGRES_IMAGE}
           envFrom:
             - secretRef:
                 name: postgres-credentials
@@ -72,7 +72,9 @@ spec:
         name: data
       spec:
         accessModes: ["ReadWriteOnce"]
-        storageClassName: standard
+        # No class name: each assembler has its own default (Docker
+        # Desktop `standard`, k3s `local-path`). Naming one here made the
+        # same manifest apply to only one of the two clusters.
         resources:
           requests:
             storage: 20Gi

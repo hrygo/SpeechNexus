@@ -4,14 +4,30 @@
 Inputs: ``.runtime/cluster/compose.env`` (written by ``deploy/cluster/init-env.py``)
 and ``.runtime/cluster/private/`` (recipe JSON). Nothing secret is passed on a
 command line, printed, or written outside ``.runtime``.
+
+Two topologies, because the engine and the coordination database are reached in two
+different ways while the application plane moves into the cluster:
+
+``in-cluster`` (default)
+    Database, object storage and the engine Service are all reached by their
+    cluster names -- the target assembly, once the whole plane runs here.
+``tunnel``
+    Only the readiness report and renewal are rendered, against the *existing*
+    coordination database and object storage through the reverse tunnels that are
+    already up on the host (``127.0.0.1:15440`` and ``127.0.0.1:19100``), and the
+    engine through the host-loopback shim (``127.0.0.1:18190``). That is the
+    additive step: it produces readiness receipts for the live engine without
+    forking the coordination domain (#1253).
 """
 
 from __future__ import annotations
 
+import argparse
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 ROOT = Path(__file__).resolve().parents[3]
 CLUSTER = Path(__file__).resolve().parents[1]
@@ -36,6 +52,27 @@ BUCKET = "speechnexus-results"
 # the deployment states the exact origin, so the origin is written once here and
 # passed to both credential-presenting app-plane units.
 GATEWAY_ORIGIN = "http://bridge.speechnexus.svc:18010"
+
+# The engine address is the one value that must not be copied from anywhere: it is
+# where the running instance answers, and it changes with every generation. The
+# Service name is the stable form; the loopback is what the tunnel topology has
+# today, and it is precisely the volatile form #1253 is about.
+ENGINE_SERVICE_HEALTH_URL = "http://engine-asr-1:18190/health"
+ENGINE_LOOPBACK_HEALTH_URL = "http://127.0.0.1:18190/health"
+
+TUNNEL_PG = ("127.0.0.1", 15440)
+TUNNEL_S3 = "http://127.0.0.1:19100"
+
+
+def to_tunnel(dsn: str) -> str:
+    """Re-point a DSN at the host's reverse tunnel, keeping role and database."""
+    parts = urlsplit(dsn)
+    host, port = TUNNEL_PG
+    netloc = parts.netloc.replace(f"@{parts.hostname}", f"@{host}", 1)
+    if parts.port:
+        netloc = netloc.replace(f":{parts.port}", f":{port}", 1)
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+
 
 RECIPES = {
     "transcription-recipe.json": ROOT / "deploy/private/transcription-recipe.example.json",
@@ -104,7 +141,17 @@ def write_env_file(path: Path, values: dict[str, str]) -> None:
     path.chmod(0o600)
 
 
-def main() -> int:
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--topology",
+        choices=("in-cluster", "tunnel"),
+        default="in-cluster",
+        help="in-cluster: database, object storage and engine by cluster name; "
+        "tunnel: only the readiness units, against the existing tunnels",
+    )
+    args = parser.parse_args(argv)
+    topology = args.topology
     if not ENV_FILE.exists():
         raise SystemExit(f"missing {ENV_FILE}; run deploy/cluster/init-env.py first")
     env = load_env(ENV_FILE)
@@ -294,16 +341,22 @@ def main() -> int:
             "SPEECHNEXUS_ADMISSION_WATCH_WORKSPACES": "workspace-default",
             "SPEECHNEXUS_ADMISSION_WATCH_TRANSACTION_TIMEOUT_SECONDS": "10",
         }
+        # The readiness units are the only ones rendered for both topologies, so
+        # the two values that differ between them are chosen here and nowhere else.
+        tunnel = topology == "tunnel"
         readiness = {
             "SPEECHNEXUS_DATABASE_SCHEMA": "speech",
-            "SPEECHNEXUS_DATABASE_URL": env["SPEECHNEXUS_REGISTRATION_DATABASE_URL"],
-            "SPEECHNEXUS_ENGINE_HEALTH_URL": env.get("SPEECHNEXUS_ENGINE_HEALTH_URL")
-            or "http://bridge.speechnexus.svc:18190/health",
+            "SPEECHNEXUS_DATABASE_URL": to_tunnel(env["SPEECHNEXUS_REGISTRATION_DATABASE_URL"])
+            if tunnel
+            else env["SPEECHNEXUS_REGISTRATION_DATABASE_URL"],
+            "SPEECHNEXUS_ENGINE_HEALTH_URL": ENGINE_LOOPBACK_HEALTH_URL
+            if tunnel
+            else ENGINE_SERVICE_HEALTH_URL,
             "SPEECHNEXUS_TRANSCRIPTION_RECIPE_FILE": (
                 "/run/speechnexus-private/transcription-recipe.json"
             ),
             "SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET": BUCKET,
-            "SPEECHNEXUS_OBJECT_STORAGE_ENDPOINT": "http://minio:9000",
+            "SPEECHNEXUS_OBJECT_STORAGE_ENDPOINT": TUNNEL_S3 if tunnel else "http://minio:9000",
             "SPEECHNEXUS_OBJECT_STORAGE_BUCKET": BUCKET,
             "SPEECHNEXUS_OBJECT_STORAGE_ACCESS_KEY": env["MINIO_ROOT_USER"],
             "SPEECHNEXUS_OBJECT_STORAGE_SECRET_KEY": env["MINIO_ROOT_PASSWORD"],
@@ -356,6 +409,11 @@ def main() -> int:
             "workbench-migrate-env": workbench_migrate,
             "workbench-api-env": workbench_api,
         }
+        if topology == "tunnel":
+            # Deliberately only the readiness units: everything else would name
+            # services that this assembly does not have, and rendering them here
+            # would make an empty coordination domain look assembled.
+            sources = {"readiness-env": readiness}
         for name, values in sources.items():
             path = tmp / f"{name}.env"
             write_env_file(path, values)
@@ -365,6 +423,10 @@ def main() -> int:
             "private-config",
             {name: PRIVATE / name for name in RECIPES},
         )
+        if topology == "tunnel":
+            printable = sorted(sources)
+            print(f"[{topology}] rendered secrets {printable} + private-config")
+            return 0
 
         configmap = subprocess.run(
             [
@@ -435,7 +497,7 @@ def main() -> int:
         kubectl("-n", NAMESPACE, "apply", "-f", "-", stdin=nginx.stdout)
 
         print(
-            f"rendered secrets {sorted(sources)} + private-config, "
+            f"[{topology}] rendered secrets {sorted(sources)} + private-config, "
             "configmaps minio-init-script, workbench-startup-gate, workbench-nginx-template"
         )
         return 0
@@ -446,4 +508,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

@@ -37,7 +37,7 @@ spec:
         runAsNonRoot: true
       containers:
         - name: minio
-          image: speechnexus-minio:RELEASE.2025-09-07T16-13-09Z
+          image: ${MINIO_IMAGE}
           args: ["server", "/data", "--console-address", ":9001"]
           envFrom:
             - secretRef:
@@ -77,7 +77,9 @@ spec:
         name: data
       spec:
         accessModes: ["ReadWriteOnce"]
-        storageClassName: standard
+        # No class name: each assembler has its own default (Docker
+        # Desktop `standard`, k3s `local-path`). Naming one here made the
+        # same manifest apply to only one of the two clusters.
         resources:
           requests:
             storage: 20Gi

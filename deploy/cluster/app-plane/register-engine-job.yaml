@@ -1,10 +1,11 @@
 # One-shot registration of the file-ASR engine instance that runs on MegaCube.
 #
-# The engine itself is reached over the bridge (127.0.0.1:18190 on MegaCube is
-# forwarded to bridge.speechnexus.svc:18190), so registration runs in the
-# application plane where the coordination database is local. The private recipe
-# is copied to /tmp with the mode the loader requires: a Secret mount cannot
-# satisfy "owned by the running uid and 0600".
+# The engine is reached by its cluster Service (`engine-service.yaml`), not by a Pod
+# IP: the address changes on every generation, and a registration that carries one
+# goes stale silently. Registration runs in the application plane because the
+# coordination database is reachable from there. The private recipe is copied to
+# /tmp with the mode the loader requires: a Secret mount cannot satisfy "owned by
+# the running uid and 0600".
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -18,7 +19,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: register
-          image: speechnexus-python:3a6a2683
+          image: ${PYTHON_IMAGE}
           imagePullPolicy: IfNotPresent
           command:
             - /bin/sh
@@ -43,7 +44,7 @@ spec:
             - name: SPEECHNEXUS_TRANSCRIPTION_RECIPE_FILE
               value: /tmp/transcription-recipe.json
             - name: SPEECHNEXUS_ENGINE_HEALTH_URL
-              value: http://bridge.speechnexus.svc:18190/health
+              value: http://engine-asr-1:18190/health
           volumeMounts:
             - name: private-config
               mountPath: /private

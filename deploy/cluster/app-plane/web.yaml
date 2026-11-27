@@ -29,7 +29,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: workbench
-          image: speechnexus-workbench-web:203d412b
+          image: ${WORKBENCH_WEB_IMAGE}
           imagePullPolicy: IfNotPresent
           envFrom:
             # Rendered from the live Services by render-web-upstreams.py; the
@@ -109,7 +109,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: admin
-          image: speechnexus-admin-web:203d412b
+          image: ${ADMIN_WEB_IMAGE}
           imagePullPolicy: IfNotPresent
           envFrom:
             # Rendered from the live Services by render-web-upstreams.py; the

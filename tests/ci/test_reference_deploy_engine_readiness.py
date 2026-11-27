@@ -229,3 +229,28 @@ class ContractReadinessTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+CLUSTER_TEMPLATES = ROOT / "deploy/cluster/compute/approved-templates.json"
+
+
+class ClusterTemplateBudgetTests(unittest.TestCase):
+    """Every approved cluster template states how long its model may take to load.
+
+    The controller's fallback budget is calibrated for one measured cold load, so a
+    template that declares nothing silently inherits a number that may not describe
+    it — and a load slower than that number is reported as ``warmup_deadline_exceeded``
+    instead of plain progress (#1250). The declaration is per model, so the
+    deployment has to keep one per template.
+    """
+
+    def test_every_approved_cluster_template_declares_its_load_budget(self) -> None:
+        import json
+
+        document = json.loads(read(CLUSTER_TEMPLATES))
+        for template in document["templates"]:
+            with self.subTest(template=template.get("template_id")):
+                budget = template.get("load_budget_seconds")
+                self.assertIsInstance(budget, int)
+                self.assertGreaterEqual(budget, 300)
+                self.assertLessEqual(budget, 3600)

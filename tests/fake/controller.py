@@ -95,6 +95,7 @@ def build_template(
     environment: tuple[tuple[str, str], ...] = (),
     variant_slot: str | None = None,
     engine_auth: EngineAuthKind = EngineAuthKind.NONE,
+    load_budget_seconds: int | None = None,
 ) -> ApprovedRuntimeTemplate:
     resolved_readiness = (
         readiness if readiness is not None else ReadinessRule(kind=ReadinessKind.PROCESS_RUNNING)
@@ -115,6 +116,7 @@ def build_template(
         environment=environment,
         variant_slot=variant_slot,
         engine_auth=engine_auth,
+        load_budget_seconds=load_budget_seconds,
     )
 
 

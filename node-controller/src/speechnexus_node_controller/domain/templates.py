@@ -192,6 +192,7 @@ class ApprovedRuntimeTemplate:
     engine_auth: EngineAuthKind = EngineAuthKind.NONE
     environment: tuple[tuple[str, str], ...] = ()
     variant_slot: str | None = None
+    load_budget_seconds: int | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.template_id, "template_id")
@@ -202,6 +203,8 @@ class ApprovedRuntimeTemplate:
             raise ValueError("image_reference must be a single container image reference")
         if self.command is not None and not self.command:
             raise ValueError("a declared command must not be empty")
+        if self.load_budget_seconds is not None and not 0 < self.load_budget_seconds <= 3600:
+            raise ValueError("a declared load budget must be positive and at most 3600 seconds")
         if not isinstance(self.engine_auth, EngineAuthKind):
             raise ValueError("engine_auth must select an approved native authentication mode")
         if self.engine_auth is EngineAuthKind.VLLM_API_KEY_V1:

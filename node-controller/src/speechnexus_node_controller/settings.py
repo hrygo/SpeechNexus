@@ -23,6 +23,9 @@ from speechnexus_node_controller.environment import (
     PLANES,
     refuse_unrecognised_prefixed_environment,
 )
+from speechnexus_node_controller.infrastructure.kubernetes_runtime import (
+    DEFAULT_POD_READY_TIMEOUT_SECONDS,
+)
 
 KUBERNETES_RUNTIME: Final = "k8s"
 _DNS_LABEL: Final = re.compile(r"[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?")
@@ -81,9 +84,13 @@ class Settings(BaseSettings):
     # created in the wrong namespace is a rejection, not a working engine.
     k8s_namespace: str | None = None
     k8s_service_account_name: str | None = None
-    # Pod readiness is transport health with its own wall-clock budget; the
-    # plan records that the real create-to-serving time is still unmeasured.
-    k8s_pod_ready_timeout_seconds: float = Field(default=180.0, gt=0, le=3600)
+    # Pod readiness is transport health with its own wall-clock budget. The
+    # calibrated value (measured cold load plus margin) lives with the driver that
+    # spends it; this field only carries it into the process settings, so a
+    # deployment can still override it and the two defaults cannot drift apart.
+    k8s_pod_ready_timeout_seconds: float = Field(
+        default=DEFAULT_POD_READY_TIMEOUT_SECONDS, gt=0, le=3600
+    )
     k8s_pod_poll_interval_seconds: float = Field(default=1.0, gt=0, le=60)
     k8s_request_timeout_seconds: float = Field(default=10.0, gt=0, le=120)
     local_observer_enabled: bool = True

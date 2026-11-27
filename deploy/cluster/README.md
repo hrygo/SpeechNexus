@@ -188,6 +188,9 @@ docker save speechnexus-node-controller:<sha> | sudo k3s ctr images import -
 #   或者：docker push <registry>/speechnexus-node-controller:<sha>，再把清单里的
 #   image 换成该地址
 
+# 顺序有约束：模板文件先于镜像升级会被旧控制器**整份拒绝**（文件模型是
+# extra="forbid"，它不认识新字段），控制器随后以 CrashLoop 收场。先换镜像、等 rollout
+# 成功，再 apply 模板；反过来只需重启一次 Pod，不会进循环。
 # 两个输入取自既有来源，不在清单里复制
 kubectl -n speechnexus create configmap controller-approved-templates \
   --from-file=approved-templates.json=deploy/cluster/compute/approved-templates.json \

@@ -119,9 +119,6 @@ def render_compute(values: dict[str, str], versions: dict[str, str]) -> str:
         "COMPUTE_GATEWAY_QUERY_DATABASE_URL": to_tunnel(
             values["SPEECHNEXUS_GATEWAY_CONTROL_QUERY_DATABASE_URL"]
         ),
-        "COMPUTE_JOB_DISPATCH_DATABASE_URL": to_tunnel(
-            values["SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL"]
-        ),
         "COMPUTE_DISABLE_DATABASE_URL": to_tunnel(values["SPEECHNEXUS_DISABLE_DATABASE_URL"]),
         "COMPUTE_DISABLE_SETTLEMENT_DATABASE_URL": to_tunnel(
             values["SPEECHNEXUS_DISABLE_SETTLEMENT_DATABASE_URL"]

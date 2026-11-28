@@ -360,6 +360,24 @@ docker compose -p speechnexus-cluster-compute --env-file .runtime/cluster-comput
 只改这一处：网关端点文件读的是 18190 这个宿主端口，不跟随 Pod IP。反过来，把 Pod IP 直接写进
 `gateway-file-asr-endpoint.json` 是错的——那样每次重建都要改两处。
 
+端点里的 `target.instance_generation` **不由人手填**：它是账本事实
+（`runtime_instance_heads.current_generation`），控制器换代就变，写死会在下一次换代后全程
+`stale_instance_generation`，而只读侧仍报 `valid`（#1291）。换代或重建后按顺序做：
+
+```bash
+# ① 从账本写回端点文件（只改这一个字段，地址/端口/绑定版本原样保留）
+SPEECHNEXUS_DATABASE_URL=... SPEECHNEXUS_DATABASE_SCHEMA=speech \
+  python3 deploy/cluster/render-endpoint.py \
+  --file .runtime/cluster/compute/gateway-file-asr-endpoint.json
+# ② 核对：文件与账本一致时退出 0，不一致时退出 1 并点名两个数字
+python3 deploy/cluster/render-endpoint.py \
+  --file .runtime/cluster/compute/gateway-file-asr-endpoint.json --check
+```
+
+`--check` 是漂移检测：账本有行才算数，账本没有该实例的 head 行时脚本拒绝写任何代次（缺行不是
+"第 1 代"）。网关重启前后各跑一次即可；`readiness` 判据里的 `instance_generation` 与它读的是同一
+个账本字段。
+
 ## 作业派发
 
 派发器在应用面：`deploy/cluster/app-plane/workers.yaml` 的 `job-dispatch` Deployment，

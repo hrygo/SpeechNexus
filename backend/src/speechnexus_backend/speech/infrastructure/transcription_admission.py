@@ -27,6 +27,13 @@ from speechnexus_backend.speech.domain.admission import (
     AdmitRecipe,
     StageAllocation,
 )
+from speechnexus_backend.speech.domain.binding_readiness import (
+    QUALITY_UNVERIFIED,
+    BindingReadiness,
+    EngineFacts,
+    QualityEvidence,
+    binding_readiness,
+)
 from speechnexus_backend.speech.domain.jobs import CreateJob
 from speechnexus_backend.speech.domain.owners import OwnerAuthority
 from speechnexus_backend.speech.domain.transcription import TranscriptionPlan
@@ -34,6 +41,12 @@ from speechnexus_backend.speech.infrastructure.admission_codec import (
     business_command_from_value,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
+from speechnexus_backend.speech.infrastructure.readiness_void_schema import (
+    latest_void_at_us_expression,
+)
+from speechnexus_backend.speech.infrastructure.runtime_observation_codec import (
+    readiness_from_document,
+)
 from speechnexus_backend.speech.infrastructure.transcription_recipe import (
     TranscriptionRecipe,
 )
@@ -55,6 +68,13 @@ class LiveTranscriptionFacts:
     instance_version: int
     host_node_id: str
     gateway_id: str
+    # The binding's readiness verdict, decided once in
+    # ``speech/domain/binding_readiness.py`` (#1295). Admission refuses on it, so
+    # the answer the catalogue projects and the answer this path enforces cannot
+    # drift: a voided receipt used to be invisible to the synchronous path, which
+    # is how it answered "backend unavailable" for an engine whose receipt had
+    # already been voided.
+    readiness: BindingReadiness | None = None
 
 
 class TranscriptionAdmissionFacts(Protocol):
@@ -96,6 +116,27 @@ class PostgresTranscriptionAdmissionFacts:
                     "WHERE h.instance_id = ?",
                     (recipe.instance_id,),
                 ).fetchone()
+                # The readiness evidence for this generation: the prepare intent
+                # that succeeded for it, plus the receipt it signed. ``action`` and
+                # ``intent_state`` are part of the evidence -- a prepare that never
+                # succeeded is not a prepare (#1295).
+                receipt = connection.execute(
+                    "SELECT r.readiness_document, "
+                    + latest_void_at_us_expression(
+                        instance_column="r.instance_id",
+                        generation_column="r.instance_generation",
+                    )
+                    + " AS readiness_voided_at_us "
+                    "FROM runtime_instance_heads AS h "
+                    "JOIN runtime_instance_intents AS r "
+                    "ON r.instance_id = h.instance_id "
+                    "AND r.instance_generation = h.current_generation "
+                    "AND r.intent_id = h.current_prepare_intent_id "
+                    "AND r.target_node_id = ? "
+                    "WHERE h.instance_id = ? AND r.action = 'prepare' "
+                    "AND r.intent_state = 'succeeded'",
+                    (binding.target_node_id, recipe.instance_id),
+                ).fetchone()
                 clock = now_us(cast(ClockReader, connection))
         except Exception:
             raise TranscriptionUnavailableError(
@@ -119,6 +160,21 @@ class PostgresTranscriptionAdmissionFacts:
             raise TranscriptionUnavailableError(
                 "Transcription admission facts disagree with the private recipe"
             )
+        readiness = _binding_readiness(receipt, instance, now_us_value=int(clock))
+        if readiness.blocks_admission:
+            # The reason names the object and the fact, so an operator reading the
+            # public refusal can tell a voided receipt from an unproven prepare
+            # (#1295: "backend_unavailable" alone was not attributable).
+            raise TranscriptionUnavailableError(
+                "Transcription binding is unavailable: "
+                f"{readiness.admission_state} "
+                f"(engine_ready={readiness.engine_ready}, "
+                f"engine_reason={readiness.engine_reason}, "
+                f"quality_basis={readiness.quality_basis}, "
+                f"quality_detail={readiness.quality_detail}, "
+                f"instance={recipe.instance_id}, "
+                f"generation={int(instance['instance_generation'])})"
+            )
         return LiveTranscriptionFacts(
             now_us=int(clock),
             quota_version=int(quota["version"]),
@@ -131,7 +187,45 @@ class PostgresTranscriptionAdmissionFacts:
             instance_version=int(instance["version"]),
             host_node_id=str(instance["host_node_id"]),
             gateway_id=str(instance["gateway_id"]),
+            readiness=readiness,
         )
+
+
+def _binding_readiness(
+    receipt: dict[str, object] | None,
+    instance: dict[str, object],
+    *,
+    now_us_value: int,
+) -> BindingReadiness:
+    """Map the stored receipt and void onto the domain's readiness inputs.
+
+    ``engine_ready`` is the receipt's own outcome: the renewal that wrote it ran the
+    prepare and signed the health probe, so the receipt *is* the prepare+probe
+    evidence -- there is no operator-set flag to consult (see the domain module).
+    Quality stays ``unverified`` here on purpose: this deployment has no
+    qualification-run producer yet, and #1295 chose "flag, do not block" for that
+    case. Once a producer records runs, only this adapter changes; the decision and
+    its guard test stay where they are.
+    """
+    document = None if receipt is None else receipt.get("readiness_document")
+    decoded = None
+    if isinstance(document, str):
+        try:
+            decoded = readiness_from_document(document)
+        except ValueError:
+            decoded = None
+    voided_at_us = None if receipt is None else receipt.get("readiness_voided_at_us")
+    engine = EngineFacts(
+        prepare_probe_succeeded=decoded is not None,
+        receipt_expires_at_us=None if decoded is None else decoded.expires_at_us,
+        voided_at_us=None if voided_at_us is None else int(str(voided_at_us)),
+        observed_at_us=0 if decoded is None else decoded.verified_at_us,
+    )
+    return binding_readiness(
+        engine=engine,
+        quality=QualityEvidence(basis=QUALITY_UNVERIFIED),
+        now_us=now_us_value,
+    )
 
 
 class PostgresTranscriptionAdmission:

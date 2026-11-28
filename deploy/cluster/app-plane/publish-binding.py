@@ -63,7 +63,14 @@ def build_recipe(path: Path) -> dict:
     )
     document.update(
         {
-            "model_id": LOGICAL_MODEL,
+            # The recipe's ``model_id`` is the *public* model/binding id the
+            # transcription route is called with, not the engine's logical model
+            # name. The two live in separate namespaces (the engine is launched
+            # without ``--served-model-name``), so writing ``LOGICAL_MODEL`` here
+            # makes every synchronous request fail admission with
+            # ``recipe_mismatch`` -- the DEL-538 failure the assembly checker
+            # documents in scripts/dev-env/check-tts-assembly.py.
+            "model_id": BINDING_ID,
             "manifest_id": CAPACITY_MANIFEST_ID,
             "policy_revision_id": POLICY_REVISION_ID,
             "stage": {

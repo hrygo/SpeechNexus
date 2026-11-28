@@ -33,7 +33,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 
 ROOT = Path(__file__).resolve().parents[2]
 RENDER_ENDPOINT = ROOT / "deploy/cluster/render-endpoint.py"
@@ -82,7 +82,9 @@ class GenerationDerivationTests(unittest.TestCase):
     def test_a_missing_head_row_is_refused(self) -> None:
         # "no row" is not generation 1: it means the instance was never registered
         # against this database.
-        with self.assertRaises(Exception):
+        renderer: Any = RENDER
+        ledger_error = renderer.LedgerError
+        with self.assertRaises(ledger_error):
             RENDER.generation_from_head(None)
 
     def test_rendering_follows_the_ledger(self) -> None:

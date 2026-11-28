@@ -68,7 +68,7 @@ def _recovery_command(operation_id: str) -> str:
     process it is recovering: when the preflight refuses startup, the operator has
     no HTTP surface at all.
     """
-    return f'{SETTLEMENT_COMMAND} --operation {operation_id} --confirm'
+    return f"{SETTLEMENT_COMMAND} --operation {operation_id} --confirm"
 
 
 def require_complete_tts_roots(pool: SpeechPool, *, timeout_seconds: float = 3) -> None:

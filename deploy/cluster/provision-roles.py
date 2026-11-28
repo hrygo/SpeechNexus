@@ -1,3 +1,15 @@
+"""Provision the cluster's non-owner runtime roles, or replay their grants.
+
+The first run creates every role and installs the declared grant surface. A later
+release that declares a new table (or a new column on an existing one) must be able
+to install **only** the grants on a deployment whose roles already exist: role
+creation is guarded against existing roles on purpose, so `--grants-only` is the
+upgrade path. It refuses to create anything and refuses to run when a role is
+missing, so a replay can neither add an identity nor quietly widen the surface: it
+re-executes the same declared statements (`create` and `replay` call one function).
+"""
+
+import argparse
 import os
 
 import psycopg
@@ -100,63 +112,85 @@ roles = {
     # whatever the writer wrote without any privilege boundary in between.
     "sn_qualification_reader": os.environ["SPEECHNEXUS_QUALIFICATION_READER_ROLE_PASSWORD"],
 }
+_arguments = argparse.ArgumentParser(description=__doc__)
+_arguments.add_argument(
+    "--grants-only",
+    action="store_true",
+    help="apply the declared grants to existing roles; never create or drop a role",
+)
+_options = _arguments.parse_args()
+
 with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
-    # PostgreSQL 角色属于整个集群,即使数据库是专用的也要先核对。
-    for role in roles:
-        if conn.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)).fetchone():
-            raise SystemExit(f"role {role} already exists; inspect ownership before proceeding")
-    database = conn.execute("SELECT current_database()").fetchone()[0]
-    conn.execute(
-        sql.SQL("REVOKE CREATE, TEMPORARY ON DATABASE {} FROM PUBLIC").format(
-            sql.Identifier(database)
-        )
-    )
-    conn.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
-    large_object_writers = (
-        "lo_create",
-        "lo_creat",
-        "lo_from_bytea",
-        "lo_import",
-        "lo_export",
-        "lo_unlink",
-        "lo_put",
-        "lo_truncate",
-        "lo_truncate64",
-        "lowrite",
-    )
-    for (signature,) in conn.execute(
-        "SELECT p.oid::regprocedure::text FROM pg_proc p "
-        "JOIN pg_namespace n ON n.oid=p.pronamespace "
-        "WHERE n.nspname='pg_catalog' AND p.proname=ANY(%s)",
-        (list(large_object_writers),),
-    ).fetchall():
-        # regprocedure is server-generated, including the complete argument types.
+    if _options.grants_only:
+        # 升级路径:角色已存在,只补声明面。先核对齐全,避免把一条 GRANT 打到半套身份上。
+        missing = [
+            role
+            for role in roles
+            if conn.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)).fetchone() is None
+        ]
+        if missing:
+            raise SystemExit(
+                "missing roles: " + ", ".join(missing) + "; run without --grants-only first"
+            )
+    if not _options.grants_only:
+        # PostgreSQL 角色属于整个集群,即使数据库是专用的也要先核对。
+        for role in roles:
+            if conn.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)).fetchone():
+                raise SystemExit(f"role {role} already exists; inspect ownership before proceeding")
+        database = conn.execute("SELECT current_database()").fetchone()[0]
         conn.execute(
-            sql.SQL("REVOKE EXECUTE ON FUNCTION {} FROM PUBLIC").format(sql.SQL(signature))
-        )
-    for role, password in roles.items():
-        exists = conn.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)).fetchone()
-        if exists is not None:
-            raise SystemExit(f"role {role} appeared during setup; stop without changing it")
-        conn.execute(
-            sql.SQL("CREATE ROLE {} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT").format(
-                sql.Identifier(role)
+            sql.SQL("REVOKE CREATE, TEMPORARY ON DATABASE {} FROM PUBLIC").format(
+                sql.Identifier(database)
             )
         )
-        conn.execute(
-            sql.SQL("ALTER ROLE {} PASSWORD {}").format(sql.Identifier(role), sql.Literal(password))
+        conn.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
+        large_object_writers = (
+            "lo_create",
+            "lo_creat",
+            "lo_from_bytea",
+            "lo_import",
+            "lo_export",
+            "lo_unlink",
+            "lo_put",
+            "lo_truncate",
+            "lo_truncate64",
+            "lowrite",
         )
-        memberships = conn.execute(
-            "SELECT 1 FROM pg_auth_members m JOIN pg_roles r ON r.oid = m.member "
-            "WHERE r.rolname = %s LIMIT 1",
-            (role,),
-        ).fetchone()
-        forbidden = conn.execute(
-            "SELECT rolsuper OR rolcreatedb OR rolcreaterole FROM pg_roles WHERE rolname = %s",
-            (role,),
-        ).fetchone()
-        if memberships is not None or forbidden is None or any(forbidden):
-            raise SystemExit(f"role {role} is not a fresh non-owner runtime role")
+        for (signature,) in conn.execute(
+            "SELECT p.oid::regprocedure::text FROM pg_proc p "
+            "JOIN pg_namespace n ON n.oid=p.pronamespace "
+            "WHERE n.nspname='pg_catalog' AND p.proname=ANY(%s)",
+            (list(large_object_writers),),
+        ).fetchall():
+            # regprocedure is server-generated, including the complete argument types.
+            conn.execute(
+                sql.SQL("REVOKE EXECUTE ON FUNCTION {} FROM PUBLIC").format(sql.SQL(signature))
+            )
+        for role, password in roles.items():
+            exists = conn.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)).fetchone()
+            if exists is not None:
+                raise SystemExit(f"role {role} appeared during setup; stop without changing it")
+            conn.execute(
+                sql.SQL(
+                    "CREATE ROLE {} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT"
+                ).format(sql.Identifier(role))
+            )
+            conn.execute(
+                sql.SQL("ALTER ROLE {} PASSWORD {}").format(
+                    sql.Identifier(role), sql.Literal(password)
+                )
+            )
+            memberships = conn.execute(
+                "SELECT 1 FROM pg_auth_members m JOIN pg_roles r ON r.oid = m.member "
+                "WHERE r.rolname = %s LIMIT 1",
+                (role,),
+            ).fetchone()
+            forbidden = conn.execute(
+                "SELECT rolsuper OR rolcreatedb OR rolcreaterole FROM pg_roles WHERE rolname = %s",
+                (role,),
+            ).fetchone()
+            if memberships is not None or forbidden is None or any(forbidden):
+                raise SystemExit(f"role {role} is not a fresh non-owner runtime role")
 
     for statement in coordination_runtime_grants(
         schema, speech_role="sn_api", gateway_role="sn_gateway"
@@ -313,4 +347,5 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
             sql.Identifier("sn_api"),
         )
     )
-    print("roles ready: " + " ".join(sorted(roles)))
+    state = "cluster grants replayed for existing roles" if _options.grants_only else "roles ready"
+    print(state + ": " + " ".join(sorted(roles)))

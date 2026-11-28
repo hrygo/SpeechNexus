@@ -198,42 +198,41 @@ class CliTests(unittest.TestCase):
         def factory(*_: object, **__: object) -> _FakePool:
             return pool
 
-        self.cli.speech_pool = factory  # type: ignore[assignment]
+        module: Any = self.cli
+        module.speech_pool = factory
         return pool
 
-    def test_check_does_not_write(self) -> None:
+    def release_calls(self) -> list[object]:
+        from unittest import mock
+
         from speechnexus_backend.speech.application.quarantine_releases import (
             QuarantineReleaseService,
         )
 
+        def recorded(service: object, evidence: object) -> object:
+            self.calls.append(evidence)
+            raise AssertionError("the CLI must not write without --confirm")
+
+        patcher = mock.patch.object(QuarantineReleaseService, "release", recorded)
+        self.addCleanup(patcher.stop)
+        patcher.start()
+        return self.calls
+
+    def test_check_does_not_write(self) -> None:
         self.pool_factory([LEASE])
-        original = QuarantineReleaseService.release
-        QuarantineReleaseService.release = lambda self, evidence: self.calls.append(evidence)  # type: ignore[method-assign]
-        try:
-            code = self.cli.main(
-                ["--operation", "job-1", "--check", "--database-url", "postgresql://unused/test"]
-            )
-        finally:
-            QuarantineReleaseService.release = original  # type: ignore[method-assign]
+        calls = self.release_calls()
+        code = self.cli.main(
+            ["--operation", "job-1", "--check", "--database-url", "postgresql://unused/test"]
+        )
         self.assertEqual(code, 0)
-        self.assertEqual(self.calls, [])
+        self.assertEqual(calls, [])
 
     def test_without_confirm_nothing_is_released(self) -> None:
-        from speechnexus_backend.speech.application.quarantine_releases import (
-            QuarantineReleaseService,
-        )
-
         self.pool_factory([LEASE])
-        original = QuarantineReleaseService.release
-        QuarantineReleaseService.release = lambda self, evidence: self.calls.append(evidence)  # type: ignore[method-assign]
-        try:
-            code = self.cli.main(
-                ["--operation", "job-1", "--database-url", "postgresql://unused/test"]
-            )
-        finally:
-            QuarantineReleaseService.release = original  # type: ignore[method-assign]
+        calls = self.release_calls()
+        code = self.cli.main(["--operation", "job-1", "--database-url", "postgresql://unused/test"])
         self.assertEqual(code, 0)
-        self.assertEqual(self.calls, [])
+        self.assertEqual(calls, [])
 
     def test_an_unknown_operation_is_refused(self) -> None:
         self.pool_factory([])

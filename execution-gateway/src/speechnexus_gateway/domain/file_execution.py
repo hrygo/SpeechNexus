@@ -26,7 +26,7 @@ from speechnexus_gateway.domain.submission import (
     SubmissionIntent,
     SubmitRequest,
 )
-from speechnexus_gateway.domain.terminal import EngineTerminalResponse
+from speechnexus_gateway.domain.terminal import DispatchAttestation, EngineTerminalResponse
 
 
 class FileCommandInvalidError(InvalidExecutionRequestError):
@@ -91,12 +91,17 @@ class FileStagingOutcome:
 
     result: StagingResult
     terminal: EngineTerminalResponse | None = None
+    #: What this stage itself recorded about engine requests it issued. A stage that
+    #: dispatched nothing reports zero here; only then may success rest on that fact.
+    dispatch: DispatchAttestation | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.result, ExecutionStagingResult | ExecutionAudioStagingResult):
             raise ValueError("a file staging outcome requires one fixed result receipt")
         if self.terminal is not None and not isinstance(self.terminal, EngineTerminalResponse):
             raise ValueError("a file staging outcome requires the adapter terminal fact")
+        if self.dispatch is not None and not isinstance(self.dispatch, DispatchAttestation):
+            raise ValueError("a file staging outcome needs the stage dispatch attestation")
 
 
 class FileCommandExecution[StoreT](Protocol):

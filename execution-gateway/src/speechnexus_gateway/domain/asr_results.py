@@ -12,7 +12,7 @@ from speechnexus_gateway.domain.execution_inputs import (
     ExecutionObjectReference,
     is_fixed_storage_version,
 )
-from speechnexus_gateway.domain.terminal import EngineTerminalResponse
+from speechnexus_gateway.domain.terminal import DispatchAttestation, EngineTerminalResponse
 
 MAX_ASR_RESULT_BYTES = 4 * 1024 * 1024
 ASR_RESULT_MEDIA_TYPE = "application/json"
@@ -78,6 +78,9 @@ class StagedAsrResult:
     reference: ExecutionObjectReference
     storage_version: str
     terminal: EngineTerminalResponse | None = None
+    #: The stage's own dispatch record, so the execution owner can prove that nothing was
+    #: ever sent to the engine when the receipt carries no terminal answer.
+    dispatch: DispatchAttestation | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -86,6 +89,7 @@ class StagedAsrResult:
             or not isinstance(self.reference, ExecutionObjectReference)
             or not is_fixed_storage_version(self.storage_version)
             or (self.terminal is not None and not isinstance(self.terminal, EngineTerminalResponse))
+            or (self.dispatch is not None and not isinstance(self.dispatch, DispatchAttestation))
         ):
             raise AsrResultError("asr_result_identity_mismatch")
 

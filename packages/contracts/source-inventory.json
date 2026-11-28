@@ -28,7 +28,7 @@
     "version": null
   },
   "internal/coordination-transactions.schema.json": {
-    "sha256": "4bbc3b73ff5a6a387ea2d5c3baeddf66ec3fd68bd40d751359aa8ddef871b94e",
+    "sha256": "4680851b537c0bfc112dd372ccf02438698f650d32ca8d570ab73dde1f53ed25",
     "version": null
   },
   "internal/execution-command.schema.json": {
@@ -36,7 +36,7 @@
     "version": null
   },
   "internal/execution-control.openapi.yaml": {
-    "sha256": "fd33dabc47e6d0d7b1860feb94a0f04301fb04cf875e873f3337af077c1d19b2",
+    "sha256": "ac5a81048e75045cd86a01197873da5daded8d0f4b8fcdf21f7a8dbcea5d1f96",
     "version": "0.4.0.dev1"
   },
   "internal/execution-stream.schema.json": {

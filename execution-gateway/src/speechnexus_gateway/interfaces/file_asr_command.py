@@ -229,7 +229,12 @@ class CommandFileAsr:
                 ) from None
             # The receipt is what was produced; only a completed run can also attest
             # the engine's terminal answers, and only the execution owner may use it.
-            return replace(receipt, terminal=run.terminal_response(self._now()))
+            observed_at = self._now()
+            return replace(
+                receipt,
+                terminal=run.terminal_response(observed_at),
+                dispatch=run.dispatch_attestation(observed_at),
+            )
 
     def validate_request(self, request: SubmitRequest) -> SubmitRequest:
         """Freeze the supported command before accepting work; no external I/O."""

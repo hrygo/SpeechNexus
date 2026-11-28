@@ -1156,6 +1156,20 @@ SQL）上的集成用例，见下表的「过期未派发租约的自动回收�
 - 协调者新增有界清扫：Job 在认领之前就进入终态时，它占着的准入租约会在最长一个 CronJob
   周期内被自动释放，四个投影随之归还；不再需要手工改 `engine_instances.held_slots`，下一个
   同实例类的 Job 从 `capacity_exhausted` 变回可准入（[#1248](https://github.com/hrygo/SpeechNexus/issues/1248)）。
+- **内部契约新增一个停止证据种类 `not_dispatched`**（`internal/execution-control` 的
+  `StopEvidenceKind`，同步出现在 `internal/coordination-transactions` 的
+  `VerifiedStopEvidence.evidence_kind`）。语义只有一句：该执行从未向引擎发出请求，因此没有
+  运行中的算力需要停止。它只出现在 `execution_state=succeeded`、`cleanup_state=complete`
+  的执行上，摘要绑定 `submit_intent_id`、外发次数 `0` 与舞台记录的观测时刻，不携带任何
+  「引擎回报」字段；语音样本零段（VAD 判无语音）的静音请求因此以 `200 {"text": ""}` 收口并
+  当场归还容量，而不是停在 `unknown_quarantined` 继续占租约。
+  兼容性：**新增枚举值对既有读者是严格向后兼容的输入，但不是可与成功等同的输入**——不认识它
+  的读者必须 fail-closed（把该行当作「未结算」而不是 `succeeded`）。仓库内两个读者已按此分工：
+  网关的 `StopEvidenceKind(...)` 反序列化对未知种类直接抛错，后端以
+  `SUCCESS_STOP_EVIDENCE_KINDS` 单一集合放行释放、而 `asr_settlement_debt` 与
+  `cancellation_debt` 的债务判定仍只认「引擎终态应答」，因此旧读者的行为是「继续报债」而不是
+  「误判为已释放」。没有新迁移、没有新授权函数：`execution_stop_evidence.evidence_kind`
+  没有 CHECK 约束，该列对旧构建是未知字符串，只会让旧构建按上一条 fail-closed 处理。
 
 ## 证据
 

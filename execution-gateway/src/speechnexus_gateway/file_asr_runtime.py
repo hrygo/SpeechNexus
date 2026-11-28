@@ -152,6 +152,7 @@ class AsrFileStage:
                 receipt.request_digest, receipt.reference, receipt.storage_version
             ),
             receipt.terminal,
+            receipt.dispatch,
         )
 
 

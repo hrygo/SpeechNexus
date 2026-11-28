@@ -125,12 +125,29 @@ class EngineInstanceState(StrEnum):
 
 
 class StopEvidenceKind(StrEnum):
+    """What proved that one execution no longer holds reserved capacity.
+
+    ``NOT_DISPATCHED`` is the only kind that is not an engine or controller answer: the
+    executing stage recorded that it issued zero engine requests, so nothing was running
+    and nothing needed stopping. It never stands in for a missing answer on a dispatched
+    execution, and it is built by exactly one constructor (``undispatched_stop_evidence``).
+    """
+
     NONE = "none"
     ENGINE_ABORT_ACK = "engine_abort_ack"
     ENGINE_TERMINAL_RESPONSE = "engine_terminal_response"
+    NOT_DISPATCHED = "not_dispatched"
     INSTANCE_TERMINATED_BY_CONTROLLER = "instance_terminated_by_controller"
     OPERATOR_VERIFIED_INSTANCE_TERMINATED = "operator_verified_instance_terminated"
     UNCONFIRMED_TIMEOUT = "unconfirmed_timeout"
+
+
+#: Kinds that may close a ``succeeded`` execution. Both prove there is no running work
+#: left to stop: an engine terminal answer for dispatched requests, or the stage's own
+#: record that it never dispatched one.
+SUCCESS_STOP_EVIDENCE_KINDS: frozenset[StopEvidenceKind] = frozenset(
+    {StopEvidenceKind.ENGINE_TERMINAL_RESPONSE, StopEvidenceKind.NOT_DISPATCHED}
+)
 
 
 class AbortAcknowledgement(StrEnum):
@@ -828,8 +845,8 @@ class SubmissionIntent:
         if self.execution_state is ExecutionState.SUCCEEDED:
             if self.error_code is not None:
                 raise ValueError("successful intent carries no error code")
-            if self.stop_evidence_kind is not StopEvidenceKind.ENGINE_TERMINAL_RESPONSE:
-                raise ValueError("successful intent records the engine terminal response")
+            if self.stop_evidence_kind not in SUCCESS_STOP_EVIDENCE_KINDS:
+                raise ValueError("successful intent records a success stop proof")
 
     def mark_dispatched(self, engine_request_id: str, *, at: datetime) -> None:
         self.execution_state = ExecutionState.EXECUTING
@@ -989,9 +1006,9 @@ class RecordStop:
             raise InvalidExecutionRequestError("only a failed stop requires an error code")
         if (
             self.terminal_state is ExecutionState.SUCCEEDED
-            and self.evidence.evidence_kind is not StopEvidenceKind.ENGINE_TERMINAL_RESPONSE
+            and self.evidence.evidence_kind not in SUCCESS_STOP_EVIDENCE_KINDS
         ):
-            raise InvalidExecutionRequestError("success requires the engine terminal response")
+            raise InvalidExecutionRequestError("success requires a terminal or undispatched proof")
 
     def apply(
         self,

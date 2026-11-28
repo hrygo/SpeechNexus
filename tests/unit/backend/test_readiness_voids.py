@@ -18,13 +18,14 @@
 
 from __future__ import annotations
 
+import inspect
 from typing import Any
 
 import pytest
 
 from speechnexus_backend import engine_readiness
 from speechnexus_backend.speech.domain.readiness_void import void_invalidates_receipt
-from speechnexus_backend.speech.infrastructure import admission_sql
+from speechnexus_backend.speech.infrastructure import admission_sql, readiness_void_schema
 from speechnexus_backend.speech.infrastructure.readiness_void_schema import (
     READINESS_VOID_COLUMN_DEFINITIONS,
     READINESS_VOID_COLUMNS,
@@ -73,11 +74,21 @@ def test_the_void_table_cannot_hold_two_equal_generations_or_orphans() -> None:
 
 
 def test_the_report_and_admission_share_one_reading_of_which_void_applies() -> None:
-    # 报告说 invalid、准入说放行的窗口正是本切片要关的:两边必须引用同一个函数对象,而不是
-    # 各写一份等价逻辑。这里锚住 import 出来的就是同一个对象。
-    assert engine_readiness.latest_void_at_us_expression is latest_void_at_us_expression
-    assert admission_sql.latest_void_at_us_expression is latest_void_at_us_expression
-    assert engine_readiness.void_invalidates_receipt is void_invalidates_receipt
+    # 报告说 invalid、准入说放行的窗口正是本切片要关的:两边必须**引用同一份**定义,而不是各写
+    # 一份等价逻辑。断言读源码里的 import 来源,比断言「行为相同」更直接:一旦谁把那段 SQL 抄进
+    # 自己的模块,这条用例就红。
+    shared_import = "from speechnexus_backend.speech.infrastructure.readiness_void_schema import"
+    for module in (engine_readiness, admission_sql):
+        source = inspect.getsource(module)
+        assert shared_import in source, module.__name__
+        assert "latest_void_at_us_expression(" in source, module.__name__
+    assert (
+        "from speechnexus_backend.speech.domain.readiness_void import void_invalidates_receipt"
+        in inspect.getsource(engine_readiness)
+    )
+    # 「哪一次作废仍然有效」的 SQL 文本只在 schema 模块里出现一次。
+    schema_source = inspect.getsource(readiness_void_schema)
+    assert schema_source.count("SELECT MAX(v.voided_at_us)") == 1
     expression = latest_void_at_us_expression(
         instance_column="i.instance_id", generation_column="i.instance_generation"
     )
@@ -100,9 +111,7 @@ def test_a_void_invalidates_only_receipts_signed_before_it(
     voided_at_us: int | None, verified_at_us: int, invalidates: bool
 ) -> None:
     assert (
-        void_invalidates_receipt(
-            voided_at_us=voided_at_us, receipt_verified_at_us=verified_at_us
-        )
+        void_invalidates_receipt(voided_at_us=voided_at_us, receipt_verified_at_us=verified_at_us)
         is invalidates
     )
 

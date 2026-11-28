@@ -483,9 +483,7 @@ def test_a_voided_receipt_refuses_admission_until_a_later_receipt_replaces_it(
     db.query("UPDATE workspace_quotas SET held_attempts = 0")
     recovered = store.create(_job(key="synthetic-idem-void-recovered"))
     assert recovered.outcome == "created" and recovered.job is not None
-    assert (
-        db.query("SELECT COUNT(*) AS rows FROM runtime_readiness_voids")[0]["rows"] == 1
-    )
+    assert db.query("SELECT COUNT(*) AS rows FROM runtime_readiness_voids")[0]["rows"] == 1
 
 
 def test_capacity_shortage_is_429_and_writes_zero_rows(

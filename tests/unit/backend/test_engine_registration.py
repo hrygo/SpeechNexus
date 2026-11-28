@@ -1381,7 +1381,8 @@ def test_a_generation_the_node_never_prepared_is_refused_before_anything_is_writ
     # #1286: a **determined** disagreement is what writes the explicit void. Without the
     # write the receipt signed before the divergence keeps admitting creates until it
     # expires, which is the window this closes.
-    assert [entry["head"].current_generation for entry in voided] == [11]
+    heads = [cast(_NodeInstanceHead, entry["head"]).current_generation for entry in voided]
+    assert heads == [11]
 
 
 def test_an_agreeing_node_lets_the_registration_proceed(

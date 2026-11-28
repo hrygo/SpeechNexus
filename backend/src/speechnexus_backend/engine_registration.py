@@ -1602,15 +1602,15 @@ def _void_readiness_for_mismatch(
         # this short one has to do the same: an unqualified INSERT on a fresh connection
         # answers ``42P01 relation does not exist`` against the reference deployment.
         with connection.transaction(), connection.cursor() as raw:
-            raw.execute(
-                "SELECT set_config('search_path', ?, true)", (schema + ",pg_catalog",)
-            )
+            raw.execute("SELECT set_config('search_path', ?, true)", (schema + ",pg_catalog",))
             cursor = _Cursor(raw, time.monotonic() + max(1.0, timeout_seconds))
             # The database clock, so the void and the receipt that beat it later are
             # ordered by one clock rather than by this host's.
             insert_if_absent(
                 cursor,
-                "INSERT INTO " + READINESS_VOID_TABLE + " ("
+                "INSERT INTO "
+                + READINESS_VOID_TABLE
+                + " ("
                 + ", ".join(READINESS_VOID_INSERT_COLUMNS)
                 + ") VALUES ("
                 + ", ".join("?" for _ in READINESS_VOID_INSERT_COLUMNS)

@@ -29,6 +29,15 @@ spec:
         app: api
     spec:
       terminationGracePeriodSeconds: 30
+      # The gateway binds the compute host's loopback and nothing broader, so the
+      # only way to present the component credential to it from inside the cluster
+      # is to join the host network -- the same trade the readiness units make for
+      # the engine shim. `ClusterFirstWithHostNet` keeps Service DNS working, so
+      # `postgres`, `minio` and `asset-inspector` still resolve by name. This is why
+      # `render-config.py --topology in-cluster` renders `http://127.0.0.1:8010` as
+      # the gateway origin; the two must agree, and the test asserts it.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
       securityContext:
         runAsUser: 10001
         runAsGroup: 10001

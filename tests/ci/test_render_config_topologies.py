@@ -21,7 +21,10 @@ Mutations that must turn it red:
   exist in the compute cluster: the same assertions fail;
 - adding an application-plane Secret to the ``data-plane`` render set, which is how
   a second coordination domain would get assembled while the writers are still on
-  the old database.
+  the old database;
+- rendering the in-cluster gateway origin as a name only the other cluster can
+  resolve, or deploying the credential-presenting units without the host network
+  that loopback origin depends on (``GatewayOriginTests``).
 """
 
 from __future__ import annotations
@@ -29,7 +32,9 @@ from __future__ import annotations
 import importlib.util
 import unittest
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
+
+import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 RENDER_CONFIG = ROOT / "deploy/cluster/app-plane/render-config.py"
@@ -54,6 +59,8 @@ class Renderer(Protocol):
     _DATA_PLANE_SECRETS: tuple[str, ...]
 
     def readiness_env(self, env: dict[str, str], topology: str) -> dict[str, str]: ...
+
+    def gateway_origin(self, topology: str) -> str: ...
 
 
 def load() -> Renderer:
@@ -117,6 +124,56 @@ class DataPlaneObjectSetTests(unittest.TestCase):
         rendered = set(RENDERER._DATA_PLANE_SECRETS)
         for writer in ("api-env", "dispatch-env", "admission-watch-env", "workbench-api-env"):
             self.assertNotIn(writer, rendered)
+
+
+GATEWAY_APPS = ("api", "job-dispatch")
+
+
+def manifests_named(path: Path, select: str) -> dict[str, Any]:
+    """Return ``select``'s pod spec from one manifest, so a field can be asserted."""
+    for document in yaml.safe_load_all(path.read_text()):
+        if not document or document.get("kind") != "Deployment":
+            continue
+        if document.get("metadata", {}).get("name") != select:
+            continue
+        return cast(dict[str, Any], document["spec"]["template"]["spec"])
+    raise AssertionError(f"{path.name} has no Deployment named {select}")
+
+
+class GatewayOriginTests(unittest.TestCase):
+    """The credential-presenting units name the gateway address their pods can reach.
+
+    The compute gateway binds the host's loopback and nothing broader, so the
+    app plane reaches it two different ways depending on which cluster it runs in:
+    through the bridge from the other host, or through the host network from inside
+    the compute cluster. The origin is one switch, and the host network is the fact
+    that switch depends on -- if the deployment drops it, the origin becomes
+    unresolvable and the API cannot submit anything, which is exactly the kind of
+    "green pods, dead product" state the rest of this file guards against.
+    """
+
+    def test_in_cluster_names_the_address_its_pods_can_reach(self) -> None:
+        self.assertEqual(RENDERER.gateway_origin("in-cluster"), "http://127.0.0.1:8010")
+
+    def test_the_bridge_is_used_while_the_app_plane_lives_on_the_other_host(self) -> None:
+        for topology in ("tunnel", "data-plane"):
+            self.assertEqual(
+                RENDERER.gateway_origin(topology), "http://bridge.speechnexus.svc:18010"
+            )
+
+    def test_the_units_that_present_the_credential_join_the_host_network(self) -> None:
+        app_plane = ROOT / "deploy/cluster/app-plane"
+        for name in GATEWAY_APPS:
+            source = app_plane / ("api.yaml" if name == "api" else "workers.yaml")
+            pod = manifests_named(source, name)
+            self.assertIs(pod.get("hostNetwork"), True, f"{name} must join the host network")
+            self.assertEqual(pod.get("dnsPolicy"), "ClusterFirstWithHostNet")
+
+    def test_units_that_do_not_present_the_credential_do_not_join_it(self) -> None:
+        # Joining the host network is not free: the API takes port 8000 there. Only
+        # the units that must reach the gateway should be paying that price.
+        pod = manifests_named(ROOT / "deploy/cluster/app-plane/workbench.yaml", "workbench-api")
+        self.assertIsNone(pod.get("hostNetwork"))
 
 
 if __name__ == "__main__":

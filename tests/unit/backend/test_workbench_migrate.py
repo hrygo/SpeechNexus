@@ -72,6 +72,10 @@ class FakeConnection:
             return _Result((self.granted,))
         return _Result(None)
 
+    def close(self) -> None:
+        """The driver adapter closes the wrapped connection on exit."""
+        return
+
     @contextmanager
     def transaction(self) -> Iterator[None]:
         yield
@@ -255,3 +259,42 @@ def test_main_returns_zero_after_a_clean_run() -> None:
     assert migrate.main(ENV, out=out, err=err, execute=execute) == 0
     assert out.getvalue().startswith("OK:")
     assert err.getvalue() == ""
+
+
+class QmarkBlindConnection(FakeConnection):
+    """A driver that only understands its own placeholders, like psycopg does.
+
+    This is what the migration met on the new coordination database: the module's
+    statements are written to the portable ``?`` contract, and psycopg answers such
+    a statement with ``ProgrammingError: the query has 0 placeholders but 1
+    parameters were passed``. Reproducing it here is what makes the adapter wrap a
+    checked fact instead of a comment.
+    """
+
+    def execute(self, query: Any, params: Any = None) -> Any:
+        text = query if isinstance(query, str) else query.as_string(None)
+        if params is not None and "?" in text:
+            raise psycopg.ProgrammingError(
+                "the query has 0 placeholders but 1 parameters were passed"
+            )
+        return super().execute(query, params)
+
+
+def test_the_owner_connection_speaks_the_drivers_placeholder_syntax(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The vendor placeholder never reaches the driver; the adapter is the only seam.
+
+    Removing ``PortableConnection`` from ``run`` reproduces the production failure
+    (``ProgrammingError``) here, so the wrap cannot be refactored away silently.
+    """
+    holder = QmarkBlindConnection()
+    monkeypatch.setattr(psycopg, "connect", lambda dsn, **_: holder)
+    out = io.StringIO()
+
+    migrate.run(migrate.plan(ENV), out)
+
+    assert holder.statements, "the migration must have executed its statements"
+    assert any("%s" in statement for statement in holder.statements), (
+        "the owner connection did not translate the portable placeholders"
+    )

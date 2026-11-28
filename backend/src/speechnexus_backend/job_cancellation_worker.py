@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import signal
 
 from speechnexus_backend.job_cancellation_runtime import (
@@ -12,6 +13,21 @@ from speechnexus_backend.job_cancellation_runtime import (
     JobCancellationSettings,
     build_cancellation_runtime,
 )
+
+
+def _pass_summary(batch: object) -> str:
+    """One line per bounded pass, so an operator can tell the two cases apart.
+
+    A silent empty pass and a process that died before doing anything looked
+    identical in the cluster: ``succeeded=1`` with no output (#1293). Every pass
+    now prints one JSON line, including the pass that found nothing to do.
+    """
+    fields = ("claimed", "settled", "retried", "exhausted", "unavailable")
+    summary: dict[str, int | str] = {name: int(getattr(batch, name, 0)) for name in fields}
+    blocked = getattr(batch, "blocked", ())
+    summary["blocked"] = len(blocked) if blocked is not None else 0
+    summary["event"] = "job_cancellation_pass"
+    return json.dumps(summary, sort_keys=True)
 
 
 async def _main(runtime: JobCancellationRuntime, *, once: bool) -> None:
@@ -23,7 +39,7 @@ async def _main(runtime: JobCancellationRuntime, *, once: bool) -> None:
         await runtime.open()
         try:
             if once:
-                await runtime.run_once()
+                print(_pass_summary(await runtime.run_once()), flush=True)
             else:
                 await runtime.run(stop)
         finally:

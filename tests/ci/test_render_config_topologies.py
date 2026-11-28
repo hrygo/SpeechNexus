@@ -30,11 +30,10 @@ Mutations that must turn it red:
 from __future__ import annotations
 
 import importlib.util
+import re
 import unittest
 from pathlib import Path
-from typing import Any, Protocol, cast
-
-import yaml
+from typing import Protocol, cast
 
 ROOT = Path(__file__).resolve().parents[2]
 RENDER_CONFIG = ROOT / "deploy/cluster/app-plane/render-config.py"
@@ -128,16 +127,30 @@ class DataPlaneObjectSetTests(unittest.TestCase):
 
 GATEWAY_APPS = ("api", "job-dispatch")
 
+DOCUMENT = re.compile(r"(?m)^---\s*$")
+KIND = re.compile(r"(?m)^kind:\s*(\w+)\s*$")
+NAME_UNDER_METADATA = re.compile(r"(?m)^metadata:\n  name:\s*([\w.-]+)\s*$")
 
-def manifests_named(path: Path, select: str) -> dict[str, Any]:
-    """Return ``select``'s pod spec from one manifest, so a field can be asserted."""
-    for document in yaml.safe_load_all(path.read_text()):
-        if not document or document.get("kind") != "Deployment":
+
+def deployment_text(path: Path, select: str) -> str:
+    """Return ``select``'s Deployment document, so the pod-spec fields can be asserted.
+
+    The manifest text is scanned rather than parsed: this file also runs in the
+    dependency-free guards job, which installs nothing (no PyYAML there), and the
+    fields under test (``hostNetwork``, ``dnsPolicy``) are single lines.
+    """
+    for document in DOCUMENT.split(path.read_text(encoding="utf-8")):
+        kind = KIND.search(document)
+        name = NAME_UNDER_METADATA.search(document)
+        if kind is None or name is None:
             continue
-        if document.get("metadata", {}).get("name") != select:
-            continue
-        return cast(dict[str, Any], document["spec"]["template"]["spec"])
+        if kind.group(1) == "Deployment" and name.group(1) == select:
+            return document
     raise AssertionError(f"{path.name} has no Deployment named {select}")
+
+
+def host_network(path: Path, select: str) -> bool:
+    return "hostNetwork: true" in deployment_text(path, select)
 
 
 class GatewayOriginTests(unittest.TestCase):
@@ -165,15 +178,21 @@ class GatewayOriginTests(unittest.TestCase):
         app_plane = ROOT / "deploy/cluster/app-plane"
         for name in GATEWAY_APPS:
             source = app_plane / ("api.yaml" if name == "api" else "workers.yaml")
-            pod = manifests_named(source, name)
-            self.assertIs(pod.get("hostNetwork"), True, f"{name} must join the host network")
-            self.assertEqual(pod.get("dnsPolicy"), "ClusterFirstWithHostNet")
+            with self.subTest(unit=name):
+                pod = deployment_text(source, name)
+                self.assertIn("hostNetwork: true", pod, f"{name} must join the host network")
+                self.assertIn(
+                    "dnsPolicy: ClusterFirstWithHostNet",
+                    pod,
+                    "the host network must not take the cluster DNS with it, or "
+                    "postgres/minio/asset-inspector stop resolving",
+                )
 
     def test_units_that_do_not_present_the_credential_do_not_join_it(self) -> None:
         # Joining the host network is not free: the API takes port 8000 there. Only
         # the units that must reach the gateway should be paying that price.
-        pod = manifests_named(ROOT / "deploy/cluster/app-plane/workbench.yaml", "workbench-api")
-        self.assertIsNone(pod.get("hostNetwork"))
+        pod = deployment_text(ROOT / "deploy/cluster/app-plane/workbench.yaml", "workbench-api")
+        self.assertNotIn("hostNetwork", pod)
 
 
 if __name__ == "__main__":

@@ -102,6 +102,24 @@ def resolved_string(node: ast.expr, constants: dict[str, str]) -> str | None:
     return None
 
 
+def gateway_branches(tree: ast.Module, constants: dict[str, str]) -> tuple[str, str]:
+    """The two origins ``gateway_origin`` can return, as the renderer states them."""
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef) or node.name != "gateway_origin":
+            continue
+        for inner in ast.walk(node):
+            if not isinstance(inner, ast.IfExp):
+                continue
+            taken = resolved_string(inner.body, constants)
+            fallback = resolved_string(inner.orelse, constants)
+            if taken is not None and fallback is not None:
+                return taken, fallback
+    raise AssertionError(
+        "the cluster app-plane renderer no longer selects between two stated gateway "
+        "origins; re-check this guard against the two-host assembly"
+    )
+
+
 class CredentialPathCoverageTest(unittest.TestCase):
     def test_every_credential_reader_applies_the_shared_rule(self) -> None:
         readers = {
@@ -175,34 +193,63 @@ class DeploymentShapeTest(unittest.TestCase):
                 )
 
     def test_the_cluster_app_plane_states_its_bridge_origin(self) -> None:
+        """The renderer states both origins once, and derives both keys from that rule.
+
+        The gateway binds a loopback address on the compute host, so ``in-cluster``
+        presents that loopback from a unit that joined the host network, while the
+        two-host topologies still present the bridge Service. Both are legitimate only
+        as long as the runtime keeps seeing one origin per topology, which is why this
+        guard reads the branch expressions instead of one rendered dict: a second
+        literal copy of either origin is a second definition point.
+        """
         tree = tree_of(CLUSTER_RENDERER)
         constants = module_constants(tree)
-        rendered = 0
+        in_cluster, two_host = gateway_branches(tree, constants)
+        text = CLUSTER_RENDERER.read_text(encoding="utf-8")
+
+        self.assertTrue(
+            is_non_loopback_plain(two_host),
+            f"{two_host!r}: the tunnel and data-plane topologies must keep presenting the "
+            "bridge Service over plain HTTP, or #1079 comes back",
+        )
+        self.assertIn(
+            urlsplit(in_cluster).hostname,
+            LOOPBACK_HOSTS,
+            f"{in_cluster!r}: an in-cluster unit reaches the gateway through the host "
+            "network, so its stated origin is host loopback",
+        )
+        for origin in (in_cluster, two_host):
+            with self.subTest(origin=origin):
+                self.assertEqual(
+                    text.count(origin),
+                    1,
+                    "the gateway origin has a second definition point",
+                )
+
+        derived = 0
         for node in ast.walk(tree):
             if not isinstance(node, ast.Dict):
                 continue
-            entries = {
-                key_value: resolved_string(value, constants)
-                for key, value in zip(node.keys, node.values, strict=True)
-                if (key_value := resolved_string(key, constants) if key is not None else None)
-                is not None
-            }
-            origin = entries.get("SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL")
-            if origin is None or not is_non_loopback_plain(origin):
-                continue
-            rendered += 1
-            with self.subTest(origin=origin):
-                self.assertEqual(
-                    entries.get("SPEECHNEXUS_EXECUTION_GATEWAY_ALLOW_PLAINTEXT_ORIGIN"),
-                    origin,
-                    "the cluster app-plane renders a non-loopback plain gateway origin "
-                    "without stating it in SPEECHNEXUS_EXECUTION_GATEWAY_ALLOW_PLAINTEXT_ORIGIN",
-                )
-        self.assertGreaterEqual(
-            rendered,
-            1,
-            "the cluster app-plane renderer no longer configures a non-loopback plain "
-            "gateway origin; re-check this guard against the two-host assembly",
+            for key, value in zip(node.keys, node.values, strict=True):
+                if key is None or value is None:
+                    continue
+                if resolved_string(key, constants) not in (
+                    "SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL",
+                    "SPEECHNEXUS_EXECUTION_GATEWAY_ALLOW_PLAINTEXT_ORIGIN",
+                ):
+                    continue
+                derived += 1
+                with self.subTest(key=resolved_string(key, constants)):
+                    self.assertIsInstance(
+                        value,
+                        ast.Call,
+                        "the gateway origin and its plaintext opt-in must both be "
+                        "derived from gateway_origin(topology), never written out again",
+                    )
+        self.assertEqual(
+            derived,
+            4,
+            "the two credential-presenting units must each render both gateway keys",
         )
 
 

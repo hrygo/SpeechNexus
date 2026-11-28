@@ -109,7 +109,12 @@ class ReferenceManifestTests(unittest.TestCase):
         self.assertIn(f'"{SCHEMA_VARIABLE}"', envelope)
         # Two keys, no more: a broader envelope would hand the API's credentials to
         # a scheduled Pod.
-        self.assertEqual(len(re.findall(r'"(SPEECHNEXUS_[A-Z0-9_]+)"', envelope)), 2)
+        # Names, not mentions: the DSN variable appears twice because the value is
+        # borrowed from the API block. A third *distinct* key still fails.
+        self.assertEqual(
+            set(re.findall(r'"(SPEECHNEXUS_[A-Z0-9_]+)"', envelope)),
+            {DSN_VARIABLE, SCHEMA_VARIABLE},
+        )
 
     def test_the_cli_and_the_rendered_secret_name_the_same_variable(self) -> None:
         module = read(CLI)
@@ -136,3 +141,44 @@ class ComposeTests(unittest.TestCase):
             f'"{CRONJOB}": "speechnexus-python"',
             read(RELEASE_ASSETS),
         )
+
+
+class ReconcilerSecretInputsTests(unittest.TestCase):
+    """The rendered Secret may only read keys ``render-config`` actually defines.
+
+    #1287 shipped a Secret derivation that pulled ``SPEECHNEXUS_DATABASE_SCHEMA``
+    out of the ``api`` dict, which never carries it: every render failed with
+    ``KeyError`` before writing anything, so the sweep could not be deployed at
+    all. A text guard is enough here -- it is the same file that would have to
+    change, and the failure mode is a missing literal, not a runtime path.
+    """
+
+    def test_every_key_the_reconciler_secret_borrows_exists_in_the_api_block(self) -> None:
+        source = read(RENDER_CONFIG)
+        block = reconciler_secret_block(source)
+        borrowed = set(re.findall(r'api\[\s*"([A-Z0-9_]+)"\s*\]', block))
+        declared = set(re.findall(r'"([A-Z0-9_]+)":', api_block(source)))
+        self.assertTrue(borrowed, "the reconciler Secret borrows nothing from api")
+        self.assertEqual(
+            borrowed - declared,
+            set(),
+            "the reconciler Secret reads api keys the API block does not define",
+        )
+
+    def test_the_reconciler_secret_states_the_schema_itself(self) -> None:
+        # The sweep needs the schema spelled out; the API learns it from a default,
+        # so borrowing it from `api` is impossible by construction.
+        block = reconciler_secret_block(read(RENDER_CONFIG))
+        self.assertIn(f'"{SCHEMA_VARIABLE}": "speech"', block)
+
+
+def reconciler_secret_block(source: str) -> str:
+    start = source.index("lease_reconciler = {")
+    end = source.index("}", source.index("\n", start))
+    return source[start : end + 1]
+
+
+def api_block(source: str) -> str:
+    start = source.index("        api = {")
+    end = source.index("\n        }\n", start)
+    return source[start:end]

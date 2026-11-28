@@ -347,11 +347,13 @@ def main(argv: list[str]) -> int:
         # The values are taken from `api` instead of re-deriving the DSN, so the
         # role/password pair exists once.
         lease_reconciler = {
-            name: api[name]
-            for name in (
-                "SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL",
-                "SPEECHNEXUS_DATABASE_SCHEMA",
-            )
+            "SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL": api[
+                "SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL"
+            ],
+            # The schema is not one of `api`'s keys: the API learns it from its
+            # own default, while a scheduled sweep needs it spelled out. Same
+            # literal as every other rendered unit above.
+            "SPEECHNEXUS_DATABASE_SCHEMA": "speech",
         }
         # The readiness units are the only ones rendered for both topologies, so
         # the two values that differ between them are chosen here and nowhere else.

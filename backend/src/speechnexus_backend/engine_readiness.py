@@ -40,11 +40,13 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any, TextIO, cast
 
 from speechnexus_backend.controller_head import (
+    ADOPTION_COMMAND,
     CONTROLLER_URL_VARIABLE,
     ControllerConsultationError,
     ControllerEndpoint,
     NodeInstanceHead,
     configured_endpoint,
+    decide_generation_adoption,
     generation_disagreement,
     read_head,
 )
@@ -274,6 +276,13 @@ def with_node_generations(
         if disagreement is None:
             checked.append(entry)
             continue
+        # The same decision the adoption command executes says whether this row can be
+        # repaired at all, and the operator reading the report is the one who has to
+        # choose. Reporting the verdict here means the report and the command cannot
+        # disagree about what is available.
+        decision = decide_generation_adoption(
+            int(entry["instance_generation"]), head, node_id=node_id
+        )
         checked.append(
             {
                 **entry,
@@ -282,6 +291,18 @@ def with_node_generations(
                 "remaining_seconds": None,
                 "reason": "instance_generation_mismatch",
                 "remediation": disagreement,
+                "adoption": {
+                    "outcome": decision.outcome,
+                    "code": decision.code,
+                    "reason": decision.reason,
+                    "ledger_generation": decision.ledger_generation,
+                    "adopted_generation": decision.adopted_generation,
+                    "previous_stop_evidence": decision.previous_stop_evidence,
+                    "command": (
+                        f"{ADOPTION_COMMAND} --instance {entry['instance_id']} "
+                        f"--node {node_id} --engine-url <url>"
+                    ),
+                },
             }
         )
     return checked

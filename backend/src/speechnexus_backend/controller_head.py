@@ -24,6 +24,27 @@ from urllib.request import Request, urlopen
 CONTROLLER_URL_VARIABLE = "SPEECHNEXUS_CONTROLLER_API_URL"
 CONTROLLER_TOKEN_VARIABLE = "SPEECHNEXUS_CONTROLLER_API_TOKEN"
 
+#: The repair command both this module's messages and the operations doc point at.
+ADOPTION_COMMAND = "speechnexus-adopt-generation"
+
+ADOPTION_ALIGNED = "aligned"
+ADOPTION_ADOPTABLE = "adoptable"
+ADOPTION_REFUSED = "refused"
+
+#: What the ledger holds as evidence that the previous generation stopped serving. The
+#: first two are the node's own testimony; ``missing`` is the operator's explicit
+#: acceptance of the absence of any, and it is recorded as the weaker claim it is.
+PREVIOUS_STOPPED = "node_reported_stopped"
+PREVIOUS_VOIDED = "node_voided_prepare"
+PREVIOUS_STOP_MISSING = "missing"
+PREVIOUS_STOP_EVIDENCE_KINDS = (PREVIOUS_STOPPED, PREVIOUS_VOIDED, PREVIOUS_STOP_MISSING)
+
+_STOP_EVIDENCE_WORDS = {
+    PREVIOUS_STOPPED: "stopped",
+    PREVIOUS_VOIDED: "a prepare it never ran",
+    PREVIOUS_STOP_MISSING: "gone with no recorded stop evidence",
+}
+
 _MAX_HEAD_BYTES = 65_536
 _HEAD_PATH = "/internal/v1/nodes/{node_id}/instances/{instance_id}/head"
 
@@ -44,6 +65,31 @@ class NodeInstanceHead:
     instance_id: str
     current_generation: int | None
     generation_high_water: int | None
+    # The node's own testimony about generations it no longer serves. Absent from a
+    # controller built before the testimony was exposed, and an absent list is read as
+    # "no testimony", never as "nothing was stopped": the repair that cites it must
+    # then be told explicitly that it is accepting a generation without stop evidence.
+    stopped_generations: tuple[int, ...] = ()
+    voided_generations: tuple[int, ...] = ()
+    last_fencing_token: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class GenerationAdoptionDecision:
+    """Whether the ledger may adopt the node's generation, and on what evidence.
+
+    ``outcome`` is ``aligned`` (the two counters already agree), ``adoptable`` or
+    ``refused``. Only ``adoptable`` carries ``adopted_generation`` and
+    ``previous_stop_evidence``; a refusal carries a stable ``code`` and the sentence
+    an operator needs.
+    """
+
+    outcome: str
+    ledger_generation: int
+    adopted_generation: int | None = None
+    previous_stop_evidence: str | None = None
+    code: str | None = None
+    reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,11 +187,37 @@ def read_head(
             raise ControllerConsultationError(
                 "controller_head_invalid", f"{name} is not a positive integer or null"
             )
+    fencing_token = document.get("last_fencing_token")
+    if fencing_token is not None and (type(fencing_token) is not int or fencing_token < 0):
+        raise ControllerConsultationError(
+            "controller_head_invalid", "last_fencing_token is not a non-negative integer or null"
+        )
     return NodeInstanceHead(
         instance_id=str(document.get("instance_id", instance_id)),
         current_generation=current,
         generation_high_water=high_water,
+        stopped_generations=_generations(document, "stopped_generations"),
+        voided_generations=_generations(document, "voided_generations"),
+        last_fencing_token=fencing_token,
     )
+
+
+def _generations(document: Mapping[str, object], name: str) -> tuple[int, ...]:
+    """One generation list from the head response, ascending and de-duplicated.
+
+    An unanswered list is no testimony at all, which is a different fact from an
+    empty one; both are represented as ``()`` here because the adoption decision asks
+    only whether the ledger's generation appears. A list the node does send must be
+    generations: anything else is a broken answer, not a narrower one.
+    """
+    value = document.get(name)
+    if value is None:
+        return ()
+    if not isinstance(value, list) or any(type(item) is not int or item < 1 for item in value):
+        raise ControllerConsultationError(
+            "controller_head_invalid", f"{name} is not a list of positive integers"
+        )
+    return tuple(sorted(set(value)))
 
 
 def generation_disagreement(
@@ -172,6 +244,125 @@ def generation_disagreement(
         "Converge one of the two ways: roll the node forward (stop generation "
         f"{head.current_generation}, prepare the next one, register it — this restarts the "
         "engine) and the ledger follows, or adopt the node's generation in the ledger with "
+        f"{ADOPTION_COMMAND} --instance {head.instance_id} --node {node_id} --engine-url <url>, "
         "an audited repair that retires the intervening generations. Until one is done, "
         "admission gets no usable receipt for this instance"
+    )
+
+
+def decide_generation_adoption(
+    ledger_generation: int,
+    head: NodeInstanceHead,
+    *,
+    node_id: str,
+    accept_missing_stop_evidence: bool = False,
+) -> GenerationAdoptionDecision:
+    """The one place that decides whether the ledger may adopt the node's generation.
+
+    Written once and reused: the writer (``speechnexus-adopt-generation``) executes this
+    decision, and the read-only readiness report calls it to say whether the audited
+    repair is available for a mismatched row. Two copies of these conditions -- one per
+    caller -- would drift exactly like the two counters did.
+
+    What the repair is not: it is not a way around ``previous_generation_active``. The
+    registration path refuses a higher generation because *the ledger* has no stop
+    evidence for the current one, and it is right to: it is an operator attestation
+    with no node testimony. This decision substitutes a different, checkable evidence --
+    the node's own lifecycle head saying that ledger generation ``G`` is no longer
+    served -- and records it in an audit row. Where that testimony is absent the answer
+    is a refusal, and continuing requires the caller to say explicitly that it accepts a
+    generation without stop evidence.
+    """
+    if head.current_generation is None:
+        return GenerationAdoptionDecision(
+            ADOPTION_REFUSED,
+            ledger_generation,
+            code="node_has_no_intent",
+            reason=(
+                f"node {node_id} holds no runtime intent for {head.instance_id}, so there is "
+                "no generation to adopt; register the instance where it actually runs"
+            ),
+        )
+    adopted = head.current_generation
+    if adopted == ledger_generation:
+        return GenerationAdoptionDecision(
+            ADOPTION_ALIGNED,
+            ledger_generation,
+            reason=(
+                f"the ledger and node {node_id} already agree on generation {ledger_generation}; "
+                "nothing to adopt"
+            ),
+        )
+    if adopted < ledger_generation:
+        return GenerationAdoptionDecision(
+            ADOPTION_REFUSED,
+            ledger_generation,
+            code="ledger_ahead_of_node",
+            reason=(
+                f"the ledger is at generation {ledger_generation} but node {node_id} prepared "
+                f"only generation {adopted}; adoption moves the ledger forward to what the node "
+                "serves and never back, so this divergence is not repaired here -- prepare the "
+                "ledger's generation on the node instead"
+            ),
+        )
+    if head.generation_high_water is None or head.generation_high_water < adopted:
+        return GenerationAdoptionDecision(
+            ADOPTION_REFUSED,
+            ledger_generation,
+            code="node_head_incomplete",
+            reason=(
+                f"node {node_id} reports generation {adopted} as current but a high water of "
+                f"{head.generation_high_water}; the head contradicts itself, so its testimony "
+                "cannot be cited"
+            ),
+        )
+    if not head.last_fencing_token:
+        # Missing, or a zero epoch: the receipt must carry the token the node serves, and
+        # an invented one would attest an epoch nobody holds. Refusing here keeps this
+        # decision the only place that says whether the repair is available -- the report
+        # and the writer must not answer differently.
+        return GenerationAdoptionDecision(
+            ADOPTION_REFUSED,
+            ledger_generation,
+            code="node_head_incomplete",
+            reason=(
+                f"node {node_id} did not report a usable fencing token for generation "
+                f"{adopted} (got {head.last_fencing_token}); the adopted generation's receipt "
+                "must carry the token the node serves, and an invented token would attest an "
+                "epoch nobody holds"
+            ),
+        )
+    if ledger_generation in head.stopped_generations:
+        evidence = PREVIOUS_STOPPED
+    elif ledger_generation in head.voided_generations:
+        evidence = PREVIOUS_VOIDED
+    elif accept_missing_stop_evidence:
+        evidence = PREVIOUS_STOP_MISSING
+    else:
+        return GenerationAdoptionDecision(
+            ADOPTION_REFUSED,
+            ledger_generation,
+            code="previous_generation_stop_unconfirmed",
+            reason=(
+                f"node {node_id} reports generation {adopted} as current but says nothing about "
+                f"generation {ledger_generation}: it is not in stopped_generations "
+                f"{list(head.stopped_generations)} or voided_generations "
+                f"{list(head.voided_generations)}. Adopting it would retire a generation without "
+                "evidence that it stopped serving. If the intervening generations are known to be "
+                "gone (for example an operator stop nobody recorded in the ledger), pass "
+                "--accept-missing-stop-evidence: the audit row then records `missing`, which is "
+                "the weaker claim it actually is"
+            ),
+        )
+    return GenerationAdoptionDecision(
+        ADOPTION_ADOPTABLE,
+        ledger_generation,
+        adopted_generation=adopted,
+        previous_stop_evidence=evidence,
+        code=None,
+        reason=(
+            f"node {node_id} serves generation {adopted} at fencing token "
+            f"{head.last_fencing_token} and reports generation {ledger_generation} as "
+            f"{_STOP_EVIDENCE_WORDS[evidence]}; the ledger can adopt generation {adopted}"
+        ),
     )

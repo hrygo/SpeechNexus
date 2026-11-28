@@ -67,6 +67,7 @@ for table coordination_jobs`（见下节），所以迁移与授权重放必须�
 | `0068_canonical_event_tables` | 建 canonical `job_events`（`job_id` `VARCHAR(128)`、`event_seq` `DECIMAL(38,0)`、`event_digest` `VARCHAR(71)`、`payload_ref` `VARCHAR(512)` 可空，主键 `(job_id, event_seq)`，外键指向 `coordination_jobs(job_id)`），并给 `coordination_outbox` 加可空 `delivered_at TIMESTAMP(6)`；**纯加法，无写者、无读者**，草案列 `delivered_at_us` 原样保留，`downgrade` 只删这一列与 `job_events` 表 |
 | `0069_tighten_job_bucket_due` | **S4**：先回填再收紧 —— 全表用 `bucket_for(job_id)` 重算 `bucket_no`、按 `speech_jobs.created_at_us` 填 `due_at`（fill-if-null，UTC 墙上时间），任一列仍有 `NULL` 就抛错点名行数（`due_at` 没有第二个来源，不编造时刻），然后 `ALTER COLUMN ... SET NOT NULL`；`downgrade` 只放开这两个 `NOT NULL` |
 | `0070_retire_draft_claim_epoch` | **S5（单向）**：`ALTER TABLE coordination_jobs DROP COLUMN claim_expires_at_us`；`downgrade` 显式 `raise`——越过 S5 之后重跑 `0064`/`0065` 以 `42703` 失败，回退只能走备份恢复 |
+| `0071_generation_adoptions` | 建 `runtime_generation_adoptions`：审计型代次收养的追加写账本（主键 `(instance_id, adopted_generation)`，外键指向 `engine_instances(instance_id, instance_generation)`，`document` 存节点证词与收养前后的账本快照）；**只建表，不开启任何收养**，`downgrade` 只 DROP 这张表，收养本身不写回其他表之外的兼容面 |
 | `0001_jobs` | 行为不变，只是把草案 epoch 列 `claim_expires_at_us` 从 `JOB_DDL` 移到本修订自己的 `_LEGACY_DRAFT_COLUMNS` 里补一条 `ALTER`：`JOB_DDL` 现在描述 head 形状（也是 InnoDB 验证 schema 的来源），历史列留在已发布修订里，`0064`/`0065` 才有列可读、空库仍能重放到 `0069`，`0070` 再删它 |
 | `0008_runtime_delivery` | 参数标记迁到 `?` 契约后，迁移把唯一的占位符内联成迁移事务时间戳；行为不变，仍给旧 outbox 行补 `unknown` 投递相位 |
 | `0023_publication_lifecycle`（视图定义） | 视图里的 `::numeric` 改成标准 `CAST(... AS numeric)`，语义等价；只在重新 bootstrap 时生效，不新增迁移 |
@@ -79,7 +80,7 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
   'select version_num from speech.alembic_version'
 ```
 
-第二段的期望输出是 `0070_retire_draft_claim_epoch`。迁移身份是独立 DDL 身份
+第二段的期望输出是 `0071_generation_adoptions`。迁移身份是独立 DDL 身份
 （`SPEECHNEXUS_MIGRATION_DATABASE_URL`），不要用 `sn_api`。`0058`–`0063` 六个 revision 的
 `downgrade` 全部显式 `raise`（计划是删除凭据、账本是删除事实、索引是轮询读的访问路径），
 回退没有 `alembic downgrade` 这条路径，只能显式处理数据后手工回收。`0064` 只删自己加的
@@ -92,6 +93,7 @@ canonical 列，`0065` 把 `last_event_seq` 归零（并防御性清掉 `bucket_
 `0068` 的 `downgrade` 只删本修订加的两样东西（`coordination_outbox.delivered_at` 列与
 `job_events` 表），两列此刻都没有写者，所以回退不丢事实；`delivered_at_us` 的值与
 `coordination_jobs` 的行都不动。`0069` 的 `downgrade` 只放开两个 `NOT NULL`（列与值都保留）。`0070` 的 `downgrade` **拒绝执行**：`claim_expires_at_us` 是单向退役，删列之后再跑 `0064`/`0065` 是 `42703`（`0064` 的回填语句读这一列），所以回退只有备份恢复一条路（计划 §6）。
+`0071` 的 `downgrade` 只 DROP `runtime_generation_adoptions`：这张表只有收养命令写，删表不改变账本的头、实例行或池的 fencing epoch —— 已经发生的收养仍然是事实，只是失去它自己的审计行，所以真实回退前先导出这张表。
 
 `0068` 自己只建对象，但 S1（事件双写）给了 `job_events` 第一个写者，于是多了一条运维动作：
 部署新构建之前重放 `job_dispatch_grants`（见第 9 条）。读路径仍留在草案
@@ -967,6 +969,80 @@ HTTP 边界就是 `400 invalid_job_request`；没有游标等价于从最早事�
 docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
   --profile migration run --rm migrate
 ```
+
+### 12. 可选：把账本的一代收敛到节点的一代（`speechnexus-adopt-generation`）
+
+现场形状是**两套代次各说各话**：账本 `runtime_instance_heads.current_generation = 1`，控制器意图库里
+最近一次成功的 prepare 是第 11 代，Pod 叫 `engine-instance-asr-1-11`（[#1282](https://github.com/hrygo/SpeechNexus/issues/1282)）。
+#1283 让续租与小时报问节点并**在同一条判定上**拒绝签名（`instance_generation_mismatch`），从此外科
+只有两条路：
+
+- **让节点追上账本**：重新准备第 12 代、停掉第 11 代。需要重建运行态，代价是在跑的引擎要停。
+- **让账本收养节点那一代**：不动运行中的引擎，把账本的头改到节点实际在跑的那一代，并留下审计。
+
+本版提供第二条路的工具，它是**可选的运维动作**，迁移本身不会触发它。收养不是"改一个数字"：
+
+- **不 prepare、不 stop、不重启引擎。** 命令不发任何意图给节点，只读控制器的头。
+- **容量向量不动。** 同一台物理引擎仍持同一份 `steady` 预算，收养只搬动"哪个实例身份持着它"：
+  旧代按 `released` 退役但**不减预算**（减了等于把这个还在跑的引擎的容量还回给别的实例），
+  新代以零增量入账。`host_nodes.held_*` 与 `resource_pools` 的预算前后逐字相同。
+- **池的 fencing epoch 抬到节点的 token。** 不抬的话下一次续租会被判 `stale_fencing_token`；
+  节点的 token 落后于池则拒绝收养（那意味着同一 epoch 里会有两个写者）。
+- **同一事务。** 实例行（`ready`/`steady`）、已成功的 prepare 意图、旧代 `released`、头推进、
+  池 epoch、审计行要么一起提交，要么一行都不动：预处理不满足时**整体回滚**，实测比对 8 张关系
+  的前后快照逐字相同。
+
+**前提与拒绝码。** 命令要求能查到控制器（`SPEECHNEXUS_CONTROLLER_API_URL` 与
+`SPEECHNEXUS_CONTROLLER_API_TOKEN`，缺任一即 `controller_not_configured`，退出码 2），并要求节点
+对要退役的那一代给出**停止证词**（`stopped_generations`）或**作废证词**（`voided_generations`）。
+两条都没有时以 `previous_generation_stop_unconfirmed`（退出码 4）拒绝——节点没说自己停过，账本
+就没有资格把那一代划掉。只有确实取不到证词时才用 `--accept-missing-stop-evidence`，此时审计行
+记 `previous_stop_evidence = missing`，是明确更弱的声明而不是默认值。其余拒绝：`node_has_no_intent`、
+`ledger_ahead_of_node`、`node_head_incomplete`、`stale_fencing_token`、`version_conflict`（均退出码 4），
+`controller_unreachable`/`controller_refused`/`engine_unreachable`/`schema_not_migrated`（退出码 5），
+参数或回答形状不对（退出码 2）。**拒绝路径零写入**，不是"写了再回滚"。
+
+**审计。** 每次收养追加一行到 `runtime_generation_adoptions`：
+`instance_id, adopted_generation, ledger_generation, node_high_water, node_last_fencing_token,
+previous_stop_evidence, operator_id, adopted_at_us, document`。`document` 里是节点头的原样证词、
+收养前的账本快照、池 epoch 前后与健康探针结果。这张表**只有 INSERT**，没有 UPDATE/DELETE 授权：
+审计行不可改写。
+
+**幂等与并发。** 头已经等于节点那一代时命令退出 0、回答 `outcome=aligned`、**零写入**（可以安全重跑）。
+两个收养并发时只有一个提交，另一个以 `version_conflict`（退出码 4）要求重跑——它拒绝的是在自己
+规划期间被移动过的头，不是"冲突后照样写"。
+
+**收养之后。** 命令不自己签就绪收据：收养完重跑一次
+`speechnexus-register-engine --renew-readiness`，让收据签在节点真的准备好的那一代上；小时报随后
+从 `invalid` 转 `valid`。命令在 stderr 里就写着这一步。
+
+```bash
+# 只读：先看两套代次差多少、节点有没有停止证词（同样的判定也出现在小时报与续租里）
+speechnexus-engine-readiness --database-url "$SPEECHNEXUS_MIGRATION_DATABASE_URL" \
+  --controller-api-url "$SPEECHNEXUS_CONTROLLER_API_URL" --output json
+
+# 收养（需要写者身份；表必须已迁移到 0071）
+speechnexus-adopt-generation \
+  --database-url "$SPEECHNEXUS_MIGRATION_DATABASE_URL" \
+  --engine-url http://engine-instance-asr-1-11:8080 \
+  --instance engine-instance-asr-1 --node node-megacube-1 \
+  --operator-id "$OPERATOR_ID" \
+  --controller-api-url "$SPEECHNEXUS_CONTROLLER_API_URL" \
+  --controller-api-token "$SPEECHNEXUS_CONTROLLER_API_TOKEN"
+
+# 收养后重新签发收据
+speechnexus-register-engine --renew-readiness --database-url "$SPEECHNEXUS_MIGRATION_DATABASE_URL"
+```
+
+| 授权函数 | 本版 |
+| --- | --- |
+| `generation_adoption_writer_grants` | **新**：收养命令的写者身份，`runtime_generation_adoptions` 的 `USAGE` + 逐列 `INSERT`（9 列），不含 `UPDATE`/`DELETE` |
+| `generation_adoption_reader_grants` | **新**：审计读取身份，`USAGE` + `SELECT`（整表，不逐列，读审计不改写） |
+
+两个函数目前**没有自动调用点**：与 `public_job_admission_grants` 同为按需授予的声明（bootstrap
+owner 手装在先）。收养命令写的是既有的协调表加上这张审计表，所以它要一个能写协调账本的身份：
+要么用迁移属主身份跑（`--database-url "$SPEECHNEXUS_MIGRATION_DATABASE_URL"`），要么给运维身份
+显式授予协调写者与该表的两组授权。
 
 ## 边界澄清（行为未变）
 

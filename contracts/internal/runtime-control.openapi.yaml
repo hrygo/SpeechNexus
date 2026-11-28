@@ -930,6 +930,8 @@ components:
         - last_fencing_token
         - unresolved_prepare_intent_id
         - unresolved_stop_intent_id
+        - stopped_generations
+        - voided_generations
       properties:
         instance_id:
           type: string
@@ -954,6 +956,25 @@ components:
         unresolved_stop_intent_id:
           type: string
           nullable: true
+        stopped_generations:
+          type: array
+          description: |
+            Generations this node prepared and then verified stopped, ascending. The
+            node no longer serves them, which is the testimony an audited ledger
+            repair cites before it retires a generation the coordination ledger still
+            lists as current.
+          items:
+            type: integer
+            minimum: 1
+        voided_generations:
+          type: array
+          description: |
+            Generations whose prepare this node refused or never ran, ascending. A
+            voided generation was never served, so it carries no stop evidence to
+            cite; it is listed separately from the stopped ones for that reason.
+          items:
+            type: integer
+            minimum: 1
     RuntimeQualificationObservationResponse:
       allOf:
         - $ref: "#/components/schemas/RuntimeCoordinationObservation"

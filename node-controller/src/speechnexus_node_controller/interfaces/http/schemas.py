@@ -127,6 +127,12 @@ class RuntimeInstanceHeadResponse(BaseModel):
     this node. The coordination ledger has its own counter, and in the field the two
     drifted to 1 and 11 for the same instance (#1282), so the receipt that attests a
     generation has to be checked against this number before it is signed.
+
+    ``stopped_generations`` and ``voided_generations`` are the node's own testimony
+    about generations it no longer serves. They are what an audited ledger repair
+    reads: a generation the node reports stopped is retired evidence a human can act
+    on, while a generation the node still reports current is not. Neither list is
+    admission state; they are facts the operator command cites.
     """
 
     model_config = _MODEL_CONFIG
@@ -137,6 +143,8 @@ class RuntimeInstanceHeadResponse(BaseModel):
     last_fencing_token: int
     unresolved_prepare_intent_id: str | None
     unresolved_stop_intent_id: str | None
+    stopped_generations: list[int]
+    voided_generations: list[int]
 
 
 class RuntimeQualificationObservationResponse(RuntimeInstanceIntentResponse):

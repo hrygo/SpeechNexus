@@ -1239,6 +1239,130 @@ def reviewed_vocabulary_addition(root: Path, reference: str) -> str | None:
     return None
 
 
+class _ReviewedFieldAddition(NamedTuple):
+    """One required response property a reviewed change may add.
+
+    An addition is a widening a strict client can feel: the service will send a
+    property the frozen declaration did not have, and against a component with
+    ``additionalProperties: false`` the old declaration says that response is invalid.
+    It is therefore never accepted implicitly, and the approval below is again a proof
+    over the whole ``contracts/`` diff, so it can only ever explain exactly the fields
+    it names (#1282).
+    """
+
+    path: str
+    component: str
+    name: str
+
+    @property
+    def label(self) -> str:
+        return self.path + "/" + self.component + "/" + self.name
+
+
+# The node controller's lifecycle head gained the two lists an audited ledger repair
+# needs: which generations the node verified stopped, and which prepares it never ran.
+# Without them the operator could not tell "the node says generation 1 is gone" from
+# "nobody knows", and the ledger repair would have to ask for a weaker claim from
+# every operator instead of only from the ones the node cannot speak for (#1282, #1283).
+_REVIEWED_RESPONSE_FIELD_ADDITIONS: tuple[_ReviewedFieldAddition, ...] = (
+    _ReviewedFieldAddition(
+        "contracts/internal/runtime-control.openapi.yaml",
+        "RuntimeInstanceHeadResponse",
+        "stopped_generations",
+    ),
+    _ReviewedFieldAddition(
+        "contracts/internal/runtime-control.openapi.yaml",
+        "RuntimeInstanceHeadResponse",
+        "voided_generations",
+    ),
+)
+_REVIEWED_FIELD_ISSUE = "#1282"
+_REVIEWED_FIELD_REASON = (
+    "the lifecycle head is the node's testimony for an audited ledger repair; without "
+    "these lists every adoption would have to record the weakest evidence (`missing`) "
+    "even when the node can name the generation it stopped"
+)
+
+
+def reviewed_response_field_addition(root: Path, reference: str) -> str | None:
+    """Prove the contracts diff is exactly the reviewed response field additions.
+
+    Same whole-diff discipline as the other reviewed movements: the current document is
+    normalized by removing exactly the registered properties (and their ``required``
+    entries), and the result must be identical to the baseline document. A second edit,
+    a field that was already declared, or a field that is added but not required keeps
+    the gate's findings.
+    """
+
+    expected = {entry.path for entry in _REVIEWED_RESPONSE_FIELD_ADDITIONS}
+    changed = _changed_contract_paths(root, reference)
+    if changed != expected:
+        unexpected = sorted(changed.symmetric_difference(expected))
+        return (
+            "the reviewed response field addition may explain only its own file, but "
+            f"contracts/ differs in {', '.join(unexpected)}"
+        )
+    for path in sorted(expected):
+        base = _contract_document(root, reference, path)
+        current = _contract_document(root, None, path)
+        normalized: object = copy.deepcopy(current)
+        # One component at a time: every registered name there is removed together, so
+        # a component with two additions is normalized in one step instead of the last
+        # one restoring the first.
+        components = {
+            entry.component: entry
+            for entry in _REVIEWED_RESPONSE_FIELD_ADDITIONS
+            if entry.path == path
+        }
+        for component_name, first in components.items():
+            names = {
+                entry.name
+                for entry in _REVIEWED_RESPONSE_FIELD_ADDITIONS
+                if entry.path == path and entry.component == component_name
+            }
+            pointer = ("components", "schemas", component_name)
+            base_component = _pointer_value(base, pointer)
+            current_component = _pointer_value(current, pointer)
+            if not isinstance(base_component, Mapping) or not isinstance(
+                current_component, Mapping
+            ):
+                return f"{first.label} is not an object in both versions"
+            properties = current_component.get("properties")
+            required = current_component.get("required")
+            if not isinstance(properties, Mapping) or not isinstance(required, list):
+                return f"{first.label} has no properties/required to add a field to"
+            for name in names:
+                if name not in properties:
+                    return f"{path}: {component_name}/{name} is not declared in the contract"
+                if name in (base_component.get("properties") or {}):
+                    return f"{path}: {component_name}/{name} already exists in the baseline"
+                if name not in required:
+                    return f"{path}: {component_name}/{name} is added but not required"
+            body = dict(current_component)
+            body["properties"] = {
+                name: value for name, value in properties.items() if name not in names
+            }
+            body["required"] = [item for item in required if item not in names]
+            normalized = _with_pointer_value(normalized, pointer, body)
+        if not _same_json_tree(_annotation_free(base), _annotation_free(normalized)):
+            return (
+                f"{path}: another semantic change exists beside the reviewed response "
+                "field additions"
+            )
+    return None
+
+
+def reviewed_response_field_addition_line(explained: int) -> str:
+    """One review line for the response fields the whole-diff proof covered."""
+
+    names = ", ".join(entry.name for entry in _REVIEWED_RESPONSE_FIELD_ADDITIONS)
+    files = ", ".join(sorted({entry.path for entry in _REVIEWED_RESPONSE_FIELD_ADDITIONS}))
+    return (
+        f"{files}: required response field additions {names} explain {explained} "
+        f"finding(s) [{_REVIEWED_FIELD_ISSUE}: {_REVIEWED_FIELD_REASON}]"
+    )
+
+
 def reviewed_vocabulary_addition_line(explained: int) -> str:
     """One review line for a code addition the proof showed explains every finding."""
 

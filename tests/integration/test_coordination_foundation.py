@@ -58,6 +58,10 @@ from speechnexus_backend.speech.infrastructure.gateway_abort_intent_schema impor
     ABORT_INTENT_TABLE,
     gateway_abort_grants,
 )
+from speechnexus_backend.speech.infrastructure.generation_adoption_schema import (
+    GENERATION_ADOPTION_DDL,
+    GENERATION_ADOPTION_TABLE,
+)
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
     gateway_cancellation_fence_grants,
 )
@@ -227,6 +231,7 @@ def foundation(database: JobDatabase) -> Iterator[Foundation]:
             *ADMISSION_COMMAND_DDL,
             *RUNTIME_DELIVERY_DDL,
             *EXECUTION_RESULT_DDL,
+            *GENERATION_ADOPTION_DDL,
             RELEASE_GUARD_DDL,
         ):
             ddl = ddl.replace('COLLATE "C"', "COLLATE utf8mb4_0900_bin")
@@ -439,6 +444,11 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
         if db.dialect == "postgresql"
         else set()
     )
+    # The audited generation-adoption ledger (0071). Append-only operator evidence: it
+    # exists on both engines (the adoption transaction is driven on both), and neither
+    # coordination owner holds any right on it, so it sits outside the shared grant
+    # surface on purpose.
+    adoption_tables = {GENERATION_ADOPTION_TABLE}
     # The coordination keyed-lock rows (0067). Grant is column-level and belongs
     # to the dispatch writer and the gateway only; neither coordination owner
     # holds table-level rights, so it sits outside the shared grant surface.
@@ -508,6 +518,7 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
         - qualification_provenance_tables
         - deletion_plan_tables
         - keyed_lock_tables
+        - adoption_tables
         - canonical_event_tables
         == (set(SPEECH_UPDATES) | set(GATEWAY_UPDATES))
     )
@@ -528,6 +539,7 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
                 | qualification_provenance_tables
                 | deletion_plan_tables
                 | keyed_lock_tables
+                | adoption_tables
             ):
                 with (
                     pytest.raises(psycopg.errors.InsufficientPrivilege),

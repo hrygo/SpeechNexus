@@ -448,3 +448,95 @@ def test_a_report_without_a_controller_keeps_the_previous_behaviour(
     captured = capsys.readouterr()
     assert code == 0
     assert json.loads(captured.out.splitlines()[0])["readiness_state"] == "valid"
+
+
+def test_the_report_says_whether_the_audited_adoption_is_available(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The report and the adoption command must not disagree about the repair.
+
+    Both call ``decide_generation_adoption``: the report tells the operator which of the
+    two convergence paths the node's testimony allows, instead of leaving them to discover
+    a refusal after opening a write transaction.
+    """
+    rows = [_row(document=_receipt(verified=NOW - 10, expires=NOW + 60_000_000_000))]
+    monkeypatch.setattr(
+        engine_readiness,
+        "read_head",
+        lambda *_, **__: NodeInstanceHead(
+            "instance-1",
+            11,
+            11,
+            stopped_generations=(1,),
+            last_fencing_token=20,
+        ),
+    )
+    engine_readiness.main(
+        ["--database-url", DSN],
+        env={
+            "SPEECHNEXUS_CONTROLLER_API_URL": "http://127.0.0.1:8080",
+            "SPEECHNEXUS_CONTROLLER_API_TOKEN": "token",
+        },
+        connect=lambda *_, **__: rows,
+    )
+    entry = json.loads(capsys.readouterr().out.splitlines()[0])
+
+    adoption = entry["adoption"]
+    assert adoption["outcome"] == "adoptable"
+    assert adoption["adopted_generation"] == 11
+    assert adoption["ledger_generation"] == 1
+    assert adoption["previous_stop_evidence"] == "node_reported_stopped"
+    assert adoption["command"].startswith("speechnexus-adopt-generation --instance instance-1")
+
+
+def test_the_report_says_when_the_node_offers_no_stop_evidence(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The refusal is the fact the operator needs before running the command: the way
+    # forward is an explicit acceptance, not a different command.
+    rows = [_row(document=_receipt(verified=NOW - 10, expires=NOW + 60_000_000_000))]
+    monkeypatch.setattr(
+        engine_readiness,
+        "read_head",
+        lambda *_, **__: NodeInstanceHead("instance-1", 11, 11, last_fencing_token=20),
+    )
+    engine_readiness.main(
+        ["--database-url", DSN],
+        env={
+            "SPEECHNEXUS_CONTROLLER_API_URL": "http://127.0.0.1:8080",
+            "SPEECHNEXUS_CONTROLLER_API_TOKEN": "token",
+        },
+        connect=lambda *_, **__: rows,
+    )
+    adoption = json.loads(capsys.readouterr().out.splitlines()[0])["adoption"]
+
+    assert adoption["outcome"] == "refused"
+    assert adoption["code"] == "previous_generation_stop_unconfirmed"
+    assert "--accept-missing-stop-evidence" in adoption["reason"]
+
+
+def test_an_unrepairable_divergence_does_not_claim_the_adoption_would_help(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The ledger is ahead of the node: adoption only moves the ledger forward, so the
+    # report must not send the operator to a command that can only refuse.
+    row = _row(document=_receipt(verified=NOW - 10, expires=NOW + 60_000_000_000))
+    row["instance_generation"] = 5
+    rows = [row]
+    monkeypatch.setattr(
+        engine_readiness,
+        "read_head",
+        lambda *_, **__: NodeInstanceHead("instance-1", 3, 3, last_fencing_token=9),
+    )
+    engine_readiness.main(
+        ["--database-url", DSN],
+        env={
+            "SPEECHNEXUS_CONTROLLER_API_URL": "http://127.0.0.1:8080",
+            "SPEECHNEXUS_CONTROLLER_API_TOKEN": "token",
+        },
+        connect=lambda *_, **__: rows,
+    )
+    adoption = json.loads(capsys.readouterr().out.splitlines()[0])["adoption"]
+
+    assert adoption["outcome"] == "refused"
+    assert adoption["code"] == "ledger_ahead_of_node"

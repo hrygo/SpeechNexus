@@ -505,3 +505,44 @@ async def test_the_head_route_is_scoped_to_this_node_and_requires_the_credential
 
     assert anonymous.status_code == 401
     assert other_node.status_code == 409
+
+
+async def test_the_head_route_reports_which_generations_stopped_and_which_never_ran(
+    settings: Settings,
+) -> None:
+    """#1282: an adoption cites the node's own testimony, so the head must carry it.
+
+    ``stopped_generations`` and ``voided_generations`` are different facts -- a generation
+    that served and was verified stopped, versus a prepare that never ran -- and the ledger
+    repair records which one it relied on. A head that omitted either would force the
+    operator to accept "no evidence" for a generation the node can actually account for.
+    """
+    service, _store, _runtime = _service(runtime=ScriptedNodeRuntime(ready_on_prepare=True))
+    head_path = f"/internal/v1/nodes/{_NODE}/instances/{SAMPLE_INSTANCE_ID}/head"
+
+    async with _client(settings, service) as client:
+        prepared = await client.post(
+            _INTENTS_PATH,
+            json=request_payload(build_request(intent_id="intent-1", instance_generation=1)),
+            headers=_HEADERS,
+        )
+        stopped = await client.post(
+            _INTENTS_PATH,
+            json=request_payload(
+                build_request(
+                    intent_id="intent-stop-1",
+                    action=RuntimeActionKind.STOP,
+                    instance_generation=1,
+                    fencing_token=2,
+                )
+            ),
+            headers=_HEADERS,
+        )
+        head = await client.get(head_path, headers=_HEADERS)
+
+    assert prepared.status_code == 200
+    assert stopped.status_code == 200
+    payload = head.json()
+    assert payload["stopped_generations"] == [1]
+    assert payload["voided_generations"] == []
+    assert payload["last_fencing_token"] == 2

@@ -19,6 +19,7 @@
     "backend/src/speechnexus_backend/speech/infrastructure/execution_release_schema.py",
     "backend/src/speechnexus_backend/speech/infrastructure/execution_result_schema.py",
     "backend/src/speechnexus_backend/speech/infrastructure/gateway_abort_intent_schema.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/generation_adoption_schema.py",
     "backend/src/speechnexus_backend/speech/infrastructure/job_cancellation_fence_schema.py",
     "backend/src/speechnexus_backend/speech/infrastructure/job_schema.py",
     "backend/src/speechnexus_backend/speech/infrastructure/profile_draft_schema.py",
@@ -60,6 +61,7 @@
     "backend/src/speechnexus_backend/speech/infrastructure/builtin_voice_grants.py",
     "backend/src/speechnexus_backend/speech/infrastructure/coordination_grants.py",
     "backend/src/speechnexus_backend/speech/infrastructure/gateway_query_grants.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/generation_adoption_grants.py",
     "backend/src/speechnexus_backend/speech/infrastructure/public_job_admission_grants.py",
     "backend/src/speechnexus_backend/speech/infrastructure/qualification_admission_grants.py"
   ]

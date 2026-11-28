@@ -25,6 +25,7 @@ dependencies = [
 speechnexus-api = "speechnexus_backend.main:main"
 speechnexus-runtime-delivery-worker = "speechnexus_backend.runtime_delivery_worker:main"
 speechnexus-register-engine = "speechnexus_backend.engine_registration:main"
+speechnexus-adopt-generation = "speechnexus_backend.generation_adoption:main"
 speechnexus-asset-maintain = "speechnexus_backend.asset_worker:main"
 speechnexus-artifact-retention = "speechnexus_backend.artifact_retention_worker:main"
 speechnexus-engine-readiness = "speechnexus_backend.engine_readiness:main"

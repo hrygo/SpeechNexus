@@ -385,6 +385,54 @@ _UPDATE_HOST_NODE = (
 )
 
 
+_INSERT_OUTBOX_EVENT = (
+    "INSERT INTO coordination_outbox (event_id, event_digest, event_kind, "
+    "target_node_id, intent_id) VALUES (?, ?, 'runtime', ?, ?)"
+)
+_INSERT_INTENT_DELIVERY = (
+    "INSERT INTO runtime_intent_deliveries "
+    "(event_id, delivery_phase, created_at_us, updated_at_us) "
+    "VALUES (?, 'unsent', ?, ?)"
+)
+_BLOCK_OPERATOR_ATTESTED_DELIVERY = (
+    "UPDATE runtime_intent_deliveries SET delivery_phase = 'blocked', "
+    "last_failure_code = 'operator_attested', updated_at_us = ?, "
+    "version = version + 1 WHERE event_id = ? AND delivery_phase = 'unsent'"
+)
+
+
+def queue_intent_dispatch(
+    cursor: RuntimeCursor,
+    prepared: PreparedRuntimeRequest,
+    request: RuntimeIntent,
+    *,
+    now_us: int,
+) -> None:
+    """Persist the outbox event and the delivery row of one runtime intent.
+
+    The create path and the audited generation adoption both queue an intent in the
+    same transaction that records it; two copies of these column lists is how one of
+    them ends up missing a column that was added to the other. Only this same-transaction
+    insertion proves a fresh unsent command: old pending outbox rows are adopted as
+    unknown by migration, never recreated.
+    """
+    cursor.execute(
+        _INSERT_OUTBOX_EVENT,
+        (
+            prepared.event_id,
+            prepared.request_digest,
+            request.binding.target_node_id,
+            request.intent_id,
+        ),
+    )
+    cursor.execute(_INSERT_INTENT_DELIVERY, (prepared.event_id, now_us, now_us))
+
+
+def block_operator_attested_delivery(cursor: RuntimeCursor, event_id: str, *, now_us: int) -> None:
+    """An operator-attested intent has no node delivery to perform."""
+    cursor.execute(_BLOCK_OPERATOR_ATTESTED_DELIVERY, (now_us, event_id))
+
+
 # 33 列写死:基准 15 列 + peak/steady/per_slot 各 6 个维度,顺序与 values 一致。
 # 列序由 test_engine_instance_insert_statement 对着 DIMENSIONS 核对。
 _INSERT_ENGINE_INSTANCE = (
@@ -631,24 +679,7 @@ def create_in_transaction(
             now_us,
         ),
     )
-    cursor.execute(
-        "INSERT INTO coordination_outbox (event_id, event_digest, event_kind, "
-        "target_node_id, intent_id) VALUES (?, ?, 'runtime', ?, ?)",
-        (
-            prepared.event_id,
-            prepared.request_digest,
-            request.binding.target_node_id,
-            request.intent_id,
-        ),
-    )
-    # Only this same-transaction creation proves a fresh unsent command. Old
-    # pending outbox rows are adopted as unknown by migration, never recreated.
-    cursor.execute(
-        "INSERT INTO runtime_intent_deliveries "
-        "(event_id, delivery_phase, created_at_us, updated_at_us) "
-        "VALUES (?, 'unsent', ?, ?)",
-        (prepared.event_id, now_us, now_us),
-    )
+    queue_intent_dispatch(cursor, prepared, request, now_us=now_us)
     # The global outbox identity can introduce one last uniqueness wait. A
     # successful INSERT after a rival rollback must not commit expired authority.
     require_runtime_authority(owner, request, clock(), owner_id=command.owner_id)

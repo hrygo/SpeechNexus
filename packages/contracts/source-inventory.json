@@ -48,7 +48,7 @@
     "version": "1.0.0"
   },
   "internal/runtime-control.openapi.yaml": {
-    "sha256": "cfffc93aabd3801a1e7386e1568e9f37b33ecbade198b5421f47a1a386bbe622",
+    "sha256": "3f76d050f2877d4739d8eed338b4b9d35cb16728cdf925b50ce7dcc4caa290fb",
     "version": "0.1.0.dev1"
   },
   "internal/zero-dispatch.schema.json": {

@@ -87,7 +87,7 @@ def test_the_head_is_read_from_the_node_that_prepared_the_instance(
         ControllerEndpoint(url, "token"), node_id="node-megacube-1", instance_id="instance-asr-1"
     )
 
-    assert head == NodeInstanceHead("instance-asr-1", 11, 11)
+    assert head == NodeInstanceHead("instance-asr-1", 11, 11, last_fencing_token=20)
     # The disagreement names both numbers and both ways out, so the operator does not
     # have to guess which plane is right.
     message = generation_disagreement(1, head, node_id="node-megacube-1")

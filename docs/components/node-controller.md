@@ -187,6 +187,16 @@ adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把
   [停止恢复](node-stop-recovery.md)，不增加共享数据库专有协调逻辑。
 - **本地共享编解码**：HTTP 响应与持久记录都由 `domain/payloads.py` 从同一份领域事实投影出来，
   避免出现第二套字段定义；合约校验会同时验证生产投影与冻结响应形状。
+- **生命周期头（`getInstanceHead`）**：`GET /internal/v1/nodes/{node_id}/instances/{instance_id}/head`
+  回答本节点为该实例派生出的代次事实：`current_generation`、`generation_high_water`、
+  `last_fencing_token`、未决的 prepare / stop 意图，以及两份**证词列表**——
+  `stopped_generations`（本节点准备好、随后确认已停止的代次，升序）与 `voided_generations`
+  （点了 prepare 但从未跑起来的代次，升序；`gpu_budget_undeclared` 这类创建前拒绝记在这里）。
+  两份列表分开是因为它们证明的事情不同：前者能当「那一代已经不在服务」的证词，后者说明
+  「那一代从来没有引擎」，因此不需要、也永远拿不到停止证据。账本收敛工具
+  （`speechnexus-adopt-generation`）只在这些证词上退役一代；两者都空时它拒绝收养，而不是
+  假定节点忘了说。头部没有该实例的任何意图时，代次字段答 `null`（不是错误）："没问过这个实例"
+  与"读不到意图库"是两件不同的事。节点从不自己改协调账本，头只是它的证词。
 
 真实进程级证据（生产入口进程、一次性真实凭据、真实 daemon、真实持久存储、重启后意图仍在）见
 [B02 控制器 HTTP 外壳与持久意图探针](../archive/audits/2026-10-24-b02-controller-http-shell-probe.md)。

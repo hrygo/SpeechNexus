@@ -59,7 +59,10 @@ from speechnexus_backend.speech.infrastructure.runtime_observation_codec import 
 from speechnexus_backend.speech.infrastructure.runtime_observation_sql import (
     observe_in_transaction,
 )
-from speechnexus_backend.speech.infrastructure.runtime_sql import create_in_transaction
+from speechnexus_backend.speech.infrastructure.runtime_sql import (
+    block_operator_attested_delivery,
+    create_in_transaction,
+)
 from speechnexus_backend.speech.infrastructure.transcription_recipe import (
     TranscriptionRecipe,
     load_transcription_recipe,
@@ -291,13 +294,73 @@ def probe_engine(engine_url: str, *, timeout_seconds: float = 5.0) -> EngineProb
     )
 
 
-def _evidence(spec: RegistrationSpec, probe: EngineProbe) -> tuple[str, Row]:
-    binding = spec.plan.binding
+def prepared_observation_wire(
+    *,
+    plan: ApprovedRuntimePlan,
+    instance_id: str,
+    instance_generation: int,
+    intent_id: str,
+    fencing_token: int,
+    observed_at_us: int,
+) -> Row:
+    """The succeeded prepare observation one ready generation is recorded with.
+
+    One definition point for a fact two commands write: the registration command has
+    just probed the engine, and the audited adoption command is recording that the same
+    plan is serving under the node's generation. Both must produce a document the
+    existing decoder and the future reader accept, and a second copy of this shape is
+    exactly how one of them silently stops decoding (#1282's sibling risk).
+    """
+    return {
+        "intent_id": intent_id,
+        "target_node_id": plan.binding.target_node_id,
+        "pool_id": plan.binding.pool_id,
+        "gateway_id": plan.binding.gateway_id,
+        "approved_template_id": plan.binding.approved_template_id,
+        "binding_revision_id": plan.binding.binding_revision_id,
+        "manifest_id": plan.binding.manifest_id,
+        "config_digest": plan.binding.config_digest,
+        "instance_id": instance_id,
+        "instance_generation": instance_generation,
+        "action": "prepare",
+        "fencing_token": fencing_token,
+        "intent_state": "succeeded",
+        "observed_instance_state": "ready",
+        "reserved_memory": {
+            "architecture": plan.memory.architecture,
+            "peak": _memory_wire(plan.memory.peak),
+            "steady": _memory_wire(plan.memory.steady),
+        },
+        "observed_peak_memory": _memory_wire(plan.peak),
+        "created_at": _iso(observed_at_us),
+        "updated_at": _iso(observed_at_us),
+    }
+
+
+def probe_evidence_document(
+    *,
+    kind: str,
+    instance_id: str,
+    instance_generation: int,
+    binding: RuntimeBinding,
+    probe: EngineProbe,
+    model_id: str | None,
+) -> tuple[str, Row]:
+    """The bounded evidence document one health probe is recorded as.
+
+    One definition point for every command that attests an engine generation with a
+    live probe: the registration command and the audited adoption command cite the
+    same facts in the same shape, and the only thing that differs is ``kind`` (which
+    is how a reader tells which command signed it). ``model_id`` is null for a repair
+    that copies an already-registered plan: the ledger's ``engine_instances`` row does
+    not carry a model identity, and inventing one from the recipe would put a claim in
+    the evidence that the command never read.
+    """
     document: Row = {
-        "kind": "operator_engine_health_probe_v1",
-        "model_id": spec.model_id,
-        "instance_id": spec.instance_id,
-        "instance_generation": spec.generation,
+        "kind": kind,
+        "model_id": model_id,
+        "instance_id": instance_id,
+        "instance_generation": instance_generation,
         "target_node_id": binding.target_node_id,
         "pool_id": binding.pool_id,
         "gateway_id": binding.gateway_id,
@@ -310,6 +373,17 @@ def _evidence(spec: RegistrationSpec, probe: EngineProbe) -> tuple[str, Row]:
     }
     text = json.dumps(document, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return "sha256:" + hashlib.sha256(text.encode()).hexdigest(), document
+
+
+def _evidence(spec: RegistrationSpec, probe: EngineProbe) -> tuple[str, Row]:
+    return probe_evidence_document(
+        kind="operator_engine_health_probe_v1",
+        instance_id=spec.instance_id,
+        instance_generation=spec.generation,
+        binding=spec.plan.binding,
+        probe=probe,
+        model_id=spec.model_id,
+    )
 
 
 def _iso(us: int) -> str:
@@ -589,8 +663,15 @@ def _capacity_headroom(row: Row, spec: RegistrationSpec) -> CapacityHeadroom | N
     return CapacityHeadroom(capacity.subtract(occupied), required)
 
 
-def _config_matches(row: Row, spec: RegistrationSpec) -> bool:
-    plan, binding = spec.plan, spec.plan.binding
+def plan_matches_row(row: Row, plan: ApprovedRuntimePlan) -> bool:
+    """Whether an ``engine_instances`` row describes exactly this approved plan.
+
+    One definition point for "the row and the plan agree": the registration command
+    uses it to recognise an instance it already wrote, and the audited adoption
+    command uses it to refuse copying a generation whose stored plan has drifted from
+    its own row. A second copy would let one reader call a drifted row identical.
+    """
+    binding = plan.binding
     return (
         (
             row["host_node_id"],
@@ -677,7 +758,7 @@ def _existing_result(
                 "instance_not_ready",
                 f"generation {spec.generation} is {instance['instance_state']}; reconcile it first",
             )
-        if not _config_matches(instance, spec):
+        if not plan_matches_row(instance, spec.plan):
             raise RegistrationError(
                 "instance_config_conflict",
                 "the ready instance has different binding, model plan or capacity facts",
@@ -947,30 +1028,14 @@ def _register_in_transaction(
                 created.error_code or "runtime_create_rejected",
                 "runtime create transaction did not commit",
             )
-        observation_wire: Row = {
-            "intent_id": request.intent_id,
-            "target_node_id": spec.plan.binding.target_node_id,
-            "pool_id": spec.plan.binding.pool_id,
-            "gateway_id": spec.plan.binding.gateway_id,
-            "approved_template_id": spec.plan.binding.approved_template_id,
-            "binding_revision_id": spec.plan.binding.binding_revision_id,
-            "manifest_id": spec.plan.binding.manifest_id,
-            "config_digest": spec.plan.binding.config_digest,
-            "instance_id": spec.instance_id,
-            "instance_generation": spec.generation,
-            "action": "prepare",
-            "fencing_token": token,
-            "intent_state": "succeeded",
-            "observed_instance_state": "ready",
-            "reserved_memory": {
-                "architecture": spec.plan.memory.architecture,
-                "peak": _memory_wire(spec.plan.memory.peak),
-                "steady": _memory_wire(spec.plan.memory.steady),
-            },
-            "observed_peak_memory": _memory_wire(spec.plan.peak),
-            "created_at": _iso(observed_at_us),
-            "updated_at": _iso(observed_at_us),
-        }
+        observation_wire = prepared_observation_wire(
+            plan=spec.plan,
+            instance_id=spec.instance_id,
+            instance_generation=spec.generation,
+            intent_id=request.intent_id,
+            fencing_token=token,
+            observed_at_us=observed_at_us,
+        )
         prepared_observation = prepare_observation(observation_wire)
         readiness = VerifiedRuntimeReadiness(
             spec.plan.binding,
@@ -1002,12 +1067,7 @@ def _register_in_transaction(
                 "runtime observation transaction did not commit",
             )
         # Operator attestation has no node-controller delivery to perform.
-        cursor.execute(
-            "UPDATE runtime_intent_deliveries SET delivery_phase = 'blocked', "
-            "last_failure_code = 'operator_attested', updated_at_us = ?, "
-            "version = version + 1 WHERE event_id = ? AND delivery_phase = 'unsent'",
-            (cursor.clock(), prepared.event_id),
-        )
+        block_operator_attested_delivery(cursor, prepared.event_id, now_us=cursor.clock())
         rows = _snapshot(cursor, spec)
         instance = rows["engine_instances"]
         # `_require_capacity` locked the host row; read it again after the writes.

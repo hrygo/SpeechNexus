@@ -457,3 +457,72 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 32Mi
+---
+# #1293: accepted cancellations are confirmed against execution facts here. Without
+# this unit a cancelled Job stops at `cancelling` and keeps its admission lease
+# `reserved`, so the next Job of that instance class is refused with
+# `capacity_exhausted`; the lease reconciler only returns capacity for rows a
+# dispatcher had claimed.
+#
+# One bounded pass per invocation (`--once`), like `lease-reconciler`: the process
+# loops on its own when the flag is absent, and a crash-looping Deployment would be
+# invisible here because the worker exposes no port. A failed pass is visible as a
+# non-zero container exit in `kubectl get jobs`.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: job-cancellation
+  namespace: speechnexus
+spec:
+  # A cancelled Job is user-visible as `cancelling` until this pass confirms it, so
+  # the cadence is the delay the operator has to wait; one pass settles up to
+  # `SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_BATCH_SIZE` of them.
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 3600
+      template:
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            # The staged Secret is root-owned 0440; only the fsGroup can read it.
+            fsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: job-cancellation
+              image: ${PYTHON_IMAGE}
+              imagePullPolicy: IfNotPresent
+              command:
+                - speechnexus-job-cancellation-reconciler
+                - --once
+              envFrom:
+                - secretRef:
+                    name: job-cancellation-env
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 64Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir:
+                medium: Memory
+                sizeLimit: 16Mi

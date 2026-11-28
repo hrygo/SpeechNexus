@@ -149,6 +149,42 @@ def readiness_env(env: dict[str, str], topology: str) -> dict[str, str]:
     }
 
 
+def job_cancellation_env(dispatch: dict[str, str], topology: str) -> dict[str, str]:
+    """#1293's cancellation pass reads exactly what the dispatcher already holds.
+
+    ``cancellation_reconciliation_grants`` is declared for the dispatch role, and the
+    pass asks the execution gateway for the stop fact, so it needs that same DSN and
+    credential -- not a fourth runtime identity. Everything else here is a bound, and
+    every key is spelled out because a scheduled Pod cannot fall back to the process
+    defaults the API gets away with (``--once`` reads them once and exits).
+
+    Pure on purpose: ``tests/ci`` imports it to prove the rendered Secret covers every
+    setting the worker validates, so deleting a key here fails before a rollout.
+    """
+    return {
+        "SPEECHNEXUS_DATABASE_URL": dispatch["SPEECHNEXUS_DATABASE_URL"],
+        "SPEECHNEXUS_DATABASE_SCHEMA": dispatch["SPEECHNEXUS_DATABASE_SCHEMA"],
+        # Derived from the same rule as every other credential-presenting unit, so the
+        # origin keeps one definition point instead of being copied through dispatch.
+        "SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL": gateway_origin(topology),
+        "SPEECHNEXUS_EXECUTION_GATEWAY_ALLOW_PLAINTEXT_ORIGIN": gateway_origin(topology),
+        "SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL": dispatch[
+            "SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL"
+        ],
+        "SPEECHNEXUS_EXECUTION_GATEWAY_TIMEOUT_SECONDS": dispatch[
+            "SPEECHNEXUS_EXECUTION_GATEWAY_TIMEOUT_SECONDS"
+        ],
+        "SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_ENABLED": "true",
+        "SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_INTERVAL_SECONDS": "15",
+        "SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_BATCH_SIZE": "16",
+        "SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_MAX_ATTEMPTS": "8",
+        "SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_MIN_AGE_SECONDS": "5",
+        "SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_CONFIRM_TIMEOUT_SECONDS": "300",
+        "SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_LEASE_SECONDS": "30",
+        "SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_TRANSACTION_TIMEOUT_SECONDS": "3",
+    }
+
+
 def load_env(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     for line in path.read_text().splitlines():
@@ -444,6 +480,7 @@ def main(argv: list[str]) -> int:
             # literal as every other rendered unit above.
             "SPEECHNEXUS_DATABASE_SCHEMA": "speech",
         }
+        job_cancellation = job_cancellation_env(dispatch, topology)
         # The readiness units are the only ones rendered for every topology. Which
         # endpoint each of them reads is decided in `readiness_env` above.
         readiness = readiness_env(env, topology)
@@ -492,6 +529,7 @@ def main(argv: list[str]) -> int:
             "artifact-retention-env": artifact_retention,
             "admission-watch-env": admission_watch,
             "lease-reconciler-env": lease_reconciler,
+            "job-cancellation-env": job_cancellation,
             "readiness-env": readiness,
             "workbench-migrate-env": workbench_migrate,
             "workbench-api-env": workbench_api,

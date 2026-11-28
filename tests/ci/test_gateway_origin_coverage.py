@@ -248,8 +248,10 @@ class DeploymentShapeTest(unittest.TestCase):
                     )
         self.assertEqual(
             derived,
-            4,
-            "the two credential-presenting units must each render both gateway keys",
+            6,
+            "each credential-presenting unit must derive both gateway keys from "
+            "gateway_origin(topology): the api secret, the dispatch secret and the "
+            "cancellation pass (#1293), three units times two keys",
         )
 
 

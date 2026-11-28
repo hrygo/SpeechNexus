@@ -38,7 +38,7 @@ from typing import Any, Protocol, cast
 ROOT = Path(__file__).resolve().parents[2]
 RENDER_ENDPOINT = ROOT / "deploy/cluster/render-endpoint.py"
 
-DOCUMENT = {
+DOCUMENT: dict[str, Any] = {
     "protocol": "vllm_api_key_v1",
     "target": {
         "host_node_id": "node-test",
@@ -57,9 +57,9 @@ DOCUMENT = {
 class Renderer(Protocol):
     def generation_from_head(self, head: dict[str, object] | None) -> int: ...
 
-    def with_generation(self, document: dict, generation: int) -> dict: ...
+    def with_generation(self, document: dict[str, Any], generation: int) -> dict[str, Any]: ...
 
-    def disagreements(self, document: dict, generation: int) -> list[str]: ...
+    def disagreements(self, document: dict[str, Any], generation: int) -> list[str]: ...
 
     def main(self, argv: list[str] | None = None) -> int: ...
 
@@ -102,14 +102,12 @@ class GenerationDerivationTests(unittest.TestCase):
             for name, value in rewritten["target"].items()
             if name != "instance_generation"
         }
-        self.assertEqual(
-            other,
-            {
-                name: value
-                for name, value in DOCUMENT["target"].items()
-                if name != "instance_generation"
-            },
-        )
+        expected = {
+            name: value
+            for name, value in DOCUMENT["target"].items()
+            if name != "instance_generation"
+        }
+        self.assertEqual(other, expected)
 
     def test_agreement_and_disagreement_are_explicit(self) -> None:
         self.assertEqual(RENDER.disagreements(DOCUMENT, 1), [])

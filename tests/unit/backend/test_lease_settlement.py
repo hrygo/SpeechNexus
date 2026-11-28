@@ -236,8 +236,13 @@ def test_preflight_passes_when_every_lease_is_settled() -> None:
 def test_preflight_refuses_a_public_lease_on_its_identity() -> None:
     pool = _PreflightPool({"operation_id": OPERATION, "attempt_id": "attempt-1", "lease_id": LEASE})
 
-    with pytest.raises(ValueError, match="reconcile first"):
+    # #1299: the refusal must name the row and a command that does not need this API.
+    with pytest.raises(ValueError) as raised:
         require_complete_tts_roots(cast(SpeechPool, pool))
+    message = str(raised.value)
+    assert f"operation_id={OPERATION}" in message
+    assert f"lease_id={LEASE}" in message
+    assert f"speechnexus-quarantine-release --operation {OPERATION} --confirm" in message
 
 
 def test_preflight_requires_a_bounded_timeout() -> None:

@@ -711,7 +711,8 @@ async def test_preflight_still_covers_live_public_asr_and_tts(
         ("job-deletion-preflight", DIGEST, created.job.job_id),
     )
     db.query("UPDATE admission_leases SET deadline_at_us=1")
-    with pytest.raises(ValueError, match="reconcile first"):
+    # #1299: the refusal names the lease and a command that does not need this API.
+    with pytest.raises(ValueError, match="speechnexus-quarantine-release --operation"):
         require_complete_tts_roots(_pool(admission_database))
     db.query("UPDATE admission_leases SET deadline_at_us=%s", (2**62,))
     require_complete_tts_roots(_pool(admission_database))
@@ -786,7 +787,8 @@ async def test_cancellation_settlement_returns_the_admission_lease(
             "deadline_at_us": past,
         }
     ]
-    with pytest.raises(ValueError, match="reconcile first"):
+    # #1299: the refusal names the lease and a command that does not need this API.
+    with pytest.raises(ValueError, match="speechnexus-quarantine-release --operation"):
         require_complete_tts_roots(pool)
 
     class MissingClient:
@@ -870,5 +872,6 @@ async def test_the_operator_query_finds_a_cancelling_lease_that_blocks_restart(
     rows = db.query(_UNSETTLED_LEASES)
     assert [(row["operation_id"], row["lease_state"]) for row in rows] == [(job_id, "reserved")]
     assert rows[0]["deadline_at_us"] == past
-    with pytest.raises(ValueError, match="reconcile first"):
+    # #1299: the refusal names the lease and a command that does not need this API.
+    with pytest.raises(ValueError, match="speechnexus-quarantine-release --operation"):
         require_complete_tts_roots(_pool(admission_database))

@@ -166,6 +166,8 @@ def inspect_source(
         "findings": [],
         "approved_reviewed_bound_movements": [],
         "reviewed_bound_movement_problem": None,
+        "approved_reviewed_stop_admissions": [],
+        "reviewed_stop_admission_problem": None,
         "unverified": list(RESULT_UNVERIFIED if is_result else UNVERIFIED),
     }
     if is_result:
@@ -208,6 +210,10 @@ def inspect_source(
         except ValueError, TypeError, OSError, SchemaError, RecursionError:
             findings.append(pointer + ": reference comparison failed; not proven")
     kernel.apply_reviewed_bound_movement(report, _ROOT, resolved)
+    # The verified stop evidence this result surface carries names an evidence kind.
+    # Widening that vocabulary is a structural change on this surface too, and the
+    # same whole-diff proof explains it: only the reviewed admission may have moved.
+    kernel.apply_reviewed_stop_vocabulary_admission(report, _ROOT, resolved)
     return report
 
 
@@ -236,10 +242,18 @@ def main() -> int:
             print("  - " + finding)
         for approval in report["approved_reviewed_bound_movements"]:
             print("  approved reviewed planner bound widening: " + approval)
+        for approval in report["approved_reviewed_stop_admissions"]:
+            print("  approved reviewed stop-evidence admission: " + approval)
         if report["reviewed_bound_movement_problem"]:
             print(
                 "  reviewed planner bound widening did not cover this diff: "
                 + report["reviewed_bound_movement_problem"],
+                file=sys.stderr,
+            )
+        if report["reviewed_stop_admission_problem"]:
+            print(
+                "  reviewed stop-evidence admission did not cover this diff: "
+                + report["reviewed_stop_admission_problem"],
                 file=sys.stderr,
             )
         print(

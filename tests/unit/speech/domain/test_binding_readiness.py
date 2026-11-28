@@ -31,6 +31,7 @@ from speechnexus_backend.speech.domain.binding_readiness import (
     QUALITY_QUALIFIED,
     QUALITY_UNVERIFIED,
     UNAVAILABLE,
+    BindingReadiness,
     EngineFacts,
     QualityEvidence,
     admission_state,
@@ -44,7 +45,7 @@ EXPIRES_US = NOW_US + 300_000_000
 
 
 def engine(**overrides: object) -> EngineFacts:
-    facts = {
+    facts: dict[str, object] = {
         "prepare_probe_succeeded": True,
         "receipt_expires_at_us": EXPIRES_US,
         "voided_at_us": None,
@@ -143,7 +144,7 @@ class AdmissionStateMappingTests(unittest.TestCase):
 
 
 class RoundTripTests(unittest.TestCase):
-    def build(self, *, engine_facts: EngineFacts, evidence: QualityEvidence):
+    def build(self, *, engine_facts: EngineFacts, evidence: QualityEvidence) -> BindingReadiness:
         return binding_readiness(engine=engine_facts, quality=evidence, now_us=NOW_US)
 
     def test_available_then_unavailable_then_available_again(self) -> None:

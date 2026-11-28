@@ -41,7 +41,7 @@ class RecipeBuilder(Protocol):
     BINDING_ID: str
     LOGICAL_MODEL: str
 
-    def build_recipe(self, path: Path) -> dict: ...
+    def build_recipe(self, path: Path) -> dict[str, object]: ...
 
 
 def load() -> RecipeBuilder:
@@ -66,7 +66,7 @@ PUBLISHER = load()
 
 
 class RecipeModelIdTests(unittest.TestCase):
-    def recipe(self) -> dict:
+    def recipe(self) -> dict[str, object]:
         return PUBLISHER.build_recipe(EXAMPLE_RECIPE)
 
     def test_the_recipe_names_the_public_binding_id(self) -> None:

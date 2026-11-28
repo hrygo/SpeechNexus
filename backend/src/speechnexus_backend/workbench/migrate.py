@@ -39,6 +39,7 @@ from speechnexus_backend.workbench.infrastructure.runtime_schema import (
     runtime_grants_sql,
 )
 from speechnexus_backend.workbench.infrastructure.version_schema import schema_identifier
+from speechnexus_portable_sql.psycopg_driver import PortableConnection
 from speechnexus_portable_sql.vendor import conninfo_to_dict, psycopg, sql
 
 OWNER_DSN_ENV = "SPEECHNEXUS_MIGRATION_DATABASE_URL"
@@ -163,7 +164,7 @@ def plan(env: Mapping[str, str]) -> Plan:
     )
 
 
-def _role_problem(connection: psycopg.Connection[Any], role: str) -> str | None:
+def _role_problem(connection: PortableConnection, role: str) -> str | None:
     """A migrated role must exist and must not be a cluster-wide authority."""
     row = connection.execute(
         "SELECT rolsuper OR rolcreatedb OR rolcreaterole OR rolbypassrls AS unsafe "
@@ -180,15 +181,27 @@ def _role_problem(connection: psycopg.Connection[Any], role: str) -> str | None:
     return None
 
 
-def _recorded_revision(connection: psycopg.Connection[Any], schema: str) -> int | None:
-    row = connection.execute(
-        sql.SQL("SELECT revision FROM {}.runtime_schema_revision").format(sql.Identifier(schema))
+def _execute_composed(connection: PortableConnection, statement: Any) -> Any:
+    """Send a schema-qualified statement through the portable adapter.
+
+    ``PortableConnection.execute`` is typed for the portable ``?`` text contract,
+    while the schema-qualified fragments here are ``psycopg.sql`` compositions. The
+    adapter translates only the text fragments of a composition at runtime, so both
+    forms share this one seam instead of a cast at every call site.
+    """
+    return cast(Any, connection).execute(statement)
+
+
+def _recorded_revision(connection: PortableConnection, schema: str) -> int | None:
+    row = _execute_composed(
+        connection,
+        sql.SQL("SELECT revision FROM {}.runtime_schema_revision").format(sql.Identifier(schema)),
     ).fetchone()
     return None if row is None else int(row[0])
 
 
 def _granted(
-    connection: psycopg.Connection[Any], role: str, schema: str, table: str, privilege: str
+    connection: PortableConnection, role: str, schema: str, table: str, privilege: str
 ) -> bool:
     row = connection.execute(
         "SELECT pg_catalog.has_table_privilege(?, ?, ?)",
@@ -199,8 +212,13 @@ def _granted(
 
 def run(value: Plan, out: TextIO) -> None:
     """Bootstrap a fresh namespace or verify an existing one, then grant both roles."""
+    # The statements in this module are written to the portable `?` contract, so
+    # the driver adapter is what turns them into the vendor's placeholders. Handing
+    # raw psycopg a `?` query raises "the query has 0 placeholders but 1 parameters
+    # were passed" on every role check, which is why this is one line and not a
+    # `%s` rewrite: the adapter is the only place a dialect is allowed to appear.
     with (
-        psycopg.connect(value.owner_dsn, connect_timeout=5) as connection,
+        PortableConnection(psycopg.connect(value.owner_dsn, connect_timeout=5)) as connection,
         connection.transaction(),
     ):
         # The owner may not be one of the roles it grants to: that would make
@@ -214,7 +232,7 @@ def run(value: Plan, out: TextIO) -> None:
             "SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname=?", (value.schema,)
         ).fetchone()
         if namespace is None:
-            connection.execute(bootstrap_sql(value.schema))
+            _execute_composed(connection, bootstrap_sql(value.schema))
             print(
                 f"OK: bootstrapped workbench schema {value.schema} at revision {SCHEMA_REVISION}",
                 file=out,
@@ -234,9 +252,9 @@ def run(value: Plan, out: TextIO) -> None:
         # Both declarations are idempotent and are the only place the runtime
         # and cleanup surface is written; nothing here is hand-written SQL.
         for statement in runtime_grants_sql(value.schema, value.runtime_role):
-            connection.execute(cast("sql.Composed", statement))
+            _execute_composed(connection, statement)
         for statement in cleanup_grants_sql(value.schema, value.cleanup_role):
-            connection.execute(cast("sql.Composed", statement))
+            _execute_composed(connection, statement)
         print(
             f"OK: granted the runtime surface to {value.runtime_role} and the "
             f"cleanup surface to {value.cleanup_role}",

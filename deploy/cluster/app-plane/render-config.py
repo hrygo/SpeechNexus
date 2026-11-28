@@ -61,7 +61,27 @@ BUCKET = "speechnexus-results"
 # component credential would travel in clear text. The runtime refuses that unless
 # the deployment states the exact origin, so the origin is written once here and
 # passed to both credential-presenting app-plane units.
-GATEWAY_ORIGIN = "http://bridge.speechnexus.svc:18010"
+BRIDGE_GATEWAY_ORIGIN = "http://bridge.speechnexus.svc:18010"
+
+# The gateway binds the compute host's loopback and nothing broader: publishing an
+# admin surface on a routable address is not a deployment this assembly allows. So
+# a unit inside the compute cluster reaches it the same way the readiness units
+# reach the engine shim -- by joining the host network -- and states that loopback
+# origin. Plain HTTP is acceptable there because the runtime's rule is about the
+# hop, and this hop never leaves the host.
+HOST_GATEWAY_ORIGIN = "http://127.0.0.1:8010"
+
+
+def gateway_origin(topology: str) -> str:
+    """Where the gateway credential is presented, from where the app plane runs.
+
+    One switch, read by every unit that presents the component credential. The
+    ``in-cluster`` value only works because those units are deployed with
+    ``hostNetwork: true``; ``api.yaml`` and ``workers.yaml`` say so, and
+    ``tests/ci/test_render_config_topologies.py`` fails if the two disagree.
+    """
+    return HOST_GATEWAY_ORIGIN if topology == "in-cluster" else BRIDGE_GATEWAY_ORIGIN
+
 
 # The engine address is the one value that must not be copied from anywhere: it is
 # where the running instance answers, and it changes with every generation. The
@@ -287,8 +307,8 @@ def main(argv: list[str]) -> int:
             "SPEECHNEXUS_SPEECH_ENABLED": "true",
             "SPEECHNEXUS_SPEECH_RECIPE_FILE": "/run/speechnexus-private/speech-recipe.json",
             "SPEECHNEXUS_SPEECH_DEFAULT_LANGUAGE": "en",
-            "SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL": GATEWAY_ORIGIN,
-            "SPEECHNEXUS_EXECUTION_GATEWAY_ALLOW_PLAINTEXT_ORIGIN": GATEWAY_ORIGIN,
+            "SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL": gateway_origin(topology),
+            "SPEECHNEXUS_EXECUTION_GATEWAY_ALLOW_PLAINTEXT_ORIGIN": gateway_origin(topology),
             "SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL": env[
                 "SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL"
             ],
@@ -356,8 +376,8 @@ def main(argv: list[str]) -> int:
             "SPEECHNEXUS_INSTANCE_ID": "dispatch-1",
             "SPEECHNEXUS_DATABASE_URL": env["SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL"],
             "SPEECHNEXUS_DATABASE_SCHEMA": "speech",
-            "SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL": GATEWAY_ORIGIN,
-            "SPEECHNEXUS_EXECUTION_GATEWAY_ALLOW_PLAINTEXT_ORIGIN": GATEWAY_ORIGIN,
+            "SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL": gateway_origin(topology),
+            "SPEECHNEXUS_EXECUTION_GATEWAY_ALLOW_PLAINTEXT_ORIGIN": gateway_origin(topology),
             "SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL": env[
                 "SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL"
             ],

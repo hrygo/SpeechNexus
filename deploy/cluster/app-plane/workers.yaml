@@ -418,6 +418,11 @@ spec:
       labels:
         app: job-dispatch
     spec:
+      # Same reason as the API: the gateway answers on the compute host's loopback
+      # only, so the dispatcher joins the host network to reach it. It opens no
+      # port of its own, so joining costs nothing else.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001

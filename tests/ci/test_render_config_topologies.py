@@ -21,12 +21,16 @@ Mutations that must turn it red:
   exist in the compute cluster: the same assertions fail;
 - adding an application-plane Secret to the ``data-plane`` render set, which is how
   a second coordination domain would get assembled while the writers are still on
-  the old database.
+  the old database;
+- rendering the in-cluster gateway origin as a name only the other cluster can
+  resolve, or deploying the credential-presenting units without the host network
+  that loopback origin depends on (``GatewayOriginTests``).
 """
 
 from __future__ import annotations
 
 import importlib.util
+import re
 import unittest
 from pathlib import Path
 from typing import Protocol, cast
@@ -54,6 +58,8 @@ class Renderer(Protocol):
     _DATA_PLANE_SECRETS: tuple[str, ...]
 
     def readiness_env(self, env: dict[str, str], topology: str) -> dict[str, str]: ...
+
+    def gateway_origin(self, topology: str) -> str: ...
 
 
 def load() -> Renderer:
@@ -117,6 +123,76 @@ class DataPlaneObjectSetTests(unittest.TestCase):
         rendered = set(RENDERER._DATA_PLANE_SECRETS)
         for writer in ("api-env", "dispatch-env", "admission-watch-env", "workbench-api-env"):
             self.assertNotIn(writer, rendered)
+
+
+GATEWAY_APPS = ("api", "job-dispatch")
+
+DOCUMENT = re.compile(r"(?m)^---\s*$")
+KIND = re.compile(r"(?m)^kind:\s*(\w+)\s*$")
+NAME_UNDER_METADATA = re.compile(r"(?m)^metadata:\n  name:\s*([\w.-]+)\s*$")
+
+
+def deployment_text(path: Path, select: str) -> str:
+    """Return ``select``'s Deployment document, so the pod-spec fields can be asserted.
+
+    The manifest text is scanned rather than parsed: this file also runs in the
+    dependency-free guards job, which installs nothing (no PyYAML there), and the
+    fields under test (``hostNetwork``, ``dnsPolicy``) are single lines.
+    """
+    for document in DOCUMENT.split(path.read_text(encoding="utf-8")):
+        kind = KIND.search(document)
+        name = NAME_UNDER_METADATA.search(document)
+        if kind is None or name is None:
+            continue
+        if kind.group(1) == "Deployment" and name.group(1) == select:
+            return document
+    raise AssertionError(f"{path.name} has no Deployment named {select}")
+
+
+def host_network(path: Path, select: str) -> bool:
+    return "hostNetwork: true" in deployment_text(path, select)
+
+
+class GatewayOriginTests(unittest.TestCase):
+    """The credential-presenting units name the gateway address their pods can reach.
+
+    The compute gateway binds the host's loopback and nothing broader, so the
+    app plane reaches it two different ways depending on which cluster it runs in:
+    through the bridge from the other host, or through the host network from inside
+    the compute cluster. The origin is one switch, and the host network is the fact
+    that switch depends on -- if the deployment drops it, the origin becomes
+    unresolvable and the API cannot submit anything, which is exactly the kind of
+    "green pods, dead product" state the rest of this file guards against.
+    """
+
+    def test_in_cluster_names_the_address_its_pods_can_reach(self) -> None:
+        self.assertEqual(RENDERER.gateway_origin("in-cluster"), "http://127.0.0.1:8010")
+
+    def test_the_bridge_is_used_while_the_app_plane_lives_on_the_other_host(self) -> None:
+        for topology in ("tunnel", "data-plane"):
+            self.assertEqual(
+                RENDERER.gateway_origin(topology), "http://bridge.speechnexus.svc:18010"
+            )
+
+    def test_the_units_that_present_the_credential_join_the_host_network(self) -> None:
+        app_plane = ROOT / "deploy/cluster/app-plane"
+        for name in GATEWAY_APPS:
+            source = app_plane / ("api.yaml" if name == "api" else "workers.yaml")
+            with self.subTest(unit=name):
+                pod = deployment_text(source, name)
+                self.assertIn("hostNetwork: true", pod, f"{name} must join the host network")
+                self.assertIn(
+                    "dnsPolicy: ClusterFirstWithHostNet",
+                    pod,
+                    "the host network must not take the cluster DNS with it, or "
+                    "postgres/minio/asset-inspector stop resolving",
+                )
+
+    def test_units_that_do_not_present_the_credential_do_not_join_it(self) -> None:
+        # Joining the host network is not free: the API takes port 8000 there. Only
+        # the units that must reach the gateway should be paying that price.
+        pod = deployment_text(ROOT / "deploy/cluster/app-plane/workbench.yaml", "workbench-api")
+        self.assertNotIn("hostNetwork", pod)
 
 
 if __name__ == "__main__":

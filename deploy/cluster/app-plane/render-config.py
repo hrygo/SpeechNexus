@@ -341,6 +341,18 @@ def main(argv: list[str]) -> int:
             "SPEECHNEXUS_ADMISSION_WATCH_WORKSPACES": "workspace-default",
             "SPEECHNEXUS_ADMISSION_WATCH_TRANSACTION_TIMEOUT_SECONDS": "10",
         }
+        # #1248's coordinator-side sweep runs under the operator release identity,
+        # so its Secret carries exactly that DSN and the schema and nothing else:
+        # a scheduled Pod does not get to read the API's tokens through `api-env`.
+        # The values are taken from `api` instead of re-deriving the DSN, so the
+        # role/password pair exists once.
+        lease_reconciler = {
+            name: api[name]
+            for name in (
+                "SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL",
+                "SPEECHNEXUS_DATABASE_SCHEMA",
+            )
+        }
         # The readiness units are the only ones rendered for both topologies, so
         # the two values that differ between them are chosen here and nowhere else.
         tunnel = topology == "tunnel"
@@ -405,6 +417,7 @@ def main(argv: list[str]) -> int:
             "dispatch-env": dispatch,
             "artifact-retention-env": artifact_retention,
             "admission-watch-env": admission_watch,
+            "lease-reconciler-env": lease_reconciler,
             "readiness-env": readiness,
             "workbench-migrate-env": workbench_migrate,
             "workbench-api-env": workbench_api,

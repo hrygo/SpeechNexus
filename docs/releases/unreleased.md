@@ -1044,6 +1044,57 @@ owner 手装在先）。收养命令写的是既有的协调表加上这张审�
 要么用迁移属主身份跑（`--database-url "$SPEECHNEXUS_MIGRATION_DATABASE_URL"`），要么给运维身份
 显式授予协调写者与该表的两组授权。
 
+### 13. 可选：让协调者自动回收「过期未派发」的租约（`speechnexus-lease-reconciler`）
+
+现场形状是：Job 还没被任何派发器认领就已进入终态——受理取消，或准入审批在派发前就过期——
+它的准入租约停在 `reserved`，四个投影继续占着容量，于是下一个 Job 被判 `capacity_exhausted`
+（[#1248](https://github.com/hrygo/SpeechNexus/issues/1248)，同族 case 见
+[#1235](https://github.com/hrygo/SpeechNexus/issues/1235)）。派发器自己的归还路径在**认领之后**，
+所以这些行没有任何现存路径够得着。本版新增一个有界清扫器，由调度触发，不是常驻进程：
+
+- 一次调用一轮，最多 `--limit` 条（默认 8）；每条一行 JSON，最后一行是汇总；有拒绝或结果未知
+  的行时退出码 2，失败的 Job 就是报警信号。`--dry-run` 只列出行、不写任何东西。
+- 选择条件是四条同时成立：`lease_state = 'reserved'`、准入 `deadline_at_us` 已过、
+  `speech_jobs.state` 属终态、且没有 `submit_intents` 行。判定刻意**不用**
+  `coordination_jobs.job_state`：取消一旦被受理就写 `cancelled`，而公开 Job 此刻可能还是
+  `cancelling`、执行也可能仍在跑；按那一列释放等于提前归还活执行的预算。
+- 释放走既有的那一份实现（`LeaseService.release` → `release_in_transaction`），不写账本行：
+  被释放的租约行（`lease_state='released'`、`budget_released_at_us`）就是持久事实。重跑、崩溃
+  后重跑或两个清扫器并发时，后到者读到已释放的行是 `replayed`，不会二次回滚，因此也不需要
+  「已清扫」标记表。
+- 身份是操作员释放身份 `sn_quarantine_release`（`SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL`），
+  **不需要新角色、不需要重放任何授权**：它的声明面本来就含 `speech_jobs(job_id, state)` 的列级
+  读取和释放所需的列级 `UPDATE`，启动时逐列核验（`verify_quarantine_release_role`）。
+
+**集群内**（`deploy/cluster/app-plane/`）：新增 CronJob `lease-reconciler`（每 5 min、
+`concurrencyPolicy: Forbid`、`--limit 8`）与 Secret `lease-reconciler-env`（只有
+`SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL` 与 `SPEECHNEXUS_DATABASE_SCHEMA` 两项——刻意不
+复用 `api-env`，否则被调度的 Pod 会读到 API 的令牌）。重新渲染后 apply：
+
+```bash
+python3 deploy/cluster/app-plane/render-config.py --topology in-cluster
+python3 deploy/cluster/app-plane/render-manifests.py
+kubectl -n speechnexus apply -f .runtime/cluster/app-plane/workers.yaml
+
+# 立刻验证一次（CronJob 的下一跳到点前）
+kubectl -n speechnexus create job --from=cronjob/lease-reconciler lease-reconciler-manual
+kubectl -n speechnexus logs -f job/lease-reconciler-manual
+```
+
+**Compose 侧**：新增可选一次性服务 `lease-reconciler`（`profiles: ["lease-reconciler"]`、
+`restart: "no"`），基础 `up` 不会启动它。先只读看一遍，再真跑：
+
+```bash
+docker compose --profile lease-reconciler run --rm lease-reconciler \
+  speechnexus-lease-reconciler --dry-run --limit 8
+docker compose --profile lease-reconciler run --rm lease-reconciler
+```
+
+**未验证项。** 现场清扫未在本机执行（真实集群的清扫由现场负责人在合并后执行）；上述集群
+CronJob 与 Secret 尚未在真实集群创建；Compose profile 的容器级实跑未做——行为证据是隔离
+PostgreSQL（真实释放身份，含并发两次清扫只回滚一次）与 InnoDB（同一条选择语句与同一份释放
+SQL）上的集成用例，见下表的「过期未派发租约的自动回收」一行。
+
 ## 边界澄清（行为未变）
 
 - 单次合成的**入口声明**上限是 4096 字符（`MAX_SPEECH_TEXT_CHARS`）：同步入口超界 `400 invalid_request`（带 `param: input`），异步 Job 对 **>4096** 的请求体答 `422 unsupported_parameter`（**异步只保证 `error.code`，`param` 为 `null`**）；不切分、不截断，更长的正文由调用方分片。
@@ -1098,6 +1149,10 @@ owner 手装在先）。收养命令写的是既有的协调表加上这张审�
   [#1048](https://github.com/hrygo/SpeechNexus/pull/1048)），取消对账的重试上界收敛到
   `ATTEMPT_CEILING` 单一常量（[#1045](https://github.com/hrygo/SpeechNexus/pull/1045)）。
 
+- 协调者新增有界清扫：Job 在认领之前就进入终态时，它占着的准入租约会在最长一个 CronJob
+  周期内被自动释放，四个投影随之归还；不再需要手工改 `engine_instances.held_slots`，下一个
+  同实例类的 Job 从 `capacity_exhausted` 变回可准入（[#1248](https://github.com/hrygo/SpeechNexus/issues/1248)）。
+
 ## 证据
 
 当前 `main` 上覆盖这些变化、且能在 CI 或真实 PostgreSQL 上重跑的检查：
@@ -1113,6 +1168,7 @@ owner 手装在先）。收养命令写的是既有的协调表加上这张审�
 | 对账耗尽不记 settled | `tests/integration/test_cancellation_exhausted_release_pg.py` |
 | 授权面本身 | `tests/integration/test_role_grant_coverage_pg.py`（真实库上按每个受限身份逐面核对声明的授权面）、`tests/ci/test_compose_minimal_role_provisioning.py`（授权组仍被声明） |
 | admission-watch | `tests/integration/test_admission_watch_pg.py`、`tests/integration/test_admission_watch_process_pg.py`、`tests/unit/backend/test_admission_watch.py` |
+| 过期未派发租约的自动回收（#1248） | `tests/integration/test_lease_reconciliation.py`（隔离 PG + 真实释放身份：终态前未派发/已取消/带 submit intent/未到期/Job 仍在跑/并发两次清扫只回滚一次）、`tests/integration/test_lease_reconciliation_innodb.py`（InnoDB 同一条选择语句与释放 SQL） 、`tests/unit/backend/test_lease_reconciliation.py`（清扫模块不写一行 DML、报告与边界）、`tests/unit/test_admission.py`（同一组数字从 `capacity_exhausted` 变回放行）、`tests/ci/test_reference_deploy_lease_reconciler.py`（CronJob/Secret/Compose/镜像分类仍在装配） |
 | 第 2 条的升级重放 | `tests/integration/test_upgrade_path_pg.py`（真库上构造 v0.1.0 的四列 ACL，重放本节命令原文，并断言未重跑前仍然是坏的） |
 | `0068` 的两件加法 | `tests/integration/test_canonical_event_tables_0068_pg.py`：真库上逐列核对 `job_events`（类型、NULL 性、主键、外键）与 `coordination_outbox.delivered_at` 的 `timestamp(6)`，把 `alembic_version` 戳回 `0067` 再 `upgrade head` 与直接重跑 DDL 两遍都不报错且已有事件行不丢，`downgrade` 只删本修订的两样东西，`canonical_event_grants` 按列核对到「事件表没有 UPDATE/DELETE」 |
 | 事件双写 S1/S1b | `tests/integration/test_canonical_event_double_write_pg.py`：真库、真实授权身份跑 `mark_running` → `record_progress` → `finish`，断言 canonical 序号从 1 起密、逐行摘要重算相等、`payload_ref` 为 `NULL`；`job_events` 改名后 started / 进度 / 终态三条路径都不留半成品；没有 `coordination_jobs` 行的 Job 被拒绝且同一轮的对照 Job 仍被领取；`started_event_gaps` 按名点出历史缺口 |

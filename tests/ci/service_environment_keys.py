@@ -188,6 +188,13 @@ SURFACES: tuple[Surface, ...] = (
         "AdmissionWatchSettings",
     ),
     Surface(
+        "lease_reconciler",
+        "backend",
+        "the bounded lease-reconciliation sweep",
+        "backend/src/speechnexus_backend/lease_reconciler.py",
+        "LeaseReconcilerSettings",
+    ),
+    Surface(
         "tts_settlement",
         "backend",
         "the TTS settlement worker entrypoint",

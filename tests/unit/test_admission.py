@@ -237,6 +237,27 @@ def test_realtime_can_use_all_slots_but_quarantined_batch_keeps_its_charge() -> 
         _decide(batch, runtimes=(runtime,))
 
 
+def test_releasing_a_never_dispatched_lease_is_what_lets_the_next_batch_job_in() -> None:
+    """#1248: the four counters are the admission's input, not a diagnostic.
+
+    A batch instance whose slots are all held -- the shape a lease left behind by a
+    Job that terminated before dispatch produces -- answers ``capacity_exhausted``.
+    The same instance with the numbers a release returns admits the next Job. This
+    is the decision side of the case; ``tests/integration/test_lease_reconciliation.py``
+    proves the release really moves those numbers on PostgreSQL and InnoDB.
+    """
+    held, batch = 4, 4
+    blocked = replace(
+        RUNTIMES[0], instance=replace(RUNTIMES[0].instance, held_slots=held), batch_slots=batch
+    )
+    with pytest.raises(AdmissionRejectedError, match="capacity_exhausted"):
+        _decide(runtimes=(blocked,))
+    released = replace(
+        RUNTIMES[0], instance=replace(RUNTIMES[0].instance, held_slots=0), batch_slots=0
+    )
+    assert _decide(runtimes=(released,)).instance_held_slots == ((STAGE.instance_key, 1),)
+
+
 @pytest.mark.parametrize("part", ["owner", "approval", "readiness", "request"])
 def test_authority_windows_are_rechecked_after_waits(part: str) -> None:
     command = replace(

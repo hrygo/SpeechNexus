@@ -261,6 +261,36 @@ gateway 先提交执行事实，Scheduler 后核对并释放；两步间崩溃�
 已隔离 lease 只有全部附属执行终止并取得释放事实后才减少隔离量。
 清理可继续补充，Operation 的唯一结果终态不得翻转。
 
+从未创建 submit 的 lease 另有一条**自动**路径：`speechnexus-lease-reconciler` 按
+`deploy/cluster/app-plane/workers.yaml` 的 5 min CronJob 做有界清扫，一次最多处理 `--limit`
+条（默认 8）。选择条件只写在
+`backend/src/speechnexus_backend/speech/infrastructure/lease_reconciliation_sql.py`
+一处：`lease_state = 'reserved'`、`deadline_at_us` 已过、`speech_jobs.state` 属于
+`domain.public_jobs.TERMINAL_STATES`、且不存在 `submit_intents` 行。四个条件都单调成立，所以
+一次读取即够：终态不会再回到可派发状态，`deadline_at_us` 是租约行的不可变列，而 submit
+intent 只能由仍可认领的 Job 创建——派发器在计划、标记 running 与外发**之前**就拒绝对终态
+Job 的认领（#1248）。判定刻意不用 `coordination_jobs.job_state`：取消一旦被受理就写
+`cancelled`，此时公开 Job 可能仍是 `cancelling`、执行也可能仍在跑，按那一列释放等于提前归还
+活执行的预算。
+
+释放本身走 `LeaseService.release` → `lease_release_sql.release_in_transaction`：同一个实现、
+同一把锁序、同一版本 CAS，清扫只做「选行 + 调用」，不新增任何计数器算术。它不写
+`admission_quarantine_releases` 账本行——被释放的租约行（`lease_state = 'released'`、
+`budget_released_at_us`）就是持久事实，与派发器自己的释放一致。重复运行、崩溃后重跑、两个
+清扫器并发时，后到者读到已释放的行得到 `replayed`，不会二次回滚，因此也不需要「已清扫」
+标记表。运行身份是操作员释放身份 `sn_quarantine_release`
+（`SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL`）：其声明面已含 `speech_jobs(job_id, state)`
+的列级读取与释放所需的列级 UPDATE，启动检查 `verify_quarantine_release_role` 逐列比对，
+清扫路径不写证词所以不需要更宽的授权。拒绝或结果未知的行逐行输出稳定错误码，并让该次运行
+非零退出——失败的 CronJob 就是报警信号。
+
+双库验证在 `tests/integration/test_lease_reconciliation.py`（PostgreSQL，真实释放身份；覆盖
+终态前未派发、已取消、带 submit intent、未到期、Job 仍在跑、并发两次清扫只回滚一次）与
+`tests/integration/test_lease_reconciliation_innodb.py`（InnoDB，同一条选择语句与同一份释放
+SQL）。单元层用 `tests/unit/backend/test_lease_reconciliation.py` 钉住「清扫模块不写一行
+DML」，用 `tests/unit/test_admission.py` 钉住「这四个数字回到未占用后，下一次批量准入从
+`capacity_exhausted` 变成放行」。
+
 删除协调器先按既有删除契约核验当前删除任务及依赖范围，再向 Gateway 的受信应用
 边界提交绑定 submit 的清理许可；不能让公开客户端自行构造许可或指定任意记录。
 Gateway 不查询工作台或语音业务表，只在自己的清理事务中重核对 lease 已释放、

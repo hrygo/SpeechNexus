@@ -76,6 +76,7 @@ SERVICE_IMAGES = {
     "job-dispatch-worker": "speechnexus-python",
     "artifact-retention": "speechnexus-python",
     "admission-watch": "speechnexus-python",
+    "lease-reconciler": "speechnexus-python",
     "migrate": "speechnexus-python",
     "engine-register": "speechnexus-python",
     "engine-readiness-renew": "speechnexus-python",

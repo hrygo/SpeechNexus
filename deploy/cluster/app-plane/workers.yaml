@@ -121,6 +121,78 @@ spec:
             medium: Memory
             sizeLimit: 16Mi
 ---
+# #1248: a Job that reached a terminal state before any dispatcher claimed it kept
+# its admission lease `reserved` -- an accepted cancellation of a still-pending
+# Job, or an approval that expired before dispatch -- and the four projections
+# stayed held, so the next Job of that instance class was refused with
+# `capacity_exhausted`. The dispatcher's own return path needs a claim, so nothing
+# ever reached those rows. This sweep does, in bounded passes, through the one
+# release implementation the dispatcher and the operator exit use.
+#
+# Forbid: two passes racing for the same rows would settle them one after the
+# other anyway (the release is idempotent), but a serialized schedule keeps the
+# log readable. A refusal exits non-zero -- the failed Job is the alarm.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: lease-reconciler
+  namespace: speechnexus
+spec:
+  # Five minutes: while a slot is leaked, every new Job of that class is refused,
+  # and one pass settles up to --limit of them.
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 3600
+      template:
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            # The staged Secret is root-owned 0440; only the fsGroup can read it.
+            fsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: lease-reconciler
+              image: ${PYTHON_IMAGE}
+              imagePullPolicy: IfNotPresent
+              command:
+                - speechnexus-lease-reconciler
+                # Small on purpose: one pass is a short transaction set, and a
+                # backlog is drained over several scheduled runs.
+                - --limit
+                - "8"
+              envFrom:
+                - secretRef:
+                    name: lease-reconciler-env
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 64Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir:
+                medium: Memory
+                sizeLimit: 16Mi
+---
 # The readiness lease is the only thing keeping the instance admissible, and it
 # lasts 24 h: a one-shot report and renewal is a receipt that silently runs out.
 # Both run on a schedule instead, and the report exits non-zero while a receipt

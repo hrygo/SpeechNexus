@@ -157,7 +157,16 @@ python3 deploy/cluster/app-plane/render-manifests.py           # 渲染到 .runt
    所以它同时证明两面同源；
 2. `grep -c '^PYTHON_IMAGE='` 在 `versions.env` 与 `.runtime/cluster-compute.env` 里都是 1，取值相同；
 3. 改完重建 `config-init` + `gateway`（算力面）与相关 Deployment（应用面），两面的容器
-   `docker ps` / `kubectl get pod` 里的镜像 tag 一致。
+   `docker ps` / `kubectl get pod` 里的镜像 tag 一致；
+4. **运行态 tag 与 `versions.env` 一致，而不只是两面彼此一致**：`grep '^PYTHON_IMAGE=' deploy/cluster/versions.env`
+   的 tag、`kubectl -n speechnexus get pods -o jsonpath` 里每个 python Pod 的镜像 tag、算力面
+   `docker ps` 里 `gateway`/`engine-shim`/`binding-disable-worker` 的 tag 三者相同。
+   `versions.env` 是唯一取值点：改 tag 只能「改 `versions.env` → `render-manifests.py` → apply」，
+   `kubectl set image` 只是把运行态临时对齐，下次 apply 渲染结果时会被清单里的旧 tag 打回去。
+
+2026-11-28 实例：`versions.env` 写 `fed8a5f3-r1`，而 `job-dispatch`/`workbench-api`/`admission-watch`/
+`artifact-retention` 与三个 CronJob 还停在 `089fb9f9-r1`——两面同 tag 判据 2 满足，判据 4 不满足。
+统一到 `3be6e650-r1` 后 `kubectl diff -f` 对 `api.yaml`、`workers.yaml`、`workbench.yaml` 均为空。
 
 ## 部序
 

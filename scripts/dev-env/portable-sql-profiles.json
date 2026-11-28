@@ -35,6 +35,7 @@
     "backend/src/speechnexus_backend/speech/infrastructure/publication_lifecycle_schema.py",
     "backend/src/speechnexus_backend/speech/infrastructure/publication_schema.py",
     "backend/src/speechnexus_backend/speech/infrastructure/quarantine_release_schema.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/readiness_void_schema.py",
     "backend/src/speechnexus_backend/speech/infrastructure/runtime_delivery_schema.py",
     "backend/src/speechnexus_backend/speech/infrastructure/runtime_intent_schema.py",
     "backend/src/speechnexus_backend/speech/infrastructure/runtime_observation_schema.py",
@@ -63,6 +64,7 @@
     "backend/src/speechnexus_backend/speech/infrastructure/gateway_query_grants.py",
     "backend/src/speechnexus_backend/speech/infrastructure/generation_adoption_grants.py",
     "backend/src/speechnexus_backend/speech/infrastructure/public_job_admission_grants.py",
-    "backend/src/speechnexus_backend/speech/infrastructure/qualification_admission_grants.py"
+    "backend/src/speechnexus_backend/speech/infrastructure/qualification_admission_grants.py",
+    "backend/src/speechnexus_backend/speech/infrastructure/readiness_void_grants.py"
   ]
 }

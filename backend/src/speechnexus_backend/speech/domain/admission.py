@@ -22,6 +22,7 @@ from speechnexus_backend.speech.domain.owners import (
 from speechnexus_backend.speech.domain.owners import (
     identity as validate_pool_identity,
 )
+from speechnexus_backend.speech.domain.readiness_void import void_invalidates_receipt
 from speechnexus_backend.speech.domain.runtime_intents import (
     ApprovedRuntimePlan,
     RuntimeHead,
@@ -307,9 +308,14 @@ class AdmissionRuntime:
     readiness: VerifiedRuntimeReadiness
     batch_slots: int
     slots_source: str = "admission_leases"
+    #: 这一实例代次最近一次被显式作废的时刻(#1286),没有作废行时为 ``None``。它不由收据自己
+    #: 携带:作废是收据之外的事实,写进收据文档就必须重签整张收据,而重签需要节点配合。
+    readiness_voided_at_us: int | None = None
 
     def __post_init__(self) -> None:
         integer(self.batch_slots)
+        if self.readiness_voided_at_us is not None:
+            integer(self.readiness_voided_at_us)
         if self.batch_slots > self.instance.held_slots + self.instance.quarantined_slots:
             raise AdmissionStateInvalidError(
                 instance_id=self.instance.instance_id,
@@ -392,6 +398,10 @@ ADMISSION_REJECTION_CODES: frozenset[str] = CAPACITY_REJECTION_CODES | frozenset
         "recipe_mismatch",
         # Observation, generation, topology or topology-owner identity disagrees.
         "reconciliation_required",
+        # The coordinator explicitly voided this instance generation's receipt after a
+        # node reported another generation (#1286). The receipt may still be inside its
+        # window; the void is the newer fact.
+        "instance_generation_mismatch",
         "stale_instance_generation",
         # The pool owner lease moved: the transaction lost its fencing token.
         "stale_fencing_token",
@@ -430,6 +440,9 @@ PUBLIC_ADMISSION_CODES: dict[str, str] = {
     # The pinned instance/pool row is gone: re-register to restore the plan.
     "not_found": "engine_state_mismatch",
     "stale_instance_generation": "engine_state_mismatch",
+    # 作废的收据:内部分码点名「代次不一致」,公开面仍走契约里为「代次变了」定义的同一个码。
+    # 新增一个公开码要改冻结的 contracts/speech-openapi.yaml 与生成消费者,不在本切片里。
+    "instance_generation_mismatch": "engine_state_mismatch",
     "reconciliation_required": "engine_state_mismatch",
     # The instance, pool, node, template or recipe approval is not active, and a
     # builtin qualification whose source is unevidenced or elapsed is no approval
@@ -482,6 +495,16 @@ def require_live_authority(
         if pool.ownership.owner_state != "active":
             raise AdmissionRejectedError("reconciliation_required")
     for runtime in runtimes:
+        # A receipt the coordinator has explicitly voided must not admit anything, even
+        # while its own 24 h window has hours left: that window is exactly the gap
+        # between "the report says invalid" and "the create path still says yes"
+        # (#1286). Checked before the receipt's own verdict so the refusal names the
+        # generation instead of degrading into ``readiness_expired``/``readiness_unobserved``.
+        if void_invalidates_receipt(
+            voided_at_us=runtime.readiness_voided_at_us,
+            receipt_verified_at_us=runtime.readiness.verified_at_us,
+        ):
+            raise AdmissionRejectedError("instance_generation_mismatch")
         try:
             # Admission separates an elapsed receipt from a stale identity: the
             # instance is still the right one, so re-signing readiness admits the

@@ -215,6 +215,46 @@ speechnexus-register-engine \
 比较，不一致或问不到时把该行降级为 `invalid`（`reason` 为 `instance_generation_mismatch` 或
 控制器错误码），不等 24 小时窗口自然到期（[#1282](https://github.com/hrygo/SpeechNexus/issues/1282)）。
 
+### 确定不一致即作废旧收据
+
+报告变红只是给操作者看的；准入读的是**已签发的收据**，那张旧收据在自己窗口到期前仍然放行
+`create`。所以「续租发现确定不一致」本身是一个显式动作：往 `runtime_readiness_voids` 追加一行，
+写清实例、账本哪一代、节点报的哪一代、原因（`instance_generation_mismatch`）、来源（`renewal`）
+与当时的完整分歧说明（[#1286](https://github.com/hrygo/SpeechNexus/issues/1286)）。
+
+两种情形在这里**分开**，这是判据而不是实现细节：
+
+| 控制器怎么答 | 续租行为 | 作废行 |
+| --- | --- | --- |
+| 报出另一个代次（确定不一致） | `instance_generation_mismatch`（退出码 4） | **写一行** |
+| 不可达/超时/拒绝/响应不合格式（不确定） | 同名控制器错误码（退出码 5） | 不写 |
+| 两边一致 | 照常签发 | 不写 |
+
+不确定不写，是因为一次配置写错不应该立刻打断生产准入；报告仍然分得开这两种情形——确定的记
+`instance_generation_mismatch`，不确定的记控制器自己的错误码。
+
+准入与小时报用**同一条规则**判作废是否仍然适用：`voided_at_us >= 收据的 verified_at_us`，
+定义点在 `speech/domain/readiness_void.py`，读法（「这一实例代次最近一次作废的时刻」）只有
+`readiness_void_schema.latest_void_at_us_expression` 一处。命中时：
+
+- 准入拒绝，内部分码 `instance_generation_mismatch`，公开响应仍是契约里的
+  `503 engine_state_mismatch`（契约的公开词汇表没有「只属于代次」的码，新增要走契约变更）；
+- 小时报把该行标 `invalid`、`reason=instance_generation_mismatch`，并在 `remediation` 里点名
+  审计表。
+
+**作废不会被撤销，会被覆盖。** 修好控制器后重跑 `speechnexus-register-engine --renew-readiness`，
+新收据的 `verified_at_us` 晚于 `voided_at_us`，同一条规则自动判定作废与它无关，准入恢复。表是
+只追加的：没有 `UPDATE`/`DELETE` 授权面，所以「撤销」只能通过写一条更晚的收据证明这一代真的
+健康了。审计行按 `(instance_id, instance_generation, observed_generation)` 去重，5 分钟一次的
+续租在同一个分歧上只留一行。
+
+授权面是 `readiness_void_writer_grants`（逐列 `INSERT`）与 `readiness_void_reader_grants`
+（`SELECT`）；两者目前都**没有自动调用点**，与 `generation_adoption_*_grants` 同为按需授予的
+声明——参考装配里续租以 bootstrap owner 凭据运行，Owner 权限已覆盖这条写入。**准入角色**的读面
+要重放一次 `scripts/dev-env/provision-job-roles.py`（或 `deploy/cluster/provision-roles.py`）：
+`public_job_admission_grants` 已经把这张表加进 `_READ_TABLES`，不重放时创建路径会把每次拒绝答成
+`storage_rejected`（缺 SELECT），而不是 `engine_state_mismatch`。
+
 ### 把账本那一代收敛到节点那一代
 
 `instance_generation_mismatch` 有两条出路，区别在于**动不动运行中的引擎**：按账本代重新 prepare

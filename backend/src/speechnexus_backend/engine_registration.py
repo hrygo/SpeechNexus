@@ -26,6 +26,7 @@ from urllib.request import Request, urlopen
 
 from speechnexus_backend.controller_head import (
     ControllerConsultationError,
+    NodeInstanceHead,
     configured_endpoint,
     generation_disagreement,
     read_head,
@@ -45,6 +46,12 @@ from speechnexus_backend.speech.domain.runtime_observations import (
     READINESS_EXPIRING,
     ObserveRuntimeIntent,
     VerifiedRuntimeReadiness,
+)
+from speechnexus_backend.speech.infrastructure.readiness_void_schema import (
+    READINESS_VOID_INSERT_COLUMNS,
+    READINESS_VOID_REASON_GENERATION_MISMATCH,
+    READINESS_VOID_SOURCE_RENEWAL,
+    READINESS_VOID_TABLE,
 )
 from speechnexus_backend.speech.infrastructure.runtime_codec import (
     decode_record,
@@ -1509,9 +1516,13 @@ def _report(result: RegistrationResult) -> None:
 
 
 def _require_the_node_prepares_this_generation(
-    spec: RegistrationSpec, options: argparse.Namespace
+    spec: RegistrationSpec,
+    options: argparse.Namespace,
+    *,
+    database_url: str,
+    schema: str,
 ) -> None:
-    """Refuse to attest a generation the node has not prepared (#1282).
+    """Refuse to attest a generation the node has not prepared (#1282, #1286).
 
     The ledger and the controller count generations separately, and nothing made them
     move together: the live instance was registered at generation 1 while the node had
@@ -1519,6 +1530,21 @@ def _require_the_node_prepares_this_generation(
     every surface called it healthy. The node is asked before anything is written, and
     an unreachable node fails the run instead of skipping the check: an unverified
     attestation is exactly the green-but-wrong state this closes.
+
+    The two answers are deliberately not the same answer (#1286):
+
+    * a **determined** disagreement (the node names another generation) makes the
+      receipts already signed for the ledger's generation unusable, so this run records
+      an explicit void in ``runtime_readiness_voids`` before failing. Without that write
+      the old receipt keeps admitting creates until it expires, which is the window the
+      report-and-create disagreement lived in;
+    * an **undetermined** answer (unreachable, timeout, refused, malformed) writes
+      nothing. A wrong controller URL must not break production admission, and the
+      report keeps telling the two apart by naming the controller's own error code.
+
+    A void is never revoked: the next *successful* renewal signs a receipt whose
+    ``verified_at_us`` is later than ``voided_at_us``, and the one rule in
+    ``speech.domain.readiness_void`` stops applying the void to it.
     """
     endpoint = configured_endpoint(_process_environment())
     if endpoint is None:
@@ -1532,10 +1558,86 @@ def _require_the_node_prepares_this_generation(
             timeout_seconds=options.health_timeout_seconds,
         )
     except ControllerConsultationError as error:
+        # Undetermined, not inconsistent: report it and write no void.
         raise RegistrationError(error.code, error.message, EXIT_UNAVAILABLE) from None
     disagreement = generation_disagreement(spec.generation, head, node_id=node_id)
     if disagreement is not None:
+        _void_readiness_for_mismatch(
+            database_url=database_url,
+            schema=schema,
+            spec=spec,
+            head=head,
+            disagreement=disagreement,
+            timeout_seconds=options.transaction_timeout_seconds,
+        )
         raise RegistrationError("instance_generation_mismatch", disagreement, EXIT_CONFLICT)
+
+
+def _void_readiness_for_mismatch(
+    *,
+    database_url: str,
+    schema: str,
+    spec: RegistrationSpec,
+    head: NodeInstanceHead,
+    disagreement: str,
+    timeout_seconds: float,
+) -> None:
+    """Append one void row for a determined generation disagreement (#1286).
+
+    It runs in its own short transaction, before the refusal is raised, because the
+    refusal must carry the fact that the receipt is now unusable: a caller that sees
+    only the error cannot tell "nothing happened" from "the old receipt was voided".
+    The row is append-only and idempotent per (instance, ledger generation, node
+    generation), so the 5-minute renewal loop leaves exactly one audit row per
+    divergence instead of one every run.
+    """
+    assert head.current_generation is not None  # a disagreement always names one
+    connection = portable_connect(
+        database_url,
+        row_factory=dict_row,
+        connect_timeout=max(1, min(30, int(timeout_seconds) or 1)),
+    )
+    try:
+        # The registration transaction pins ``search_path`` for its own statements, so
+        # this short one has to do the same: an unqualified INSERT on a fresh connection
+        # answers ``42P01 relation does not exist`` against the reference deployment.
+        with connection.transaction(), connection.cursor() as raw:
+            raw.execute("SELECT set_config('search_path', ?, true)", (schema + ",pg_catalog",))
+            cursor = _Cursor(raw, time.monotonic() + max(1.0, timeout_seconds))
+            # The database clock, so the void and the receipt that beat it later are
+            # ordered by one clock rather than by this host's.
+            insert_if_absent(
+                cursor,
+                "INSERT INTO "
+                + READINESS_VOID_TABLE
+                + " ("
+                + ", ".join(READINESS_VOID_INSERT_COLUMNS)
+                + ") VALUES ("
+                + ", ".join("?" for _ in READINESS_VOID_INSERT_COLUMNS)
+                + ")",
+                (
+                    spec.instance_id,
+                    spec.generation,
+                    int(head.current_generation),
+                    READINESS_VOID_REASON_GENERATION_MISMATCH,
+                    READINESS_VOID_SOURCE_RENEWAL,
+                    cursor.clock(),
+                    disagreement,
+                ),
+            )
+        connection.commit()
+    except Exception as error:
+        connection.rollback()
+        # A void that cannot be written must not be silently absent: the operator has to
+        # see that the receipt is still usable before fixing the controller.
+        raise RegistrationError(
+            "readiness_void_failed",
+            f"the node reports generation {head.current_generation} but the void of the "
+            f"receipt for generation {spec.generation} could not be recorded: {error}",
+            EXIT_UNAVAILABLE,
+        ) from None
+    finally:
+        connection.close()
 
 
 def _process_environment() -> Mapping[str, str]:
@@ -1653,7 +1755,9 @@ def main(argv: Sequence[str] | None = None) -> None:
                 database_url, schema, _instance_hint(options)
             )
         spec = _spec_from_args(options)
-        _require_the_node_prepares_this_generation(spec, options)
+        _require_the_node_prepares_this_generation(
+            spec, options, database_url=database_url, schema=schema
+        )
         result = register_engine(
             database_url=database_url,
             schema=schema,

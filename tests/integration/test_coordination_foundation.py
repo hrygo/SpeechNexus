@@ -66,6 +66,10 @@ from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema imp
     gateway_cancellation_fence_grants,
 )
 from speechnexus_backend.speech.infrastructure.job_schema import job_runtime_grants
+from speechnexus_backend.speech.infrastructure.readiness_void_schema import (
+    READINESS_VOID_DDL,
+    READINESS_VOID_TABLE,
+)
 from speechnexus_backend.speech.infrastructure.runtime_delivery_schema import RUNTIME_DELIVERY_DDL
 from speechnexus_backend.speech.infrastructure.runtime_intent_schema import RUNTIME_INTENT_DDL
 from speechnexus_backend.speech.infrastructure.runtime_observation_schema import (
@@ -232,6 +236,7 @@ def foundation(database: JobDatabase) -> Iterator[Foundation]:
             *RUNTIME_DELIVERY_DDL,
             *EXECUTION_RESULT_DDL,
             *GENERATION_ADOPTION_DDL,
+            *READINESS_VOID_DDL,
             RELEASE_GUARD_DDL,
         ):
             ddl = ddl.replace('COLLATE "C"', "COLLATE utf8mb4_0900_bin")
@@ -449,6 +454,10 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
     # coordination owner holds any right on it, so it sits outside the shared grant
     # surface on purpose.
     adoption_tables = {GENERATION_ADOPTION_TABLE}
+    # The readiness-void audit rows (#1286, 0072). Append-only: the speech role reads
+    # them and appends declared columns, and it holds no UPDATE privilege -- a void is
+    # history, never rewritten.
+    readiness_void_tables = {READINESS_VOID_TABLE}
     # The coordination keyed-lock rows (0067). Grant is column-level and belongs
     # to the dispatch writer and the gateway only; neither coordination owner
     # holds table-level rights, so it sits outside the shared grant surface.
@@ -497,6 +506,7 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
     assert quarantine_release_tables <= {row["name"] for row in rows}
     assert qualification_provenance_tables <= {row["name"] for row in rows}
     assert deletion_plan_tables <= {row["name"] for row in rows}
+    assert readiness_void_tables <= {row["name"] for row in rows}
     assert (
         {row["name"] for row in rows}
         - {
@@ -547,6 +557,16 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
                     connection.cursor() as cursor,
                 ):
                     cursor.execute(f"SELECT * FROM {table}")
+        # 作废行只追加(#1286):speech 角色能读、能写声明列,但**没有** UPDATE。改写作废时刻
+        # 会让「哪一次作废仍然有效」这条唯一判据失去依据,所以这一条按权限实测,不靠声明。
+        with foundation.connection("speech") as connection, connection.cursor() as cursor:
+            cursor.execute(f"SELECT * FROM {READINESS_VOID_TABLE}")
+        with (
+            pytest.raises(psycopg.errors.InsufficientPrivilege),
+            foundation.connection("speech") as connection,
+            connection.cursor() as cursor,
+        ):
+            cursor.execute(f"UPDATE {READINESS_VOID_TABLE} SET voided_at_us = 0")
     db.query(
         "INSERT INTO resource_pools (pool_id, service_class, pool_state) "
         "VALUES ('TTS-realtime', 'realtime', 'active')"

@@ -287,6 +287,54 @@ def test_authority_windows_are_rechecked_after_waits(part: str) -> None:
         require_live_authority(command, pools, (runtime,), NOW + 60000000)
 
 
+def test_an_explicitly_voided_receipt_refuses_admission_and_names_the_generation() -> None:
+    """#1286: the coordinator voided this generation's receipt, so it admits nothing.
+
+    The receipt's own window still has hours left -- that gap between "the report says
+    invalid" and "the create path says yes" is exactly what the void closes. The refusal
+    names the generation, not ``readiness_expired``/``readiness_unobserved``: those would
+    send the operator after a window that never elapsed.
+    """
+    receipt = RUNTIMES[0].readiness
+    voided = replace(RUNTIMES[0], readiness_voided_at_us=receipt.verified_at_us)
+    with pytest.raises(AdmissionRejectedError, match="instance_generation_mismatch"):
+        require_live_authority(COMMAND, POOLS, (voided,), NOW)
+    # The same instant without the void is admitted: the void is what refuses, not the window.
+    require_live_authority(COMMAND, POOLS, (RUNTIMES[0],), NOW)
+
+
+def test_a_voided_receipt_reports_the_generation_rather_than_an_expired_window() -> None:
+    # Ordering matters: a receipt that is both voided and elapsed must answer the fact
+    # the operator can act on (a generation disagreement), not the clock.
+    receipt = replace(RUNTIMES[0].readiness, expires_at_us=NOW)
+    runtime = replace(
+        RUNTIMES[0], readiness=receipt, readiness_voided_at_us=receipt.verified_at_us + 1
+    )
+    with pytest.raises(AdmissionRejectedError, match="instance_generation_mismatch"):
+        require_live_authority(COMMAND, POOLS, (runtime,), NOW)
+    elapsed_only = replace(RUNTIMES[0], readiness=receipt)
+    with pytest.raises(AdmissionRejectedError, match="readiness_expired"):
+        require_live_authority(COMMAND, POOLS, (elapsed_only,), NOW)
+
+
+def test_a_receipt_signed_after_the_void_is_admitted_again() -> None:
+    """作废不是永久毒化:覆盖靠时间序,不靠撤销动作.
+
+    A successful renewal signs a receipt after the void; the one rule
+    (``voided_at_us >= receipt.verified_at_us``) stops applying it. Deleting the void
+    row is not part of recovery, and there is no grant to do so.
+    """
+    receipt = RUNTIMES[0].readiness
+    void = receipt.verified_at_us
+    refreshed = replace(
+        RUNTIMES[0],
+        instance=replace(RUNTIMES[0].instance, ready_at_us=void + 5),
+        readiness=replace(receipt, verified_at_us=void + 1),
+        readiness_voided_at_us=void,
+    )
+    require_live_authority(COMMAND, POOLS, (refreshed,), NOW)
+
+
 @pytest.mark.parametrize(
     "kind", ["generation", "version", "stop", "observation", "unready", "peak", "host", "template"]
 )

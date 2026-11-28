@@ -176,6 +176,14 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="print the rendered GRANT statements and exit without connecting",
     )
+    parser.add_argument(
+        "--grants-only",
+        action="store_true",
+        help=(
+            "apply the declared grants to roles that already exist; never create a role "
+            "(the upgrade path for a release that declares a new table or column)"
+        ),
+    )
     arguments = parser.parse_args(argv)
     writer, admission, dispatch = role_names()
     gateway = os.environ.get(GATEWAY_ROLE_ENV, DEFAULT_GATEWAY_ROLE)
@@ -208,21 +216,31 @@ def main(argv: list[str] | None = None) -> int:
             for role in (writer, admission, dispatch)
             if connection.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)).fetchone()
         ]
-        if existing:
-            raise SystemExit(
-                f"roles already exist: {', '.join(existing)}; inspect ownership before proceeding"
-            )
-        for role, password in passwords.items():
-            connection.execute(
-                sql.SQL(
-                    "CREATE ROLE {} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT"
-                ).format(sql.Identifier(role))
-            )
-            connection.execute(
-                sql.SQL("ALTER ROLE {} PASSWORD {}").format(
-                    sql.Identifier(role), sql.Literal(password)
+        if arguments.grants_only:
+            # 升级路径:角色必须已经存在,这里只补声明面。缺一个就停,避免把一条 GRANT
+            # 打到半套身份上;不创建、不改密码、不动角色属性。
+            missing = [role for role in (writer, admission, dispatch) if role not in existing]
+            if missing:
+                raise SystemExit(
+                    "missing roles: " + ", ".join(missing) + "; run without --grants-only first"
                 )
-            )
+        else:
+            if existing:
+                raise SystemExit(
+                    f"roles already exist: {', '.join(existing)}; "
+                    "inspect ownership before proceeding, or replay with --grants-only"
+                )
+            for role, password in passwords.items():
+                connection.execute(
+                    sql.SQL(
+                        "CREATE ROLE {} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT"
+                    ).format(sql.Identifier(role))
+                )
+                connection.execute(
+                    sql.SQL("ALTER ROLE {} PASSWORD {}").format(
+                        sql.Identifier(role), sql.Literal(password)
+                    )
+                )
         for statement in grants:
             connection.execute(statement)
         for role in (*passwords, gateway):
@@ -232,7 +250,8 @@ def main(argv: list[str] | None = None) -> int:
             ).fetchone()
             if row is None or any(row):
                 raise SystemExit(f"role {role} is not a usable non-owner role")
-    print(f"job roles ready: {writer} {admission} {dispatch}; grants: {len(grants)} statements")
+    state = "job grants replayed for existing roles" if arguments.grants_only else "job roles ready"
+    print(f"{state}: {writer} {admission} {dispatch}; grants: {len(grants)} statements")
     return 0
 
 

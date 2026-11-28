@@ -34,6 +34,14 @@ set -a; . .runtime/cluster/compose.env; set +a
 SN_ADMIN_DSN=... python3 deploy/cluster/provision-roles.py
 SN_ADMIN_DSN=... python3 scripts/dev-env/provision-job-roles.py
 
+# 2.1 升级已有部署：只补声明面，不动身份
+# 轮换到声明了新表/新列的构建时必须重放授权，否则运行期角色在第一条新语句上以
+# 42501（PG）/1142（InnoDB）失败，公开路径把它答成 storage_rejected。两个脚本都接受
+# --grants-only：它要求全部角色已存在（缺一个就停）、不创建/不改密码/不动角色属性，
+# 执行的语句与首次安装完全同一份（首次安装只是多跑角色 DDL 与 PUBLIC 加固）。
+SN_ADMIN_DSN=... python3 deploy/cluster/provision-roles.py --grants-only
+SN_ADMIN_DSN=... python3 scripts/dev-env/provision-job-roles.py --grants-only
+
 # 3. 应用面服务
 kubectl apply -f deploy/cluster/app-plane/api.yaml
 kubectl apply -f deploy/cluster/app-plane/asset-inspector.yaml

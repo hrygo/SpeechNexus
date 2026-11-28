@@ -139,6 +139,26 @@ python3 deploy/cluster/app-plane/render-manifests.py           # 渲染到 .runt
 
 `--select engine-readiness,engine-readiness-renew` 只输出指定对象，用于按级上线；完整部序见下。
 
+## 两面同 tag 是装配判据
+
+应用面清单的 `image:` 全是占位符，值来自 `deploy/cluster/versions.env`；算力面
+`.runtime/cluster-compute.env` 的 `PYTHON_IMAGE` 与 `CONTROLLER_IMAGE` 由
+`deploy/cluster/init-env.py` 从同一个 `versions.env` 生成。所以「两面同 tag」不是约定而是产物：
+升级只改 `versions.env`，`cluster-compute.env` 由生成器写回——**不要手改它里面的 tag**。
+
+两个反例（2026-11-28 实测）：应用面 `465c9f94`、算力面 `913d0e0a` 时，派发把网关回执判成
+`unknown/outcome_unknown`，Job 停在 `running` 且容量不回；应用面 `465c9f94` 早于 #1287，
+镜像里没有 `speechnexus-lease-reconciler`，`lease-reconciler` CronJob 每次
+`StartError: executable file not found in $PATH`，过期租约的清收路径等于不存在。
+
+判据（三条都要过）：
+
+1. 两面镜像里 `speechnexus-lease-reconciler --help` 都能跑——回执契约与清收入口在同一提交里定义，
+   所以它同时证明两面同源；
+2. `grep -c '^PYTHON_IMAGE='` 在 `versions.env` 与 `.runtime/cluster-compute.env` 里都是 1，取值相同；
+3. 改完重建 `config-init` + `gateway`（算力面）与相关 Deployment（应用面），两面的容器
+   `docker ps` / `kubectl get pod` 里的镜像 tag 一致。
+
 ## 部序
 
 ### 一级：就绪报告与续租（已在集群内）

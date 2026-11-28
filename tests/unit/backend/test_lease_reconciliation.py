@@ -133,12 +133,33 @@ def test_the_selection_takes_its_terminal_set_from_the_domain() -> None:
     # Deleting the condition, or restating the four states next to the SQL, fails
     # here: the value has to be the domain's own set.
     assert tuple(sorted(TERMINAL_STATES)) == CANDIDATE_STATES
-    assert "AND j.state IN (?) " in CANDIDATE_STATEMENT
+    assert "j.state IN (?) " in CANDIDATE_STATEMENT
     assert "AND NOT EXISTS (SELECT 1 FROM submit_intents AS s " in CANDIDATE_STATEMENT
     assert "l.lease_state = 'reserved' AND l.deadline_at_us < ?" in CANDIDATE_STATEMENT
     # The bound is a client-side truncation: LIMIT is outside the portable subset.
     assert " LIMIT " not in CANDIDATE_STATEMENT
     assert "%s" not in CANDIDATE_STATEMENT
+
+
+def test_the_selection_also_reaches_a_settled_execution_whose_job_never_settled() -> None:
+    # 2026-11-28 field case: the engine answered, the gateway kept
+    # succeeded/complete plus terminal-response evidence, and the Job stayed running
+    # with the lease reserved past its deadline. The sweep could not see the row, so
+    # the four projections held forever and the API settlement preflight refused to
+    # start. The second admitted shape must stay paired with proven stop evidence and
+    # with the frozen-deadline condition; the release transaction re-verifies it.
+    assert (
+        "OR EXISTS (SELECT 1 FROM submit_intents AS s "
+        "JOIN execution_stop_evidence AS e ON e.submit_intent_id = s.submit_intent_id "
+        "WHERE s.lease_id = l.lease_id AND s.execution_state = 'succeeded' "
+        "AND s.cleanup_state = 'complete' AND e.execution_stopped = 1 "
+        "AND e.resources_released = 1)) "
+    ) in CANDIDATE_STATEMENT
+    # The deadline condition still governs both shapes: it is tested before the
+    # disjunction, never inside one branch.
+    assert CANDIDATE_STATEMENT.index("l.deadline_at_us < ?") < CANDIDATE_STATEMENT.index(
+        "OR EXISTS"
+    )
 
 
 def test_candidates_are_read_once_bounded_and_oldest_deadline_first() -> None:

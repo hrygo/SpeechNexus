@@ -18,8 +18,20 @@ This statement is the whole selection rule. Every condition is required:
   of "a public Job can never transition again". The dispatcher refuses such a Job
   *before* planning, marking running or submitting (``_dispatch_claimed``), so a
   terminal Job cannot create a submit intent later;
-* no ``submit_intents`` row -- the operation never reached the gateway, so there is
-  no execution and nothing whose stop could be unproven.
+* one of two execution shapes:
+
+  * no ``submit_intents`` row -- the operation never reached the gateway, so there
+    is no execution and nothing whose stop could be unproven;
+  * or an execution that is durably terminal *with its stop proven*: the submit
+    intent says ``succeeded``/``complete`` and ``execution_stop_evidence`` records
+    ``execution_stopped = 1`` and ``resources_released = 1``. A Job can reach this
+    shape when the dispatcher saw the terminal execution but never settled the Job
+    (the 2026-11-28 field case: the engine answered, the gateway kept
+    ``succeeded``/``complete`` and its terminal-response evidence, and the Job
+    stayed ``running`` with the lease ``reserved`` past its deadline, so the four
+    projections held forever and the API's settlement preflight refused to start).
+    Nothing is running here, so the capacity may return; the release transaction
+    still re-verifies the same evidence through the one release implementation.
 
 Why one read is enough (no second re-check, no "already swept" marker): every
 condition is monotone. A terminal state never reopens, ``deadline_at_us`` is an
@@ -29,8 +41,10 @@ re-locks the lease and re-reads the submit intents through the one release
 implementation, so an intent that appears in between refuses the release instead of
 being ignored.
 
-``job_state`` of ``coordination_jobs`` is deliberately **not** part of this
-predicate: an accepted cancellation writes ``cancelled`` there while the public Job
+Both shapes are monotone for the same reason: a terminal Job state never reopens, a
+succeeded/complete execution intent never regresses, and stop evidence rows are
+append-only. ``job_state`` of ``coordination_jobs`` is deliberately **not** part of
+this predicate: an accepted cancellation writes ``cancelled`` there while the public Job
 is still ``cancelling`` and the execution may still be running. Using that column
 would release the capacity of a live execution, so terminality is decided by the
 public Job state, whose terminal set is ``domain.public_jobs.TERMINAL_STATES``.
@@ -56,8 +70,13 @@ CANDIDATE_STATEMENT = (
     "AND a.attempt_id = l.attempt_id "
     "JOIN speech_jobs AS j ON j.job_id = l.operation_id "
     "WHERE l.lease_state = 'reserved' AND l.deadline_at_us < ? "
-    "AND j.state IN (?) "
-    "AND NOT EXISTS (SELECT 1 FROM submit_intents AS s WHERE s.lease_id = l.lease_id) "
+    "AND ((j.state IN (?) "
+    "AND NOT EXISTS (SELECT 1 FROM submit_intents AS s WHERE s.lease_id = l.lease_id)) "
+    "OR EXISTS (SELECT 1 FROM submit_intents AS s "
+    "JOIN execution_stop_evidence AS e ON e.submit_intent_id = s.submit_intent_id "
+    "WHERE s.lease_id = l.lease_id AND s.execution_state = 'succeeded' "
+    "AND s.cleanup_state = 'complete' AND e.execution_stopped = 1 "
+    "AND e.resources_released = 1)) "
     "ORDER BY l.deadline_at_us, l.lease_id"
 )
 

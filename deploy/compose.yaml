@@ -631,6 +631,37 @@ services:
       - no-new-privileges:true
     restart: unless-stopped
 
+  # Opt-in coordinator sweep (#1248). One bounded pass per invocation, so it is
+  # run by a scheduler (`docker compose run --rm lease-reconciler`) instead of
+  # looping: `restart: "no"` and no interval. It runs under the operator release
+  # identity, the same one `deploy/cluster/app-plane/workers.yaml` schedules.
+  #
+  # Without it, a Job that reached a terminal state before any dispatcher claimed
+  # it keeps its admission lease `reserved`: the dispatcher's own return path needs
+  # a claim, so nothing reaches the row, and the next Job of that instance class is
+  # refused with `capacity_exhausted`.
+  lease-reconciler:
+    profiles: ["lease-reconciler"]
+    build: *python-build
+    command: ["speechnexus-lease-reconciler", "--limit", "8"]
+    user: "${SPEECHNEXUS_RUNTIME_UID:?set SPEECHNEXUS_RUNTIME_UID from id -u}:${SPEECHNEXUS_RUNTIME_GID:?set SPEECHNEXUS_RUNTIME_GID from id -g}"
+    environment:
+      # Empty default, like the other optional identities: the base topology must
+      # render without it, and the process refuses an empty DSN at startup.
+      SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL: ${SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL:-}
+      SPEECHNEXUS_DATABASE_SCHEMA: speech
+    depends_on:
+      postgres:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+
   # Opt-in migration. It never starts as part of the base `up`; the migration
   # identity is distinct from both runtime roles.
   migrate:

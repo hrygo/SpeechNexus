@@ -77,6 +77,17 @@ class _DeadlineCursor:
         rows = self.fetchall()
         return rows[0] if rows else None
 
+    def fetchmany(self, size: int) -> list[dict[str, Any]]:
+        """A bounded read of an already ordered statement.
+
+        ``LIMIT`` is outside the portable subset, so the sweep's bound is applied
+        here, after a total order, on the cursor that already enforces the
+        transaction's deadline. This is the documented replacement
+        (``fetchmany(page_size + 1)``), not a new paging scheme.
+        """
+        rows: list[dict[str, Any]] = cast(Any, self._cursor).fetchmany(size)
+        return rows
+
     def clock(self) -> int:
         # 「现在」只从便携时钟读一次;语句里不再有品牌函数。
         now: int = now_us(cast(ClockReader, self))

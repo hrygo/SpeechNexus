@@ -19,6 +19,9 @@ from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_nam
 from speechnexus_backend.speech.infrastructure.job_writer_columns import (
     COORDINATION_JOB_INSERT_COLUMNS,
 )
+from speechnexus_backend.speech.infrastructure.readiness_void_schema import (
+    READINESS_VOID_INSERT_COLUMNS,
+)
 
 DIMENSIONS = (
     "unified_physical_memory_bytes",
@@ -47,6 +50,9 @@ SPEECH_UPDATES = {
         "intent_state stop_evidence_document error_code updated_at_us observation_document "
         "readiness_document version"
     ),
+    # 作废审计(#1286)。声明面读/写:写入面是逐列 INSERT,``""`` 表示**没有** UPDATE --
+    # 作废是历史事实,不改写。准入与小时报读这张表,所以两侧角色都需要 SELECT。
+    "runtime_readiness_voids": "",
     "admission_attempts": "quota_state version",
     "admission_operations": (
         "current_attempt_id request_document command_redacted_at_us command_deletion_job_id "
@@ -81,12 +87,21 @@ GATEWAY_UPDATES = {
 }
 CONTROL_PLANE_TABLES = frozenset({"resource_pools", "workspace_quotas", "host_nodes"})
 PRIVATE_SPEECH_TABLES = frozenset(
-    {"admission_operations", "admission_requests", "runtime_intent_deliveries"}
+    {
+        "admission_operations",
+        "admission_requests",
+        "runtime_intent_deliveries",
+        # 作废审计(#1286)是准入侧的判据,执行网关既不读也不写:它没有等待或续租的动作
+        # 需要这张表。
+        "runtime_readiness_voids",
+    }
 )
 INSERT_COLUMNS: dict[str, tuple[str, ...]] = {
     # The Job writer's own insertion surface, from the one declaration (#1181): a
     # column added there reaches this role's GRANT without a second edit here.
     "coordination_jobs": COORDINATION_JOB_INSERT_COLUMNS,
+    # 作废行是整行写入,列序来自 ``readiness_void_schema`` 的那一份声明(#1286)。
+    "runtime_readiness_voids": READINESS_VOID_INSERT_COLUMNS,
     # Not the writer's surface, and deliberately wider: the runtime role appends
     # runtime-intent events with the three columns ``runtime_intent_schema`` adds
     # (``event_kind``, ``target_node_id``, ``intent_id``), while a Job event is

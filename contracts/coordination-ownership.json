@@ -194,6 +194,7 @@
     "execution_stop_evidence": "B",
     "output_sample_intervals": "B",
     "runtime_intent_deliveries": "A",
+    "runtime_readiness_voids": "A",
     "coordination_keyed_locks": "C"
   },
   "query_outcome": {

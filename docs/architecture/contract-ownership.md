@@ -2,7 +2,7 @@
 
 本文件配合 [A00 #19](https://github.com/hrygo/SpeechNexus/issues/19)。机器矩阵为
 [`coordination-ownership.json`](../../contracts/coordination-ownership.json)，
-测试核对 18 端口、18 张生产协调表和 `query_outcome` 快照映射；根目录草案仍为原15表。
+测试核对 18 端口、19 张生产协调表和 `query_outcome` 快照映射；根目录草案仍为原15表。
 矩阵描述目标归属，不证明端口已实现。A01/B00–B06 是历史工作包；当前需求、实现与证据关联见[交付跟踪矩阵](../plans/delivery-tracking.md)和[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)。
 
 冻结 main `7dc276a` 的实际端口、7 类查询、正式消费者及双库证据见
@@ -61,6 +61,10 @@ A02 的 `0009_profile_drafts` 另加三个 speech 配置私有表：
 `0007_admission_commands` 新增的 operation/准入请求表仅 A 可读写，B 不获跨 owner 锁授权；
 详见[准入命令存储](../components/production-admission-storage.md)，独立admit_recipe事务见[准入实现](../components/production-admission.md)，完整业务配额/消费者与真实资格仍待。
 
+`0072_readiness_voids` 新增 A 的作废审计表 `runtime_readiness_voids`：续租在控制器报出另一个
+代次时追加一行，准入与小时报读它来判断「这张收据还作不作数」。列级 `INSERT` + 表级 `SELECT`，
+**没有** `UPDATE`/`DELETE` 授权（作废是历史事实，覆盖靠之后的新收据而不是改写历史）；执行网关
+不持有该表任何权限。归属见机器矩阵，语义见[注册引擎](../operations/register-engine.md)。
 `0008_runtime_delivery` 新增 A 私有投递账本，创建 runtime intent 时同事务插入；
 专用投递角色只能认领、标记未知和确认传输，不能改写原请求、物理状态或预算。
 B 无该表权限，私有投递端口不扩充共享18端口；见[持久投递](../operations/production-runtime-delivery.md)。

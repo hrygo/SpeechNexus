@@ -24,6 +24,9 @@ from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema imp
     gateway_cancellation_fence_grants,
 )
 from speechnexus_backend.speech.infrastructure.job_schema import JOB_DDL
+from speechnexus_backend.speech.infrastructure.readiness_void_schema import (
+    READINESS_VOID_DDL,
+)
 from speechnexus_backend.speech.infrastructure.runtime_delivery_schema import RUNTIME_DELIVERY_DDL
 
 
@@ -39,6 +42,7 @@ def test_production_storage_and_dml_owners_match_the_authoritative_matrix() -> N
             *RUNTIME_DELIVERY_DDL,
             *CLAIM_BUCKET_DDL,
             *COORDINATION_KEYED_LOCK_DDL,
+            *READINESS_VOID_DDL,
         )
         if (match := re.match(r"CREATE TABLE (?:IF NOT EXISTS )?(\w+)", ddl))
     }

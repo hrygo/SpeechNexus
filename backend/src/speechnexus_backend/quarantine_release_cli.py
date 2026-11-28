@@ -57,7 +57,7 @@ EXIT_INVALID = 2
 DEFAULT_SCHEMA = "speech"
 _LEASE_QUERY = (
     "SELECT lease_id, operation_id, attempt_id, lease_state, cleanup_state "
-    "FROM admission_leases WHERE operation_id = %s AND budget_released_at_us IS NULL"
+    "FROM admission_leases WHERE operation_id = ? AND budget_released_at_us IS NULL"
 )
 
 

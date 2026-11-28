@@ -26,7 +26,7 @@ from speechnexus_gateway.domain.media import (
     MediaCancelledError,
     SourceAudioClock,
 )
-from speechnexus_gateway.domain.terminal import EngineTerminalResponse
+from speechnexus_gateway.domain.terminal import DispatchAttestation, EngineTerminalResponse
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,7 +81,7 @@ class FileAsrTranscription:
         self._cancelled = cancelled
         self._final_deadline = final_deadline_seconds
         self._monotonic = monotonic
-        self._has_dispatched = False
+        self._dispatched_requests = 0
         self._responses: list[str] = []
         self._completed = False
         self._iterator = self._recognize()
@@ -89,7 +89,19 @@ class FileAsrTranscription:
     @property
     def has_dispatched(self) -> bool:
         """Conservative execution fact; never a stop or resource-release proof."""
-        return self._has_dispatched
+        return self._dispatched_requests > 0
+
+    def dispatch_attestation(self, observed_at: datetime) -> DispatchAttestation:
+        """Record, for the execution owner, exactly how many requests this run issued.
+
+        Only this class knows what left the process, so the count is built here and read
+        as data elsewhere; ``application.file_asr_command`` no longer infers it.
+        """
+        return DispatchAttestation(
+            requests_dispatched=self._dispatched_requests,
+            responses_answered=len(self._responses),
+            observed_at=observed_at,
+        )
 
     def terminal_response(self, observed_at: datetime) -> EngineTerminalResponse | None:
         """The engine's terminal answers, or ``None`` while any of them is missing.
@@ -116,7 +128,7 @@ class FileAsrTranscription:
 
     def _check(self) -> None:
         if self._cancelled():
-            raise AsrCallError(AsrFailure.CANCELLED, request_may_have_run=self._has_dispatched)
+            raise AsrCallError(AsrFailure.CANCELLED, request_may_have_run=self.has_dispatched)
 
     def _remaining_final(self, prepared: PreparedAsrSegment) -> float | None:
         if self._final_deadline is None:
@@ -134,7 +146,7 @@ class FileAsrTranscription:
         remaining = closed_at + self._final_deadline - now
         if remaining <= 0:
             raise AsrCallError(
-                AsrFailure.DEADLINE_EXCEEDED, request_may_have_run=self._has_dispatched
+                AsrFailure.DEADLINE_EXCEEDED, request_may_have_run=self.has_dispatched
             )
         return remaining
 
@@ -171,7 +183,7 @@ class FileAsrTranscription:
                         }
                     ).removeprefix("sha256:")
                     remaining = self._remaining_final(prepared)
-                    self._has_dispatched = True
+                    self._dispatched_requests += 1
                     try:
                         async with asyncio.timeout(remaining):
                             recognized = await self._recognizer.transcribe(
@@ -239,7 +251,7 @@ class FileAsrTranscription:
             self._completed = True
         except MediaCancelledError:
             raise AsrCallError(
-                AsrFailure.CANCELLED, request_may_have_run=self._has_dispatched
+                AsrFailure.CANCELLED, request_may_have_run=self.has_dispatched
             ) from None
         finally:
             self._audio.close()

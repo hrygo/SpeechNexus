@@ -1374,6 +1374,149 @@ def reviewed_vocabulary_addition_line(explained: int) -> str:
     )
 
 
+class _ReviewedStopVocabularyAdmission(NamedTuple):
+    """One reviewed response-vocabulary value a conditional branch may start admitting.
+
+    A terminal-status response whose ``stop_evidence_kind`` is pinned by a ``const``
+    cannot express a second legitimate proof without touching that branch, and a
+    branch edit is exactly the structural change the gate refuses to accept
+    implicitly. This entry names the vocabulary pointer that grows the value, the
+    single conditional branch that must start admitting it, and the value itself, so
+    the proof below can normalize both edits away and compare the rest of the file.
+    """
+
+    path: str
+    vocabulary: tuple[str | int, ...]
+    code: str
+    branch: tuple[str | int, ...]
+    issue: str
+    reason: str
+
+
+# An execution whose stage issued zero engine requests succeeded with nothing to
+# stop: the engine never received the command, so no terminal answer can exist and
+# the completion path would quarantine a finished execution while it still held its
+# lease. `not_dispatched` is that third proof, and the succeeded branch must admit it
+# or the service would emit a document its own contract rejects (#1301).
+_REVIEWED_STOP_VOCABULARY_ADMISSIONS: tuple[_ReviewedStopVocabularyAdmission, ...] = (
+    _ReviewedStopVocabularyAdmission(
+        "contracts/internal/execution-control.openapi.yaml",
+        ("components", "schemas", "StopEvidenceKind", "enum"),
+        "not_dispatched",
+        (
+            "components",
+            "schemas",
+            "ExecutionTerminalEvidenceInvariants",
+            "allOf",
+            1,
+            "then",
+            "properties",
+            "stop_evidence_kind",
+        ),
+        "#1301",
+        "a zero-segment transcription dispatched nothing, so requiring an engine "
+        "terminal response quarantined a completed execution and kept its capacity; "
+        "the succeeded branch admits the one proof that can exist in that case, and a "
+        "dispatched execution still needs the engine's own answer",
+    ),
+)
+
+
+def reviewed_stop_vocabulary_admission(root: Path, reference: str) -> str | None:
+    """Prove the contracts diff is exactly the reviewed stop-evidence admission.
+
+    Same whole-diff discipline as the other reviewed movements: the approval fires
+    only when the value grows by exactly the registered code, the registered branch
+    moves from ``const`` on one already-declared value to an ``enum`` of that value
+    plus the code, and nothing else in ``contracts/`` changes semantically. Any other
+    file, a third admitted value, a branch that drops its original value or a sibling
+    edit keeps the gate's findings.
+    """
+
+    expected = {entry.path for entry in _REVIEWED_STOP_VOCABULARY_ADMISSIONS}
+    for path in sorted(_changed_contract_paths(root, reference) - expected):
+        base = _contract_document(root, reference, path)
+        current = _contract_document(root, None, path)
+        if not _same_json_tree(_annotation_free(base), _annotation_free(current)):
+            return (
+                "the reviewed stop vocabulary may explain only its own file, but "
+                f"contracts/ also changed in {path}"
+            )
+    for entry in _REVIEWED_STOP_VOCABULARY_ADMISSIONS:
+        base = _contract_document(root, reference, entry.path)
+        current = _contract_document(root, None, entry.path)
+        before = _pointer_value(base, entry.vocabulary)
+        after = _pointer_value(current, entry.vocabulary)
+        if not isinstance(before, list) or not isinstance(after, list):
+            return f"{entry.path}: {entry.code} is not an enum in both versions"
+        added = [value for value in after if value not in before]
+        removed = [value for value in before if value not in after]
+        if added != [entry.code] or removed:
+            return (
+                f"{entry.path}: the vocabulary adds {added!r} and removes {removed!r}, "
+                f"not exactly the reviewed {entry.code!r}"
+            )
+        branch_before = _pointer_value(base, entry.branch)
+        branch_after = _pointer_value(current, entry.branch)
+        admitted = branch_before.get("const") if isinstance(branch_before, dict) else None
+        if not isinstance(admitted, str) or admitted not in before:
+            return f"{entry.path}: the reviewed branch does not start at one declared value"
+        if not isinstance(branch_after, dict):
+            return f"{entry.path}: the reviewed branch is not a constraint"
+        values = branch_after.get("enum")
+        if not isinstance(values, list) or sorted(values) != sorted([admitted, entry.code]):
+            return (
+                f"{entry.path}: the reviewed branch admits {values!r}, "
+                f"not exactly {sorted([admitted, entry.code])!r}"
+            )
+        if set(branch_after) != {"enum"}:
+            return f"{entry.path}: the reviewed branch changed more than its vocabulary"
+        normalized = _with_pointer_value(copy.deepcopy(current), entry.vocabulary, before)
+        normalized = _with_pointer_value(normalized, entry.branch, branch_before)
+        if not _same_json_tree(_annotation_free(base), _annotation_free(normalized)):
+            return (
+                f"{entry.path}: another semantic change exists beside the reviewed stop vocabulary"
+            )
+    return None
+
+
+def reviewed_stop_vocabulary_admission_line(explained: int) -> str:
+    """One review line for a stop-evidence admission the proof showed explains every finding."""
+
+    codes = ", ".join(sorted({entry.code for entry in _REVIEWED_STOP_VOCABULARY_ADMISSIONS}))
+    files = ", ".join(sorted({entry.path for entry in _REVIEWED_STOP_VOCABULARY_ADMISSIONS}))
+    issues = ", ".join(sorted({entry.issue for entry in _REVIEWED_STOP_VOCABULARY_ADMISSIONS}))
+    reasons = "; ".join(entry.reason for entry in _REVIEWED_STOP_VOCABULARY_ADMISSIONS)
+    return (
+        f"{files}: stop-evidence vocabulary admission {codes} explains {explained} "
+        f"finding(s) [{issues}: {reasons}]"
+    )
+
+
+def apply_reviewed_stop_vocabulary_admission(
+    report: dict[str, Any], root: Path, resolved: str
+) -> None:
+    """Fold a gate's findings into one approval when the whole diff is the admission.
+
+    Same contract as `apply_reviewed_bound_movement`: a gate keeps its own finding
+    semantics and this only decides whether every finding is explained by the reviewed
+    stop-evidence vocabulary. When the proof fails the findings stay and the reason is
+    reported beside them, never instead of them.
+    """
+
+    findings = report.get("findings")
+    if not findings:
+        return
+    problem = reviewed_stop_vocabulary_admission(root, resolved)
+    if problem is None:
+        report["approved_reviewed_stop_admissions"] = [
+            reviewed_stop_vocabulary_admission_line(len(findings))
+        ]
+        report["findings"] = []
+    else:
+        report["reviewed_stop_admission_problem"] = problem
+
+
 def _apply_reviewed_receipt_planner_widenings(
     issues: list[str],
 ) -> tuple[list[str], list[str]]:

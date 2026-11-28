@@ -100,9 +100,9 @@ qualify a real service, cross-host TLS, or a physical topology.
 
 - public synchronous ASR is assembled but not exercised in this deployment: the
   gateway closes a file execution only from the engine's own terminal fact
-  (`execution-gateway/src/speechnexus_gateway/infrastructure/file_execution_worker.py:380`
+  (`execution-gateway/src/speechnexus_gateway/infrastructure/file_execution_worker.py:384`
   calls `ExecutionCompletionService.complete`, which records `record_stop(SUCCEEDED)`
-  at `execution-gateway/src/speechnexus_gateway/application/execution_completion.py:55`),
+  at `execution-gateway/src/speechnexus_gateway/application/execution_completion.py:68`),
   and this bootstrap provides no real engine, so no public `200` has been run
   against it here. The historical local request that answered `504
   operation_timeout` ran on `c435908` before DEL-115 (PR #284) added that writer;

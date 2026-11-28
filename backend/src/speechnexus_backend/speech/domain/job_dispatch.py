@@ -533,7 +533,20 @@ VERIFIED_STOP_EVIDENCE_KINDS: frozenset[str] = frozenset(
         "engine_abort_ack",
         "engine_terminal_response",
         "instance_terminated_by_controller",
+        "not_dispatched",
         "operator_verified_instance_terminated",
+    }
+)
+
+#: The stop-evidence kinds that may close a ``succeeded`` execution and authorize release.
+#: ``engine_terminal_response`` is the engine answering every dispatched request;
+#: ``not_dispatched`` is the executing stage's own record that it issued none, so no work
+#: was running. Every other kind describes a stop that was forced from outside, and a
+#: reader that meets an unknown kind must reject rather than infer success.
+SUCCESS_STOP_EVIDENCE_KINDS: frozenset[str] = frozenset(
+    {
+        "engine_terminal_response",
+        "not_dispatched",
     }
 )
 

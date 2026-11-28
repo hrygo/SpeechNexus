@@ -50,7 +50,7 @@ from speechnexus_gateway.domain.submission import (
     SubmissionOutcomeUnknownError,
     SubmitRequest,
 )
-from speechnexus_gateway.domain.terminal import EngineTerminalResponse
+from speechnexus_gateway.domain.terminal import DispatchAttestation, EngineTerminalResponse
 
 
 @dataclass(slots=True, repr=False)
@@ -330,7 +330,7 @@ class FileExecutionWorker[StoreT]:
                 await self._reject_without_quarantine(key)
                 return
             await self._database(lambda: self._register(intent, outcome.result, ticket.cancelled))
-            await self._complete(intent, outcome.terminal)
+            await self._complete(intent, outcome.terminal, outcome.dispatch)
         except FileCommandInvalidError:
             # The stage proved the frozen content invalid while the request was
             # still local. No engine request left this process, so capacity is
@@ -373,11 +373,16 @@ class FileExecutionWorker[StoreT]:
                 self._accepting = False
 
     async def _complete(
-        self, accepted: SubmissionIntent, terminal: EngineTerminalResponse | None
+        self,
+        accepted: SubmissionIntent,
+        terminal: EngineTerminalResponse | None,
+        dispatch: DispatchAttestation | None,
     ) -> None:
-        """Record the success transition only with the adapter's terminal fact."""
+        """Record the success transition only with a proof owned by the stage."""
         try:
-            await self._database(lambda: self._completion.complete(accepted, terminal))
+            await self._database(
+                lambda: self._completion.complete(accepted, terminal, dispatch=dispatch)
+            )
         except TerminalStopEvidenceUnavailableError:
             # The private result exists, but nothing trusted proved this execution
             # stopped. Keep the capacity and record that specific pending reason.

@@ -86,6 +86,7 @@ type StopEvidenceKind = Literal[
     "none",
     "engine_abort_ack",
     "engine_terminal_response",
+    "not_dispatched",
     "instance_terminated_by_controller",
     "operator_verified_instance_terminated",
     "unconfirmed_timeout",

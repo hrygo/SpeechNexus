@@ -218,11 +218,19 @@ export interface components {
       | "unknown_quarantined";
     /** @enum {string} */
     CleanupState: "not_required" | "pending" | "complete" | "quarantined";
-    /** @enum {string} */
+    /**
+     * @description What proved that an execution no longer holds reserved capacity. `not_dispatched`
+     *     only ever appears on a `succeeded` execution whose stage recorded that it issued
+     *     zero engine requests: nothing was running, so there was nothing to stop. It is not
+     *     a substitute for a missing engine answer on a dispatched execution, and a reader
+     *     that does not recognise it must fail closed rather than infer success.
+     * @enum {string}
+     */
     StopEvidenceKind:
       | "none"
       | "engine_abort_ack"
       | "engine_terminal_response"
+      | "not_dispatched"
       | "instance_terminated_by_controller"
       | "operator_verified_instance_terminated"
       | "unconfirmed_timeout";

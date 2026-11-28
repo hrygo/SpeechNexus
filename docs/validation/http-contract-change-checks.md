@@ -331,6 +331,44 @@ additions needs no approval.
 The standard-surface `contracts-compat` gate is unaffected: the refused kinds live on
 Nexus paths, which that scope does not walk.
 
+### A reviewed stop-evidence admission
+
+`#1301` fixes an execution that finished without ever reaching the engine: the audio
+held no speech, the stage issued zero engine requests, so no terminal answer can
+exist, and the completion path quarantined a finished execution while it still held
+its lease. The third proof is `not_dispatched`, which the terminal-status contract has
+to admit on a `succeeded` execution; the branch that pinned `stop_evidence_kind` to a
+single `const` therefore has to move as well, and a conditional-branch edit is exactly
+what this gate refuses to accept implicitly.
+
+`reviewed_stop_vocabulary_admission()` is a fourth proof over the whole diff, and any
+failure leaves every finding in place:
+
+- `git diff <base> -- contracts` names only the reviewed file and any file that is
+  unchanged once annotation keys are removed;
+- the reviewed vocabulary pointer gains exactly the reviewed value and removes
+  nothing;
+- the reviewed branch moves from `const` on one value the same enum still declares to
+  an `enum` of exactly that value plus the reviewed one, and carries no other
+  keyword;
+- with the vocabulary and the branch restored to their baseline shapes, both
+  documents are identical once annotation keys are removed at schema position.
+
+The registry sits beside the other proofs (`_REVIEWED_STOP_VOCABULARY_ADMISSIONS`,
+`reviewed_stop_vocabulary_admission()`, `apply_reviewed_stop_vocabulary_admission()`).
+The speech surface consults it immediately after the response-field proof, and the
+coordination request and result surfaces (`contracts-coordination-requests`,
+`contracts-coordination-results`) consult it after their movement proof, because
+`VerifiedStopEvidence.evidence_kind` references the same vocabulary. Each approval is
+printed as `approved reviewed stop-evidence admission:` and listed in
+`approved_reviewed_stop_admissions` in JSON mode; when the proof fails and findings
+remain, the gate reports why in `reviewed_stop_admission_problem` and on stderr, and
+adds no finding of its own. New entries must add matching cases in
+[`tests/contract/test_approved_stop_vocabulary_admission.py`](../../tests/contract/test_approved_stop_vocabulary_admission.py),
+which proves that a third admitted value, a dropped original value, a branch that
+stops admitting the value, an extra branch keyword, a sibling constraint, a second
+contract file and an annotation beside the change are each handled as documented.
+
 ## What the check establishes
 
 The existing directional comparison kernel is reused: reject known request

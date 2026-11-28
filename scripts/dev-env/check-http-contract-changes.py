@@ -1244,6 +1244,8 @@ def inspect_sources(
     code_addition_problem: str | None = None
     approved_field_additions: list[str] = []
     field_addition_problem: str | None = None
+    approved_stop_admissions: list[str] = []
+    stop_admission_problem: str | None = None
     compared_sources: set[str] = set()
     selected = (SPEECH_SOURCE,) if surface == "speech" else SOURCES
     for path in selected:
@@ -1342,12 +1344,28 @@ def inspect_sources(
                             )
                             detected = []
                         else:
-                            # A reviewer reads why no proof covered this diff; the
-                            # kernel's own findings stay exactly as reported so the gate
-                            # never adds a finding of its own.
-                            movement_problem = f"{path}: {problem}"
-                            code_addition_problem = f"{path}: {addition_problem}"
-                            field_addition_problem = f"{path}: {field_problem}"
+                            # The fourth whole-diff proof covers a reviewed *stop
+                            # evidence* admission (#1301): a terminal-status branch
+                            # that starts admitting one new, already-declared-kind
+                            # value. It is tried only while findings remain, and it
+                            # approves them all only when the whole `contracts/` diff
+                            # is that vocabulary growth and that branch, nothing else.
+                            stop_problem = kernel.reviewed_stop_vocabulary_admission(
+                                _ROOT, resolved
+                            )
+                            if stop_problem is None:
+                                approved_stop_admissions.append(
+                                    kernel.reviewed_stop_vocabulary_admission_line(len(detected))
+                                )
+                                detected = []
+                            else:
+                                # A reviewer reads why no proof covered this diff; the
+                                # kernel's own findings stay exactly as reported so the
+                                # gate never adds a finding of its own.
+                                movement_problem = f"{path}: {problem}"
+                                code_addition_problem = f"{path}: {addition_problem}"
+                                field_addition_problem = f"{path}: {field_problem}"
+                                stop_admission_problem = f"{path}: {stop_problem}"
             findings.extend(detected)
             approved_removals.extend(approved)
             approved_parameters.extend(approved_parameter)
@@ -1389,6 +1407,8 @@ def inspect_sources(
         "reviewed_code_addition_problem": code_addition_problem,
         "approved_reviewed_field_additions": approved_field_additions,
         "reviewed_field_addition_problem": field_addition_problem,
+        "approved_reviewed_stop_admissions": approved_stop_admissions,
+        "reviewed_stop_admission_problem": stop_admission_problem,
         "unverified": list(UNVERIFIED),
     }
 
@@ -1432,6 +1452,8 @@ def main() -> int:
             print("  approved reviewed response code addition: " + approval)
         for approval in report["approved_reviewed_field_additions"]:
             print("  approved reviewed response field addition: " + approval)
+        for approval in report["approved_reviewed_stop_admissions"]:
+            print("  approved reviewed stop-evidence admission: " + approval)
         if report["reviewed_bound_movement_problem"] and report["findings"]:
             print(
                 "  reviewed planner bound widening did not cover this diff: "
@@ -1442,6 +1464,12 @@ def main() -> int:
             print(
                 "  reviewed response code addition did not cover this diff: "
                 + report["reviewed_code_addition_problem"],
+                file=sys.stderr,
+            )
+        if report["reviewed_stop_admission_problem"] and report["findings"]:
+            print(
+                "  reviewed stop-evidence admission did not cover this diff: "
+                + report["reviewed_stop_admission_problem"],
                 file=sys.stderr,
             )
         print("Known HTTP structural checks: " + ("rejected" if report["findings"] else "passed"))

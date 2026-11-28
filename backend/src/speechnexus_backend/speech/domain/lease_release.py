@@ -3,6 +3,7 @@
 from dataclasses import dataclass, replace
 
 from speechnexus_backend.speech.domain.job_dispatch import (
+    SUCCESS_STOP_EVIDENCE_KINDS,
     VERIFIED_STOP_EVIDENCE_KINDS,
 )
 from speechnexus_backend.speech.domain.leases import (
@@ -136,7 +137,8 @@ def release(
             or stop is None
             or stop.observed_at_us > now_us
             or (
-                execution.execution_state == "succeeded" and stop.kind != "engine_terminal_response"
+                execution.execution_state == "succeeded"
+                and stop.kind not in SUCCESS_STOP_EVIDENCE_KINDS
             )
             or (
                 isolated

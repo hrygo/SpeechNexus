@@ -45,3 +45,30 @@ class EngineTerminalResponse:
             )
         if not isinstance(self.observed_at, datetime) or self.observed_at.tzinfo is None:
             raise ValueError("an engine terminal fact needs a timezone")
+
+
+@dataclass(frozen=True, slots=True)
+class DispatchAttestation:
+    """What one file stage itself recorded about the engine requests it issued.
+
+    Only the stage that owned every request can build this, and it is the single input
+    that decides whether an execution completed without ever leaving this process. The
+    counts are carried as data so the stop-evidence digest binds them rather than trusting
+    a boolean, and so no consumer re-derives "zero" from another signal.
+    """
+
+    requests_dispatched: int
+    responses_answered: int
+    observed_at: datetime
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.requests_dispatched) is not int
+            or type(self.responses_answered) is not int
+            or self.requests_dispatched < 0
+            or self.responses_answered < 0
+            or self.responses_answered > self.requests_dispatched
+        ):
+            raise ValueError("a dispatch attestation needs ordered nonnegative counts")
+        if not isinstance(self.observed_at, datetime) or self.observed_at.tzinfo is None:
+            raise ValueError("a dispatch attestation needs a timezone")

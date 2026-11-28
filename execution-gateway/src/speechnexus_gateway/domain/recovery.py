@@ -26,7 +26,7 @@ from speechnexus_gateway.domain.submission import (
     contract_instant_text,
     hard_output_ceiling_samples,
 )
-from speechnexus_gateway.domain.terminal import EngineTerminalResponse
+from speechnexus_gateway.domain.terminal import DispatchAttestation, EngineTerminalResponse
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
@@ -418,6 +418,47 @@ def whole_instance_stop_evidence(
 
 class TerminalStopEvidenceUnavailableError(ExecutionCleanupPendingError):
     """No trusted engine terminal fact covers this execution, so it keeps its capacity."""
+
+
+def undispatched_stop_evidence(
+    intent: SubmissionIntent,
+    attestation: DispatchAttestation | None,
+) -> VerifiedStopEvidence | None:
+    """Success evidence for an execution whose stage issued zero engine requests.
+
+    This is the single place where "no engine request ever left this process" is decided.
+    It returns evidence only when the owning stage recorded exactly zero dispatches; a run
+    that dispatched anything keeps requiring ``engine_terminal_stop_evidence``, so this can
+    never release capacity while work may still be running. The digest binds the execution
+    identity, the zero dispatch count and one instant, and carries no engine-answer field.
+    """
+    if attestation is None or attestation.requests_dispatched != 0:
+        return None
+    identity = intent.identity.submit_intent_id
+    observed_at_us = observed_at_microseconds(attestation.observed_at)
+    digest = command_digest(
+        [
+            "no-engine-dispatch/v1",
+            {
+                "submit_intent_id": identity,
+                "requests_dispatched": attestation.requests_dispatched,
+                "responses_answered": attestation.responses_answered,
+                "observed_at": contract_instant_text(attestation.observed_at),
+            },
+        ]
+    )
+    evidence_key = canonical_json(["no-engine-dispatch-stop/v1", identity])
+    return VerifiedStopEvidence(
+        evidence_id="stop-undispatched-"
+        + hashlib.sha256(evidence_key.encode("utf-8")).hexdigest()[:48],
+        submit_intent_id=identity,
+        evidence_kind=StopEvidenceKind.NOT_DISPATCHED,
+        evidence_digest=digest,
+        observed_at_us=observed_at_us,
+        execution_stopped=True,
+        resources_released=True,
+        reason=None,
+    )
 
 
 def engine_terminal_stop_evidence(

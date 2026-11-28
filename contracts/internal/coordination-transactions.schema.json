@@ -620,7 +620,7 @@
           }
         }
       ],
-      "description": "Verified termination of this submitted execution and release of its incremental resources. This does not imply that the shared engine process exited; instance baseline release requires the separate RuntimeStopEvidence contract."
+      "description": "Verified termination of this submitted execution and release of its incremental resources. This does not imply that the shared engine process exited; instance baseline release requires the separate RuntimeStopEvidence contract. A reader that does not recognise an evidence kind must fail closed rather than infer success: `not_dispatched` authorizes release only because the executor recorded zero engine requests."
     },
     "JobIdentity": {
       "type": "object",

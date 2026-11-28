@@ -1345,7 +1345,7 @@ def test_a_generation_the_node_never_prepared_is_refused_before_anything_is_writ
     disagreement fails the run with both numbers and both ways out.
     """
     spec = _spec_from_manual(manual_args())
-    options = argparse.Namespace(health_timeout_seconds=5.0)
+    options = argparse.Namespace(health_timeout_seconds=5.0, transaction_timeout_seconds=3.0)
     monkeypatch.setattr(
         registration,
         "_process_environment",
@@ -1360,8 +1360,17 @@ def test_a_generation_the_node_never_prepared_is_refused_before_anything_is_writ
         lambda *_, **__: _NodeInstanceHead("instance-1", 11, 11),
     )
 
+    voided: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        registration,
+        "_void_readiness_for_mismatch",
+        lambda **kwargs: voided.append(kwargs),
+    )
+
     with pytest.raises(RegistrationError) as caught:
-        registration._require_the_node_prepares_this_generation(spec, options)
+        registration._require_the_node_prepares_this_generation(
+            spec, options, database_url=DSN, schema="speech"
+        )
 
     assert (caught.value.code, caught.value.exit_code) == (
         "instance_generation_mismatch",
@@ -1369,13 +1378,17 @@ def test_a_generation_the_node_never_prepared_is_refused_before_anything_is_writ
     )
     assert "generation 1" in caught.value.message
     assert "generation 11" in caught.value.message
+    # #1286: a **determined** disagreement is what writes the explicit void. Without the
+    # write the receipt signed before the divergence keeps admitting creates until it
+    # expires, which is the window this closes.
+    assert [entry["head"].current_generation for entry in voided] == [11]
 
 
 def test_an_agreeing_node_lets_the_registration_proceed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     spec = _spec_from_manual(manual_args())
-    options = argparse.Namespace(health_timeout_seconds=5.0)
+    options = argparse.Namespace(health_timeout_seconds=5.0, transaction_timeout_seconds=3.0)
     monkeypatch.setattr(
         registration,
         "_process_environment",
@@ -1390,7 +1403,17 @@ def test_an_agreeing_node_lets_the_registration_proceed(
         lambda *_, **__: _NodeInstanceHead("instance-1", 1, 1),
     )
 
-    registration._require_the_node_prepares_this_generation(spec, options)
+    voided: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        registration,
+        "_void_readiness_for_mismatch",
+        lambda **kwargs: voided.append(kwargs),
+    )
+    registration._require_the_node_prepares_this_generation(
+        spec, options, database_url=DSN, schema="speech"
+    )
+    # A node that agrees with the ledger voids nothing: there is no inconsistency to record.
+    assert voided == []
 
 
 def test_an_unreachable_controller_refuses_the_attestation(
@@ -1399,7 +1422,7 @@ def test_an_unreachable_controller_refuses_the_attestation(
     # An unverified attestation is the green-but-wrong state this closes: skipping the
     # check when the controller is down would sign exactly what #1282 was about.
     spec = _spec_from_manual(manual_args())
-    options = argparse.Namespace(health_timeout_seconds=5.0)
+    options = argparse.Namespace(health_timeout_seconds=5.0, transaction_timeout_seconds=3.0)
     monkeypatch.setattr(
         registration,
         "_process_environment",
@@ -1409,17 +1432,32 @@ def test_an_unreachable_controller_refuses_the_attestation(
         },
     )
 
+    voided: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        registration,
+        "_void_readiness_for_mismatch",
+        lambda **kwargs: voided.append(kwargs),
+    )
+
     with pytest.raises(RegistrationError) as caught:
-        registration._require_the_node_prepares_this_generation(spec, options)
+        registration._require_the_node_prepares_this_generation(
+            spec, options, database_url=DSN, schema="speech"
+        )
 
     assert (caught.value.code, caught.value.exit_code) == (
         "controller_unreachable",
         EXIT_UNAVAILABLE,
     )
+    # #1286: "undetermined" is not "inconsistent". A wrong controller URL must not void
+    # the receipt and interrupt production admission; the report still names the code.
+    assert voided == []
 
 
 def test_no_configured_controller_keeps_the_command_working() -> None:
     spec = _spec_from_manual(manual_args())
     registration._require_the_node_prepares_this_generation(
-        spec, argparse.Namespace(health_timeout_seconds=5.0)
+        spec,
+        argparse.Namespace(health_timeout_seconds=5.0, transaction_timeout_seconds=3.0),
+        database_url=DSN,
+        schema="speech",
     )

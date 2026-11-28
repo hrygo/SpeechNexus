@@ -425,6 +425,69 @@ def test_same_key_replay_reserves_once_and_returns_the_original(
     assert _counts(db) == before
 
 
+def test_a_voided_receipt_refuses_admission_until_a_later_receipt_replaces_it(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """#1286: an explicit void closes the window between the report and the create.
+
+    The receipt is the only thing admission reads, so a receipt signed before the
+    divergence keeps creating Jobs until its own 24 h window elapses -- the report says
+    ``invalid`` while ``create`` says yes. The void is appended by the renewal path when
+    the node names another generation, and this test drives the whole round trip through
+    the real public create port: admitted, then refused by the void, then admitted again
+    after a *later* receipt is signed. Recovery never deletes the void row.
+    """
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    store = _store(admission_database)
+    baseline = store.create(_job(key="synthetic-idem-void-baseline"))
+    assert baseline.outcome == "created" and baseline.job is not None
+
+    document = db.query(
+        "SELECT intent_id, readiness_document FROM runtime_instance_intents "
+        "WHERE intent_id = 'runtime-new'"
+    )[0]
+    receipt = json.loads(document["readiness_document"])
+    verified_at_us = int(receipt["verified_at_us"])
+
+    # The renewal saw the node report another generation: one audit row, appended.
+    db.query(
+        "INSERT INTO runtime_readiness_voids "
+        "(instance_id, instance_generation, observed_generation, reason, void_source, "
+        "voided_at_us, document) VALUES (%s, %s, %s, 'instance_generation_mismatch', "
+        "'renewal', %s, 'synthetic disagreement')",
+        (
+            receipt["instance_id"],
+            int(receipt["instance_generation"]),
+            int(receipt["instance_generation"]) + 10,
+            verified_at_us,
+        ),
+    )
+
+    before = _counts(db)
+    refused = store.create(_job(key="synthetic-idem-void-refused"))
+    assert refused.outcome == "rejected"
+    # The public vocabulary has one code for "the pinned runtime state disagrees"; the
+    # internal code that named the generation is what the report and audit row carry.
+    assert refused.error_code == "engine_state_mismatch"
+    assert _counts(db) == before  # a refusal writes no Job, receipt or lease rows
+
+    # Recovery is a later receipt, not a deletion: the same void row stays in place.
+    receipt["verified_at_us"] = verified_at_us + 1
+    db.query(
+        "UPDATE runtime_instance_intents SET readiness_document = %s WHERE intent_id = %s",
+        (json.dumps(receipt, separators=(",", ":")), document["intent_id"]),
+    )
+    # The baseline create still holds its attempt; capacity is not what this test
+    # measures, so give the recovery leg room instead of reading a quota refusal.
+    db.query("UPDATE workspace_quotas SET held_attempts = 0")
+    recovered = store.create(_job(key="synthetic-idem-void-recovered"))
+    assert recovered.outcome == "created" and recovered.job is not None
+    assert (
+        db.query("SELECT COUNT(*) AS rows FROM runtime_readiness_voids")[0]["rows"] == 1
+    )
+
+
 def test_capacity_shortage_is_429_and_writes_zero_rows(
     admission_database: AdmissionDatabase,
 ) -> None:

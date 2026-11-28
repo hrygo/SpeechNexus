@@ -30,6 +30,9 @@ from speechnexus_backend.speech.infrastructure.admission_recovery_sql import (
 )
 from speechnexus_backend.speech.infrastructure.coordination_grants import DIMENSIONS
 from speechnexus_backend.speech.infrastructure.jobs_sql import create_in_transaction
+from speechnexus_backend.speech.infrastructure.readiness_void_schema import (
+    latest_void_at_us_expression,
+)
 from speechnexus_backend.speech.infrastructure.runtime_observation_codec import (
     decode_observation,
     validate_stored_readiness,
@@ -71,6 +74,26 @@ def _quota(row: Row) -> AdmissionQuota:
     )
 
 
+def _latest_readiness_void_us(cursor: AdmissionCursor, instance: Row) -> int | None:
+    """这一实例代次最近一次被显式作废的时刻(#1286)。
+
+    读法只有一份(``readiness_void_schema.latest_void_at_us_expression``),报告用的是同一段:
+    报告说 ``invalid``、准入说放行的窗口,正是本切片要关掉的东西。没有作废行时返回 ``None``。
+    """
+    row = one(
+        cursor,
+        "SELECT "
+        + latest_void_at_us_expression(
+            instance_column="i.instance_id", generation_column="i.instance_generation"
+        )
+        + " AS readiness_voided_at_us FROM engine_instances AS i "
+        "WHERE i.instance_id = ? AND i.instance_generation = ?",
+        (instance["instance_id"], instance["instance_generation"]),
+    )
+    voided = row["readiness_voided_at_us"]
+    return None if voided is None else int(voided)
+
+
 def _runtime(cursor: AdmissionCursor, instance: Row, head: Row, intent: Row) -> AdmissionRuntime:
     try:
         record = _record(intent)
@@ -98,6 +121,7 @@ def _runtime(cursor: AdmissionCursor, instance: Row, head: Row, intent: Row) -> 
             readiness,
             int(batch),
             "the unreleased admission_leases of this instance generation",
+            _latest_readiness_void_us(cursor, instance),
         )
     except AdmissionStateInvalidError:
         # The counters and the leases disagree. That is an accounting defect, so it

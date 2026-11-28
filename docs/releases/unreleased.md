@@ -68,6 +68,7 @@ for table coordination_jobs`（见下节），所以迁移与授权重放必须�
 | `0069_tighten_job_bucket_due` | **S4**：先回填再收紧 —— 全表用 `bucket_for(job_id)` 重算 `bucket_no`、按 `speech_jobs.created_at_us` 填 `due_at`（fill-if-null，UTC 墙上时间），任一列仍有 `NULL` 就抛错点名行数（`due_at` 没有第二个来源，不编造时刻），然后 `ALTER COLUMN ... SET NOT NULL`；`downgrade` 只放开这两个 `NOT NULL` |
 | `0070_retire_draft_claim_epoch` | **S5（单向）**：`ALTER TABLE coordination_jobs DROP COLUMN claim_expires_at_us`；`downgrade` 显式 `raise`——越过 S5 之后重跑 `0064`/`0065` 以 `42703` 失败，回退只能走备份恢复 |
 | `0071_generation_adoptions` | 建 `runtime_generation_adoptions`：审计型代次收养的追加写账本（主键 `(instance_id, adopted_generation)`，外键指向 `engine_instances(instance_id, instance_generation)`，`document` 存节点证词与收养前后的账本快照）；**只建表，不开启任何收养**，`downgrade` 只 DROP 这张表，收养本身不写回其他表之外的兼容面 |
+| `0072_readiness_voids` | 建 `runtime_readiness_voids`：**检测即作废**的只追加审计账本（主键 `(instance_id, instance_generation, observed_generation)`，外键指向 `engine_instances(instance_id, instance_generation)`，表级 `CHECK (observed_generation <> instance_generation)`）；作废只由续租在**确定**代次不一致时写一行（`ON CONFLICT` 语义由保存点去重），控制器不可达等**不确定**情形不写；准入与小时报按同一条规则（`voided_at_us >= receipt.verified_at_us`）判它是否仍适用，后续成功续租签出的新收据自动覆盖作废，无需撤销动作；`downgrade` 只 DROP 这张表 |
 | `0001_jobs` | 行为不变，只是把草案 epoch 列 `claim_expires_at_us` 从 `JOB_DDL` 移到本修订自己的 `_LEGACY_DRAFT_COLUMNS` 里补一条 `ALTER`：`JOB_DDL` 现在描述 head 形状（也是 InnoDB 验证 schema 的来源），历史列留在已发布修订里，`0064`/`0065` 才有列可读、空库仍能重放到 `0069`，`0070` 再删它 |
 | `0008_runtime_delivery` | 参数标记迁到 `?` 契约后，迁移把唯一的占位符内联成迁移事务时间戳；行为不变，仍给旧 outbox 行补 `unknown` 投递相位 |
 | `0023_publication_lifecycle`（视图定义） | 视图里的 `::numeric` 改成标准 `CAST(... AS numeric)`，语义等价；只在重新 bootstrap 时生效，不新增迁移 |
@@ -80,7 +81,7 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
   'select version_num from speech.alembic_version'
 ```
 
-第二段的期望输出是 `0071_generation_adoptions`。迁移身份是独立 DDL 身份
+第二段的期望输出是 `0072_readiness_voids`。迁移身份是独立 DDL 身份
 （`SPEECHNEXUS_MIGRATION_DATABASE_URL`），不要用 `sn_api`。`0058`–`0063` 六个 revision 的
 `downgrade` 全部显式 `raise`（计划是删除凭据、账本是删除事实、索引是轮询读的访问路径），
 回退没有 `alembic downgrade` 这条路径，只能显式处理数据后手工回收。`0064` 只删自己加的
@@ -93,6 +94,7 @@ canonical 列，`0065` 把 `last_event_seq` 归零（并防御性清掉 `bucket_
 `0068` 的 `downgrade` 只删本修订加的两样东西（`coordination_outbox.delivered_at` 列与
 `job_events` 表），两列此刻都没有写者，所以回退不丢事实；`delivered_at_us` 的值与
 `coordination_jobs` 的行都不动。`0069` 的 `downgrade` 只放开两个 `NOT NULL`（列与值都保留）。`0070` 的 `downgrade` **拒绝执行**：`claim_expires_at_us` 是单向退役，删列之后再跑 `0064`/`0065` 是 `42703`（`0064` 的回填语句读这一列），所以回退只有备份恢复一条路（计划 §6）。
+`0072` 的 `downgrade` 只 DROP `runtime_readiness_voids`：表里可能已有真实作废行，删表不改变收据本身（收据在 `runtime_instance_intents.readiness_document`），但会丢掉「哪一代对哪一代、凭什么、什么时候」的审计，所以真实回退前先导出这张表，并让续租重新签一次收据。
 `0071` 的 `downgrade` 只 DROP `runtime_generation_adoptions`：这张表只有收养命令写，删表不改变账本的头、实例行或池的 fencing epoch —— 已经发生的收养仍然是事实，只是失去它自己的审计行，所以真实回退前先导出这张表。
 
 `0068` 自己只建对象，但 S1（事件双写）给了 `job_events` 第一个写者，于是多了一条运维动作：
@@ -1038,8 +1040,10 @@ speechnexus-register-engine --renew-readiness --database-url "$SPEECHNEXUS_MIGRA
 | --- | --- |
 | `generation_adoption_writer_grants` | **新**：收养命令的写者身份，`runtime_generation_adoptions` 的 `USAGE` + 逐列 `INSERT`（9 列），不含 `UPDATE`/`DELETE` |
 | `generation_adoption_reader_grants` | **新**：审计读取身份，`USAGE` + `SELECT`（整表，不逐列，读审计不改写） |
+| `readiness_void_writer_grants` | **新**：作废写者，`runtime_readiness_voids` 的 `USAGE` + 逐列 `INSERT`（7 列），不含 `UPDATE`/`DELETE`（作废是历史事实，不改写） |
+| `readiness_void_reader_grants` | **新**：作废读取身份（准入与小时报共用），`USAGE` + `SELECT`（整表，不逐列） |
 
-两个函数目前**没有自动调用点**：与 `public_job_admission_grants` 同为按需授予的声明（bootstrap
+这四个函数目前**没有自动调用点**：与 `public_job_admission_grants` 同为按需授予的声明（bootstrap
 owner 手装在先）。收养命令写的是既有的协调表加上这张审计表，所以它要一个能写协调账本的身份：
 要么用迁移属主身份跑（`--database-url "$SPEECHNEXUS_MIGRATION_DATABASE_URL"`），要么给运维身份
 显式授予协调写者与该表的两组授权。

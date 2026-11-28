@@ -47,6 +47,11 @@ _READ_TABLES = (
     "engine_instances",
     "runtime_instance_heads",
     "runtime_instance_intents",
+    # The create path also refuses a receipt the coordinator explicitly voided after a
+    # node reported another generation (#1286): the refusal reads this audit table in
+    # the same transaction, so the role needs SELECT on it or every create answers
+    # ``storage_rejected`` instead of ``engine_state_mismatch``.
+    "runtime_readiness_voids",
     "admission_operations",
     "admission_attempts",
     "admission_requests",

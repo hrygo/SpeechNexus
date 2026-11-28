@@ -58,6 +58,7 @@ from speechnexus_backend.speech.domain.readiness_verdict import (
     READINESS_MISSING as READINESS_MISSING_STATE,
 )
 from speechnexus_backend.speech.domain.readiness_verdict import ReadinessVerdict
+from speechnexus_backend.speech.domain.readiness_void import void_invalidates_receipt
 from speechnexus_backend.speech.domain.runtime_intents import (
     ApprovedRuntimePlan,
     RuntimeIntent,
@@ -69,6 +70,11 @@ from speechnexus_backend.speech.domain.runtime_observations import (
     READINESS_UNOBSERVED,
     READINESS_VALID,
     VerifiedRuntimeReadiness,
+)
+from speechnexus_backend.speech.infrastructure.readiness_void_schema import (
+    READINESS_VOID_REASON_GENERATION_MISMATCH,
+    READINESS_VOID_TABLE,
+    latest_void_at_us_expression,
 )
 from speechnexus_backend.speech.infrastructure.runtime_codec import decode_record
 from speechnexus_backend.speech.infrastructure.runtime_observation_codec import (
@@ -135,6 +141,12 @@ def _decoded_receipt(document: object) -> VerifiedRuntimeReadiness | None:
         return None
 
 
+def _voided_at_us(row: Row) -> int | None:
+    """The joined active-void instant, or ``None`` when this generation was never voided."""
+    value = row.get("readiness_voided_at_us")
+    return None if value is None else int(value)
+
+
 def readiness_report(rows: Sequence[Row], *, now_us: int, warn_within_us: int) -> list[Row]:
     """Classify every ready instance from its stored receipt and one clock.
 
@@ -152,6 +164,34 @@ def readiness_report(rows: Sequence[Row], *, now_us: int, warn_within_us: int) -
     for row in rows:
         document = row.get("readiness_document")
         request, plan, unreadable = _stored_identity(row)
+        receipt_for_void = _decoded_receipt(document)
+        if receipt_for_void is not None and void_invalidates_receipt(
+            voided_at_us=_voided_at_us(row), receipt_verified_at_us=receipt_for_void.verified_at_us
+        ):
+            # The coordinator voided this receipt after asking the node which generation
+            # it prepared (#1286). Its own 24 h window may have hours left; the void is
+            # the newer fact, and admission refuses it for this same reason.
+            report.append(
+                {
+                    "instance_id": row["instance_id"],
+                    "instance_generation": int(row["instance_generation"]),
+                    "target_node_id": row.get("host_node_id"),
+                    "readiness_state": READINESS_INVALID,
+                    "expires_at_us": None,
+                    "remaining_seconds": None,
+                    "reason": READINESS_VOID_REASON_GENERATION_MISMATCH,
+                    "voided_at_us": _voided_at_us(row),
+                    "remediation": (
+                        "the node controller reported another generation after this receipt "
+                        f"was signed, so the receipt is voided and admission answers 503 "
+                        f"engine_state_mismatch; run {ADOPTION_COMMAND} or register the "
+                        f"generation the node actually serves, then {RENEW_COMMAND}, and the "
+                        "void stops applying to the new receipt (audit: "
+                        f"{READINESS_VOID_TABLE})"
+                    ),
+                }
+            )
+            continue
         if unreadable is not None:
             # The plan the receipt must describe cannot be read, so no window can
             # make the receipt usable: admission refuses it for the same reason.
@@ -332,7 +372,11 @@ def _summary(report: Sequence[Row]) -> Row:
 
 _QUERY = (
     "SELECT e.instance_id, e.instance_generation, e.host_node_id, "
-    "h.current_prepare_intent_id, i.request_document, i.readiness_document "
+    "h.current_prepare_intent_id, i.request_document, i.readiness_document, "
+    + latest_void_at_us_expression(
+        instance_column="e.instance_id", generation_column="e.instance_generation"
+    )
+    + " AS readiness_voided_at_us "
     "FROM engine_instances AS e "
     "JOIN runtime_instance_heads AS h ON h.instance_id = e.instance_id "
     "AND h.current_generation = e.instance_generation "

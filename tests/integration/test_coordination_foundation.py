@@ -66,6 +66,9 @@ from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema imp
     gateway_cancellation_fence_grants,
 )
 from speechnexus_backend.speech.infrastructure.job_schema import job_runtime_grants
+from speechnexus_backend.speech.infrastructure.readiness_void_schema import (
+    READINESS_VOID_DDL,
+)
 from speechnexus_backend.speech.infrastructure.runtime_delivery_schema import RUNTIME_DELIVERY_DDL
 from speechnexus_backend.speech.infrastructure.runtime_intent_schema import RUNTIME_INTENT_DDL
 from speechnexus_backend.speech.infrastructure.runtime_observation_schema import (
@@ -232,6 +235,7 @@ def foundation(database: JobDatabase) -> Iterator[Foundation]:
             *RUNTIME_DELIVERY_DDL,
             *EXECUTION_RESULT_DDL,
             *GENERATION_ADOPTION_DDL,
+            *READINESS_VOID_DDL,
             RELEASE_GUARD_DDL,
         ):
             ddl = ddl.replace('COLLATE "C"', "COLLATE utf8mb4_0900_bin")

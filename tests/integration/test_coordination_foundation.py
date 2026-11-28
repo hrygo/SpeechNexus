@@ -68,6 +68,7 @@ from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema imp
 from speechnexus_backend.speech.infrastructure.job_schema import job_runtime_grants
 from speechnexus_backend.speech.infrastructure.readiness_void_schema import (
     READINESS_VOID_DDL,
+    READINESS_VOID_TABLE,
 )
 from speechnexus_backend.speech.infrastructure.runtime_delivery_schema import RUNTIME_DELIVERY_DDL
 from speechnexus_backend.speech.infrastructure.runtime_intent_schema import RUNTIME_INTENT_DDL
@@ -453,6 +454,10 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
     # coordination owner holds any right on it, so it sits outside the shared grant
     # surface on purpose.
     adoption_tables = {GENERATION_ADOPTION_TABLE}
+    # The readiness-void audit rows (#1286, 0072). Append-only, written by the
+    # renewal path and read by admission and the report; neither coordination owner
+    # holds table-level rights on it, so it sits outside the shared grant surface.
+    readiness_void_tables = {READINESS_VOID_TABLE}
     # The coordination keyed-lock rows (0067). Grant is column-level and belongs
     # to the dispatch writer and the gateway only; neither coordination owner
     # holds table-level rights, so it sits outside the shared grant surface.
@@ -523,6 +528,7 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
         - deletion_plan_tables
         - keyed_lock_tables
         - adoption_tables
+        - readiness_void_tables
         - canonical_event_tables
         == (set(SPEECH_UPDATES) | set(GATEWAY_UPDATES))
     )
@@ -544,6 +550,7 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
                 | deletion_plan_tables
                 | keyed_lock_tables
                 | adoption_tables
+                | readiness_void_tables
             ):
                 with (
                     pytest.raises(psycopg.errors.InsufficientPrivilege),

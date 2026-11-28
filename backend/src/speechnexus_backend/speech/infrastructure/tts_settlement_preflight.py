@@ -57,6 +57,20 @@ _ROOT_ABSENT = (
 )
 
 
+SETTLEMENT_COMMAND = "speechnexus-quarantine-release"
+"""The standalone settlement process; it must not be an API route (#1299)."""
+
+
+def _recovery_command(operation_id: str) -> str:
+    """The exact command that settles this lease, runnable without the API.
+
+    The command is a console script so the recovery path cannot depend on the
+    process it is recovering: when the preflight refuses startup, the operator has
+    no HTTP surface at all.
+    """
+    return f"{SETTLEMENT_COMMAND} --operation {operation_id} --confirm"
+
+
 def require_complete_tts_roots(pool: SpeechPool, *, timeout_seconds: float = 3) -> None:
     """Read only; an operator must reconcile the exact original identities separately."""
     if not 0 < timeout_seconds <= 30:
@@ -98,6 +112,15 @@ def require_complete_tts_roots(pool: SpeechPool, *, timeout_seconds: float = 3) 
             f"profile; run `{MIGRATION_COMMAND}` before starting the API"
         ) from None
     if row is not None:
+        # Name the exact lease and the recovery step. The refusal used to say only
+        # "reconcile first", which left an operator holding a deadlocked API
+        # without knowing which row to look at (#1299: the preflight could lock the
+        # only service that could clear it).
+        operation_id = str(row["operation_id"])
         raise ValueError(
-            "Unsettled asr/tts admission lacks a settlement root or release; reconcile first"
+            "Unsettled asr/tts admission lacks a settlement root or release: "
+            f"operation_id={operation_id} attempt_id={row['attempt_id']} "
+            f"lease_id={row['lease_id']} "
+            f"(recovered by `{_recovery_command(operation_id)}`, which does not need this "
+            "API to be running)"
         )

@@ -54,7 +54,6 @@ VARIABLE = "SPEECHNEXUS_TEST_DATABASE_URL"
 DIGEST = "sha256:" + "c" * 64
 MOMENT = datetime(2026, 11, 24, 12, 0, 0, tzinfo=UTC)
 MOMENT_US = int(MOMENT.timestamp()) * 1_000_000
-HEAD = "0070_retire_draft_claim_epoch"
 AFTER_S2 = "0069_tighten_job_bucket_due"
 AFTER_S1 = "0065_canonical_jobs_reconcile"
 PRE_TIGHTEN = "0068_canonical_event_tables"

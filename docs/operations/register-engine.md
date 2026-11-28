@@ -215,6 +215,49 @@ speechnexus-register-engine \
 比较，不一致或问不到时把该行降级为 `invalid`（`reason` 为 `instance_generation_mismatch` 或
 控制器错误码），不等 24 小时窗口自然到期（[#1282](https://github.com/hrygo/SpeechNexus/issues/1282)）。
 
+### 把账本那一代收敛到节点那一代
+
+`instance_generation_mismatch` 有两条出路，区别在于**动不动运行中的引擎**：按账本代重新 prepare
+要停掉正在服务的第 11 代；让账本收养节点那一代则不改运行态。收养走
+`speechnexus-adopt-generation`，它是显式的运维动作，不是自动收敛：
+
+命令要一个能写协调账本的身份（迁移属主，或按声明授予协调写者与
+`generation_adoption_writer_grants` 的身份）；它写的是既有的协调表加上审计表，不需要新的授权面。
+
+```bash
+speechnexus-adopt-generation \
+  --database-url "$SPEECHNEXUS_MIGRATION_DATABASE_URL" \
+  --engine-url http://engine-instance-asr-1-11:8080 \
+  --instance engine-instance-asr-1 --node node-megacube-1 \
+  --operator-id "$OPERATOR_ID" \
+  --controller-api-url "$SPEECHNEXUS_CONTROLLER_API_URL" \
+  --controller-api-token "$SPEECHNEXUS_CONTROLLER_API_TOKEN"
+```
+
+它读控制器的头取得节点证词，然后在一个事务里：把节点那一代写成 `ready`/`steady` 的实例行、
+补一条已成功的 prepare 意图、把账本中要退役的那一代标为 `released`、推进
+`runtime_instance_heads.current_generation` 到节点那一代、把 `resource_pools.fencing_token`
+抬到节点的 token、追加一行审计。三件容易做错的事在这里是判据而不是注释：
+
+- **容量向量不动。** 同一台物理引擎仍持同一份 `steady` 预算，收养只改「哪个实例身份持着它」。
+  退役的旧代以 `released` 记账但**不减预算**——减了就是把这个还在跑的引擎的容量还回池子。
+  `host_nodes.held_*` 与池预算前后逐字相同（测试比对前后快照）。
+- **池的 epoch 必须跟上节点。** 不抬就等着下一次续租以 `stale_fencing_token` 失败；节点的
+  token 落后于池则拒绝收养，因为那意味着同一 epoch 会有两个写者。
+- **拒绝即零写入。** 节点既没说停过（`stopped_generations`）也没说那一代没跑起来
+  （`voided_generations`）时，命令以 `previous_generation_stop_unconfirmed`（退出码 4）拒绝，
+  整个事务回滚，8 张关系的前后快照逐字相同。确实取不到证词时才用
+  `--accept-missing-stop-evidence`，审计行会记 `previous_stop_evidence = missing`。
+
+并发下只有一个收养提交，另一个得到 `version_conflict`（退出码 4）——它拒绝的是自己规划期间被
+移动过的头，重跑后得到 `outcome=aligned` 与零写入。命令**不签就绪收据**：收养之后重跑一次
+`speechnexus-register-engine --renew-readiness`，让收据签在节点真的准备好的那一代上。
+
+审计在 `runtime_generation_adoptions`（迁移 `0071_generation_adoptions`，只追加）：
+`instance_id, adopted_generation, ledger_generation, node_high_water, node_last_fencing_token,
+previous_stop_evidence, operator_id, adopted_at_us, document`。`document` 存节点头的原样证词、
+收养前的账本快照、池 epoch 前后与健康探针结果。
+
 已知缺陷：参考部署没有集群内的自动信号覆盖收据状态（`/readyz` 有意不因过期失败，
 报告命令不被 Compose 调度，启动闸门只打印一次），跟踪
 [#845](https://github.com/hrygo/SpeechNexus/issues/845)。定时续期只缩短窗口，不消除该缺口。

@@ -1242,6 +1242,8 @@ def inspect_sources(
     movement_problem: str | None = None
     approved_code_additions: list[str] = []
     code_addition_problem: str | None = None
+    approved_field_additions: list[str] = []
+    field_addition_problem: str | None = None
     compared_sources: set[str] = set()
     selected = (SPEECH_SOURCE,) if surface == "speech" else SOURCES
     for path in selected:
@@ -1328,11 +1330,24 @@ def inspect_sources(
                         )
                         detected = []
                     else:
-                        # A reviewer reads why neither proof covered this diff; the
-                        # kernel's own findings stay exactly as reported so the gate
-                        # never adds a finding of its own.
-                        movement_problem = f"{path}: {problem}"
-                        code_addition_problem = f"{path}: {addition_problem}"
+                        # The third whole-diff proof covers reviewed *required response
+                        # field* additions (#1282): a response component that gains a
+                        # property a strict client can meet. It is tried only while the
+                        # findings remain, and only when the whole `contracts/` diff is
+                        # those fields and nothing else.
+                        field_problem = kernel.reviewed_response_field_addition(_ROOT, resolved)
+                        if field_problem is None:
+                            approved_field_additions.append(
+                                kernel.reviewed_response_field_addition_line(len(detected))
+                            )
+                            detected = []
+                        else:
+                            # A reviewer reads why no proof covered this diff; the
+                            # kernel's own findings stay exactly as reported so the gate
+                            # never adds a finding of its own.
+                            movement_problem = f"{path}: {problem}"
+                            code_addition_problem = f"{path}: {addition_problem}"
+                            field_addition_problem = f"{path}: {field_problem}"
             findings.extend(detected)
             approved_removals.extend(approved)
             approved_parameters.extend(approved_parameter)
@@ -1372,6 +1387,8 @@ def inspect_sources(
         "reviewed_bound_movement_problem": movement_problem,
         "approved_reviewed_code_additions": approved_code_additions,
         "reviewed_code_addition_problem": code_addition_problem,
+        "approved_reviewed_field_additions": approved_field_additions,
+        "reviewed_field_addition_problem": field_addition_problem,
         "unverified": list(UNVERIFIED),
     }
 
@@ -1413,6 +1430,8 @@ def main() -> int:
             print("  approved reviewed planner bound widening: " + approval)
         for approval in report["approved_reviewed_code_additions"]:
             print("  approved reviewed response code addition: " + approval)
+        for approval in report["approved_reviewed_field_additions"]:
+            print("  approved reviewed response field addition: " + approval)
         if report["reviewed_bound_movement_problem"] and report["findings"]:
             print(
                 "  reviewed planner bound widening did not cover this diff: "

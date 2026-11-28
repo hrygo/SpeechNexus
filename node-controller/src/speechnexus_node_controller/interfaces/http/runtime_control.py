@@ -172,6 +172,10 @@ def create_runtime_control_router(
             last_fencing_token=head.last_fencing_token,
             unresolved_prepare_intent_id=head.unresolved_prepare_intent_id,
             unresolved_stop_intent_id=head.unresolved_stop_intent_id,
+            # Sorted so two reads of the same store answer the same document; the
+            # domain keeps them as frozensets, which have no wire order.
+            stopped_generations=sorted(head.stopped_generations),
+            voided_generations=sorted(head.voided_generations),
         )
 
     @router.get(

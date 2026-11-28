@@ -327,6 +327,19 @@ export interface components {
       last_fencing_token: number;
       unresolved_prepare_intent_id: string | null;
       unresolved_stop_intent_id: string | null;
+      /**
+       * @description Generations this node prepared and then verified stopped, ascending. The
+       *     node no longer serves them, which is the testimony an audited ledger
+       *     repair cites before it retires a generation the coordination ledger still
+       *     lists as current.
+       */
+      stopped_generations: number[];
+      /**
+       * @description Generations whose prepare this node refused or never ran, ascending. A
+       *     voided generation was never served, so it carries no stop evidence to
+       *     cite; it is listed separately from the stopped ones for that reason.
+       */
+      voided_generations: number[];
     };
     RuntimeQualificationObservationResponse: components["schemas"]["RuntimeCoordinationObservation"] &
       unknown;

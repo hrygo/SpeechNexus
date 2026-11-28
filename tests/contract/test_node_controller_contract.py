@@ -34,6 +34,7 @@ from speechnexus_node_controller.interfaces.http.schemas import (
     ObservedNodeInstanceFactPayload,
     RuntimeControlErrorDetail,
     RuntimeControlErrorResponse,
+    RuntimeInstanceHeadResponse,
     RuntimeInstanceIntentRequestPayload,
     RuntimeInstanceIntentResponse,
     RuntimeStopEvidencePayload,
@@ -230,6 +231,7 @@ def test_the_boundary_models_own_exactly_the_frozen_fields(tmp_path: Path) -> No
         ("NodeReconcileResponse", NodeReconcileResponse),
         ("RuntimeControlErrorResponse", RuntimeControlErrorResponse),
         ("RuntimeStopEvidence", RuntimeStopEvidencePayload),
+        ("RuntimeInstanceHeadResponse", RuntimeInstanceHeadResponse),
     ):
         expected = _SCHEMAS[name]
         assert set(model.model_fields) == set(expected["properties"]), name

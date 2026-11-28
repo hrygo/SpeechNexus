@@ -36,6 +36,7 @@ from alembic.config import Config
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.pool import NullPool
+from tests.support.migrations import HEAD
 from tests.support.portable_pg import connect as portable_pg_connect
 
 from speechnexus_backend.speech.infrastructure.job_writer_columns import (
@@ -51,7 +52,6 @@ MOMENT = datetime(2026, 11, 24, 12, 0, 0, tzinfo=UTC)
 MOMENT_US = int(MOMENT.timestamp()) * 1_000_000
 NAIVE_MOMENT = datetime(2026, 11, 24, 12, 0, 0)
 PRE_TIGHTEN = "0068_canonical_event_tables"
-HEAD = "0070_retire_draft_claim_epoch"
 PRE_RERUN = "0063_deletion_targets_blocked"
 
 

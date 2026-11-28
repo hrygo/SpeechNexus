@@ -63,6 +63,13 @@ COVERAGE: dict[str, tuple[str, str, str]] = {
     "admission-watch": ("ported", "k8s app-plane/workers.yaml", ""),
     "engine-readiness": ("ported", "k8s app-plane/workers.yaml", ""),
     "engine-readiness-renew": ("ported", "k8s app-plane/workers.yaml", ""),
+    # #1293: the pass runs under the dispatcher's identity, so it is a scheduled
+    # unit here while the reference runs it with ``docker compose run --once``.
+    "job-cancellation-reconciler": (
+        "ported",
+        "k8s app-plane/workers.yaml (CronJob job-cancellation)",
+        "scheduled pass replaces the reference's explicit run --rm invocation",
+    ),
     "workbench-migrate": ("ported", "k8s app-plane/workbench.yaml", ""),
     "workbench-api": ("ported", "k8s app-plane/workbench.yaml", ""),
     "workbench": ("ported", "k8s app-plane/web.yaml", ""),

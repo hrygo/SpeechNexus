@@ -662,6 +662,48 @@ services:
       - no-new-privileges:true
     restart: "no"
 
+  # Opt-in cancellation confirmation (#1293). Accepted cancellations are confirmed
+  # against execution facts by this process: without it a cancelled Job stops at
+  # `cancelling` and its admission lease stays `reserved`, so the next Job of that
+  # instance class is refused with `capacity_exhausted` (`lease-reconciler` only
+  # returns capacity for rows a dispatcher claimed).
+  #
+  # One bounded pass per invocation, like `lease-reconciler`: a scheduler runs
+  # `docker compose run --rm job-cancellation-reconciler`, and the cluster unit
+  # schedules the same command. It reuses the dispatcher's identity and gateway
+  # credential because `cancellation_reconciliation_grants` is declared for that
+  # role, so there is no fourth runtime credential to provision.
+  job-cancellation-reconciler:
+    profiles: ["job-cancellation"]
+    build: *python-build
+    command: ["speechnexus-job-cancellation-reconciler", "--once"]
+    user: "${SPEECHNEXUS_RUNTIME_UID:?set SPEECHNEXUS_RUNTIME_UID from id -u}:${SPEECHNEXUS_RUNTIME_GID:?set SPEECHNEXUS_RUNTIME_GID from id -g}"
+    network_mode: "service:gateway"
+    environment:
+      SPEECHNEXUS_DATABASE_URL: ${SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL:-}
+      SPEECHNEXUS_DATABASE_SCHEMA: speech
+      SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL: http://127.0.0.1:8010
+      SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL: ${SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL:?set SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL in compose.env}
+      SPEECHNEXUS_EXECUTION_GATEWAY_TIMEOUT_SECONDS: ${SPEECHNEXUS_EXECUTION_GATEWAY_TIMEOUT_SECONDS:-10}
+      SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_ENABLED: ${SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_ENABLED:-true}
+      SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_BATCH_SIZE: ${SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_BATCH_SIZE:-16}
+      SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_MAX_ATTEMPTS: ${SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_MAX_ATTEMPTS:-8}
+      SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_MIN_AGE_SECONDS: ${SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_MIN_AGE_SECONDS:-5}
+      SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_CONFIRM_TIMEOUT_SECONDS: ${SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_CONFIRM_TIMEOUT_SECONDS:-300}
+      SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_LEASE_SECONDS: ${SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_LEASE_SECONDS:-30}
+      SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_TRANSACTION_TIMEOUT_SECONDS: ${SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_TRANSACTION_TIMEOUT_SECONDS:-3}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+
   # Opt-in migration. It never starts as part of the base `up`; the migration
   # identity is distinct from both runtime roles.
   migrate:

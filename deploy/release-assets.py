@@ -74,6 +74,7 @@ SERVICE_IMAGES = {
     "gateway": "speechnexus-python",
     "binding-disable-worker": "speechnexus-python",
     "job-dispatch-worker": "speechnexus-python",
+    "job-cancellation-reconciler": "speechnexus-python",
     "artifact-retention": "speechnexus-python",
     "admission-watch": "speechnexus-python",
     "lease-reconciler": "speechnexus-python",

@@ -3,26 +3,30 @@
 本目录承载「MegaCube 算力面 + 本机 k8s 应用面」的可执行装配。目标、切片与验收口径见
 [最小同构集群实施规划](../plans/2026-11-20-minimal-isomorphic-cluster.md)；本文件只写实际操作。
 
-本文件同时记录应用面迁入 MegaCube k3s 的当前状态：**就绪两个 CronJob 已经在集群里跑**，其余应用面单元
-仍在本机 k8s（#1250 的派发器唯一持有者）。整体迁入要连数据面一起搬，步骤、回退与判据在
-[#1280](https://github.com/hrygo/SpeechNexus/issues/1280)（父项 #338）里，未获批准前不执行。
+本文件同时记录应用面迁入 MegaCube k3s 的当前状态：**协调库与就绪两个 CronJob 已经在集群里**，其余应用面
+单元仍在本机 k8s（#1250 的派发器唯一持有者）。整体迁入的步骤、回退与判据在
+[#1280](https://github.com/hrygo/SpeechNexus/issues/1280)（父项 #338）里；本次已执行到「只切读侧」，
+写侧（本机 api/dispatch 等）停在切写之前，见下文「数据面进集群」。
 
 ## 拓扑与端口
 
 | 单元 | 位置 | 访问地址 |
 | --- | --- | --- |
-| PostgreSQL | 本机 k8s `speechnexus` | `postgres.speechnexus.svc:5432` |
-| 对象存储 | 本机 k8s `speechnexus` | `minio.speechnexus.svc:9000` |
+| 协调库 PostgreSQL | MegaCube k3s `speechnexus` | `postgres.speechnexus.svc:5432`（自带 PVC，见下） |
+| 对象存储 | 本机 k8s `speechnexus` | `minio.speechnexus.svc:9000`；集群侧经隧道 `127.0.0.1:19100` |
 | Speech API | 本机 k8s `speechnexus` | `api.speechnexus.svc:8000` |
 | 桥接 | 本机 k8s `speechnexus` | `bridge.speechnexus.svc:18010` / `:18020` |
 | 执行网关 | MegaCube | `127.0.0.1:8010`（经隧道 `:18010`） |
 | 节点控制器 | MegaCube k3s | `127.0.0.1:8022`（`hostNetwork`，与网关、桥同一环回） |
 | 推理引擎 | MegaCube k3s | Pod 的 `:18190`，宿主经 `engine-shim` 暴露 `127.0.0.1:18190` |
-| 就绪报告与续租 | MegaCube k3s `speechnexus` | CronJob，`hostNetwork`，见下 |
+| 就绪报告与续租 | MegaCube k3s `speechnexus` | CronJob，`hostNetwork`，读集群内协调库 |
 
-MegaCube 侧 `9000`、`15432`、`18100` 已被既有服务占用，隧道端口固定为
-PG `15440`、S3 `19100`，不得改回常用值。应用面的就绪单元在集群里读的就是这两个端口：
-它们指向本机那套数据库与对象存储，**不是**集群内的新实例。
+MegaCube 侧 `9000`、`15432`、`18100` 已被既有服务占用，隧道端口固定为 S3 `19100`（PG 的 `15440`
+只剩本机应用面与回退路径使用，集群侧的读侧单元不再经过它），不得改回常用值。
+
+集群侧仍在隧道上的只有一个服务：**对象存储**。它的端点在算力面网关的私有配置里
+（`deploy/cluster/compute/gateway-file-asr.json` 的 `objects.endpoint`），换端点必须与算力面同批改，
+不是应用面清单能单独决定的。
 
 ## 身份
 
@@ -58,23 +62,65 @@ PG `15440`、S3 `19100`，不得改回常用值。应用面的就绪单元在集
 
 ## 数据面放在哪里
 
-结论：**PostgreSQL 与对象存储留在这套既有的、正在服务的实例上；只把不持有数据面的应用面单元搬进集群。**
-把它们换成集群内 PVC 上的新实例是目标形态，但它必须与算力面同批完成，理由是两个共享点：
+结论：**协调库（PostgreSQL）在 MegaCube k3s 内自己的 PVC 上，与它仲裁的执行同一网络域；对象存储留在
+本机这套正在服务的实例上，集群侧经隧道读。** 两个共享点决定了「哪些能单独搬」：
 
 1. **协调状态只有一份。** 租约、账本、就绪收据都在同一个 PostgreSQL 里，执行网关与派发器读写的是同一批表。
    另起一个集群内 PG，就是第二个协调域：准入在一边通过、派发在另一边领不到，任何一侧单独搬都只会
-   得到「Pod 起来了、业务不通」。
+   得到「Pod 起来了、业务不通」。所以搬库必须是一次性冻结迁移，不是新起一个空库让组件各自改 DSN。
 2. **对象存储地址写在算力面网关的私有配置里。** `deploy/cluster/compute/gateway-file-asr.json` 的
    `objects.endpoint` 是 `http://127.0.0.1:19100`，没有环境变量可以覆盖。换对象存储就得改这份文件——
-   它属于算力面装配，不属于应用面清单。
+   它属于算力面装配，不属于应用面清单，因此与协调库分两次做。
 
 | 方案 | 成本 | 风险 | 判据 |
 | --- | --- | --- | --- |
 | 集群内 PVC（PG + MinIO） | 迁数据（dump/restore）、`provision-roles.py` 重建角色、改 `compute.env` 的 PG DSN、改上面那份网关配置、停本机旧应用面 | 网关重启窗口内执行链路不可用；迁错一步就要从 dump 回滚 | 搬完派发是**本地库**事务，才是 #1250 的 5 s 判据 |
 | 隧道到既有实例 | 无迁移，改渲染出的 DSN 与 endpoint | 派发器跨隧道 claim，一轮 ≈115 s 撞 120 s 准入截止，把 **#1250 原样搬进集群** | 只适合不领 Job 的只读/续租单元 |
 
-因此落地顺序是「先只搬不领 Job 的单元」：`engine-readiness` 与 `engine-readiness-renew` 只读账本、
-只重签一份收据，跨隧道是它们的正常形态；派发器与 API 要等数据面同批进集群。
+因此落地顺序是「先搬不领 Job 的读侧，再搬写侧」：`engine-readiness` 与 `engine-readiness-renew` 只读账本、
+只重签一份收据，先把它们移到集群内协调库并验绿；派发器与 API 要等写侧同批切（#1280 第 5 步）。
+
+## 数据面进集群（#1280 第 2–4 步，已执行）
+
+四个状态由 `render-config.py --topology` 表达，一次只渲染该状态存在的对象：
+
+| `--topology` | 协调库 DSN | 对象存储 / 引擎健康地址 | 渲染的对象 |
+| --- | --- | --- | --- |
+| `tunnel` | `127.0.0.1:15440` | `127.0.0.1:19100` / `127.0.0.1:18190` | 只有 `readiness-env` + `private-config` |
+| `data-plane` | `postgres:5432`（集群内） | 同上（仍走隧道） | 再加 `postgres-credentials`、`migrate-credentials` |
+| `in-cluster` | `postgres:5432` | `minio:9000` / `engine-asr-1:18190` | 全部应用面对象 |
+
+`data-plane` 是切写之前的中间态，**故意不是** `in-cluster` 的子集：渲染写侧 Secret 会在旧库还在服务时
+把第二个域装配出来。判据在 `tests/ci/test_render_config_topologies.py`：把两个开关合成一个，`data-plane`
+的两条断言立刻红。
+
+```bash
+export KUBECONFIG=<指向 MegaCube k3s 的 kubeconfig>
+# 目标集群的 kubeconfig 只在宿主 root 可读时，先渲染到目录，再把文件拷到宿主 apply。
+python3 deploy/cluster/app-plane/render-config.py --topology data-plane --output-dir .runtime/cluster/data-plane
+python3 deploy/cluster/app-plane/render-manifests.py --select postgres,migrate
+
+# 第 2 步：新的协调库（StatefulSet/Service/新 PVC，不复用任何既有卷）
+kubectl apply -f .runtime/cluster/data-plane/postgres-credentials.yaml
+kubectl apply -f .runtime/cluster/app-plane/postgres.yaml
+kubectl apply -f .runtime/cluster/data-plane/migrate-credentials.yaml
+kubectl apply -f .runtime/cluster/app-plane/migrate-job.yaml
+# 判据：迁移版本 = head（当前 0071_generation_adoptions），空库 speech 基表数 = 88
+```
+
+第 3 步是**唯一停机窗口**：停本机 `api`、`job-dispatch`、`admission-watch`、`artifact-retention`
+（四个都持有协调库连接），`pg_dump` 后 restore 到集群内库，逐表计数与逐列投影合计相等才继续。
+判据的取法不靠固定表清单：表清单与数值列都从 `information_schema` 派生，所以新增一张表或一个预留列
+不会漏检。角色授权在恢复之后按 `provision-roles.py` + `scripts/dev-env/provision-job-roles.py`
+一次装好（授权取自仓库的授权函数，不从 dump 回放 ACL），再用 `verify-roles.py` 逐身份核验。
+
+第 4 步只切读：重新渲染 `data-plane` 的 `readiness-env`（DSN 变成 `postgres:5432`），apply 后
+用 `kubectl create job --from=cronjob/engine-readiness-renew` 与 `... engine-readiness` 各跑一次，
+判据是 `readiness.state=valid`、`instance_generation` 等于账本当前代次、`renewed=true`。
+
+**写侧没有切。** 第 5 步（api/dispatch 等改 DSN、跑端到端 Job）与第 6 步（撤隧道、清理本机库）
+在 #1280 里按评审推进；在此之前本机库是权威、只读保留，写侧单元保持停止状态，恢复命令见
+[回退](#回退)。
 
 ## 镜像来源只有一个定义点
 
@@ -98,21 +144,23 @@ python3 deploy/cluster/app-plane/render-manifests.py           # 渲染到 .runt
 ### 一级：就绪报告与续租（已在集群内）
 
 前置：`.runtime/cluster/compose.env` 已由 `init-env.py` 生成（含 `sn_*` 角色口令）；
-MegaCube 宿主的反向隧道在监听（`ss -ltn` 可见 `127.0.0.1:15440`、`127.0.0.1:19100`）；
+MegaCube 宿主的反向隧道在监听（`ss -ltn` 可见 `127.0.0.1:19100`；`15440` 只在回退到隧道拓扑时要）；
 `speechnexus-python:<sha>` 已进入 k3s containerd。
 
 ```bash
 export KUBECONFIG=<指向 MegaCube k3s 的 kubeconfig>
-python3 deploy/cluster/app-plane/render-config.py --topology tunnel
+python3 deploy/cluster/app-plane/render-config.py --topology data-plane
 python3 deploy/cluster/app-plane/render-manifests.py --select engine-readiness,engine-readiness-renew
+kubectl apply -f .runtime/cluster/data-plane/readiness-env.yaml
 kubectl apply -f .runtime/cluster/app-plane/selected.yaml
 ```
 
-`--topology tunnel` 只渲染 `readiness-env` 与 `private-config` 两个 Secret：数据库指向
-`127.0.0.1:15440`、对象存储 `127.0.0.1:19100`、引擎健康地址 `127.0.0.1:18190/health`。
-两个 CronJob 以 `hostNetwork: true` + `dnsPolicy: ClusterFirstWithHostNet` 运行——这三个地址都在宿主
-环回上，集群网络里的 Pod 一个也够不着；`ClusterFirstWithHostNet` 让 Service DNS 仍然可用，所以把引擎
-地址换成 Service（`engine-service.yaml`，`engine-asr-1:18190`）不需要改别的。
+`--topology data-plane` 渲染的 `readiness-env` 里，数据库是集群内 Service `postgres:5432`，对象存储仍是
+`127.0.0.1:19100`、引擎健康地址仍是 `127.0.0.1:18190/health`。两个 CronJob 以 `hostNetwork: true` +
+`dnsPolicy: ClusterFirstWithHostNet` 运行——后两个地址在宿主环回上，集群网络里的 Pod 够不着，而
+`ClusterFirstWithHostNet` 让 Service DNS 仍然可用，所以数据库这一项可以只改 DSN。
+
+只有对象存储还在隧道上：它的端点由算力面网关的端点文件决定，与协调库不在同一次切换里（见上）。
 
 ### 二级：应用面其余单元（未执行）
 
@@ -130,10 +178,10 @@ kubectl apply -f .runtime/cluster/app-plane/engine-service.yaml
 kubectl apply -f .runtime/cluster/app-plane/workers.yaml         # 三级：派发、后台单元、两个 CronJob
 ```
 
-角色授权在迁移之后执行，SQL 以[最小 Compose 手册 §6](../../../docs/operations/compose-minimal.md#6-创建非-owner-运行角色与最小授权)
-为准：把该节 `uv run --all-packages python - <<'PY'` 的代码块原样取出执行（不要在 k8s 侧另写一份
-授权 SQL，否则同一规则就有了两个定义点），`SN_ADMIN_DSN` 指向 `127.0.0.1:<本地转发端口>`；
-Job 三角色用 `scripts/dev-env/provision-job-roles.py`，三个 Job DSN 先写回 `compose.env`。
+角色授权在迁移之后执行，角色与最小授权取自 `deploy/cluster/provision-roles.py`（授权函数的唯一调用点；
+不要在 k8s 侧另写一份授权 SQL，否则同一规则就有了两个定义点），`SN_ADMIN_DSN` 指向
+`127.0.0.1:<本地转发端口>`；Job 三角色用 `scripts/dev-env/provision-job-roles.py`，三个 Job DSN 先写回
+`compose.env`。两个脚本都拒绝在角色已存在时重跑，因此它们只用于初次装配。
 
 最后用 `verify-roles.py` 逐身份核验：每个角色用自己的 DSN 登录，并查询一条它确实被授权的
 关系。工作台两个角色此时还没有授权目标（授权目标在工作台命名空间），探针只报 `login only`。
@@ -173,6 +221,10 @@ kubectl -n speechnexus logs job/readiness-report-proof
 `runtime_instance_heads.current_generation`。写死会在控制器换代之后继续给旧代次续命，或者每次取租都被
 `stale_instance_generation` 拒绝，两种都不会有人发现，直到回执耗尽（#1253）。
 
+切读之后（`--topology data-plane`、`data-plane` 的 `readiness-env`），这条命令读写的已经是集群内协调库。
+所以判据不只 `state=valid`：还要看**收据落在哪一边**——两库 `runtime_instance_intents` 里同一条意图的
+`readiness_document`（`verified_at_us`）只能有一边前进。两边都前进就是两个协调域，按事故处理。
+
 ## 回退
 
 一级（就绪两个 CronJob）：
@@ -187,6 +239,28 @@ kubectl -n speechnexus delete secret readiness-env private-config      # 可选�
 
 二级（完整应用面进集群）的回退是逐步反向的，含算力面 `compute.env` 与网关重建的反向命令，见
 [#1280](https://github.com/hrygo/SpeechNexus/issues/1280)；本切片不执行。
+
+数据面（协调库进集群，第 4 步之后）的回退是把读侧 DSN 改回隧道，集群内库与数据原地保留：
+
+```bash
+python3 deploy/cluster/app-plane/render-config.py --topology tunnel
+kubectl apply -f .runtime/cluster/data-plane/readiness-env.yaml   # 或按 --output-dir 渲染后 apply
+kubectl -n speechnexus create job readiness-renew-rollback --from=cronjob/engine-readiness-renew
+```
+
+判据是续租日志回到 `state=valid` 且收据写在本机库（比对两库 `runtime_instance_intents.readiness_document`
+的 `verified_at_us`：只有本机库那一行前进）。第 3 步失败时的回退更简单：集群内库丢弃重建，本机库自始至终
+没有被写过，改回 DSN 即恢复。
+
+被停的写侧单元（第 3 步的停机窗口）在同一命名空间里按原副本数恢复：
+
+```bash
+kubectl --context docker-desktop -n speechnexus scale \
+  deploy/api deploy/job-dispatch deploy/admission-watch deploy/artifact-retention --replicas=1
+```
+
+停顿期间**只有一个写方向**：本机库冻结、集群内库只接收就绪收据。发现两侧都有写入时按「双协调域」
+事故处理，不做自动合并。
 
 删除整个命名空间是最后手段，会连同控制器状态一起删：
 
@@ -358,6 +432,9 @@ docker compose -p speechnexus-cluster-compute --env-file .runtime/cluster-comput
 
 ## 已知单点
 
-桥接 Pod 是两台主机之间唯一通道；Mac 休眠或 Docker Desktop 重启会同时停掉 k8s 与隧道。应用面的
-就绪 CronJob 在集群里，但它们的数据库、对象存储与引擎健康地址都经这条隧道，所以桥一停，续租
-同样失败。本拓扑用于功能验证，不是高可用形态。
+桥接 Pod 是两台主机之间唯一通道；Mac 休眠或 Docker Desktop 重启会同时停掉 k8s 与隧道。协调库已经
+不在两台主机之间，但就绪 CronJob 的**对象存储**端点仍经这条隧道，所以桥一停，续租仍会失败——
+只是失败原因从「数据库不可达」变成「对象存储不可达」。应用面整体进集群（含对象存储换端点）之后
+这条依赖才消失。本拓扑用于功能验证，不是高可用形态。
+
+协调库本身是单副本 StatefulSet + `local-path` PVC：节点磁盘故障即丢库，备份策略不在本装配内。

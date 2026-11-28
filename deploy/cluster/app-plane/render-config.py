@@ -5,8 +5,9 @@ Inputs: ``.runtime/cluster/compose.env`` (written by ``deploy/cluster/init-env.p
 and ``.runtime/cluster/private/`` (recipe JSON). Nothing secret is passed on a
 command line, printed, or written outside ``.runtime``.
 
-Two topologies, because the engine and the coordination database are reached in two
-different ways while the application plane moves into the cluster:
+Three topologies, because the coordination database reaches the application plane in
+a different way in each state of the move into the cluster. The database and the
+object storage/engine hop are moved separately, so they are separate switches:
 
 ``in-cluster`` (default)
     Database, object storage and the engine Service are all reached by their
@@ -18,6 +19,15 @@ different ways while the application plane moves into the cluster:
     engine through the host-loopback shim (``127.0.0.1:18190``). That is the
     additive step: it produces readiness receipts for the live engine without
     forking the coordination domain (#1253).
+``data-plane``
+    The coordination database has moved into the cluster (its own StatefulSet on a
+    fresh volume), while object storage and the engine still answer on the host's
+    loopback. Only the objects the database move needs are rendered: the two
+    credential Secrets its StatefulSet/migration Job read, and the readiness units
+    that now read the new database. This is the state between "prepare the target"
+    and "move the writing side" in #1280, and it is deliberately not a superset of
+    ``in-cluster``: rendering the rest here would build an application plane whose
+    writers are still on the old database.
 """
 
 from __future__ import annotations
@@ -63,6 +73,11 @@ ENGINE_LOOPBACK_HEALTH_URL = "http://127.0.0.1:18190/health"
 TUNNEL_PG = ("127.0.0.1", 15440)
 TUNNEL_S3 = "http://127.0.0.1:19100"
 
+# The objects the `data-plane` topology renders: the credentials the coordination
+# StatefulSet and its migration Job read, plus the readiness units that the read
+# side is moved onto it first (#1280).
+_DATA_PLANE_SECRETS = ("postgres-credentials", "migrate-credentials", "readiness-env")
+
 
 def to_tunnel(dsn: str) -> str:
     """Re-point a DSN at the host's reverse tunnel, keeping role and database."""
@@ -78,6 +93,40 @@ RECIPES = {
     "transcription-recipe.json": ROOT / "deploy/private/transcription-recipe.example.json",
     "speech-recipe.json": ROOT / "deploy/private/speech-recipe.example.json",
 }
+
+
+def readiness_env(env: dict[str, str], topology: str) -> dict[str, str]:
+    """The readiness units' values, which are the ones the topology switches.
+
+    Two independent switches, because the object storage/engine hop and the
+    coordination database are moved separately (#1280): ``loopback`` says
+    object storage and the engine still answer on the host's loopback,
+    ``database_loopback`` says the coordination DSN still goes through the reverse
+    tunnel. They agree in ``tunnel`` and ``in-cluster`` and differ in
+    ``data-plane``, which is that state's whole purpose.
+
+    Pure on purpose: this is the one place that decides which endpoint the read
+    side reads, so it is testable without a cluster (``tests/ci`` imports it).
+    """
+    loopback = topology in ("tunnel", "data-plane")
+    database_loopback = topology == "tunnel"
+    return {
+        "SPEECHNEXUS_DATABASE_SCHEMA": "speech",
+        "SPEECHNEXUS_DATABASE_URL": to_tunnel(env["SPEECHNEXUS_REGISTRATION_DATABASE_URL"])
+        if database_loopback
+        else env["SPEECHNEXUS_REGISTRATION_DATABASE_URL"],
+        "SPEECHNEXUS_ENGINE_HEALTH_URL": ENGINE_LOOPBACK_HEALTH_URL
+        if loopback
+        else ENGINE_SERVICE_HEALTH_URL,
+        "SPEECHNEXUS_TRANSCRIPTION_RECIPE_FILE": (
+            "/run/speechnexus-private/transcription-recipe.json"
+        ),
+        "SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET": BUCKET,
+        "SPEECHNEXUS_OBJECT_STORAGE_ENDPOINT": TUNNEL_S3 if loopback else "http://minio:9000",
+        "SPEECHNEXUS_OBJECT_STORAGE_BUCKET": BUCKET,
+        "SPEECHNEXUS_OBJECT_STORAGE_ACCESS_KEY": env["MINIO_ROOT_USER"],
+        "SPEECHNEXUS_OBJECT_STORAGE_SECRET_KEY": env["MINIO_ROOT_PASSWORD"],
+    }
 
 
 def load_env(path: Path) -> dict[str, str]:
@@ -100,40 +149,45 @@ def kubectl(*args: str, stdin: str | None = None) -> None:
         raise SystemExit(f"kubectl {' '.join(args)} failed")
 
 
-def apply_secret(name: str, source: Path) -> None:
+def emit(name: str, create: list[str], output: Path | None) -> None:
+    """Render one object client-side, then apply it or write it to ``output``.
+
+    ``--output-dir`` exists for the one case this repository cannot solve with a
+    local ``kubectl``: the compute cluster's kubeconfig is root-only on the host
+    that owns it, so the objects are rendered here and applied over the same ssh
+    channel every other compute-cluster command uses. Rendering stays client-side
+    in both modes, so the file written is exactly the object that would have been
+    applied.
+    """
     rendered = subprocess.run(
-        [
-            "kubectl",
-            "-n",
-            NAMESPACE,
-            "create",
-            "secret",
-            "generic",
-            name,
-            f"--from-env-file={source}",
-            "--dry-run=client",
-            "-o",
-            "yaml",
-        ],
+        ["kubectl", *create, "--dry-run=client", "-o", "yaml"],
         text=True,
         capture_output=True,
         check=False,
     )
     if rendered.returncode != 0:
         sys.stderr.write(rendered.stderr)
-        raise SystemExit(f"render secret {name} failed")
-    kubectl("-n", NAMESPACE, "apply", "-f", "-", stdin=rendered.stdout)
+        raise SystemExit(f"render {name} failed")
+    if output is None:
+        kubectl("-n", NAMESPACE, "apply", "-f", "-", stdin=rendered.stdout)
+        return
+    path = output / f"{name}.yaml"
+    path.write_text(rendered.stdout)
+    path.chmod(0o600)
 
 
-def apply_file_secret(name: str, files: dict[str, Path]) -> None:
-    args = ["kubectl", "-n", NAMESPACE, "create", "secret", "generic", name]
-    args += [f"--from-file={key}={path}" for key, path in files.items()]
-    args += ["--dry-run=client", "-o", "yaml"]
-    rendered = subprocess.run(args, text=True, capture_output=True, check=False)
-    if rendered.returncode != 0:
-        sys.stderr.write(rendered.stderr)
-        raise SystemExit(f"render secret {name} failed")
-    kubectl("-n", NAMESPACE, "apply", "-f", "-", stdin=rendered.stdout)
+def apply_secret(name: str, source: Path, output: Path | None) -> None:
+    emit(
+        name,
+        ["-n", NAMESPACE, "create", "secret", "generic", name, f"--from-env-file={source}"],
+        output,
+    )
+
+
+def apply_file_secret(name: str, files: dict[str, Path], output: Path | None) -> None:
+    create = ["-n", NAMESPACE, "create", "secret", "generic", name]
+    create += [f"--from-file={key}={path}" for key, path in files.items()]
+    emit(name, create, output)
 
 
 def write_env_file(path: Path, values: dict[str, str]) -> None:
@@ -145,13 +199,23 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--topology",
-        choices=("in-cluster", "tunnel"),
+        choices=("in-cluster", "tunnel", "data-plane"),
         default="in-cluster",
         help="in-cluster: database, object storage and engine by cluster name; "
-        "tunnel: only the readiness units, against the existing tunnels",
+        "tunnel: only the readiness units, against the existing tunnels; "
+        "data-plane: the coordination database by cluster name while object "
+        "storage and the engine still answer on the host loopback",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="write the rendered objects here instead of applying them; use it to "
+        "apply to a cluster whose kubeconfig is not reachable from this host",
     )
     args = parser.parse_args(argv)
     topology = args.topology
+    output = args.output_dir
     if not ENV_FILE.exists():
         raise SystemExit(f"missing {ENV_FILE}; run deploy/cluster/init-env.py first")
     env = load_env(ENV_FILE)
@@ -162,11 +226,16 @@ def main(argv: list[str]) -> int:
             target.write_text(example.read_text())
             target.chmod(0o600)
 
-    namespace = subprocess.run(
-        ["kubectl", "get", "namespace", NAMESPACE], capture_output=True, text=True
-    )
-    if namespace.returncode != 0:
-        raise SystemExit("namespace speechnexus is missing; apply namespace.yaml first")
+    if output is None:
+        # Only the applying mode can answer this question: the rendering mode does
+        # not have (and must not assume) a kubectl context for the target cluster.
+        namespace = subprocess.run(
+            ["kubectl", "get", "namespace", NAMESPACE], capture_output=True, text=True
+        )
+        if namespace.returncode != 0:
+            raise SystemExit("namespace speechnexus is missing; apply namespace.yaml first")
+    else:
+        output.mkdir(parents=True, exist_ok=True)
 
     tmp = Path(tempfile.mkdtemp(prefix="render-", dir=RUNTIME))
     try:
@@ -355,26 +424,9 @@ def main(argv: list[str]) -> int:
             # literal as every other rendered unit above.
             "SPEECHNEXUS_DATABASE_SCHEMA": "speech",
         }
-        # The readiness units are the only ones rendered for both topologies, so
-        # the two values that differ between them are chosen here and nowhere else.
-        tunnel = topology == "tunnel"
-        readiness = {
-            "SPEECHNEXUS_DATABASE_SCHEMA": "speech",
-            "SPEECHNEXUS_DATABASE_URL": to_tunnel(env["SPEECHNEXUS_REGISTRATION_DATABASE_URL"])
-            if tunnel
-            else env["SPEECHNEXUS_REGISTRATION_DATABASE_URL"],
-            "SPEECHNEXUS_ENGINE_HEALTH_URL": ENGINE_LOOPBACK_HEALTH_URL
-            if tunnel
-            else ENGINE_SERVICE_HEALTH_URL,
-            "SPEECHNEXUS_TRANSCRIPTION_RECIPE_FILE": (
-                "/run/speechnexus-private/transcription-recipe.json"
-            ),
-            "SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET": BUCKET,
-            "SPEECHNEXUS_OBJECT_STORAGE_ENDPOINT": TUNNEL_S3 if tunnel else "http://minio:9000",
-            "SPEECHNEXUS_OBJECT_STORAGE_BUCKET": BUCKET,
-            "SPEECHNEXUS_OBJECT_STORAGE_ACCESS_KEY": env["MINIO_ROOT_USER"],
-            "SPEECHNEXUS_OBJECT_STORAGE_SECRET_KEY": env["MINIO_ROOT_PASSWORD"],
-        }
+        # The readiness units are the only ones rendered for every topology. Which
+        # endpoint each of them reads is decided in `readiness_env` above.
+        readiness = readiness_env(env, topology)
 
         # Workbench control plane. The migrate identity comes from the migration
         # credential set; the serving and cleanup identities are the two roles the
@@ -429,45 +481,45 @@ def main(argv: list[str]) -> int:
             # services that this assembly does not have, and rendering them here
             # would make an empty coordination domain look assembled.
             sources = {"readiness-env": readiness}
+        elif topology == "data-plane":
+            # The three objects the database move itself needs: the two
+            # credential Sets its StatefulSet and migration Job read, and the
+            # readiness units that are moved onto it first. The application
+            # plane's Secrets stay out -- their writers are still on the old
+            # database, and rendering them here would assemble a second one.
+            sources = {name: sources[name] for name in _DATA_PLANE_SECRETS}
         for name, values in sources.items():
             path = tmp / f"{name}.env"
             write_env_file(path, values)
-            apply_secret(name, path)
+            apply_secret(name, path, output)
 
         apply_file_secret(
             "private-config",
             {name: PRIVATE / name for name in RECIPES},
+            output,
         )
-        if topology == "tunnel":
+        if topology in ("tunnel", "data-plane"):
             printable = sorted(sources)
-            print(f"[{topology}] rendered secrets {printable} + private-config")
+            where = str(output) if output is not None else NAMESPACE
+            print(f"[{topology}] rendered secrets {printable} + private-config -> {where}")
             return 0
 
-        configmap = subprocess.run(
+        emit(
+            "minio-init-script",
             [
-                "kubectl",
                 "-n",
                 NAMESPACE,
                 "create",
                 "configmap",
                 "minio-init-script",
                 f"--from-file=init-object-storage.py={ROOT / 'deploy/init-object-storage.py'}",
-                "--dry-run=client",
-                "-o",
-                "yaml",
             ],
-            text=True,
-            capture_output=True,
-            check=False,
+            output,
         )
-        if configmap.returncode != 0:
-            sys.stderr.write(configmap.stderr)
-            raise SystemExit("render configmap minio-init-script failed")
-        kubectl("-n", NAMESPACE, "apply", "-f", "-", stdin=configmap.stdout)
 
-        gate = subprocess.run(
+        emit(
+            "workbench-startup-gate",
             [
-                "kubectl",
                 "-n",
                 NAMESPACE,
                 "create",
@@ -475,22 +527,13 @@ def main(argv: list[str]) -> int:
                 "workbench-startup-gate",
                 f"--from-file=workbench-startup-gate.py="
                 f"{ROOT / 'deploy/workbench-startup-gate.py'}",
-                "--dry-run=client",
-                "-o",
-                "yaml",
             ],
-            text=True,
-            capture_output=True,
-            check=False,
+            output,
         )
-        if gate.returncode != 0:
-            sys.stderr.write(gate.stderr)
-            raise SystemExit("render configmap workbench-startup-gate failed")
-        kubectl("-n", NAMESPACE, "apply", "-f", "-", stdin=gate.stdout)
 
-        nginx = subprocess.run(
+        emit(
+            "workbench-nginx-template",
             [
-                "kubectl",
                 "-n",
                 NAMESPACE,
                 "create",
@@ -498,22 +541,15 @@ def main(argv: list[str]) -> int:
                 "workbench-nginx-template",
                 "--from-file=default.conf.template="
                 f"{CLUSTER / 'app-plane/workbench-nginx.conf.template'}",
-                "--dry-run=client",
-                "-o",
-                "yaml",
             ],
-            text=True,
-            capture_output=True,
-            check=False,
+            output,
         )
-        if nginx.returncode != 0:
-            sys.stderr.write(nginx.stderr)
-            raise SystemExit("render configmap workbench-nginx-template failed")
-        kubectl("-n", NAMESPACE, "apply", "-f", "-", stdin=nginx.stdout)
 
+        where = str(output) if output is not None else NAMESPACE
         print(
             f"[{topology}] rendered secrets {sorted(sources)} + private-config, "
-            "configmaps minio-init-script, workbench-startup-gate, workbench-nginx-template"
+            "configmaps minio-init-script, workbench-startup-gate, workbench-nginx-template "
+            f"-> {where}"
         )
         return 0
     finally:
